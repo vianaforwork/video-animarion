@@ -1267,6 +1267,16 @@
     18.9
    ],
    "yaw": -1.5707963267948966
+  },
+  {
+   "use": "tas-jinjing",
+   "id": "tas-kamar",
+   "at": [
+    36.3,
+    0.6,
+    21.0
+   ],
+   "yaw": 1.5708
   }
  ],
  "lights": [
@@ -1460,8 +1470,7 @@
    ],
    "color": "#ff3348",
    "i": 2.6,
-   "prop": "sirene",
-   "flicker": true
+   "prop": "sirene"
   }
  ],
  "props": {

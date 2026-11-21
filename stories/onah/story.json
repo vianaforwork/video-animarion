@@ -79,18 +79,14 @@
      "do": "walk",
      "to": "depan-kamar-onah",
      "shot": {
-      "type": "lead"
+      "type": "wide"
      }
     },
     {
      "at": "mimpi",
-     "do": "look",
-     "target": "pintu-kamar-kos",
-     "face": "calm",
-     "shot": {
-      "type": "ots",
-      "target": "pintu-kamar-kos"
-     }
+     "do": "putDown",
+     "target": "rak-sepatu:front",
+     "face": "calm"
     }
    ]
   },
@@ -103,21 +99,30 @@
    },
    "cast": {
     "onah": {
-     "at": "tengah-kamar",
-     "holding": "tas"
+     "at": "kursi-santai:seat",
+     "do": "sit"
     }
    },
    "beats": [
     {
      "at": "Tapi",
-     "do": "putDown",
-     "target": "kasur:bed"
+     "do": "look",
+     "target": "jendela-kamar-kos-east",
+     "face": "sad"
     },
     {
      "at": "aku nggak",
-     "do": "sit",
-     "to": "kursi-santai:seat",
+     "do": "look",
+     "target": "tas-kamar",
      "face": "sad"
+    },
+    {
+     "at": "mana",
+     "do": "sigh",
+     "face": "sad",
+     "shot": {
+      "type": "mediumWide"
+     }
     }
    ]
   },
@@ -139,10 +144,6 @@
     }
    },
    "beats": [
-    {
-     "at": "Sampai suatu",
-     "show": "rina"
-    },
     {
      "at": "temanku",
      "who": "rina",
@@ -177,7 +178,7 @@
    },
    "cast": {
     "onah": {
-     "at": "lorong"
+     "at": "samping-meja"
     },
     "arga": {
      "at": "kursi-utama:seat",
@@ -186,10 +187,10 @@
    },
    "beats": [
     {
-     "at": "Di kantor",
+     "at": "bertemu",
      "who": "onah",
-     "do": "walk",
-     "to": "samping-meja"
+     "do": "look",
+     "target": "arga"
     },
     {
      "at": "Mas Arga",
@@ -261,13 +262,6 @@
      "who": "onah",
      "do": "think",
      "face": "think"
-    },
-    {
-     "at": "berubah",
-     "who": "onah",
-     "do": "stand",
-     "target": "arga",
-     "face": "smile"
     }
    ]
   },
