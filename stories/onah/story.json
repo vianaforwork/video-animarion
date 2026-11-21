@@ -1,0 +1,338 @@
+{
+ "id": "onah",
+ "title": "Onah",
+ "vo": {
+  "file": "audio/onah.m4a",
+  "offset": 1.5
+ },
+ "words": "words.json",
+ "world": "onah",
+ "cast": [
+  {
+   "id": "onah",
+   "look": "pemudi",
+   "name": "Onah",
+   "custom": {
+    "topColor": "#c97b8b",
+    "trim": "#f1d9dc"
+   }
+  },
+  {
+   "id": "rina",
+   "look": "pemudi",
+   "name": "Rina",
+   "custom": {
+    "top": "tee",
+    "topColor": "#6a2b57",
+    "hairStyle": "long",
+    "hair": "#5a2f20",
+    "lip": "#b04a5a"
+   }
+  },
+  {
+   "id": "arga",
+   "look": "pemuda",
+   "name": "Mas Arga",
+   "custom": {
+    "top": "jacket",
+    "topColor": "#2c2f3b",
+    "trim": "#8a8f9c"
+   }
+  }
+ ],
+ "titleCard": {
+  "at": "membawa",
+  "until": "mimpi",
+  "text": "ONAH",
+  "sub": "Dari Bandung ke Jakarta"
+ },
+ "disclaimer": {
+  "at": "Tapi",
+  "until": "mana",
+  "text": "Kisah ilustrasi — tokoh dan kejadian fiktif"
+ },
+ "endCard": {
+  "text": "FOLLOW FOR PART 2",
+  "sub": "Onah · Bagian 1",
+  "seconds": 4
+ },
+ "scenes": [
+  {
+   "at": 0,
+   "place": "lorong-kos",
+   "time": "night",
+   "mood": "memory",
+   "cast": {
+    "onah": {
+     "at": "masuk-kos",
+     "holding": "tas"
+    }
+   },
+   "beats": [
+    {
+     "at": "Namaku",
+     "do": "look",
+     "target": "pintu-kamar-kos"
+    },
+    {
+     "at": "Aku datang",
+     "do": "walk",
+     "to": "depan-kamar-onah",
+     "shot": {
+      "type": "lead"
+     }
+    },
+    {
+     "at": "mimpi",
+     "do": "look",
+     "target": "pintu-kamar-kos",
+     "face": "calm",
+     "shot": {
+      "type": "ots",
+      "target": "pintu-kamar-kos"
+     }
+    }
+   ]
+  },
+  {
+   "at": "Tapi",
+   "place": "kamar-kos",
+   "mood": "calm",
+   "set": {
+    "pintu-kamar-kos": 1
+   },
+   "cast": {
+    "onah": {
+     "at": "tengah-kamar",
+     "holding": "tas"
+    }
+   },
+   "beats": [
+    {
+     "at": "Tapi",
+     "do": "putDown",
+     "target": "kasur:bed"
+    },
+    {
+     "at": "aku nggak",
+     "do": "sit",
+     "to": "kursi-santai:seat",
+     "face": "sad"
+    }
+   ]
+  },
+  {
+   "at": "Sampai suatu",
+   "place": "kamar-kos",
+   "mood": "warm",
+   "cut": "fade",
+   "set": {
+    "pintu-kamar-kos": 1
+   },
+   "cast": {
+    "onah": {
+     "at": "kursi-santai:seat",
+     "do": "sit"
+    },
+    "rina": {
+     "at": "pintu-kamar"
+    }
+   },
+   "beats": [
+    {
+     "at": "Sampai suatu",
+     "show": "rina"
+    },
+    {
+     "at": "temanku",
+     "who": "rina",
+     "do": "walk",
+     "to": "depan-onah",
+     "shot": {
+      "type": "wide"
+     }
+    },
+    {
+     "at": "Jadi LC",
+     "who": "rina",
+     "do": "talk",
+     "target": "onah",
+     "face": "smile"
+    },
+    {
+     "at": "Gajinya",
+     "who": "onah",
+     "do": "look",
+     "target": "rina",
+     "face": "curious"
+    }
+   ]
+  },
+  {
+   "at": "Di kantor",
+   "place": "kantor",
+   "mood": "warm",
+   "set": {
+    "lampu-kantor": 1
+   },
+   "cast": {
+    "onah": {
+     "at": "lorong"
+    },
+    "arga": {
+     "at": "kursi-utama:seat",
+     "do": "sit"
+    }
+   },
+   "beats": [
+    {
+     "at": "Di kantor",
+     "who": "onah",
+     "do": "walk",
+     "to": "samping-meja"
+    },
+    {
+     "at": "Mas Arga",
+     "who": "arga",
+     "do": "standUp",
+     "face": "smile"
+    },
+    {
+     "at": "mengajariku",
+     "who": "arga",
+     "do": "point",
+     "target": "onah",
+     "face": "smile"
+    },
+    {
+     "at": "cara tersenyum",
+     "who": "onah",
+     "do": "stand",
+     "target": "arga",
+     "face": "smile"
+    },
+    {
+     "at": "menemani",
+     "who": "arga",
+     "do": "point",
+     "target": "meja-rapat"
+    },
+    {
+     "at": "cara bertahan",
+     "who": "onah",
+     "do": "nod",
+     "target": "arga",
+     "face": "serious"
+    }
+   ]
+  },
+  {
+   "at": "Pelan-pelan",
+   "place": "pojok-printer",
+   "mood": "warm",
+   "cut": "fade",
+   "set": {
+    "lampu-kantor": 1
+   },
+   "cast": {
+    "onah": {
+     "at": "printer-baca"
+    },
+    "arga": {
+     "at": "samping-meja"
+    }
+   },
+   "beats": [
+    {
+     "at": "Pelan-pelan",
+     "who": "onah",
+     "do": "look",
+     "target": "printer"
+    },
+    {
+     "at": "terbiasa",
+     "who": "arga",
+     "do": "nod",
+     "target": "onah",
+     "face": "smile"
+    },
+    {
+     "at": "Aku pikir",
+     "who": "onah",
+     "do": "think",
+     "face": "think"
+    },
+    {
+     "at": "berubah",
+     "who": "onah",
+     "do": "stand",
+     "target": "arga",
+     "face": "smile"
+    }
+   ]
+  },
+  {
+   "at": "Sampai malam",
+   "place": "kantor",
+   "mood": "tense",
+   "set": {
+    "lampu-kantor": 1
+   },
+   "cast": {
+    "onah": {
+     "at": "samping-meja"
+    },
+    "arga": {
+     "at": "depan-arga"
+    }
+   },
+   "beats": [
+    {
+     "at": "Sampai malam",
+     "who": "onah",
+     "do": "stand",
+     "target": "arga",
+     "quiet": true
+    },
+    {
+     "at": "Pintu",
+     "show": "pintu-lift",
+     "set": {
+      "pintu-lift": 1,
+      "sirene": 1
+     },
+     "fade": 0.2,
+     "hit": true,
+     "sfx": [
+      "slam"
+     ]
+    },
+    {
+     "at": "Polisi",
+     "who": "onah",
+     "do": "startle",
+     "target": "pintu-lift",
+     "face": "fear"
+    },
+    {
+     "at": "Semua diam",
+     "who": "arga",
+     "do": "freeze",
+     "target": "pintu-lift",
+     "ui": {
+      "type": "stamp",
+      "text": "GEREBEK"
+     },
+     "until": "tempat"
+    },
+    {
+     "at": "Dan aku",
+     "who": "onah",
+     "do": "freeze",
+     "target": "pintu-lift",
+     "face": "fear"
+    }
+   ]
+  }
+ ]
+}

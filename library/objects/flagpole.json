@@ -1,0 +1,83 @@
+{
+ "id": "flagpole",
+ "doc": "school flagpole 7 m with the red-and-white flag, on a small concrete base",
+ "anchors": {
+  "front": [
+   0,
+   0,
+   1.6
+  ],
+  "flag": [
+   0.45,
+   6.4,
+   0
+  ]
+ },
+ "parts": [
+  {
+   "shape": "box",
+   "size": [
+    1.2,
+    0.3,
+    1.2
+   ],
+   "at": [
+    0,
+    0.15,
+    0
+   ],
+   "mat": "concrete:#b9b4aa",
+   "round": 0.02
+  },
+  {
+   "shape": "cyl",
+   "r": 0.045,
+   "r2": 0.06,
+   "h": 7.0,
+   "at": [
+    0,
+    3.8,
+    0
+   ],
+   "mat": "paint:#e8e6e0"
+  },
+  {
+   "shape": "sphere",
+   "r": 0.08,
+   "at": [
+    0,
+    7.35,
+    0
+   ],
+   "mat": "metal:#c9a45a"
+  },
+  {
+   "shape": "box",
+   "size": [
+    1.2,
+    0.4,
+    0.01
+   ],
+   "at": [
+    0.62,
+    6.75,
+    0
+   ],
+   "mat": "cloth:#c0392b"
+  },
+  {
+   "shape": "box",
+   "size": [
+    1.2,
+    0.4,
+    0.01
+   ],
+   "at": [
+    0.62,
+    6.35,
+    0
+   ],
+   "mat": "cloth:#e8e4dc"
+  }
+ ]
+}

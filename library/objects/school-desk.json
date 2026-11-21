@@ -1,0 +1,103 @@
+{
+ "id": "school-desk",
+ "doc": "school desk with a shelf under the top, 0.65 × 0.45 m, 0.72 m high; the pupil sits at +z facing −z… place it with yaw so its +z side faces the pupil",
+ "anchors": {
+  "top": [
+   0,
+   0.73,
+   0
+  ],
+  "front": [
+   0,
+   0,
+   0.55
+  ],
+  "book": [
+   0,
+   0.735,
+   0.08
+  ]
+ },
+ "parts": [
+  {
+   "shape": "box",
+   "size": [
+    0.65,
+    0.035,
+    0.45
+   ],
+   "at": [
+    0,
+    0.715,
+    0
+   ],
+   "mat": "wood:#c89a6a",
+   "round": 0.008
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.6,
+    0.012,
+    0.38
+   ],
+   "at": [
+    0,
+    0.6,
+    -0.02
+   ],
+   "mat": "metal:#3a3d44"
+  },
+  {
+   "shape": "rod",
+   "from": [
+    0.29,
+    0,
+    0.19
+   ],
+   "to": [
+    0.29,
+    0.7,
+    0.19
+   ],
+   "r": 0.015,
+   "mat": "steel",
+   "mirror": "x"
+  },
+  {
+   "shape": "rod",
+   "from": [
+    0.29,
+    0,
+    -0.19
+   ],
+   "to": [
+    0.29,
+    0.7,
+    -0.19
+   ],
+   "r": 0.015,
+   "mat": "steel",
+   "mirror": "x"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.22,
+    0.02,
+    0.3
+   ],
+   "at": [
+    0.05,
+    0.743,
+    0.06
+   ],
+   "rot": [
+    0,
+    -8,
+    0
+   ],
+   "mat": "paper:#ddd6c6"
+  }
+ ]
+}

@@ -1,0 +1,584 @@
+{
+ "id": "onah",
+ "vo": {
+  "words": 83,
+  "start": 0,
+  "end": 45.76
+ },
+ "sentences": [
+  {
+   "i": 0,
+   "text": "Namaku Onah.",
+   "t0": 0,
+   "t1": 1.27,
+   "pauseAfter": 0.23,
+   "cue": "Namaku",
+   "para": 0
+  },
+  {
+   "i": 1,
+   "text": "Aku datang dari Bandung ke Jakarta, membawa satu tas dan banyak mimpi.",
+   "t0": 1.5,
+   "t1": 6.82,
+   "pauseAfter": 0.78,
+   "cue": "Aku",
+   "para": 0
+  },
+  {
+   "i": 2,
+   "text": "Tapi di kota sebesar ini…",
+   "t0": 7.6,
+   "t1": 9.42,
+   "pauseAfter": 0.52,
+   "cue": "Tapi",
+   "para": 0
+  },
+  {
+   "i": 3,
+   "text": "aku nggak tahu harus mulai dari mana.",
+   "t0": 9.94,
+   "t1": 12.07,
+   "pauseAfter": 0.85,
+   "cue": "aku",
+   "para": 0
+  },
+  {
+   "i": 4,
+   "text": "Sampai suatu malam, temanku Rina menawarkan pekerjaan.",
+   "t0": 12.92,
+   "t1": 16.94,
+   "pauseAfter": 0.67,
+   "cue": "Sampai",
+   "para": 0
+  },
+  {
+   "i": 5,
+   "text": "\"Jadi LC aja, Nah.",
+   "t0": 17.61,
+   "t1": 19.2,
+   "pauseAfter": 0.18,
+   "cue": "Jadi",
+   "para": 0
+  },
+  {
+   "i": 6,
+   "text": "Gajinya lumayan.\"",
+   "t0": 19.38,
+   "t1": 20.57,
+   "pauseAfter": 0.81,
+   "cue": "Gajinya",
+   "para": 0
+  },
+  {
+   "i": 7,
+   "text": "Di kantor itu aku bertemu Mas Arga.",
+   "t0": 21.38,
+   "t1": 23.54,
+   "pauseAfter": 0.56,
+   "cue": "Di",
+   "para": 0
+  },
+  {
+   "i": 8,
+   "text": "Dia yang mengajariku semuanya: cara tersenyum, cara menemani tamu, cara bertahan.",
+   "t0": 24.1,
+   "t1": 30.28,
+   "pauseAfter": 0.66,
+   "cue": "Dia",
+   "para": 0
+  },
+  {
+   "i": 9,
+   "text": "Pelan-pelan aku mulai terbiasa.",
+   "t0": 30.94,
+   "t1": 33.16,
+   "pauseAfter": 0.6,
+   "cue": "Pelan-pelan",
+   "para": 0
+  },
+  {
+   "i": 10,
+   "text": "Aku pikir hidupku akhirnya berubah.",
+   "t0": 33.76,
+   "t1": 36,
+   "pauseAfter": 0.59,
+   "cue": "Aku",
+   "para": 0
+  },
+  {
+   "i": 11,
+   "text": "Sampai malam itu.",
+   "t0": 36.59,
+   "t1": 37.91,
+   "pauseAfter": 0.2,
+   "cue": "Sampai",
+   "para": 0
+  },
+  {
+   "i": 12,
+   "text": "Pintu didobrak.",
+   "t0": 38.11,
+   "t1": 39.17,
+   "pauseAfter": 0.47,
+   "cue": "Pintu",
+   "para": 0
+  },
+  {
+   "i": 13,
+   "text": "\"Polisi!",
+   "t0": 39.64,
+   "t1": 40.21,
+   "pauseAfter": 0,
+   "cue": "Polisi",
+   "para": 0
+  },
+  {
+   "i": 14,
+   "text": "Semua diam di tempat!\"",
+   "t0": 40.21,
+   "t1": 41.71,
+   "pauseAfter": 0.7,
+   "cue": "Semua",
+   "para": 0
+  },
+  {
+   "i": 15,
+   "text": "Dan aku sadar…",
+   "t0": 42.41,
+   "t1": 43.49,
+   "pauseAfter": 0.46,
+   "cue": "Dan",
+   "para": 0
+  },
+  {
+   "i": 16,
+   "text": "semuanya baru saja dimulai.",
+   "t0": 43.95,
+   "t1": 45.76,
+   "pauseAfter": 0,
+   "cue": "semuanya",
+   "para": 0
+  }
+ ],
+ "pauses": [
+  {
+   "after": "Jakarta,",
+   "before": "membawa",
+   "at": 3.89,
+   "len": 0.62
+  },
+  {
+   "after": "mimpi.",
+   "before": "Tapi",
+   "at": 6.82,
+   "len": 0.78
+  },
+  {
+   "after": "ini…",
+   "before": "aku",
+   "at": 9.42,
+   "len": 0.52
+  },
+  {
+   "after": "mana.",
+   "before": "Sampai",
+   "at": 12.07,
+   "len": 0.85
+  },
+  {
+   "after": "pekerjaan.",
+   "before": "\"Jadi",
+   "at": 16.94,
+   "len": 0.67
+  },
+  {
+   "after": "lumayan.\"",
+   "before": "Di",
+   "at": 20.57,
+   "len": 0.81
+  },
+  {
+   "after": "Arga.",
+   "before": "Dia",
+   "at": 23.54,
+   "len": 0.56
+  },
+  {
+   "after": "semuanya:",
+   "before": "cara",
+   "at": 25.95,
+   "len": 0.44
+  },
+  {
+   "after": "tamu,",
+   "before": "cara",
+   "at": 29,
+   "len": 0.35
+  },
+  {
+   "after": "bertahan.",
+   "before": "Pelan-pelan",
+   "at": 30.28,
+   "len": 0.66
+  },
+  {
+   "after": "terbiasa.",
+   "before": "Aku",
+   "at": 33.16,
+   "len": 0.6
+  },
+  {
+   "after": "berubah.",
+   "before": "Sampai",
+   "at": 36,
+   "len": 0.59
+  },
+  {
+   "after": "didobrak.",
+   "before": "\"Polisi!",
+   "at": 39.17,
+   "len": 0.47
+  },
+  {
+   "after": "tempat!\"",
+   "before": "Dan",
+   "at": 41.71,
+   "len": 0.7
+  },
+  {
+   "after": "sadar…",
+   "before": "semuanya",
+   "at": 43.49,
+   "len": 0.46
+  }
+ ],
+ "scenes": [
+  {
+   "at": "Namaku",
+   "t0": 0,
+   "sentences": [
+    0,
+    1
+   ],
+   "why": "start",
+   "text": "Namaku Onah. Aku datang dari Bandung ke Jakarta, membawa satu tas dan banyak mimpi."
+  },
+  {
+   "at": "Tapi",
+   "t0": 7.6,
+   "sentences": [
+    2,
+    3,
+    4,
+    5,
+    6
+   ],
+   "why": "turn word “Tapi” after a 0.78s pause",
+   "text": "Tapi di kota sebesar ini… aku nggak tahu harus mulai dari mana. Sampai suatu malam, temanku Rina menawarkan pekerjaan. \"Jadi LC aja, Nah. Gajinya lumayan.\""
+  },
+  {
+   "at": "Di",
+   "t0": 21.38,
+   "sentences": [
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14
+   ],
+   "why": "pause 0.81s before it",
+   "text": "Di kantor itu aku bertemu Mas Arga. Dia yang mengajariku semuanya: cara tersenyum, cara menemani tamu, cara bertahan. Pelan-pelan aku mulai terbiasa. Aku pikir hidupku akhirnya berubah. Sampai malam itu. Pintu didobrak. \"Polisi! Semua diam di tempat!\""
+  },
+  {
+   "at": "Dan",
+   "t0": 42.41,
+   "sentences": [
+    15,
+    16
+   ],
+   "why": "turn word “Dan” after a 0.7s pause",
+   "text": "Dan aku sadar… semuanya baru saja dimulai."
+  }
+ ],
+ "protagonist": "Jakarta",
+ "explanation": [],
+ "unmapped": [
+  {
+   "t": 4.51,
+   "word": "membawa",
+   "sentence": "Aku datang dari Bandung ke Jakarta, membawa satu tas dan banyak mimpi."
+  },
+  {
+   "t": 24.56,
+   "word": "mengajariku",
+   "sentence": "Dia yang mengajariku semuanya: cara tersenyum, cara menemani tamu, cara bertahan."
+  },
+  {
+   "t": 27.79,
+   "word": "menemani",
+   "sentence": "Dia yang mengajariku semuanya: cara tersenyum, cara menemani tamu, cara bertahan."
+  },
+  {
+   "t": 29.72,
+   "word": "bertahan",
+   "sentence": "Dia yang mengajariku semuanya: cara tersenyum, cara menemani tamu, cara bertahan."
+  },
+  {
+   "t": 35.48,
+   "word": "berubah",
+   "sentence": "Aku pikir hidupku akhirnya berubah."
+  }
+ ],
+ "characters": [
+  {
+   "name": "Jakarta",
+   "mentions": [
+    3.29
+   ],
+   "kind": "named"
+  },
+  {
+   "name": "Rina",
+   "role": "teman",
+   "look": "pemuda",
+   "mentions": [
+    14.93
+   ],
+   "kind": "named"
+  },
+  {
+   "name": "Arga",
+   "role": "mas",
+   "look": "pemuda",
+   "mentions": [
+    23.21
+   ],
+   "kind": "named"
+  }
+ ],
+ "unnamed": [],
+ "time": {
+  "value": "night",
+  "stated": true,
+  "evidence": [
+   "13.92s “malam” → night",
+   "37.03s “malam itu” → night"
+  ],
+  "ignored": [],
+  "clocks": []
+ },
+ "location": {
+  "main": "office",
+  "kinds": {
+   "street": 0.4,
+   "office": 2
+  },
+  "areas": [
+   {
+    "name": "kota",
+    "kind": "street",
+    "t": 8.15
+   },
+   {
+    "name": "kantor",
+    "kind": "office",
+    "t": 21.55
+   }
+  ]
+ },
+ "objects": [
+  {
+   "word": "tas",
+   "key": "tas",
+   "value": "generate:bag",
+   "mentions": [
+    5.56
+   ],
+   "used": false
+  },
+  {
+   "word": "pintu",
+   "key": "pintu",
+   "value": "world:door",
+   "mentions": [
+    38.11
+   ],
+   "used": false
+  }
+ ],
+ "mentions": [
+  {
+   "word": "sebesar",
+   "t": 8.51,
+   "context": "di kota sebesar ini"
+  },
+  {
+   "word": "mana",
+   "t": 11.74,
+   "context": "mulai dari mana Sampai"
+  },
+  {
+   "word": "tempat",
+   "t": 41.34,
+   "context": "diam di tempat Dan"
+  }
+ ],
+ "interactions": [
+  {
+   "t": 1.9,
+   "sentence": 1,
+   "word": "datang",
+   "who": "Jakarta",
+   "action": "walk",
+   "mode": "acted",
+   "supported": true
+  },
+  {
+   "t": 15.33,
+   "sentence": 4,
+   "word": "menawarkan",
+   "who": "Rina",
+   "action": "talk",
+   "mode": "acted",
+   "supported": true
+  },
+  {
+   "t": 22.54,
+   "sentence": 7,
+   "word": "bertemu",
+   "who": "Rina",
+   "action": "look",
+   "obj": "Arga",
+   "mode": "acted",
+   "supported": true
+  },
+  {
+   "t": 34.11,
+   "sentence": 10,
+   "word": "pikir",
+   "who": "Arga",
+   "action": "think",
+   "mode": "acted",
+   "supported": true
+  }
+ ],
+ "states": [],
+ "sounds": [],
+ "emotions": [
+  {
+   "t": 26.79,
+   "word": "tersenyum",
+   "face": "smile",
+   "who": "Arga"
+  }
+ ],
+ "dialogue": [
+  {
+   "t": 17.61,
+   "sentence": 6,
+   "speaker": "Rina",
+   "text": "Jadi LC aja, Nah. Gajinya lumayan."
+  },
+  {
+   "t": 39.64,
+   "sentence": 14,
+   "speaker": "?",
+   "text": "Polisi! Semua diam di tempat!"
+  }
+ ],
+ "texts": [],
+ "requirements": {
+  "implied": [
+   "office desks with monitors / computers",
+   "office chairs",
+   "ceiling panel lights",
+   "a printer / copier corner",
+   "filing cabinets",
+   "windows with the city outside"
+  ],
+  "world": [
+   {
+    "kind": "office",
+    "status": "reuse-or-adapt",
+    "use": "worlds/kantor.world.json",
+    "note": "an open-plan office on the 11th floor of a city tower: four rows of workstations, one main desk with a monitor and a laptop near the east end, a printer/copier corner with a wall clock and a CCTV monitor, a CCTV camera high on the north wall, big north windows onto the city, a meeting room with a whiteboard behind a glass door on the east wall, the lift door in the south wall"
+   }
+  ],
+  "time": "night",
+  "objects": [
+   {
+    "word": "tas",
+    "t": 5.56,
+    "mentions": 1,
+    "story": false,
+    "need": "bag",
+    "status": "generate",
+    "note": "no library object for \"bag\" — build from primitives into assets/objects/<id>.json, check it on the object sheet"
+   },
+   {
+    "word": "pintu",
+    "t": 38.11,
+    "mentions": 1,
+    "story": false,
+    "need": "door",
+    "status": "world",
+    "note": "made by the world DSL (door)"
+   }
+  ],
+  "actions": [
+   {
+    "t": 1.9,
+    "word": "datang",
+    "who": "Jakarta",
+    "action": "walk",
+    "mode": "acted",
+    "status": "supported"
+   },
+   {
+    "t": 15.33,
+    "word": "menawarkan",
+    "who": "Rina",
+    "action": "talk",
+    "mode": "acted",
+    "status": "supported"
+   },
+   {
+    "t": 22.54,
+    "word": "bertemu",
+    "who": "Rina",
+    "action": "look",
+    "obj": "Arga",
+    "mode": "acted",
+    "status": "supported"
+   },
+   {
+    "t": 34.11,
+    "word": "pikir",
+    "who": "Arga",
+    "action": "think",
+    "mode": "acted",
+    "status": "supported"
+   }
+  ],
+  "looks": [
+   {
+    "who": "Jakarta",
+    "status": "choose"
+   },
+   {
+    "who": "Rina",
+    "look": "pemuda",
+    "status": "reuse"
+   },
+   {
+    "who": "Arga",
+    "look": "pemuda",
+    "status": "reuse"
+   }
+  ],
+  "sfx": []
+ }
+}

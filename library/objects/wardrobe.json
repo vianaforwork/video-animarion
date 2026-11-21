@@ -1,0 +1,83 @@
+{
+ "id": "wardrobe",
+ "doc": "tall two-door wooden wardrobe (lemari) 1.0 × 2.0 m, front faces +z",
+ "anchors": {
+  "front": [
+   0,
+   0,
+   0.7
+  ],
+  "door": [
+   0.25,
+   1.1,
+   0.31
+  ]
+ },
+ "states": {
+  "open": 0
+ },
+ "parts": [
+  {
+   "shape": "box",
+   "size": [
+    1.0,
+    2.0,
+    0.56
+   ],
+   "at": [
+    0,
+    1.0,
+    0
+   ],
+   "mat": "wood:#7a5236",
+   "round": 0.02
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.47,
+    1.84,
+    0.02
+   ],
+   "at": [
+    0.245,
+    1.0,
+    0.285
+   ],
+   "mat": "wood:#8f6644",
+   "mirror": "x"
+  },
+  {
+   "shape": "cyl",
+   "r": 0.015,
+   "h": 0.1,
+   "at": [
+    0.05,
+    1.05,
+    0.305
+   ],
+   "rot": [
+    90,
+    0,
+    0
+   ],
+   "mat": "metal:#c9a45a",
+   "mirror": "x"
+  },
+  {
+   "shape": "box",
+   "size": [
+    1.04,
+    0.06,
+    0.6
+   ],
+   "at": [
+    0,
+    2.02,
+    0
+   ],
+   "mat": "wood:#6a4a2e",
+   "round": 0.01
+  }
+ ]
+}

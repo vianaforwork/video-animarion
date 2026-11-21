@@ -1,0 +1,77 @@
+{
+ "id": "meeting-table",
+ "doc": "long meeting-room table 2.4 × 1.1 m, top 0.75 m, two pedestal legs",
+ "anchors": {
+  "top": [
+   0,
+   0.75,
+   0
+  ],
+  "front": [
+   0,
+   0,
+   1.1
+  ]
+ },
+ "parts": [
+  {
+   "shape": "box",
+   "size": [
+    2.4,
+    0.04,
+    1.1
+   ],
+   "at": [
+    0,
+    0.73,
+    0
+   ],
+   "mat": "wood:#4e3b2c",
+   "round": 0.01
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.12,
+    0.7,
+    0.6
+   ],
+   "at": [
+    0.75,
+    0.36,
+    0
+   ],
+   "mat": "metal:#3a3d42",
+   "mirror": "x"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.5,
+    0.03,
+    0.8
+   ],
+   "at": [
+    0.75,
+    0.015,
+    0
+   ],
+   "mat": "metal:#3a3d42",
+   "mirror": "x"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.3,
+    0.01,
+    0.12
+   ],
+   "at": [
+    0,
+    0.755,
+    0
+   ],
+   "mat": "plastic:#202226"
+  }
+ ]
+}

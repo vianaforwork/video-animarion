@@ -1,0 +1,366 @@
+{
+ "id": "office-printer",
+ "doc": "floor-standing multifunction office printer/copier 0.6 × 1.07 m, paper drawers below, scanner lid on top, output slot and tray at the front (+z); paper emerging in steps k1..k6; panel + LED glow while 'aktif'",
+ "anchors": {
+  "front": [
+   0,
+   0,
+   0.98
+  ],
+  "tray": [
+   0,
+   0.742,
+   0.44
+  ],
+  "panel": [
+   0.16,
+   1.08,
+   0.24
+  ],
+  "top": [
+   0,
+   1.07,
+   0
+  ]
+ },
+ "states": {
+  "aktif": 0,
+  "k1": 0,
+  "k2": 0,
+  "k3": 0,
+  "k4": 0,
+  "k5": 0,
+  "k6": 0
+ },
+ "parts": [
+  {
+   "shape": "box",
+   "size": [
+    0.6,
+    0.44,
+    0.58
+   ],
+   "at": [
+    0,
+    0.24,
+    0
+   ],
+   "mat": "plastic:#c8c9c3",
+   "round": 0.012
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.62,
+    0.03,
+    0.6
+   ],
+   "at": [
+    0,
+    0.015,
+    0
+   ],
+   "mat": "plastic:#3a3c40"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.56,
+    0.004,
+    0.006
+   ],
+   "at": [
+    0,
+    0.32,
+    0.291
+   ],
+   "mat": "plastic:#55575b",
+   "repeat": {
+    "n": 2,
+    "step": [
+     0,
+     -0.14,
+     0
+    ]
+   }
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.22,
+    0.02,
+    0.02
+   ],
+   "at": [
+    0,
+    0.39,
+    0.295
+   ],
+   "mat": "plastic:#55575b",
+   "repeat": {
+    "n": 2,
+    "step": [
+     0,
+     -0.14,
+     0
+    ]
+   }
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.6,
+    0.48,
+    0.58
+   ],
+   "at": [
+    0,
+    0.7,
+    0
+   ],
+   "mat": "plastic:#d3d4ce",
+   "round": 0.012
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.26,
+    0.012,
+    0.006
+   ],
+   "at": [
+    0,
+    0.742,
+    0.291
+   ],
+   "mat": "plastic:#141517"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.27,
+    0.008,
+    0.3
+   ],
+   "at": [
+    0,
+    0.736,
+    0.44
+   ],
+   "mat": "plastic:#a9aba6",
+   "round": 0.003
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.012,
+    0.03,
+    0.3
+   ],
+   "at": [
+    0.14,
+    0.75,
+    0.44
+   ],
+   "mat": "plastic:#a9aba6",
+   "mirror": "x"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.6,
+    0.13,
+    0.58
+   ],
+   "at": [
+    0,
+    1.005,
+    0
+   ],
+   "mat": "plastic:#c3c4be",
+   "round": 0.012
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.62,
+    0.012,
+    0.6
+   ],
+   "at": [
+    0,
+    1.076,
+    0
+   ],
+   "mat": "plastic:#4a4c50",
+   "round": 0.004
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.26,
+    0.03,
+    0.14
+   ],
+   "at": [
+    0.16,
+    1.06,
+    0.26
+   ],
+   "rot": [
+    22,
+    0,
+    0
+   ],
+   "mat": "plastic:#3b3d41",
+   "round": 0.006
+  },
+  {
+   "shape": "text",
+   "size": [
+    0.16,
+    0.08
+   ],
+   "at": [
+    0.16,
+    1.0752,
+    0.2662
+   ],
+   "rot": [
+    -68,
+    0,
+    0
+   ],
+   "text": "MENCETAK",
+   "ink": "#c8ffe8",
+   "bg": "#10302a",
+   "glowState": "aktif"
+  },
+  {
+   "shape": "sphere",
+   "r": 0.008,
+   "at": [
+    0.265,
+    1.074,
+    0.29
+   ],
+   "mat": "emissive:#ff9a3a"
+  },
+  {
+   "shape": "sphere",
+   "r": 0.009,
+   "at": [
+    -0.24,
+    1.03,
+    0.292
+   ],
+   "mat": "emissive:#2dff8a",
+   "glowState": "aktif"
+  },
+  {
+   "shape": "text",
+   "size": [
+    0.16,
+    0.035
+   ],
+   "at": [
+    -0.17,
+    0.88,
+    0.291
+   ],
+   "text": "OFFICEJET",
+   "ink": "#3c3e42",
+   "bg": "#d3d4ce"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.21,
+    0.003,
+    0.297
+   ],
+   "at": [
+    0,
+    0.744,
+    0.191
+   ],
+   "mat": "paper:#d9d4c8",
+   "when": "k1"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.21,
+    0.003,
+    0.297
+   ],
+   "at": [
+    0,
+    0.744,
+    0.2405
+   ],
+   "mat": "paper:#d9d4c8",
+   "when": "k2"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.21,
+    0.003,
+    0.297
+   ],
+   "at": [
+    0,
+    0.744,
+    0.29
+   ],
+   "mat": "paper:#d9d4c8",
+   "when": "k3"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.21,
+    0.003,
+    0.297
+   ],
+   "at": [
+    0,
+    0.744,
+    0.3395
+   ],
+   "mat": "paper:#d9d4c8",
+   "when": "k4"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.21,
+    0.003,
+    0.297
+   ],
+   "at": [
+    0,
+    0.744,
+    0.389
+   ],
+   "mat": "paper:#d9d4c8",
+   "when": "k5"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.21,
+    0.003,
+    0.297
+   ],
+   "at": [
+    0,
+    0.744,
+    0.4385
+   ],
+   "mat": "paper:#d9d4c8",
+   "when": "k6"
+  }
+ ]
+}

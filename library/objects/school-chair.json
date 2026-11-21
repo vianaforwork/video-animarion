@@ -1,0 +1,85 @@
+{
+ "id": "school-chair",
+ "doc": "school chair with a blue plastic seat and back on a steel frame, sits facing +z",
+ "anchors": {
+  "seat": [
+   0,
+   0.45,
+   0.02
+  ],
+  "front": [
+   0,
+   0,
+   0.55
+  ]
+ },
+ "parts": [
+  {
+   "shape": "box",
+   "size": [
+    0.4,
+    0.03,
+    0.38
+   ],
+   "at": [
+    0,
+    0.44,
+    0
+   ],
+   "mat": "plastic:#3e7cb1",
+   "round": 0.01
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.4,
+    0.26,
+    0.03
+   ],
+   "at": [
+    0,
+    0.72,
+    -0.19
+   ],
+   "rot": [
+    -6,
+    0,
+    0
+   ],
+   "mat": "plastic:#3e7cb1",
+   "round": 0.01
+  },
+  {
+   "shape": "rod",
+   "from": [
+    0.18,
+    0,
+    0.17
+   ],
+   "to": [
+    0.18,
+    0.43,
+    0.17
+   ],
+   "r": 0.012,
+   "mat": "steel",
+   "mirror": "x"
+  },
+  {
+   "shape": "rod",
+   "from": [
+    0.18,
+    0,
+    -0.17
+   ],
+   "to": [
+    0.18,
+    0.86,
+    -0.2
+   ],
+   "r": 0.012,
+   "mat": "steel",
+   "mirror": "x"
+  }
+ ]
+}

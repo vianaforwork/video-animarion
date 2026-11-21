@@ -1,0 +1,93 @@
+{
+ "id": "wall-photo",
+ "doc": "framed family photo 0.5 × 0.4 m on a wall",
+ "anchors": {
+  "front": [
+   0,
+   0,
+   0.8
+  ],
+  "photo": [
+   0,
+   1.7,
+   0.02
+  ]
+ },
+ "parts": [
+  {
+   "shape": "box",
+   "size": [
+    0.5,
+    0.4,
+    0.03
+   ],
+   "at": [
+    0,
+    1.7,
+    0
+   ],
+   "mat": "wood:#3b2a20",
+   "round": 0.005
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.44,
+    0.34,
+    0.004
+   ],
+   "at": [
+    0,
+    1.7,
+    0.017
+   ],
+   "mat": {
+    "color": "#c9b79c",
+    "roughness": 0.7
+   }
+  },
+  {
+   "shape": "sphere",
+   "r": 0.05,
+   "scale": [
+    1,
+    1.15,
+    0.2
+   ],
+   "at": [
+    -0.1,
+    1.72,
+    0.02
+   ],
+   "mat": {
+    "color": "#6d4c41",
+    "roughness": 0.7
+   },
+   "repeat": {
+    "n": 3,
+    "step": [
+     0.1,
+     -0.01,
+     0
+    ]
+   }
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.36,
+    0.08,
+    0.004
+   ],
+   "at": [
+    0,
+    1.6,
+    0.02
+   ],
+   "mat": {
+    "color": "#8d6e63",
+    "roughness": 0.7
+   }
+  }
+ ]
+}

@@ -1,0 +1,97 @@
+{
+ "id": "whiteboard",
+ "doc": "wall whiteboard 1.6 × 1.0 m with an aluminium frame and marker tray, faces +z (origin = board centre)",
+ "anchors": {
+  "front": [
+   0,
+   -1.4,
+   1
+  ]
+ },
+ "parts": [
+  {
+   "shape": "box",
+   "size": [
+    1.64,
+    1.04,
+    0.025
+   ],
+   "at": [
+    0,
+    0,
+    0.0125
+   ],
+   "mat": "aluminium"
+  },
+  {
+   "shape": "box",
+   "size": [
+    1.6,
+    1,
+    0.01
+   ],
+   "at": [
+    0,
+    0,
+    0.026
+   ],
+   "mat": "plastic:#d4d6d2"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.7,
+    0.012,
+    0.002
+   ],
+   "at": [
+    -0.3,
+    0.25,
+    0.032
+   ],
+   "mat": "paint:#2c4f8a"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.5,
+    0.012,
+    0.002
+   ],
+   "at": [
+    -0.4,
+    0.15,
+    0.032
+   ],
+   "mat": "paint:#2c4f8a"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.6,
+    0.012,
+    0.002
+   ],
+   "at": [
+    0.3,
+    -0.05,
+    0.032
+   ],
+   "mat": "paint:#8a2c2c"
+  },
+  {
+   "shape": "box",
+   "size": [
+    1.2,
+    0.03,
+    0.06
+   ],
+   "at": [
+    0,
+    -0.53,
+    0.04
+   ],
+   "mat": "aluminium"
+  }
+ ]
+}

@@ -1,0 +1,111 @@
+{
+ "id": "cctv-camera",
+ "doc": "white bullet security camera on a wall bracket, looking down into the room (+z), red REC light",
+ "anchors": {
+  "lens": [
+   0.06,
+   -0.12,
+   0.3
+  ]
+ },
+ "states": {
+  "rec": 1
+ },
+ "parts": [
+  {
+   "shape": "box",
+   "size": [
+    0.1,
+    0.14,
+    0.015
+   ],
+   "at": [
+    0,
+    0,
+    0.0075
+   ],
+   "mat": "plastic:#cfd0cb"
+  },
+  {
+   "shape": "rod",
+   "from": [
+    0,
+    0,
+    0.015
+   ],
+   "to": [
+    0,
+    -0.03,
+    0.13
+   ],
+   "r": 0.014,
+   "mat": "plastic:#cfd0cb"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.085,
+    0.08,
+    0.22
+   ],
+   "at": [
+    0.03,
+    -0.07,
+    0.2
+   ],
+   "rot": [
+    -28,
+    25,
+    0
+   ],
+   "mat": "plastic:#d6d7d2",
+   "round": 0.02
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.1,
+    0.012,
+    0.24
+   ],
+   "at": [
+    0.03,
+    -0.025,
+    0.21
+   ],
+   "rot": [
+    -28,
+    25,
+    0
+   ],
+   "mat": "plastic:#d6d7d2"
+  },
+  {
+   "shape": "cyl",
+   "r": 0.03,
+   "h": 0.012,
+   "at": [
+    0.077,
+    -0.135,
+    0.3
+   ],
+   "rot": [
+    62,
+    25,
+    0
+   ],
+   "mat": "glass"
+  },
+  {
+   "shape": "sphere",
+   "r": 0.007,
+   "at": [
+    0.005,
+    -0.04,
+    0.27
+   ],
+   "mat": "emissive:#ff2a20",
+   "glowState": "rec"
+  }
+ ]
+}

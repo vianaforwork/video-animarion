@@ -1,0 +1,924 @@
+{
+ "id": "rumah",
+ "doc": "an Indonesian family house: a living room (sofa, coffee table, TV, family photos, front door), a kitchen with a dining table, a small bedroom (bed, wardrobe, desk), a long back corridor with an old wardrobe at its end, and the front terrace with a small yard, a gate and the neighbours' houses across the lane",
+ "times": [
+  "night",
+  "day",
+  "dusk",
+  "dawn"
+ ],
+ "ground": {
+  "size": 120,
+  "material": "grass:#5f7a3e",
+  "hills": 0.02
+ },
+ "rooms": [
+  {
+   "id": "ruang-tamu",
+   "rect": [
+    -4.5,
+    -3,
+    1,
+    3
+   ],
+   "height": 3.0,
+   "floor": "tiles:#d8cfc0",
+   "walls": "paint:#efe3cf",
+   "wainscot": "#c9b393",
+   "ceiling": "paint:#f4efe6",
+   "openings": [
+    {
+     "wall": "south",
+     "at": -3.6,
+     "type": "door",
+     "id": "pintu-depan"
+    },
+    {
+     "wall": "south",
+     "at": -1.2,
+     "type": "window",
+     "w": 1.8,
+     "h": 1.3,
+     "sill": 0.9
+    },
+    {
+     "wall": "east",
+     "at": -1.5,
+     "type": "arch",
+     "id": "lengkung-dapur"
+    },
+    {
+     "wall": "east",
+     "at": 1.6,
+     "type": "door",
+     "id": "pintu-kamar"
+    },
+    {
+     "wall": "west",
+     "at": -0.7,
+     "type": "arch",
+     "id": "lengkung-lorong"
+    }
+   ]
+  },
+  {
+   "id": "dapur",
+   "rect": [
+    1,
+    -3,
+    5.5,
+    0
+   ],
+   "height": 3.0,
+   "floor": "tiles:#cfd2cc",
+   "walls": "paint:#e6ece4",
+   "ceiling": "paint:#f2f4f0",
+   "openings": [
+    {
+     "wall": "west",
+     "at": -1.5,
+     "type": "arch",
+     "id": "lengkung-dapur"
+    },
+    {
+     "wall": "east",
+     "at": -1.5,
+     "type": "window",
+     "w": 1.2,
+     "h": 1.0,
+     "sill": 1.1
+    }
+   ]
+  },
+  {
+   "id": "kamar",
+   "rect": [
+    1,
+    0,
+    5.5,
+    3
+   ],
+   "height": 3.0,
+   "floor": "planks:#b08a5e",
+   "walls": "paint:#cfdbe6",
+   "ceiling": "paint:#eef2f5",
+   "openings": [
+    {
+     "wall": "west",
+     "at": 1.6,
+     "type": "door",
+     "id": "pintu-kamar"
+    },
+    {
+     "wall": "east",
+     "at": 1.5,
+     "type": "window",
+     "w": 1.2,
+     "h": 1.2,
+     "sill": 0.9
+    }
+   ]
+  },
+  {
+   "id": "lorong",
+   "rect": [
+    -7.3,
+    -6.0,
+    -4.5,
+    3.0
+   ],
+   "height": 3.0,
+   "floor": "planks:#8f6a48",
+   "walls": "paint:#e4d8c2",
+   "wainscot": "#8a6a4a",
+   "ceiling": "paint:#efe8dc",
+   "openings": [
+    {
+     "wall": "east",
+     "at": -0.7,
+     "type": "arch",
+     "id": "lengkung-lorong"
+    },
+    {
+     "wall": "west",
+     "at": -2.0,
+     "type": "door",
+     "id": "pintu-kamar-mandi",
+     "sign": "KM"
+    },
+    {
+     "wall": "west",
+     "at": 1.2,
+     "type": "door",
+     "id": "pintu-belakang"
+    },
+    {
+     "wall": "west",
+     "at": -4.3,
+     "type": "window",
+     "w": 1.0,
+     "h": 0.9,
+     "sill": 1.2
+    }
+   ]
+  }
+ ],
+ "paths": [
+  {
+   "id": "jalan-depan",
+   "points": [
+    [
+     -3.6,
+     3.2
+    ],
+    [
+     -3.4,
+     6
+    ],
+    [
+     -3.0,
+     9.5
+    ]
+   ],
+   "width": 1.2,
+   "material": "concrete:#a7a39a"
+  },
+  {
+   "id": "gang",
+   "points": [
+    [
+     -16,
+     10.6
+    ],
+    [
+     16,
+     10.6
+    ]
+   ],
+   "width": 3.0,
+   "material": "asphalt"
+  }
+ ],
+ "buildings": [
+  {
+   "rect": [
+    -14,
+    13,
+    -7,
+    19
+   ],
+   "height": 3.5,
+   "color": "#e7c9a0",
+   "sign": "",
+   "windows": true
+  },
+  {
+   "rect": [
+    -6,
+    13,
+    1,
+    19
+   ],
+   "height": 3.7,
+   "color": "#b9d3c2",
+   "windows": true
+  },
+  {
+   "rect": [
+    2,
+    13,
+    9,
+    19
+   ],
+   "height": 3.9,
+   "color": "#e8b4a6",
+   "windows": true
+  },
+  {
+   "rect": [
+    10,
+    13,
+    17,
+    19
+   ],
+   "height": 4.1,
+   "color": "#d7d0e6",
+   "windows": true
+  },
+  {
+   "rect": [
+    -16,
+    -4,
+    -9,
+    4
+   ],
+   "height": 3.5,
+   "color": "#d9c7a8",
+   "windows": true
+  },
+  {
+   "rect": [
+    7,
+    -4,
+    14,
+    4
+   ],
+   "height": 3.8,
+   "color": "#c8d7e0",
+   "windows": true
+  },
+  {
+   "rect": [
+    -9,
+    -15,
+    -2,
+    -10
+   ],
+   "height": 4.1,
+   "color": "#d8c3a5",
+   "windows": true
+  },
+  {
+   "rect": [
+    0,
+    -15,
+    7,
+    -10
+   ],
+   "height": 4.1,
+   "color": "#c9d6c3",
+   "windows": true
+  }
+ ],
+ "objects": [
+  {
+   "use": "sofa",
+   "id": "sofa",
+   "at": [
+    -2.0,
+    -2.45
+   ],
+   "yaw": 0
+  },
+  {
+   "use": "coffee-table",
+   "id": "meja-tamu",
+   "at": [
+    -2.0,
+    -1.25
+   ]
+  },
+  {
+   "use": "wooden-chair",
+   "id": "kursi-kiri",
+   "at": [
+    -3.55,
+    -1.1
+   ],
+   "yaw": 1.5707963267948966
+  },
+  {
+   "use": "wooden-chair",
+   "id": "kursi-kanan",
+   "at": [
+    -0.45,
+    -1.1
+   ],
+   "yaw": -1.5707963267948966
+  },
+  {
+   "use": "tv-cabinet",
+   "id": "tv",
+   "at": [
+    -4.14,
+    1.2
+   ],
+   "yaw": 1.5707963267948966
+  },
+  {
+   "use": "wall-photo",
+   "id": "foto-keluarga",
+   "at": [
+    -2.0,
+    -2.97
+   ]
+  },
+  {
+   "use": "wall-clock",
+   "id": "jam-dinding",
+   "at": [
+    -0.2,
+    2.3,
+    -2.97
+   ]
+  },
+  {
+   "use": "standing-fan",
+   "id": "kipas",
+   "at": [
+    0.45,
+    -2.45
+   ],
+   "yaw": -0.6
+  },
+  {
+   "use": "potted-plant",
+   "id": "tanaman",
+   "at": [
+    0.5,
+    2.5
+   ]
+  },
+  {
+   "use": "bookshelf",
+   "id": "rak",
+   "at": [
+    -4.25,
+    -2.2
+   ],
+   "yaw": 1.5707963267948966,
+   "scale": 0.8
+  },
+  {
+   "use": "kitchen-counter",
+   "id": "dapur-meja",
+   "at": [
+    3.0,
+    -2.68
+   ],
+   "yaw": 0
+  },
+  {
+   "use": "fridge",
+   "id": "kulkas",
+   "at": [
+    4.95,
+    -2.62
+   ],
+   "yaw": 0
+  },
+  {
+   "use": "dining-table",
+   "id": "meja-makan",
+   "at": [
+    3.2,
+    -1.05
+   ],
+   "yaw": 0
+  },
+  {
+   "use": "wooden-chair",
+   "id": "kursi-makan-1",
+   "at": [
+    2.85,
+    -0.3
+   ],
+   "yaw": 3.141592653589793
+  },
+  {
+   "use": "wooden-chair",
+   "id": "kursi-makan-2",
+   "at": [
+    3.6,
+    -0.3
+   ],
+   "yaw": 3.141592653589793
+  },
+  {
+   "use": "wooden-chair",
+   "id": "kursi-makan-3",
+   "at": [
+    2.15,
+    -1.05
+   ],
+   "yaw": 1.5707963267948966
+  },
+  {
+   "use": "bed",
+   "id": "kasur",
+   "at": [
+    4.85,
+    1.22
+   ],
+   "yaw": 0
+  },
+  {
+   "use": "wardrobe",
+   "id": "lemari",
+   "at": [
+    1.75,
+    0.45
+   ],
+   "yaw": 0
+  },
+  {
+   "use": "reading-table",
+   "id": "meja-belajar",
+   "at": [
+    3.0,
+    2.62
+   ],
+   "yaw": 3.141592653589793,
+   "scale": 0.7
+  },
+  {
+   "use": "wooden-chair",
+   "id": "kursi-belajar",
+   "at": [
+    3.0,
+    2.0
+   ],
+   "yaw": 3.141592653589793
+  },
+  {
+   "use": "shoe-rack",
+   "id": "rak-sepatu",
+   "at": [
+    -2.6,
+    3.35
+   ],
+   "yaw": 0
+  },
+  {
+   "use": "wooden-chair",
+   "id": "kursi-teras",
+   "at": [
+    -0.6,
+    3.6
+   ],
+   "yaw": 3.141592653589793
+  },
+  {
+   "use": "potted-plant",
+   "id": "pot-teras",
+   "at": [
+    0.6,
+    3.5
+   ]
+  },
+  {
+   "use": "wardrobe",
+   "id": "lemari-tua",
+   "at": [
+    -5.9,
+    -5.6
+   ],
+   "yaw": 0
+  },
+  {
+   "use": "wall-photo",
+   "id": "foto-lorong",
+   "at": [
+    -4.535,
+    -3.6
+   ],
+   "yaw": -1.5707963267948966
+  },
+  {
+   "use": "wall-clock",
+   "id": "jam-lorong",
+   "at": [
+    -4.535,
+    2.3,
+    0.9
+   ],
+   "yaw": -1.5707963267948966
+  },
+  {
+   "use": "potted-plant",
+   "id": "pot-lorong",
+   "at": [
+    -7.0,
+    2.6
+   ]
+  }
+ ],
+ "scatter": [
+  {
+   "use": "bush",
+   "count": 5,
+   "area": [
+    -7.5,
+    4.2,
+    -5.2,
+    9.4
+   ],
+   "minDist": 1.4,
+   "avoid": [
+    "paths",
+    "rooms",
+    "objects"
+   ]
+  },
+  {
+   "use": "bush",
+   "count": 5,
+   "area": [
+    1.2,
+    4.2,
+    3.8,
+    9.4
+   ],
+   "minDist": 1.4,
+   "avoid": [
+    "paths",
+    "rooms",
+    "objects"
+   ]
+  },
+  {
+   "use": "tree-broad",
+   "count": 8,
+   "area": [
+    -18,
+    -22,
+    16,
+    -16
+   ],
+   "minDist": 4.5
+  },
+  {
+   "use": "grass-tuft",
+   "count": 120,
+   "area": [
+    -7,
+    4.6,
+    3.5,
+    9.2
+   ],
+   "minDist": 0.4,
+   "avoid": [
+    "paths",
+    "rooms"
+   ]
+  }
+ ],
+ "lights": [
+  {
+   "type": "panel",
+   "id": "lampu-tamu-1",
+   "at": [
+    -2.0,
+    2.95,
+    -1.2
+   ],
+   "prop": "lampu-tamu"
+  },
+  {
+   "type": "panel",
+   "id": "lampu-tamu-2",
+   "at": [
+    -2.0,
+    2.95,
+    1.6
+   ],
+   "prop": "lampu-tamu"
+  },
+  {
+   "type": "bulb",
+   "id": "lampu-dapur",
+   "at": [
+    3.2,
+    2.5,
+    -1.1
+   ],
+   "prop": "lampu-dapur"
+  },
+  {
+   "type": "panel",
+   "id": "lampu-kamar",
+   "at": [
+    3.3,
+    2.95,
+    1.5
+   ],
+   "prop": "lampu-kamar"
+  },
+  {
+   "type": "bulb",
+   "id": "lampu-teras",
+   "at": [
+    -3.6,
+    2.65,
+    3.35
+   ],
+   "prop": "lampu-teras"
+  },
+  {
+   "type": "lamp-post",
+   "id": "lampu-gang",
+   "at": [
+    1.5,
+    0,
+    12.0
+   ],
+   "prop": "lampu-teras"
+  },
+  {
+   "type": "bulb",
+   "id": "lampu-lorong",
+   "at": [
+    -5.9,
+    2.6,
+    -2.5
+   ],
+   "prop": "lampu-lorong"
+  }
+ ],
+ "props": {
+  "lampu-tamu": {
+   "default": 1,
+   "doc": "living-room ceiling lamps (0 off, 1 on)",
+   "sfx": {
+    "up": "click",
+    "down": "click"
+   }
+  },
+  "lampu-dapur": {
+   "default": 1,
+   "doc": "the kitchen bulb",
+   "sfx": {
+    "up": "click",
+    "down": "click"
+   }
+  },
+  "lampu-kamar": {
+   "default": 1,
+   "doc": "the bedroom ceiling lamp",
+   "sfx": {
+    "up": "click",
+    "down": "click"
+   }
+  },
+  "lampu-teras": {
+   "default": 1,
+   "doc": "terrace bulb + the lane's street lamp"
+  },
+  "lampu-lorong": {
+   "default": 1,
+   "doc": "the bare bulb in the back corridor (0 off — moonlight through the small window only)",
+   "sfx": {
+    "up": "click",
+    "down": "click"
+   }
+  }
+ },
+ "places": {
+  "ruang-tamu": {
+   "doc": "the living room: sofa under the family photo, coffee table, side chairs, TV on the west wall, front door and window in the south wall, an arch to the back corridor in the west wall, an arch to the kitchen and the bedroom door in the east wall",
+   "kind": "interior",
+   "rooms": [
+    "ruang-tamu"
+   ],
+   "marks": {
+    "tengah": {
+     "at": [
+      -2.0,
+      0.4
+     ],
+     "yaw": 3.141592653589793,
+     "doc": "in the middle of the room, facing the sofa"
+    },
+    "dalam-pintu": {
+     "at": [
+      -3.6,
+      2.3
+     ],
+     "yaw": 3.141592653589793,
+     "doc": "just inside the front door, facing into the room"
+    },
+    "depan-tv": {
+     "at": [
+      -2.9,
+      1.2
+     ],
+     "yaw": -1.5707963267948966,
+     "doc": "standing in front of the TV, facing it"
+    },
+    "jendela": {
+     "at": [
+      -1.2,
+      2.35
+     ],
+     "yaw": 0,
+     "doc": "at the window, looking out to the terrace"
+    },
+    "lengkung-lorong": {
+     "at": [
+      -3.95,
+      -0.7
+     ],
+     "yaw": 1.5707963267948966,
+     "doc": "in the arch from the back corridor, facing into the living room"
+    }
+   },
+   "view": "sofa",
+   "ambience": "room",
+   "surface": "tile"
+  },
+  "dapur": {
+   "doc": "the kitchen: counter with sink and stove along the north wall, fridge, the dining table with chairs",
+   "kind": "interior",
+   "rooms": [
+    "dapur"
+   ],
+   "marks": {
+    "kompor": {
+     "at": [
+      3.55,
+      -1.95
+     ],
+     "yaw": 3.141592653589793,
+     "doc": "at the stove, cooking (back half to the room)"
+    },
+    "depan-kulkas": {
+     "at": [
+      4.95,
+      -1.7
+     ],
+     "yaw": 3.141592653589793,
+     "doc": "at the fridge, facing it"
+    },
+    "lengkung": {
+     "at": [
+      1.6,
+      -1.5
+     ],
+     "yaw": 1.5707963267948966,
+     "doc": "in the arch from the living room, facing into the kitchen"
+    }
+   },
+   "view": "meja-makan",
+   "ambience": "room",
+   "surface": "tile"
+  },
+  "kamar": {
+   "doc": "a small bedroom: bed under the east window, wardrobe, a study table, the door to the living room",
+   "kind": "interior",
+   "rooms": [
+    "kamar"
+   ],
+   "marks": {
+    "tengah-kamar": {
+     "at": [
+      3.1,
+      1.2
+     ],
+     "yaw": 1.5707963267948966,
+     "doc": "in the middle of the bedroom, facing the bed"
+    },
+    "depan-lemari": {
+     "at": [
+      1.75,
+      1.05
+     ],
+     "yaw": 3.141592653589793,
+     "doc": "in front of the wardrobe, facing it"
+    },
+    "dalam-pintu-kamar": {
+     "at": [
+      1.6,
+      1.6
+     ],
+     "yaw": 1.5707963267948966,
+     "doc": "just inside the bedroom door"
+    }
+   },
+   "view": "kasur",
+   "ambience": "room",
+   "surface": "wood"
+  },
+  "teras": {
+   "doc": "outside the house: the terrace by the front door, the small front yard with a path to the gate, the lane and the neighbours' houses across it",
+   "kind": "exterior",
+   "area": [
+    -8,
+    3.1,
+    4,
+    11
+   ],
+   "marks": {
+    "teras": {
+     "at": [
+      -1.7,
+      4.2
+     ],
+     "yaw": 0,
+     "doc": "on the terrace, facing the yard and the lane"
+    },
+    "depan-pintu": {
+     "at": [
+      -3.6,
+      4.0
+     ],
+     "yaw": 3.141592653589793,
+     "doc": "outside the front door, facing it"
+    },
+    "halaman": {
+     "at": [
+      -3.2,
+      7.0
+     ],
+     "yaw": 3.141592653589793,
+     "doc": "in the front yard, facing the house"
+    },
+    "gerbang": {
+     "at": [
+      -3.0,
+      9.2
+     ],
+     "yaw": 3.141592653589793,
+     "doc": "at the gate, facing the house"
+    }
+   },
+   "view": "pintu-depan",
+   "ambience": "outdoor",
+   "surface": "stone"
+  },
+  "lorong": {
+   "doc": "the back corridor of the house: a long wooden hallway off the living room, the old wardrobe (lemari) at the far north end, the bathroom door and the back door on the west wall, a small high window",
+   "kind": "interior",
+   "rooms": [
+    "lorong"
+   ],
+   "marks": {
+    "ujung-lorong": {
+     "at": [
+      -5.9,
+      -4.4
+     ],
+     "yaw": 3.141592653589793,
+     "doc": "at the far end of the corridor, facing the old wardrobe"
+    },
+    "tengah-lorong": {
+     "at": [
+      -5.9,
+      -1.6
+     ],
+     "yaw": 3.141592653589793,
+     "doc": "halfway down the corridor, facing the wardrobe at the end"
+    },
+    "masuk-lorong": {
+     "at": [
+      -5.4,
+      1.0
+     ],
+     "yaw": 3.141592653589793,
+     "doc": "at the near end by the arch from the living room, facing down the corridor"
+    },
+    "depan-kamar-mandi": {
+     "at": [
+      -6.4,
+      -2.0
+     ],
+     "yaw": -1.5707963267948966,
+     "doc": "in front of the bathroom door, facing it"
+    }
+   },
+   "view": "lemari-tua",
+   "ambience": "hall",
+   "surface": "wood"
+  }
+ },
+ "fog": 0.06
+}

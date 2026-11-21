@@ -1,0 +1,77 @@
+{
+ "id": "shoe-rack",
+ "doc": "small shoe rack by a front door with two pairs of sandals",
+ "anchors": {
+  "top": [
+   0,
+   0.42,
+   0
+  ],
+  "front": [
+   0,
+   0,
+   0.5
+  ]
+ },
+ "parts": [
+  {
+   "shape": "box",
+   "size": [
+    0.8,
+    0.03,
+    0.3
+   ],
+   "at": [
+    0,
+    0.4,
+    0
+   ],
+   "mat": "wood:#8a6243",
+   "repeat": {
+    "n": 2,
+    "step": [
+     0,
+     -0.2,
+     0
+    ]
+   }
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.03,
+    0.42,
+    0.3
+   ],
+   "at": [
+    0.385,
+    0.21,
+    0
+   ],
+   "mat": "wood:#6a4a2e",
+   "mirror": "x"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.1,
+    0.025,
+    0.25
+   ],
+   "at": [
+    -0.2,
+    0.43,
+    0
+   ],
+   "mat": "rubber",
+   "repeat": {
+    "n": 4,
+    "step": [
+     0.13,
+     0,
+     0
+    ]
+   }
+  }
+ ]
+}

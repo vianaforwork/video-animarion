@@ -1,0 +1,117 @@
+{
+ "id": "tv-cabinet",
+ "doc": "low TV cabinet 1.6 m with a flat TV on top (screen glows with state 'on'); front faces +z",
+ "anchors": {
+  "top": [
+   0,
+   0.5,
+   0
+  ],
+  "front": [
+   0,
+   0,
+   1.4
+  ],
+  "screen": [
+   0,
+   0.95,
+   0.03
+  ]
+ },
+ "states": {
+  "on": 0
+ },
+ "parts": [
+  {
+   "shape": "box",
+   "size": [
+    1.6,
+    0.48,
+    0.42
+   ],
+   "at": [
+    0,
+    0.26,
+    0
+   ],
+   "mat": "wood:#8a6243",
+   "round": 0.02
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.76,
+    0.38,
+    0.01
+   ],
+   "at": [
+    0.39,
+    0.26,
+    0.212
+   ],
+   "mat": "wood:#a57a55",
+   "mirror": "x"
+  },
+  {
+   "shape": "box",
+   "size": [
+    1.24,
+    0.72,
+    0.05
+   ],
+   "at": [
+    0,
+    0.94,
+    0.0
+   ],
+   "mat": "plastic:#1a1c20",
+   "round": 0.012
+  },
+  {
+   "shape": "plane",
+   "size": [
+    1.18,
+    0.66
+   ],
+   "at": [
+    0,
+    0.94,
+    0.027
+   ],
+   "mat": {
+    "color": "#0d1520",
+    "emissive": "#5a8fd8",
+    "roughness": 0.2
+   },
+   "glowState": "on"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.3,
+    0.02,
+    0.18
+   ],
+   "at": [
+    0,
+    0.51,
+    0.0
+   ],
+   "mat": "plastic:#1a1c20"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.05,
+    0.12,
+    0.05
+   ],
+   "at": [
+    0,
+    0.56,
+    0.0
+   ],
+   "mat": "plastic:#1a1c20"
+  }
+ ]
+}

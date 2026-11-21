@@ -1,0 +1,404 @@
+{
+ "id": "minimarket",
+ "doc": "a city minimarket: a bright shop room with a checkout counter, QRIS standee and gondola shelves of goods; outside a pavement, a street and shop façades across the road.",
+ "times": [
+  "day",
+  "dusk",
+  "night"
+ ],
+ "ground": {
+  "size": 70,
+  "material": "concrete:#3b3e41",
+  "hills": 0.0
+ },
+ "rooms": [
+  {
+   "id": "toko",
+   "rect": [
+    -4,
+    -5,
+    4,
+    4
+   ],
+   "height": 3.0,
+   "floor": "tiles:#cdd2d1",
+   "walls": "paint:#7f9aa3",
+   "wainscot": "#245a6f",
+   "ceiling": "paint:#c7d0d1",
+   "openings": [
+    {
+     "wall": "south",
+     "at": 2,
+     "type": "door",
+     "sign": "MINIMARKET",
+     "w": 1.6,
+     "h": 2.2,
+     "id": "pintu-masuk"
+    },
+    {
+     "wall": "south",
+     "at": -1.5,
+     "type": "window",
+     "w": 2.4,
+     "h": 1.5,
+     "sill": 0.9
+    },
+    {
+     "wall": "east",
+     "at": 2.5,
+     "type": "window",
+     "w": 1.8,
+     "h": 1.3,
+     "sill": 0.9
+    }
+   ]
+  }
+ ],
+ "paths": [
+  {
+   "id": "trotoar-depan",
+   "points": [
+    [
+     -8,
+     5.6
+    ],
+    [
+     8,
+     5.6
+    ]
+   ],
+   "width": 2.2,
+   "material": "concrete:#6a6e70"
+  },
+  {
+   "id": "jalan-raya",
+   "points": [
+    [
+     -30,
+     8.2
+    ],
+    [
+     30,
+     8.2
+    ]
+   ],
+   "width": 5.0,
+   "material": "concrete:#2f3235"
+  }
+ ],
+ "buildings": [
+  {
+   "rect": [
+    -12,
+    10.5,
+    -3,
+    15
+   ],
+   "height": 4.5,
+   "color": "#c9b89a",
+   "sign": "APOTEK",
+   "windows": true
+  },
+  {
+   "rect": [
+    1.5,
+    10.5,
+    11,
+    15.5
+   ],
+   "height": 6.0,
+   "color": "#b0a894",
+   "sign": "RUKO",
+   "windows": true
+  },
+  {
+   "rect": [
+    -26,
+    11,
+    -15,
+    16
+   ],
+   "height": 5.0,
+   "color": "#a8b0b2",
+   "windows": true
+  },
+  {
+   "rect": [
+    14,
+    11,
+    24,
+    16
+   ],
+   "height": 5.5,
+   "color": "#bcae96",
+   "windows": true
+  },
+  {
+   "rect": [
+    -14,
+    -16,
+    -4,
+    -8
+   ],
+   "height": 5.0,
+   "color": "#9aa49a",
+   "windows": true
+  },
+  {
+   "rect": [
+    5,
+    -16,
+    15,
+    -8
+   ],
+   "height": 5.5,
+   "color": "#b2a690",
+   "windows": true
+  }
+ ],
+ "objects": [
+  {
+   "use": "counter",
+   "id": "kasir",
+   "at": [
+    -1.5,
+    -3.4
+   ],
+   "yaw": 0
+  },
+  {
+   "use": "qris",
+   "id": "qris-1",
+   "at": [
+    -2.0,
+    0.95,
+    -3.1
+   ],
+   "yaw": 0
+  },
+  {
+   "use": "store-shelf",
+   "id": "rak-1",
+   "at": [
+    -3.72,
+    -1.2
+   ],
+   "yaw": 1.5708
+  },
+  {
+   "use": "store-shelf",
+   "id": "rak-2",
+   "at": [
+    -3.72,
+    1.0
+   ],
+   "yaw": 1.5708
+  },
+  {
+   "use": "store-shelf",
+   "id": "rak-3",
+   "at": [
+    3.72,
+    -1.2
+   ],
+   "yaw": -1.5708
+  },
+  {
+   "use": "store-shelf",
+   "id": "rak-4",
+   "at": [
+    3.72,
+    1.0
+   ],
+   "yaw": -1.5708
+  },
+  {
+   "use": "store-shelf",
+   "id": "rak-5",
+   "at": [
+    0.9,
+    -1.4
+   ],
+   "yaw": 0
+  },
+  {
+   "use": "store-shelf",
+   "id": "rak-6",
+   "at": [
+    0.9,
+    0.6
+   ],
+   "yaw": 0
+  },
+  {
+   "use": "cash",
+   "id": "cash",
+   "at": [
+    -1.95,
+    0.95,
+    -3.55
+   ],
+   "yaw": 0.3
+  }
+ ],
+ "scatter": [
+  {
+   "use": "tree-broad",
+   "count": 10,
+   "area": [
+    -30,
+    16,
+    30,
+    30
+   ],
+   "minDist": 6,
+   "scale": [
+    0.8,
+    1.1
+   ],
+   "avoid": [
+    "buildings",
+    "paths"
+   ]
+  }
+ ],
+ "lights": [
+  {
+   "type": "panel",
+   "at": [
+    -1.5,
+    2.95,
+    -2.5
+   ],
+   "prop": "lampu-toko"
+  },
+  {
+   "type": "panel",
+   "at": [
+    1.5,
+    2.95,
+    -0.5
+   ],
+   "prop": "lampu-toko"
+  },
+  {
+   "type": "panel",
+   "at": [
+    -1.5,
+    2.95,
+    2.0
+   ],
+   "prop": "lampu-toko"
+  },
+  {
+   "type": "lamp-post",
+   "id": "lampu-jalan-1",
+   "at": [
+    -4,
+    0,
+    6.8
+   ]
+  },
+  {
+   "type": "lamp-post",
+   "id": "lampu-jalan-2",
+   "at": [
+    6,
+    0,
+    6.8
+   ]
+  }
+ ],
+ "props": {
+  "lampu-toko": {
+   "default": 1,
+   "doc": "shop ceiling panels on/off"
+  }
+ },
+ "places": {
+  "toko": {
+   "doc": "inside the minimarket: the checkout counter with QRIS at the back (north), gondola shelves along the walls and a centre aisle, the glass entrance door in the south wall",
+   "kind": "interior",
+   "rooms": [
+    "toko"
+   ],
+   "marks": {
+    "antre-1": {
+     "at": [
+      -1.5,
+      -2.5
+     ],
+     "yaw": 3.1416,
+     "doc": "first in line at the counter, facing the cashier"
+    },
+    "antre-2": {
+     "at": [
+      -1.5,
+      -1.2
+     ],
+     "yaw": 3.1416,
+     "doc": "second in the queue, behind antre-1"
+    },
+    "tengah-toko": {
+     "at": [
+      0.0,
+      0.2
+     ],
+     "yaw": 3.1416,
+     "doc": "in the centre aisle, facing the counter"
+    },
+    "dalam-pintu": {
+     "at": [
+      2.0,
+      3.0
+     ],
+     "yaw": 3.1416,
+     "doc": "just inside the entrance, facing into the shop"
+    }
+   },
+   "view": "kasir",
+   "ambience": "market",
+   "surface": "tile"
+  },
+  "jalan": {
+   "doc": "the pavement and street in front of the minimarket, shop façades across the road",
+   "kind": "exterior",
+   "area": [
+    -10,
+    4.6,
+    10,
+    10
+   ],
+   "marks": {
+    "depan-toko": {
+     "at": [
+      0.5,
+      7.2
+     ],
+     "yaw": 3.1416,
+     "doc": "on the pavement facing the shop, the across-street buildings behind as a backdrop"
+    },
+    "trotoar": {
+     "at": [
+      -0.6,
+      7.2
+     ],
+     "yaw": 3.1416,
+     "doc": "on the pavement facing the shop, across-street buildings behind"
+    }
+   },
+   "view": "pintu-masuk",
+   "ambience": "outdoor",
+   "surface": "stone",
+   "establish": [
+    0.5,
+    1.3,
+    5.4,
+    4.6,
+    2.3,
+    0.35
+   ]
+  }
+ },
+ "fog": 0.05
+}

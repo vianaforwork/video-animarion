@@ -1,0 +1,90 @@
+{
+ "id": "desk-monitor",
+ "doc": "24-inch desktop computer monitor on a stand, screen facing +z, switched off",
+ "anchors": {
+  "screen": [
+   0,
+   0.33,
+   0
+  ],
+  "top": [
+   0,
+   0.5,
+   -0.03
+  ]
+ },
+ "parts": [
+  {
+   "shape": "box",
+   "size": [
+    0.24,
+    0.015,
+    0.18
+   ],
+   "at": [
+    0,
+    0.0075,
+    -0.02
+   ],
+   "mat": "plastic:#202226",
+   "round": 0.005
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.05,
+    0.26,
+    0.03
+   ],
+   "at": [
+    0,
+    0.14,
+    -0.07
+   ],
+   "mat": "plastic:#202226"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.56,
+    0.35,
+    0.05
+   ],
+   "at": [
+    0,
+    0.33,
+    -0.035
+   ],
+   "mat": "plastic:#16181b",
+   "round": 0.008
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.53,
+    0.3,
+    0.002
+   ],
+   "at": [
+    0,
+    0.335,
+    -0.008
+   ],
+   "mat": "plastic:#0b0c0e"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.53,
+    0.3,
+    0.003
+   ],
+   "at": [
+    0,
+    0.335,
+    -0.0055
+   ],
+   "mat": "glass"
+  }
+ ]
+}

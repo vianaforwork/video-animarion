@@ -1,0 +1,100 @@
+{
+ "id": "dining-table",
+ "doc": "wooden dining table 1.4 × 0.8 m with a fruit plate; chairs go around it",
+ "anchors": {
+  "top": [
+   0,
+   0.76,
+   0
+  ],
+  "front": [
+   0,
+   0,
+   0.9
+  ],
+  "plate": [
+   0,
+   0.77,
+   0
+  ]
+ },
+ "parts": [
+  {
+   "shape": "box",
+   "size": [
+    1.4,
+    0.05,
+    0.8
+   ],
+   "at": [
+    0,
+    0.74,
+    0
+   ],
+   "mat": "wood:#9a6b43",
+   "round": 0.01
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.06,
+    0.72,
+    0.06
+   ],
+   "at": [
+    0.63,
+    0.36,
+    0.33
+   ],
+   "mat": "wood:#6e4a2c",
+   "mirror": "x"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.06,
+    0.72,
+    0.06
+   ],
+   "at": [
+    0.63,
+    0.36,
+    -0.33
+   ],
+   "mat": "wood:#6e4a2c",
+   "mirror": "x"
+  },
+  {
+   "shape": "cyl",
+   "r": 0.16,
+   "r2": 0.12,
+   "h": 0.03,
+   "at": [
+    0,
+    0.78,
+    0
+   ],
+   "mat": "ceramic:#e8e2d6"
+  },
+  {
+   "shape": "pile",
+   "size": [
+    0.22,
+    0.08,
+    0.22
+   ],
+   "count": 7,
+   "r": 0.04,
+   "colors": [
+    "#e63946",
+    "#f4a261",
+    "#e9c46a"
+   ],
+   "at": [
+    0,
+    0.83,
+    0
+   ]
+  }
+ ]
+}

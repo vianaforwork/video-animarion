@@ -1,0 +1,111 @@
+{
+ "id": "desk-monitor-kerja",
+ "doc": "24-inch monitor showing a report document (glows while state on = 1), screen facing +z",
+ "anchors": {
+  "screen": [
+   0,
+   0.33,
+   0
+  ],
+  "top": [
+   0,
+   0.5,
+   -0.03
+  ]
+ },
+ "states": {
+  "on": 1
+ },
+ "parts": [
+  {
+   "shape": "box",
+   "size": [
+    0.24,
+    0.015,
+    0.18
+   ],
+   "at": [
+    0,
+    0.0075,
+    -0.02
+   ],
+   "mat": "plastic:#202226",
+   "round": 0.005
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.05,
+    0.26,
+    0.03
+   ],
+   "at": [
+    0,
+    0.14,
+    -0.07
+   ],
+   "mat": "plastic:#202226"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.56,
+    0.35,
+    0.05
+   ],
+   "at": [
+    0,
+    0.33,
+    -0.035
+   ],
+   "mat": "plastic:#16181b",
+   "round": 0.008
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.53,
+    0.3,
+    0.002
+   ],
+   "at": [
+    0,
+    0.335,
+    -0.008
+   ],
+   "mat": "plastic:#0b0c0e"
+  },
+  {
+   "shape": "text",
+   "size": [
+    0.5,
+    0.05
+   ],
+   "at": [
+    0,
+    0.455,
+    -0.0055
+   ],
+   "text": "LAPORAN.docx",
+   "ink": "#e8eef8",
+   "bg": "#2b4a78",
+   "glowState": "on"
+  },
+  {
+   "shape": "text",
+   "size": [
+    0.5,
+    0.25
+   ],
+   "at": [
+    0,
+    0.305,
+    -0.0055
+   ],
+   "text": "━━━━━━━━━━━━",
+   "ink": "#8d9db4",
+   "bg": "#5d6f88",
+   "glowState": "on"
+  }
+ ]
+}

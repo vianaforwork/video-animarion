@@ -1,0 +1,44 @@
+{
+  "name": "voynann-cinestory-project",
+  "version": "1.0.0",
+  "private": true,
+  "description": "VOYNANN Motion CINÉSTORY 3D project (Remotion + React Three Fiber): story.json + voice-over → cinematic 9:16 film (16:9 on request).",
+  "type": "module",
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "scripts": {
+    "dev": "remotion studio",
+    "typecheck": "tsc --noEmit",
+    "check-env": "node scripts/check-env.mjs",
+    "make": "node scripts/make.mjs",
+    "smoke": "node scripts/stills.mjs out/smoke/cast 0,1,16,17 cast-sheet && node scripts/stills.mjs out/smoke/coast 0,4 world-coast && node scripts/stills.mjs out/smoke/kos 0,2 world-kos",
+    "look:cast": "node scripts/stills.mjs out/look/cast 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17 cast-sheet",
+    "look:coast": "node scripts/stills.mjs out/look/coast 0,1,2,3,4,5,6,7,8 world-coast",
+    "look:kos": "node scripts/stills.mjs out/look/kos 0,1,2,3,4,5 world-kos",
+    "worlds": "node scripts/worlds.mjs",
+    "qa": "node scripts/qa-scene.mjs",
+    "qa:video": "node scripts/qa-video.mjs"
+  },
+  "dependencies": {
+    "@react-three/fiber": "9.8.2",
+    "@remotion/cli": "4.0.539",
+    "@remotion/google-fonts": "4.0.539",
+    "@remotion/three": "4.0.539",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "remotion": "4.0.539",
+    "three": "0.186.1",
+    "three-mesh-bvh": "0.9.16"
+  },
+  "devDependencies": {
+    "@remotion/bundler": "4.0.539",
+    "@remotion/renderer": "4.0.539",
+    "@types/react": "19.2.7",
+    "@types/three": "0.186.0",
+    "typescript": "5.9.3"
+  },
+  "overrides": {
+    "zod": "4.6.7"
+  }
+}

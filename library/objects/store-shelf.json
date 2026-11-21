@@ -1,0 +1,14 @@
+{
+  "id": "store-shelf",
+  "doc": "minimarket gondola shelf 1.0 x 1.7 m, four shelves of colourful packaged goods facing +z; back against a wall",
+  "anchors": { "front": [0, 0, 0.6] },
+  "parts": [
+    { "shape": "box", "size": [0.03, 1.7, 0.42], "at": [0.485, 0.85, 0], "mat": "metal:#c9ccce", "mirror": "x" },
+    { "shape": "box", "size": [1.0, 1.7, 0.02], "at": [0, 0.85, -0.2], "mat": "paint:#eef1f2" },
+    { "shape": "box", "size": [0.96, 0.03, 0.4], "at": [0, 0.06, 0], "mat": "metal:#d4d7d9", "repeat": { "n": 5, "step": [0, 0.4, 0] } },
+    { "shape": "pile", "size": [0.9, 0.16, 0.28], "at": [0, 0.17, 0.02], "count": 16, "r": 0.055, "colors": ["#d8402f", "#2f6f8a", "#e0a324", "#3d8a4a"], "seed": 1 },
+    { "shape": "pile", "size": [0.9, 0.16, 0.28], "at": [0, 0.57, 0.02], "count": 16, "r": 0.055, "colors": ["#e0a324", "#8a3f7a", "#2f8a7a", "#d8402f"], "seed": 2 },
+    { "shape": "pile", "size": [0.9, 0.16, 0.28], "at": [0, 0.97, 0.02], "count": 16, "r": 0.055, "colors": ["#3d8a4a", "#d8402f", "#2f6f8a", "#e0a324"], "seed": 3 },
+    { "shape": "pile", "size": [0.9, 0.16, 0.28], "at": [0, 1.37, 0.02], "count": 16, "r": 0.055, "colors": ["#2f6f8a", "#e0a324", "#8a3f7a", "#3d8a4a"], "seed": 4 }
+  ]
+}

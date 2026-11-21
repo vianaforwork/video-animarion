@@ -1,0 +1,130 @@
+{
+ "id": "sofa",
+ "doc": "three-seat fabric sofa 2.0 m wide, sits facing +z (backrest at −z)",
+ "anchors": {
+  "seat": [
+   -0.45,
+   0.46,
+   0.08
+  ],
+  "seat2": [
+   0.45,
+   0.46,
+   0.08
+  ],
+  "front": [
+   0,
+   0,
+   0.85
+  ]
+ },
+ "parts": [
+  {
+   "shape": "box",
+   "size": [
+    2.0,
+    0.26,
+    0.86
+   ],
+   "at": [
+    0,
+    0.24,
+    0
+   ],
+   "mat": "fabric:#5b7fa6",
+   "round": 0.06
+  },
+  {
+   "shape": "box",
+   "size": [
+    1.84,
+    0.12,
+    0.62
+   ],
+   "at": [
+    0,
+    0.42,
+    0.09
+   ],
+   "mat": "fabric:#6a8fb6",
+   "round": 0.05
+  },
+  {
+   "shape": "box",
+   "size": [
+    2.0,
+    0.52,
+    0.2
+   ],
+   "at": [
+    0,
+    0.6,
+    -0.33
+   ],
+   "mat": "fabric:#5b7fa6",
+   "round": 0.08
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.17,
+    0.46,
+    0.86
+   ],
+   "at": [
+    0.915,
+    0.37,
+    0
+   ],
+   "mat": "fabric:#5b7fa6",
+   "round": 0.07,
+   "mirror": "x"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.42,
+    0.36,
+    0.13
+   ],
+   "at": [
+    0.62,
+    0.62,
+    -0.16
+   ],
+   "rot": [
+    -14,
+    -8,
+    3
+   ],
+   "mat": "fabric:#e9c46a",
+   "round": 0.06
+  },
+  {
+   "shape": "cyl",
+   "r": 0.025,
+   "r2": 0.02,
+   "h": 0.08,
+   "at": [
+    0.92,
+    0.04,
+    0.36
+   ],
+   "mat": "darkwood",
+   "mirror": "x"
+  },
+  {
+   "shape": "cyl",
+   "r": 0.025,
+   "r2": 0.02,
+   "h": 0.08,
+   "at": [
+    0.92,
+    0.04,
+    -0.36
+   ],
+   "mat": "darkwood",
+   "mirror": "x"
+  }
+ ]
+}

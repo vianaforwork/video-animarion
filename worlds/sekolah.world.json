@@ -1,0 +1,787 @@
+{
+ "id": "sekolah",
+ "doc": "an Indonesian school: a classroom (blackboard, teacher's desk, three rows of school desks, windows, lockers), the open veranda corridor outside its door with the notice board (mading), and the school field with the flagpole and the other class blocks around it",
+ "times": [
+  "day",
+  "dusk",
+  "night"
+ ],
+ "ground": {
+  "size": 140,
+  "material": "grass:#6a8a45",
+  "hills": 0.02
+ },
+ "rooms": [
+  {
+   "id": "kelas",
+   "rect": [
+    -4.5,
+    -4.5,
+    4.5,
+    3.5
+   ],
+   "height": 3.2,
+   "floor": "tiles:#d9d4c6",
+   "walls": "paint:#f1e8cf",
+   "wainscot": "#8fb39a",
+   "ceiling": "paint:#f6f3ea",
+   "openings": [
+    {
+     "wall": "west",
+     "at": 2.4,
+     "type": "door",
+     "id": "pintu-kelas",
+     "sign": "KELAS 8B"
+    },
+    {
+     "wall": "west",
+     "at": -0.6,
+     "type": "window",
+     "w": 1.6,
+     "h": 1.1,
+     "sill": 1.0
+    },
+    {
+     "wall": "east",
+     "at": -2.6,
+     "type": "window",
+     "w": 1.6,
+     "h": 1.4,
+     "sill": 0.9
+    },
+    {
+     "wall": "east",
+     "at": -0.2,
+     "type": "window",
+     "w": 1.6,
+     "h": 1.4,
+     "sill": 0.9
+    },
+    {
+     "wall": "east",
+     "at": 2.2,
+     "type": "window",
+     "w": 1.6,
+     "h": 1.4,
+     "sill": 0.9
+    }
+   ]
+  },
+  {
+   "id": "koridor",
+   "rect": [
+    -7.5,
+    -4.5,
+    -4.5,
+    3.5
+   ],
+   "height": 3.2,
+   "floor": "tiles:#c8c2b4",
+   "walls": "paint:#f1e8cf",
+   "wainscot": "#8fb39a",
+   "ceiling": "paint:#f6f3ea",
+   "open": [
+    "west",
+    "south",
+    "north"
+   ],
+   "openings": [
+    {
+     "wall": "east",
+     "at": 2.4,
+     "type": "door",
+     "id": "pintu-kelas",
+     "sign": "KELAS 8B"
+    },
+    {
+     "wall": "east",
+     "at": -0.6,
+     "type": "window",
+     "w": 1.6,
+     "h": 1.1,
+     "sill": 1.0
+    }
+   ]
+  }
+ ],
+ "paths": [
+  {
+   "id": "jalan-lapangan",
+   "points": [
+    [
+     -7.6,
+     0.2
+    ],
+    [
+     -12,
+     0.2
+    ],
+    [
+     -16.5,
+     0.0
+    ]
+   ],
+   "width": 1.6,
+   "material": "concrete:#b5b0a5"
+  }
+ ],
+ "buildings": [
+  {
+   "rect": [
+    -30,
+    -20,
+    -10,
+    -14
+   ],
+   "height": 6.4,
+   "color": "#f1e8cf",
+   "sign": "KELAS 7",
+   "windows": true
+  },
+  {
+   "rect": [
+    -30,
+    14,
+    -10,
+    20
+   ],
+   "height": 6.4,
+   "color": "#f1e8cf",
+   "sign": "KELAS 9",
+   "windows": true
+  },
+  {
+   "rect": [
+    -40,
+    -12,
+    -34,
+    12
+   ],
+   "height": 6.4,
+   "color": "#e9dfc4",
+   "sign": "PERPUSTAKAAN · TU",
+   "windows": true
+  },
+  {
+   "rect": [
+    6,
+    -12,
+    14,
+    10
+   ],
+   "height": 6.4,
+   "color": "#efe5cc",
+   "windows": true
+  }
+ ],
+ "objects": [
+  {
+   "use": "blackboard",
+   "id": "papan-tulis",
+   "at": [
+    0,
+    -4.47
+   ],
+   "yaw": 0
+  },
+  {
+   "use": "office-desk",
+   "id": "meja-guru",
+   "at": [
+    -3.0,
+    -3.0
+   ],
+   "yaw": 3.141592653589793
+  },
+  {
+   "use": "office-chair",
+   "id": "kursi-guru",
+   "at": [
+    -3.0,
+    -3.85
+   ],
+   "yaw": 0
+  },
+  {
+   "use": "wall-clock",
+   "id": "jam-dinding",
+   "at": [
+    2.8,
+    2.6,
+    -4.47
+   ],
+   "yaw": 0
+  },
+  {
+   "use": "locker-row",
+   "id": "loker",
+   "at": [
+    2.6,
+    3.22
+   ],
+   "yaw": 3.141592653589793
+  },
+  {
+   "use": "bookshelf",
+   "id": "rak-buku",
+   "at": [
+    -2.6,
+    3.25
+   ],
+   "yaw": 3.141592653589793,
+   "scale": 0.85
+  },
+  {
+   "use": "potted-plant",
+   "id": "tanaman",
+   "at": [
+    4.0,
+    -4.0
+   ]
+  },
+  {
+   "use": "school-desk",
+   "id": "meja-1a",
+   "at": [
+    -2.7,
+    -0.7
+   ],
+   "yaw": 0
+  },
+  {
+   "use": "school-chair",
+   "id": "kursi-1a",
+   "at": [
+    -2.7,
+    -0.19999999999999996
+   ],
+   "yaw": 3.141592653589793
+  },
+  {
+   "use": "school-desk",
+   "id": "meja-1b",
+   "at": [
+    -0.9,
+    -0.7
+   ],
+   "yaw": 0
+  },
+  {
+   "use": "school-chair",
+   "id": "kursi-1b",
+   "at": [
+    -0.9,
+    -0.19999999999999996
+   ],
+   "yaw": 3.141592653589793
+  },
+  {
+   "use": "school-desk",
+   "id": "meja-1c",
+   "at": [
+    0.9,
+    -0.7
+   ],
+   "yaw": 0
+  },
+  {
+   "use": "school-chair",
+   "id": "kursi-1c",
+   "at": [
+    0.9,
+    -0.19999999999999996
+   ],
+   "yaw": 3.141592653589793
+  },
+  {
+   "use": "school-desk",
+   "id": "meja-1d",
+   "at": [
+    2.7,
+    -0.7
+   ],
+   "yaw": 0
+  },
+  {
+   "use": "school-chair",
+   "id": "kursi-1d",
+   "at": [
+    2.7,
+    -0.19999999999999996
+   ],
+   "yaw": 3.141592653589793
+  },
+  {
+   "use": "school-desk",
+   "id": "meja-2a",
+   "at": [
+    -2.7,
+    0.75
+   ],
+   "yaw": 0
+  },
+  {
+   "use": "school-chair",
+   "id": "kursi-2a",
+   "at": [
+    -2.7,
+    1.25
+   ],
+   "yaw": 3.141592653589793
+  },
+  {
+   "use": "school-desk",
+   "id": "meja-2b",
+   "at": [
+    -0.9,
+    0.75
+   ],
+   "yaw": 0
+  },
+  {
+   "use": "school-chair",
+   "id": "kursi-2b",
+   "at": [
+    -0.9,
+    1.25
+   ],
+   "yaw": 3.141592653589793
+  },
+  {
+   "use": "school-desk",
+   "id": "meja-2c",
+   "at": [
+    0.9,
+    0.75
+   ],
+   "yaw": 0
+  },
+  {
+   "use": "school-chair",
+   "id": "kursi-2c",
+   "at": [
+    0.9,
+    1.25
+   ],
+   "yaw": 3.141592653589793
+  },
+  {
+   "use": "school-desk",
+   "id": "meja-2d",
+   "at": [
+    2.7,
+    0.75
+   ],
+   "yaw": 0
+  },
+  {
+   "use": "school-chair",
+   "id": "kursi-2d",
+   "at": [
+    2.7,
+    1.25
+   ],
+   "yaw": 3.141592653589793
+  },
+  {
+   "use": "school-desk",
+   "id": "meja-3a",
+   "at": [
+    -2.7,
+    2.2
+   ],
+   "yaw": 0
+  },
+  {
+   "use": "school-chair",
+   "id": "kursi-3a",
+   "at": [
+    -2.7,
+    2.7
+   ],
+   "yaw": 3.141592653589793
+  },
+  {
+   "use": "school-desk",
+   "id": "meja-3b",
+   "at": [
+    -0.9,
+    2.2
+   ],
+   "yaw": 0
+  },
+  {
+   "use": "school-chair",
+   "id": "kursi-3b",
+   "at": [
+    -0.9,
+    2.7
+   ],
+   "yaw": 3.141592653589793
+  },
+  {
+   "use": "school-desk",
+   "id": "meja-3c",
+   "at": [
+    0.9,
+    2.2
+   ],
+   "yaw": 0
+  },
+  {
+   "use": "school-chair",
+   "id": "kursi-3c",
+   "at": [
+    0.9,
+    2.7
+   ],
+   "yaw": 3.141592653589793
+  },
+  {
+   "use": "school-desk",
+   "id": "meja-3d",
+   "at": [
+    2.7,
+    2.2
+   ],
+   "yaw": 0
+  },
+  {
+   "use": "school-chair",
+   "id": "kursi-3d",
+   "at": [
+    2.7,
+    2.7
+   ],
+   "yaw": 3.141592653589793
+  },
+  {
+   "use": "notice-board",
+   "id": "mading",
+   "at": [
+    -4.62,
+    -1.5
+   ],
+   "yaw": -1.5707963267948966
+  },
+  {
+   "use": "locker-row",
+   "id": "loker-koridor",
+   "at": [
+    -4.85,
+    -3.4
+   ],
+   "yaw": -1.5707963267948966
+  },
+  {
+   "use": "park-bench",
+   "id": "bangku-koridor",
+   "at": [
+    -7.0,
+    0.2
+   ],
+   "yaw": 1.5707963267948966
+  },
+  {
+   "use": "potted-plant",
+   "id": "pot-koridor",
+   "at": [
+    -7.1,
+    -3.9
+   ]
+  },
+  {
+   "use": "flagpole",
+   "id": "tiang-bendera",
+   "at": [
+    -18,
+    0
+   ]
+  }
+ ],
+ "scatter": [
+  {
+   "use": "tree-broad",
+   "count": 10,
+   "area": [
+    -34,
+    -13,
+    -12,
+    13
+   ],
+   "minDist": 5,
+   "avoid": [
+    "paths",
+    "rooms",
+    "objects"
+   ]
+  },
+  {
+   "use": "bush",
+   "count": 14,
+   "area": [
+    -9.5,
+    -6,
+    -8,
+    7
+   ],
+   "minDist": 1.2,
+   "avoid": [
+    "paths",
+    "rooms",
+    "objects"
+   ]
+  },
+  {
+   "use": "grass-tuft",
+   "count": 200,
+   "area": [
+    -32,
+    -12,
+    -8,
+    12
+   ],
+   "minDist": 0.5,
+   "avoid": [
+    "paths",
+    "rooms",
+    "objects"
+   ]
+  }
+ ],
+ "lights": [
+  {
+   "type": "tube",
+   "id": "lampu-kelas-1",
+   "at": [
+    -1.8,
+    3.15,
+    -2.2
+   ],
+   "prop": "lampu-kelas"
+  },
+  {
+   "type": "tube",
+   "id": "lampu-kelas-2",
+   "at": [
+    1.8,
+    3.15,
+    -2.2
+   ],
+   "prop": "lampu-kelas"
+  },
+  {
+   "type": "tube",
+   "id": "lampu-kelas-3",
+   "at": [
+    -1.8,
+    3.15,
+    1.4
+   ],
+   "prop": "lampu-kelas"
+  },
+  {
+   "type": "tube",
+   "id": "lampu-kelas-4",
+   "at": [
+    1.8,
+    3.15,
+    1.4
+   ],
+   "prop": "lampu-kelas"
+  },
+  {
+   "type": "bulb",
+   "id": "lampu-koridor-1",
+   "at": [
+    -6.0,
+    2.9,
+    -2.0
+   ],
+   "prop": "lampu-koridor"
+  },
+  {
+   "type": "bulb",
+   "id": "lampu-koridor-2",
+   "at": [
+    -6.0,
+    2.9,
+    2.0
+   ],
+   "prop": "lampu-koridor"
+  },
+  {
+   "type": "lamp-post",
+   "id": "lampu-lapangan",
+   "at": [
+    -12.5,
+    0,
+    3.2
+   ],
+   "prop": "lampu-koridor"
+  }
+ ],
+ "props": {
+  "lampu-kelas": {
+   "default": 1,
+   "doc": "classroom tube lamps (0 off — after school, 1 on)",
+   "sfx": {
+    "up": "click",
+    "down": "click"
+   }
+  },
+  "lampu-koridor": {
+   "default": 0,
+   "doc": "corridor bulbs + the field lamp (on at dusk / night)",
+   "sfx": {
+    "up": "click"
+   }
+  }
+ },
+ "places": {
+  "kelas": {
+   "doc": "the classroom: the blackboard and the teacher's desk at the north wall, three rows of desks facing it, windows in the east wall, lockers at the back, the door to the corridor in the west wall",
+   "kind": "interior",
+   "rooms": [
+    "kelas"
+   ],
+   "marks": {
+    "depan-papan": {
+     "at": [
+      -0.6,
+      -3.5
+     ],
+     "yaw": 0,
+     "doc": "in front of the blackboard, facing the class (teacher / presenter)"
+    },
+    "papan": {
+     "at": [
+      0.6,
+      -3.6
+     ],
+     "yaw": 3.141592653589793,
+     "doc": "at the blackboard, facing it (writing on it)"
+    },
+    "depan-kelas": {
+     "at": [
+      1.2,
+      -2.1
+     ],
+     "yaw": -0.4,
+     "doc": "in front of the first row, facing the desks"
+    },
+    "jendela": {
+     "at": [
+      3.9,
+      -1.4
+     ],
+     "yaw": 1.5707963267948966,
+     "doc": "at the east window, looking out"
+    },
+    "belakang": {
+     "at": [
+      0.0,
+      3.0
+     ],
+     "yaw": 3.141592653589793,
+     "doc": "at the back of the class, facing the board"
+    },
+    "dalam-pintu": {
+     "at": [
+      -3.9,
+      2.4
+     ],
+     "yaw": 1.5707963267948966,
+     "doc": "just inside the door"
+    }
+   },
+   "view": "papan-tulis",
+   "ambience": "room",
+   "surface": "tile"
+  },
+  "koridor": {
+   "doc": "the open veranda corridor outside the classroom door: the notice board and lockers on the wall, a bench, the field beyond the open side",
+   "kind": "interior",
+   "rooms": [
+    "koridor"
+   ],
+   "marks": {
+    "depan-pintu": {
+     "at": [
+      -5.3,
+      2.4
+     ],
+     "yaw": 1.5707963267948966,
+     "doc": "outside the classroom door, facing it"
+    },
+    "mading": {
+     "at": [
+      -5.4,
+      -1.5
+     ],
+     "yaw": 1.5707963267948966,
+     "doc": "reading the notice board"
+    },
+    "tepi": {
+     "at": [
+      -6.9,
+      -1.2
+     ],
+     "yaw": -1.5707963267948966,
+     "doc": "at the open edge of the corridor, looking out at the field"
+    }
+   },
+   "view": "mading",
+   "ambience": "hall",
+   "surface": "tile"
+  },
+  "lapangan": {
+   "doc": "the school field: grass, the flagpole in the middle, the class blocks around, the corridor of class 8B on the east side",
+   "kind": "exterior",
+   "area": [
+    -32,
+    -12,
+    -7.6,
+    12
+   ],
+   "marks": {
+    "tiang": {
+     "at": [
+      -16.6,
+      1.6
+     ],
+     "yaw": -2.4,
+     "doc": "near the flagpole, facing it"
+    },
+    "tengah-lapangan": {
+     "at": [
+      -13,
+      -3.5
+     ],
+     "yaw": 1.5707963267948966,
+     "doc": "in the middle of the field, facing the classroom block"
+    },
+    "tepi-koridor": {
+     "at": [
+      -8.6,
+      2.2
+     ],
+     "yaw": -1.5707963267948966,
+     "doc": "at the edge of the field below the corridor, facing the field"
+    }
+   },
+   "view": "tiang-bendera",
+   "ambience": "outdoor",
+   "surface": "grass",
+   "establish": [
+    -16,
+    1.4,
+    0,
+    9.5,
+    3.2,
+    1.5708
+   ]
+  }
+ },
+ "fog": 0.04
+}

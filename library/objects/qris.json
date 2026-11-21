@@ -1,0 +1,14 @@
+{
+  "id": "qris",
+  "doc": "small QRIS payment standee for a checkout counter: a white sign card with a QR code on a short stand; screen panel glows",
+  "anchors": { "front": [0, 0, 0.2] },
+  "states": { "screen": 1 },
+  "parts": [
+    { "shape": "box", "size": [0.14, 0.02, 0.1], "at": [0, 0.01, 0], "mat": "plastic:#2f3337" },
+    { "shape": "rod", "from": [0, 0.02, 0], "to": [0, 0.2, 0], "r": 0.012, "mat": "metal:#9a9da0" },
+    { "shape": "box", "size": [0.18, 0.22, 0.012], "at": [0, 0.31, 0], "mat": "paper:#e6e2d6" },
+    { "shape": "text", "size": [0.14, 0.04], "text": "QRIS", "ink": "#2f3337", "bg": "#e6e2d6", "at": [0, 0.4, 0.008] },
+    { "shape": "box", "size": [0.12, 0.12, 0.004], "at": [0, 0.29, 0.009], "mat": "paint:#2f3337" },
+    { "shape": "box", "size": [0.085, 0.085, 0.006], "at": [0, 0.29, 0.011], "mat": "emissive:#bfe8ff", "glowState": "screen" }
+  ]
+}

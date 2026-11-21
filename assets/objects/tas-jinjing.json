@@ -1,0 +1,14 @@
+{
+  "id": "tas-jinjing",
+  "doc": "a travel duffel bag (tas jinjing) carried in one hand: rounded body, zip, two handles on top, front faces +z",
+  "hand": true,
+  "anchors": { "grab": [0, 0.36, 0], "top": [0, 0.3, 0], "front": [0, 0, 0.6] },
+  "parts": [
+    { "shape": "capsule", "r": 0.13, "h": 0.24, "at": [0, 0.15, 0], "rot": [0, 0, 90], "scale": [1, 1, 0.95], "mat": "fabric:#7a3b2e" },
+    { "shape": "box", "size": [0.5, 0.02, 0.04], "at": [0, 0.285, 0], "mat": "plastic:#2a2522", "round": 0.008 },
+    { "shape": "box", "size": [0.4, 0.13, 0.012], "at": [0, 0.13, 0.13], "mat": "fabric:#5e2c22", "round": 0.01 },
+    { "shape": "torus", "R": 0.07, "r": 0.012, "arc": 3.1416, "at": [0, 0.29, 0.035], "mat": "plastic:#2a2522" },
+    { "shape": "torus", "R": 0.07, "r": 0.012, "arc": 3.1416, "at": [0, 0.29, -0.035], "mat": "plastic:#2a2522" },
+    { "shape": "cyl", "r": 0.135, "h": 0.012, "at": [0.252, 0.15, 0], "rot": [0, 0, 90], "mat": "fabric:#5e2c22", "mirror": "x" }
+  ]
+}

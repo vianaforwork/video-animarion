@@ -1,0 +1,99 @@
+{
+ "id": "filing-cabinet",
+ "doc": "grey steel four-drawer filing cabinet 0.47 × 1.32 × 0.62 m, drawers toward +z",
+ "anchors": {
+  "top": [
+   0,
+   1.32,
+   0
+  ],
+  "front": [
+   0,
+   0,
+   0.85
+  ]
+ },
+ "parts": [
+  {
+   "shape": "box",
+   "size": [
+    0.47,
+    1.32,
+    0.62
+   ],
+   "at": [
+    0,
+    0.66,
+    0
+   ],
+   "mat": "metal:#7d8287",
+   "round": 0.008
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.43,
+    0.005,
+    0.006
+   ],
+   "at": [
+    0,
+    1,
+    0.311
+   ],
+   "mat": "metal:#4a4e52",
+   "repeat": {
+    "n": 3,
+    "step": [
+     0,
+     -0.32,
+     0
+    ]
+   }
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.16,
+    0.02,
+    0.025
+   ],
+   "at": [
+    0,
+    1.15,
+    0.32
+   ],
+   "mat": "chrome",
+   "repeat": {
+    "n": 4,
+    "step": [
+     0,
+     -0.32,
+     0
+    ]
+   }
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.08,
+    0.035,
+    0.004
+   ],
+   "at": [
+    0,
+    1.2,
+    0.312
+   ],
+   "mat": "paper:#d6d0c2",
+   "repeat": {
+    "n": 4,
+    "step": [
+     0,
+     -0.32,
+     0
+    ]
+   }
+  }
+ ]
+}

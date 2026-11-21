@@ -1,0 +1,106 @@
+{
+ "id": "cctv-monitor",
+ "doc": "wall-mounted security (CCTV) monitor 0.58 × 0.36 m on a bracket, screen toward +z; dark when off, shows the camera channel while on",
+ "anchors": {
+  "screen": [
+   0,
+   0,
+   0.11
+  ],
+  "front": [
+   0,
+   -1.7,
+   1
+  ]
+ },
+ "states": {
+  "on": 0
+ },
+ "parts": [
+  {
+   "shape": "box",
+   "size": [
+    0.22,
+    0.22,
+    0.03
+   ],
+   "at": [
+    0,
+    0,
+    0.015
+   ],
+   "mat": "metal:#2f3236"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.08,
+    0.08,
+    0.03
+   ],
+   "at": [
+    0,
+    0,
+    0.045
+   ],
+   "mat": "metal:#2f3236"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.58,
+    0.36,
+    0.06
+   ],
+   "at": [
+    0,
+    0,
+    0.09
+   ],
+   "mat": "plastic:#141619",
+   "round": 0.01
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.54,
+    0.31,
+    0.003
+   ],
+   "at": [
+    0,
+    0.005,
+    0.1205
+   ],
+   "mat": "plastic:#07090a"
+  },
+  {
+   "shape": "text",
+   "size": [
+    0.54,
+    0.31
+   ],
+   "at": [
+    0,
+    0.005,
+    0.1225
+   ],
+   "text": "CAM 03 · LT 11 · ● REC",
+   "ink": "#e4f2e2",
+   "bg": "#1c2620",
+   "glowState": "on",
+   "when": "on"
+  },
+  {
+   "shape": "sphere",
+   "r": 0.006,
+   "at": [
+    0.25,
+    -0.165,
+    0.121
+   ],
+   "mat": "emissive:#3aff7a",
+   "glowState": "on"
+  }
+ ]
+}

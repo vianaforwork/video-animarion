@@ -1,0 +1,12 @@
+{
+  "id": "cash",
+  "doc": "a small fan of Indonesian banknotes (cash), held in one hand",
+  "hand": true,
+  "anchors": { "grab": [0, 0.02, 0] },
+  "parts": [
+    { "shape": "box", "size": [0.15, 0.012, 0.072], "at": [0, 0.006, 0], "rot": [0, -8, 0], "mat": "paper:#5a8fb0" },
+    { "shape": "box", "size": [0.15, 0.012, 0.072], "at": [0.004, 0.018, 0.004], "rot": [0, 0, 0], "mat": "paper:#c76a5a" },
+    { "shape": "box", "size": [0.15, 0.012, 0.072], "at": [0.008, 0.03, 0.008], "rot": [0, 8, 0], "mat": "paper:#7aa36a" },
+    { "shape": "text", "size": [0.05, 0.03], "text": "Rp", "ink": "#2f4433", "bg": "#7aa36a", "at": [0.03, 0.037, 0.008], "rot": [-90, 8, 0] }
+  ]
+}

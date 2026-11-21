@@ -1,0 +1,108 @@
+{
+ "id": "potted-plant",
+ "doc": "office potted plant: dark ceramic pot with a leafy plant, ~1.2 m tall",
+ "parts": [
+  {
+   "shape": "lathe",
+   "profile": [
+    [
+     0,
+     0
+    ],
+    [
+     0.16,
+     0
+    ],
+    [
+     0.2,
+     0.36
+    ],
+    [
+     0.21,
+     0.38
+    ],
+    [
+     0,
+     0.38
+    ]
+   ],
+   "mat": "ceramic:#2e3236"
+  },
+  {
+   "shape": "cyl",
+   "r": 0.19,
+   "h": 0.02,
+   "at": [
+    0,
+    0.36,
+    0
+   ],
+   "mat": "dirt:#3a2c20"
+  },
+  {
+   "shape": "rod",
+   "from": [
+    0,
+    0.36,
+    0
+   ],
+   "to": [
+    0.03,
+    0.8,
+    0.02
+   ],
+   "r": 0.015,
+   "mat": "bark"
+  },
+  {
+   "shape": "sphere",
+   "r": 0.2,
+   "at": [
+    0.05,
+    0.85,
+    0.02
+   ],
+   "scale": [
+    1,
+    1.2,
+    1
+   ],
+   "mat": "leaf:#3c5a34"
+  },
+  {
+   "shape": "sphere",
+   "r": 0.16,
+   "at": [
+    -0.12,
+    0.72,
+    0.08
+   ],
+   "scale": [
+    1.1,
+    1,
+    1
+   ],
+   "mat": "leaf:#476a3c"
+  },
+  {
+   "shape": "sphere",
+   "r": 0.15,
+   "at": [
+    0.14,
+    1.05,
+    -0.06
+   ],
+   "mat": "leaf:#36522f"
+  },
+  {
+   "shape": "sphere",
+   "r": 0.13,
+   "at": [
+    -0.06,
+    1.12,
+    0.07
+   ],
+   "mat": "leaf:#41613a"
+  }
+ ]
+}
