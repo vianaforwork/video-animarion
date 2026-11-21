@@ -1,0 +1,3239 @@
+VOYNANN Motion - packed source files of this folder. Do not edit by hand.
+The skill upload in the Claude app accepts at most 200 files, so the source files are packed here.
+`node <skill folder>/new-project.mjs <project folder> --kit=<style>` unpacks them into the project.
+Format: per file one line with four '=' signs, the byte length and the path, then exactly that many bytes.
+
+==== 4314 public/fonts/OFL-pv-bangers.txt
+Google Inc.
+
+This Font Software is licensed under the SIL Open Font License, Version 1.1.
+This license is copied below, and is also available with a FAQ at:
+http://scripts.sil.org/OFL
+
+
+-----------------------------------------------------------
+SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007
+-----------------------------------------------------------
+
+PREAMBLE
+The goals of the Open Font License (OFL) are to stimulate worldwide
+development of collaborative font projects, to support the font creation
+efforts of academic and linguistic communities, and to provide a free and
+open framework in which fonts may be shared and improved in partnership
+with others.
+
+The OFL allows the licensed fonts to be used, studied, modified and
+redistributed freely as long as they are not sold by themselves. The
+fonts, including any derivative works, can be bundled, embedded,
+redistributed and/or sold with any software provided that any reserved
+names are not used by derivative works. The fonts and derivatives,
+however, cannot be released under any other type of license. The
+requirement for fonts to remain under this license does not apply
+to any document created using the fonts or their derivatives.
+
+DEFINITIONS
+"Font Software" refers to the set of files released by the Copyright
+Holder(s) under this license and clearly marked as such. This may
+include source files, build scripts and documentation.
+
+"Reserved Font Name" refers to any names specified as such after the
+copyright statement(s).
+
+"Original Version" refers to the collection of Font Software components as
+distributed by the Copyright Holder(s).
+
+"Modified Version" refers to any derivative made by adding to, deleting,
+or substituting -- in part or in whole -- any of the components of the
+Original Version, by changing formats or by porting the Font Software to a
+new environment.
+
+"Author" refers to any designer, engineer, programmer, technical
+writer or other person who contributed to the Font Software.
+
+PERMISSION & CONDITIONS
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of the Font Software, to use, study, copy, merge, embed, modify,
+redistribute, and sell modified and unmodified copies of the Font
+Software, subject to the following conditions:
+
+1) Neither the Font Software nor any of its individual components,
+in Original or Modified Versions, may be sold by itself.
+
+2) Original or Modified Versions of the Font Software may be bundled,
+redistributed and/or sold with any software, provided that each copy
+contains the above copyright notice and this license. These can be
+included either as stand-alone text files, human-readable headers or
+in the appropriate machine-readable metadata fields within text or
+binary files as long as those fields can be easily viewed by the user.
+
+3) No Modified Version of the Font Software may use the Reserved Font
+Name(s) unless explicit written permission is granted by the corresponding
+Copyright Holder. This restriction only applies to the primary font name as
+presented to the users.
+
+4) The name(s) of the Copyright Holder(s) or the Author(s) of the Font
+Software shall not be used to promote, endorse or advertise any
+Modified Version, except to acknowledge the contribution(s) of the
+Copyright Holder(s) and the Author(s) or with their explicit written
+permission.
+
+5) The Font Software, modified or unmodified, in part or in whole,
+must be distributed entirely under this license, and must not be
+distributed under any other license. The requirement for fonts to
+remain under this license does not apply to any document created
+using the Font Software.
+
+TERMINATION
+This license becomes null and void if any of the above conditions are
+not met.
+
+DISCLAIMER
+THE FONT SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT
+OF COPYRIGHT, PATENT, TRADEMARK, OR OTHER RIGHT. IN NO EVENT SHALL THE
+COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+INCLUDING ANY GENERAL, SPECIAL, INDIRECT, INCIDENTAL, OR CONSEQUENTIAL
+DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
+OTHER DEALINGS IN THE FONT SOFTWARE.
+
+==== 4314 public/fonts/OFL-pv-comic-neue.txt
+Google Inc.
+
+This Font Software is licensed under the SIL Open Font License, Version 1.1.
+This license is copied below, and is also available with a FAQ at:
+http://scripts.sil.org/OFL
+
+
+-----------------------------------------------------------
+SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007
+-----------------------------------------------------------
+
+PREAMBLE
+The goals of the Open Font License (OFL) are to stimulate worldwide
+development of collaborative font projects, to support the font creation
+efforts of academic and linguistic communities, and to provide a free and
+open framework in which fonts may be shared and improved in partnership
+with others.
+
+The OFL allows the licensed fonts to be used, studied, modified and
+redistributed freely as long as they are not sold by themselves. The
+fonts, including any derivative works, can be bundled, embedded,
+redistributed and/or sold with any software provided that any reserved
+names are not used by derivative works. The fonts and derivatives,
+however, cannot be released under any other type of license. The
+requirement for fonts to remain under this license does not apply
+to any document created using the fonts or their derivatives.
+
+DEFINITIONS
+"Font Software" refers to the set of files released by the Copyright
+Holder(s) under this license and clearly marked as such. This may
+include source files, build scripts and documentation.
+
+"Reserved Font Name" refers to any names specified as such after the
+copyright statement(s).
+
+"Original Version" refers to the collection of Font Software components as
+distributed by the Copyright Holder(s).
+
+"Modified Version" refers to any derivative made by adding to, deleting,
+or substituting -- in part or in whole -- any of the components of the
+Original Version, by changing formats or by porting the Font Software to a
+new environment.
+
+"Author" refers to any designer, engineer, programmer, technical
+writer or other person who contributed to the Font Software.
+
+PERMISSION & CONDITIONS
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of the Font Software, to use, study, copy, merge, embed, modify,
+redistribute, and sell modified and unmodified copies of the Font
+Software, subject to the following conditions:
+
+1) Neither the Font Software nor any of its individual components,
+in Original or Modified Versions, may be sold by itself.
+
+2) Original or Modified Versions of the Font Software may be bundled,
+redistributed and/or sold with any software, provided that each copy
+contains the above copyright notice and this license. These can be
+included either as stand-alone text files, human-readable headers or
+in the appropriate machine-readable metadata fields within text or
+binary files as long as those fields can be easily viewed by the user.
+
+3) No Modified Version of the Font Software may use the Reserved Font
+Name(s) unless explicit written permission is granted by the corresponding
+Copyright Holder. This restriction only applies to the primary font name as
+presented to the users.
+
+4) The name(s) of the Copyright Holder(s) or the Author(s) of the Font
+Software shall not be used to promote, endorse or advertise any
+Modified Version, except to acknowledge the contribution(s) of the
+Copyright Holder(s) and the Author(s) or with their explicit written
+permission.
+
+5) The Font Software, modified or unmodified, in part or in whole,
+must be distributed entirely under this license, and must not be
+distributed under any other license. The requirement for fonts to
+remain under this license does not apply to any document created
+using the Font Software.
+
+TERMINATION
+This license becomes null and void if any of the above conditions are
+not met.
+
+DISCLAIMER
+THE FONT SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT
+OF COPYRIGHT, PATENT, TRADEMARK, OR OTHER RIGHT. IN NO EVENT SHALL THE
+COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+INCLUDING ANY GENERAL, SPECIAL, INDIRECT, INCIDENTAL, OR CONSEQUENTIAL
+DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
+OTHER DEALINGS IN THE FONT SOFTWARE.
+
+==== 4314 public/fonts/OFL-pv-luckiest-guy.txt
+Google Inc.
+
+This Font Software is licensed under the SIL Open Font License, Version 1.1.
+This license is copied below, and is also available with a FAQ at:
+http://scripts.sil.org/OFL
+
+
+-----------------------------------------------------------
+SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007
+-----------------------------------------------------------
+
+PREAMBLE
+The goals of the Open Font License (OFL) are to stimulate worldwide
+development of collaborative font projects, to support the font creation
+efforts of academic and linguistic communities, and to provide a free and
+open framework in which fonts may be shared and improved in partnership
+with others.
+
+The OFL allows the licensed fonts to be used, studied, modified and
+redistributed freely as long as they are not sold by themselves. The
+fonts, including any derivative works, can be bundled, embedded,
+redistributed and/or sold with any software provided that any reserved
+names are not used by derivative works. The fonts and derivatives,
+however, cannot be released under any other type of license. The
+requirement for fonts to remain under this license does not apply
+to any document created using the fonts or their derivatives.
+
+DEFINITIONS
+"Font Software" refers to the set of files released by the Copyright
+Holder(s) under this license and clearly marked as such. This may
+include source files, build scripts and documentation.
+
+"Reserved Font Name" refers to any names specified as such after the
+copyright statement(s).
+
+"Original Version" refers to the collection of Font Software components as
+distributed by the Copyright Holder(s).
+
+"Modified Version" refers to any derivative made by adding to, deleting,
+or substituting -- in part or in whole -- any of the components of the
+Original Version, by changing formats or by porting the Font Software to a
+new environment.
+
+"Author" refers to any designer, engineer, programmer, technical
+writer or other person who contributed to the Font Software.
+
+PERMISSION & CONDITIONS
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of the Font Software, to use, study, copy, merge, embed, modify,
+redistribute, and sell modified and unmodified copies of the Font
+Software, subject to the following conditions:
+
+1) Neither the Font Software nor any of its individual components,
+in Original or Modified Versions, may be sold by itself.
+
+2) Original or Modified Versions of the Font Software may be bundled,
+redistributed and/or sold with any software, provided that each copy
+contains the above copyright notice and this license. These can be
+included either as stand-alone text files, human-readable headers or
+in the appropriate machine-readable metadata fields within text or
+binary files as long as those fields can be easily viewed by the user.
+
+3) No Modified Version of the Font Software may use the Reserved Font
+Name(s) unless explicit written permission is granted by the corresponding
+Copyright Holder. This restriction only applies to the primary font name as
+presented to the users.
+
+4) The name(s) of the Copyright Holder(s) or the Author(s) of the Font
+Software shall not be used to promote, endorse or advertise any
+Modified Version, except to acknowledge the contribution(s) of the
+Copyright Holder(s) and the Author(s) or with their explicit written
+permission.
+
+5) The Font Software, modified or unmodified, in part or in whole,
+must be distributed entirely under this license, and must not be
+distributed under any other license. The requirement for fonts to
+remain under this license does not apply to any document created
+using the Font Software.
+
+TERMINATION
+This license becomes null and void if any of the above conditions are
+not met.
+
+DISCLAIMER
+THE FONT SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT
+OF COPYRIGHT, PATENT, TRADEMARK, OR OTHER RIGHT. IN NO EVENT SHALL THE
+COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+INCLUDING ANY GENERAL, SPECIAL, INDIRECT, INCIDENTAL, OR CONSEQUENTIAL
+DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
+OTHER DEALINGS IN THE FONT SOFTWARE.
+
+==== 150 root.json
+{
+  "marker": "PanelverseFilms",
+  "import": "import { PanelverseFilms } from \"./kits/panelverse/Films.tsx\";",
+  "element": "<PanelverseFilms />"
+}
+
+==== 7309 scripts/pv-align.mjs
+// Word timings for PANELVERSE without whisper.cpp: clause ↔ speech-segment alignment.
+//   node scripts/pv-align.mjs <vo.mp3> --script=<text file> --out=src/pv-stories/<id>/words.json [--id=<id>]
+// With whisper.cpp installed it hands over to scripts/transcribe.mjs (exact word timings).
+// Otherwise: the script is split into clauses at punctuation (. , ! ? ; : …), the VO's speech segments are found with
+// silence detection (several thresholds are tried until segments and clauses match one-to-one), and each clause's words
+// are spread over its segment by syllable count. Typical error ≈ ±0.1 s per word when the clauses match; if no threshold
+// matches, it falls back to transcribe.mjs (sentence-level, ≈ ±0.3–0.5 s) and says so.
+import { spawnSync } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
+
+const args = process.argv.slice(2);
+const vo = args.find((a) => !a.startsWith("--"));
+const opt = (k, d) => (args.find((a) => a.startsWith(`--${k}=`)) ?? `=${d ?? ""}`).split("=").slice(1).join("=");
+const scriptFile = opt("script"), out = opt("out"), id = opt("id");
+if (!vo || !fs.existsSync(vo) || !out) {
+  console.error("usage: node scripts/pv-align.mjs <vo.mp3> --script=<text file> --out=src/pv-stories/<id>/words.json [--id=<id>]");
+  process.exit(1);
+}
+const run = (c, a) => spawnSync(c, a, { encoding: "utf8", maxBuffer: 1 << 28 });
+const handOver = (why) => {
+  console.log(`pv-align: ${why} → scripts/transcribe.mjs`);
+  const r = spawnSync("node", [path.join("scripts", "transcribe.mjs"), vo, `--out=${out}`, ...(scriptFile ? [`--script=${scriptFile}`] : []), ...(id ? [`--id=${id}`] : []), "--lang=id"], { stdio: "inherit" });
+  process.exit(r.status ?? 1);
+};
+// whisper.cpp present → exact timings from transcribe.mjs
+const hasWhisper = run("sh", ["-c", "command -v whisper-cli"]).stdout.trim() || ["/opt/homebrew/bin/whisper-cli", "/usr/local/bin/whisper-cli"].some((f) => fs.existsSync(f)) || process.env.WHISPER_CLI;
+if (hasWhisper) handOver("whisper.cpp found");
+if (!scriptFile || !fs.existsSync(scriptFile)) { console.error("pv-align: without whisper.cpp the VO text is needed: --script=<text file>"); process.exit(1); }
+if (id) {
+  if (!/^[a-z0-9-]+$/.test(id)) { console.error(`--id "${id}" must use only a-z, 0-9 and "-"`); process.exit(1); }
+  const dst = path.join("public", "audio", `${id}${path.extname(vo).toLowerCase() || ".mp3"}`);
+  fs.mkdirSync(path.dirname(dst), { recursive: true });
+  if (path.resolve(dst) !== path.resolve(vo)) fs.copyFileSync(vo, dst);
+  console.log(`vo: ${dst}`);
+}
+const text = fs.readFileSync(scriptFile, "utf8").replace(/\s+/g, " ").trim();
+// clauses: words grouped until a punctuation mark closes the clause
+const tokens = text.split(" ").filter(Boolean);
+const clauses = [];
+let cur = [];
+for (const t of tokens) {
+  cur.push(t);
+  if (/[.,!?;:…]["')\]]*$/.test(t)) { clauses.push(cur); cur = []; }
+}
+if (cur.length) clauses.push(cur);
+const duration = Number(run("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", vo]).stdout.trim());
+const segmentsFor = (noise, d) => {
+  const txt = run("ffmpeg", ["-hide_banner", "-i", vo, "-af", `silencedetect=noise=${noise}dB:d=${d}`, "-f", "null", "-"]).stderr;
+  const starts = [...txt.matchAll(/silence_start: ([\d.]+)/g)].map((m) => Number(m[1]));
+  const ends = [...txt.matchAll(/silence_end: ([\d.]+)/g)].map((m) => Number(m[1]));
+  // speech = gaps between silences
+  const segs = [];
+  let t = 0;
+  for (let i = 0; i < starts.length; i++) {
+    if (starts[i] - t > 0.08) segs.push([t, starts[i]]);
+    t = ends[i] ?? duration;
+  }
+  if (duration - t > 0.08) segs.push([t, duration]);
+  return segs.filter(([a, b]) => b - a > 0.08);
+};
+const syl = (w) => Math.max(1, (w.toLowerCase().match(/[aiueoé]+/g) ?? []).length);
+const csyl = clauses.map((c) => c.reduce((n, w) => n + syl(w), 0));
+const totalSyl = csyl.reduce((a, b) => a + b, 0);
+// monotonic alignment: each step pairs 1 clause with 1–4 consecutive segments, or 2–3 clauses with 1 segment.
+// cost = squared log ratio of segment speech time to the expected time (syllables × speech rate), weighted by size
+const align = (segs) => {
+  const C = clauses.length, Sn = segs.length;
+  const speech = segs.reduce((n, [a, b]) => n + b - a, 0);
+  const rate = speech / totalSyl;
+  const segDur = (j0, j1) => segs.slice(j0, j1).reduce((n, [a, b]) => n + b - a, 0);
+  const sylOf = (i0, i1) => csyl.slice(i0, i1).reduce((a, b) => a + b, 0);
+  const pairCost = (i0, i1, j0, j1) => {
+    const exp = sylOf(i0, i1) * rate, got = segDur(j0, j1);
+    const r = Math.log(Math.max(got, 0.05) / Math.max(exp, 0.05));
+    return r * r * sylOf(i0, i1) + 0.6 * (i1 - i0 - 1) + 0.4 * (j1 - j0 - 1);
+  };
+  const INF = 1e9;
+  const f = Array.from({ length: C + 1 }, () => new Array(Sn + 1).fill(INF));
+  const back = Array.from({ length: C + 1 }, () => new Array(Sn + 1).fill(null));
+  f[0][0] = 0;
+  for (let i = 0; i <= C; i++) for (let j = 0; j <= Sn; j++) {
+    if (f[i][j] >= INF) continue;
+    for (let k = 1; k <= 4 && j + k <= Sn && i + 1 <= C; k++) {
+      const c = f[i][j] + pairCost(i, i + 1, j, j + k);
+      if (c < f[i + 1][j + k]) { f[i + 1][j + k] = c; back[i + 1][j + k] = [i, j]; }
+    }
+    for (let k = 2; k <= 3 && i + k <= C && j + 1 <= Sn; k++) {
+      const c = f[i][j] + pairCost(i, i + k, j, j + 1);
+      if (c < f[i + k][j + 1]) { f[i + k][j + 1] = c; back[i + k][j + 1] = [i, j]; }
+    }
+  }
+  if (f[C][Sn] >= INF) return null;
+  const steps = [];
+  for (let i = C, j = Sn; i > 0 || j > 0; ) { const [pi, pj] = back[i][j]; steps.unshift([pi, i, pj, j]); i = pi; j = pj; }
+  return { cost: f[C][Sn] / totalSyl, steps };
+};
+let best = null;
+for (const noise of [-30, -32, -35, -38, -40, -45]) for (const d of [0.08, 0.1, 0.12, 0.15, 0.2, 0.25]) {
+  const segs = segmentsFor(noise, d);
+  if (!segs.length) continue;
+  const a = align(segs);
+  if (a && (!best || a.cost < best.cost)) best = { ...a, segs, noise, d };
+}
+if (!best || best.cost > 0.35) handOver(best ? `the VO's pauses do not match the script's punctuation well (fit ${best.cost.toFixed(2)})` : "no speech segments found");
+const words = [];
+for (const [i0, i1, j0, j1] of best.steps) {
+  // the clause run's words spread over the segment run's speech time (pauses between segments skipped)
+  const segs = best.segs.slice(j0, j1);
+  const ws = clauses.slice(i0, i1).flat();
+  const n = ws.map(syl), total = n.reduce((a, b) => a + b, 0);
+  const speech = segs.reduce((m, [a, b]) => m + b - a, 0);
+  const at = (x) => { // speech-time offset → real time
+    for (const [a, b] of segs) { if (x <= b - a) return a + x; x -= b - a; }
+    return segs[segs.length - 1][1];
+  };
+  let acc = 0;
+  ws.forEach((w, k) => {
+    const dur = (speech * n[k]) / total;
+    words.push([w, +at(acc + Math.min(0.01, dur * 0.1)).toFixed(3), +at(acc + dur * 0.94).toFixed(3)]);
+    acc += dur;
+  });
+}
+fs.mkdirSync(path.dirname(out), { recursive: true });
+fs.writeFileSync(out, JSON.stringify(words));
+console.log(`words: ${out} — ${words.length} words, ${clauses.length} clauses aligned to ${best.segs.length} speech segments (silence ${best.noise} dB / ${best.d} s, fit ${best.cost.toFixed(3)}), ≈ ±0.1 s per word`);
+console.log(words.map(([w, s]) => `${s.toFixed(2)} ${w}`).join("  "));
+
+==== 13024 scripts/qa.mjs
+// Automated QA of a rendered video. Writes out/<id>/qa/{qa.json, contact_1fps_001.jpg …, shots_start_mid_end.jpg}
+// (the 1-fps contact sheet covers the whole video in pages of 96 seconds, each tile stamped with its second)
+// and prints PASS/FAIL per check. The contact sheets are for the visual review that follows.
+//   node scripts/qa.mjs <video.mp4> --vo=public/audio/x.mp3 --offset=0.4 --expect=49.8 [--shots=out/<id>/shots.json] [--final]
+//                       [--size=1080x1920] [--from=12]   (--from: the video is a section starting at that film second)
+// A wide (16:9) film is recognised by its file name (…_1920x1080_60fps.mp4, …_preview_960x540.mp4): it is checked
+// against 1920×1080 and its sheets go to out/<id>/qa-wide, next to the portrait film's out/<id>/qa.
+
+import { spawnSync } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
+
+const args = process.argv.slice(2);
+const video = args.find((a) => !a.startsWith("--"));
+const opt = (k, d) => (args.find((a) => a.startsWith(`--${k}=`)) ?? `=${d ?? ""}`).split("=").slice(1).join("=");
+const final = args.includes("--final");
+if (!video || !fs.existsSync(video)) { console.error("usage: node scripts/qa.mjs <video.mp4> --vo=… --offset=… --expect=… [--shots=…] [--final]"); process.exit(1); }
+const run = (c, a) => spawnSync(c, a, { encoding: "utf8", maxBuffer: 1 << 30 });
+const wide = /1920x1080|960x540/.test(path.basename(video));
+const qaDir = path.join(path.dirname(video), wide ? "qa-wide" : "qa");
+fs.mkdirSync(qaDir, { recursive: true });
+const checks = [];
+const check = (name, ok, detail) => { checks.push({ name, ok, detail }); console.log(`  ${ok ? "PASS" : "FAIL"}  ${name}: ${detail}`); };
+
+// streams
+const probe = JSON.parse(run("ffprobe", ["-v", "error", "-show_streams", "-show_format", "-of", "json", video]).stdout);
+const v = probe.streams.find((s) => s.codec_type === "video"), a = probe.streams.find((s) => s.codec_type === "audio");
+const dur = Number(probe.format.duration), expect = Number(opt("expect", dur));
+const [fn, fd] = v.r_frame_rate.split("/").map(Number);
+const fps = fn / fd;
+const [sw, shh] = opt("size", wide ? "1920x1080" : "1080x1920").split("x").map(Number);
+const portraitV = shh > sw;
+// previews are half size; finals must be the exact delivery size at 60 fps
+const sizeOk = final ? v.width === sw && v.height === shh && Math.abs(fps - 60) < 0.01 : Math.abs(v.width / v.height - sw / shh) < 0.01;
+check("video stream", v.codec_name === "h264" && sizeOk, `${v.codec_name} ${v.width}×${v.height} @ ${fps} fps${final ? ` (final must be ${sw}×${shh} @ 60)` : ` (${portraitV ? "portrait" : "landscape"} aspect)`}`);
+check("audio stream", !!a && a.codec_name === "aac", a ? `${a.codec_name} ${a.sample_rate} Hz, ${Number(a.duration ?? dur).toFixed(2)} s` : "missing");
+check("duration", Math.abs(dur - expect) < 0.12, `${dur.toFixed(2)} s (expected ${expect.toFixed(2)} s)`);
+if (a) check("audio length = video length", Math.abs(Number(a.duration ?? dur) - dur) < 0.15, `${Number(a.duration ?? dur).toFixed(2)} vs ${dur.toFixed(2)} s`);
+
+// frame scan: white / black / sudden flashes
+const ylog = path.join(qaDir, "yavg.txt");
+run("ffmpeg", ["-v", "error", "-i", video, "-vf", `scale=192:108,signalstats,metadata=mode=print:file=${ylog}`, "-f", "null", "-"]);
+const ytxt = fs.readFileSync(ylog, "utf8");
+const y = (ytxt.match(/YAVG=[\d.]+/g) ?? []).map((s) => Number(s.slice(5)));
+// 90th percentile luma per frame (video range: black is 16) — a frame whose p90 stays ≤ 24 is practically black
+const y90 = (ytxt.match(/YHIGH=[\d.]+/g) ?? []).map((s) => Number(s.slice(6)));
+// black: the opening fade, scene fades and the end card may be dark on purpose — only long runs fail
+const white = y.filter((x) => x > 225).length;
+// blown highlights: share of the picture burnt to white (a lamp in close-up, bloom) — the mean luma misses it
+const hlog = path.join(qaDir, "hot.txt");
+// the middle of the frame (a bright sky at the top is not a lamp in the lens); video range: white is 235
+run("ffmpeg", ["-v", "error", "-i", video, "-vf", `crop=iw*0.7:ih*0.6:iw*0.15:ih*0.2,scale=160:120,lutyuv=y='if(gt(val,222),255,0)',signalstats,metadata=mode=print:key=lavfi.signalstats.YAVG:file=${hlog}`, "-f", "null", "-"]);
+const hot = (fs.readFileSync(hlog, "utf8").match(/YAVG=[\d.]+/g) ?? []).map((s) => Number(s.slice(5)) / 255);
+let hr = 0, hotLongest = 0, hotAt = -1;
+hot.forEach((x, i) => { hr = x > 0.12 ? hr + 1 : 0; if (hr > hotLongest) { hotLongest = hr; hotAt = (i - hr + 1) / fps; } });
+let run0 = 0, longest = 0;
+y.slice(Math.round(fps * 0.9), y.length - Math.round(fps * 1.2)).forEach((x) => { run0 = x < 7 ? run0 + 1 : 0; longest = Math.max(longest, run0); });
+const black = longest > fps * 0.7 ? longest : 0;
+check("no white frames", white === 0, `${white} frames with mean luma > 225`);
+check("no blown-out highlights", hotLongest < fps * 0.5, hotLongest ? `${(hotLongest / fps).toFixed(1)} s with > 12 % of the middle of the picture burnt white (from ${(hotAt + Number(opt("from", 0))).toFixed(1)} s) — a lamp / bloom too close` : "none");
+check("no black gaps (outside fades)", black === 0, `longest near-black run ${(longest / fps).toFixed(2)} s (fails above 0.7 s)`);
+// frozen picture (a stuck render shows as identical frames)
+const fz = run("ffmpeg", ["-v", "info", "-i", video, "-vf", "scale=320:180,freezedetect=n=0.0006:d=2.5", "-an", "-f", "null", "-"]).stderr;
+const freezes = [...fz.matchAll(/freeze_start: ([\d.]+)/g)].map((m) => Number(m[1])).filter((t) => t > 1 && t < dur - 6);
+check("no frozen picture", freezes.length === 0, freezes.length ? `frozen from ${freezes.map((t) => t.toFixed(1)).join(", ")} s` : "none (≥ 2.5 s)");
+// loudness (final delivery is mastered to −14 LUFS, true peak ≤ −1 dBTP)
+if (a) {
+  const lu = run("ffmpeg", ["-v", "info", "-nostats", "-i", video, "-vn", "-af", "ebur128=peak=true", "-f", "null", "-"]).stderr;
+  const I = Number((lu.match(/I:\s+(-?[\d.]+) LUFS/g) ?? []).pop()?.match(/-?[\d.]+/)?.[0]);
+  const TP = Number((lu.match(/Peak:\s+(-?[\d.]+) dBFS/g) ?? []).pop()?.match(/-?[\d.]+/)?.[0]);
+  check("loudness", !final || (Math.abs(I + 14) < 1.2 && TP <= -0.8), `${I.toFixed(1)} LUFS integrated, true peak ${TP.toFixed(1)} dBTP${final ? " (target −14 LUFS, ≤ −1 dBTP)" : ""}`);
+}
+const jumps = [];
+for (let i = 1; i < y.length; i++) if (Math.abs(y[i] - y[i - 1]) > 45) jumps.push(+(i / fps).toFixed(2));
+console.log(`  info  luma ${Math.min(...y).toFixed(0)}–${Math.max(...y).toFixed(0)}, big jumps (cuts) at ${jumps.join(", ") || "none"}`);
+
+// VO sync: cross-correlate the film's audio with the VO around the expected offset
+const voFile = opt("vo"), off0 = Number(opt("offset", 0)), section = opt("from") !== "";
+// a section that starts after the VO has begun: compare with the VO from that point (expected lag 0)
+const voSkip = Math.max(0, -off0), off = Math.max(0, off0);
+if (voFile && fs.existsSync(voFile)) {
+  const SR = 8000;
+  const raw = (f, ss = 0) => { const r = spawnSync("ffmpeg", ["-v", "error", ...(ss ? ["-ss", ss.toFixed(3)] : []), "-i", f, "-f", "f32le", "-ac", "1", "-ar", String(SR), "-"], { maxBuffer: 1 << 30 }); return new Float32Array(r.stdout.buffer, r.stdout.byteOffset, Math.floor(r.stdout.length / 4)); };
+  const film = raw(video), vo = raw(voFile, voSkip);
+  let best = -1, lag = 0;
+  for (let L = Math.round((off - 0.25) * SR); L <= Math.round((off + 0.25) * SR); L++) {
+    if (L < 0) continue;
+    let s = 0, e1 = 0, e2 = 0;
+    for (let i = 0; i < vo.length && i + L < film.length; i += 3) { const p = vo[i], q = film[i + L]; s += p * q; e1 += p * p; e2 += q * q; }
+    const c = s / Math.sqrt(e1 * e2 + 1e-12);
+    if (c > best) { best = c; lag = L; }
+  }
+  const err = lag / SR - off;
+  check("VO sync", Math.abs(err) < 0.03 && best > 0.6, `VO found at ${(lag / SR).toFixed(3)} s (expected ${off.toFixed(3)}, error ${(err * 1000).toFixed(0)} ms, correlation ${best.toFixed(2)})`);
+  const voEnd = off + vo.length / SR;
+  if (!section) check("VO not cut", voEnd <= dur + 0.02, `VO ends at ${voEnd.toFixed(2)} s, video ${dur.toFixed(2)} s`);
+}
+
+// contact sheets (portrait: tall tiles): one tile per second for the WHOLE video, 96 per page
+// (contact_1fps_001.jpg, _002.jpg …), every tile stamped with its film second so nothing can be skipped unseen
+const tw = portraitV ? 180 : 320, thh = portraitV ? 320 : 180;
+const grid = portraitV ? [12, 8] : [8, 12], perPage = grid[0] * grid[1];
+for (const f of fs.readdirSync(qaDir)) if (/^contact_1fps(_\d+)?\.jpg$/.test(f)) fs.rmSync(path.join(qaDir, f));
+// a second stamp on each tile when this ffmpeg has drawtext (not every build does); the page ranges are always listed
+const hasDrawtext = /drawtext/.test(run("ffmpeg", ["-hide_banner", "-filters"]).stdout ?? "");
+const fontFile = ["/System/Library/Fonts/Supplemental/Arial.ttf", "/Library/Fonts/Arial.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "C:/Windows/Fonts/arial.ttf"].find((f) => fs.existsSync(f));
+const t0s = Number(opt("from", 0));
+const stamp = hasDrawtext && fontFile ? `,drawtext=fontfile='${fontFile}':text='%{eif\\:t+${t0s}\\:d}s':x=6:y=6:fontsize=${portraitV ? 22 : 20}:fontcolor=yellow:box=1:boxcolor=black@0.6` : "";
+const sheetArgs = (sync) => ["-v", "error", "-y", "-i", video, "-vf", `fps=1,scale=${tw}:${thh}${stamp},tile=${grid[0]}x${grid[1]}`, ...sync, "-start_number", "1", path.join(qaDir, "contact_1fps_%03d.jpg")];
+// one output image per full (or last, partial) page: -fps_mode on ffmpeg ≥ 5.1, -vsync on older builds
+if (run("ffmpeg", sheetArgs(["-fps_mode", "passthrough"])).status !== 0) run("ffmpeg", sheetArgs(["-vsync", "0"]));
+const pages = fs.readdirSync(qaDir).filter((f) => /^contact_1fps_\d+\.jpg$/.test(f)).sort();
+const needPages = Math.max(1, Math.ceil(Math.floor(dur) / perPage));
+const pageRanges = pages.map((f, i) => ({ file: f, from: Math.round(t0s + i * perPage), to: Math.round(t0s + Math.min(dur, (i + 1) * perPage)) }));
+check("contact sheet covers the whole video", pages.length >= needPages, `${pages.length} page(s) of ${perPage} s for ${dur.toFixed(1)} s: ${pageRanges.map((p) => `${p.file} ${p.from}–${p.to} s`).join(", ")}${stamp ? "" : " (tiles not stamped: this ffmpeg has no drawtext — tiles run left→right, top→bottom, one per second)"}`);
+const shotsFile = opt("shots");
+const from = Number(opt("from", 0));
+if (shotsFile && fs.existsSync(shotsFile)) {
+  const { shots: all } = JSON.parse(fs.readFileSync(shotsFile, "utf8"));
+  // shots of this video (a section: only those inside it, in video time)
+  const shots = all.map((s) => ({ ...s, t0: Math.max(0, s.t0 - from), t1: Math.min(dur, s.t1 - from) })).filter((s) => s.t1 - s.t0 > 0.2);
+  // phone readability: the middle of every shot must not sink into black (night ≠ unreadable)
+  const dark = shots.filter((s) => { const i = Math.round(((s.t0 + s.t1) / 2) * fps); return y[i] !== undefined && y[i] < 22 && !(s.t0 < 1); });
+  // a shot that is practically black for its whole length shows nothing on a phone (darkness needs a sliver of light)
+  const black = shots.filter((s) => { if (s.t1 - s.t0 < 1.4 || s.t0 < 1 || s.t1 > dur - 1) return false; const a = Math.round((s.t0 + 0.3) * fps), b = Math.round((s.t1 - 0.3) * fps); const seg = y.slice(a, b); return seg.length && Math.max(...y90.slice(a, b)) <= 24; });
+  check("readable on a phone (not too dark)", dark.length <= Math.max(1, Math.floor(shots.length * 0.15)) && black.length === 0, `${dark.length}/${shots.length} shots with mid-frame mean luma < 22${dark.length ? ` (at ${dark.map((s) => (s.t0 + from).toFixed(1)).join(", ")} s)` : ""}${black.length ? ` · ${black.length} practically black shot(s) at ${black.map((s) => (s.t0 + from).toFixed(1)).join(", ")} s` : ""}`);
+  const tmp = path.join(qaDir, "tmp");
+  fs.mkdirSync(tmp, { recursive: true });
+  let n = 0;
+  for (const s of shots) for (const f of [0.12, 0.5, 0.88]) {
+    const t = Math.min(dur - 0.05, s.t0 + (s.t1 - s.t0) * f);
+    run("ffmpeg", ["-v", "error", "-y", "-ss", t.toFixed(3), "-i", video, "-frames:v", "1", "-vf", `scale=${tw}:${thh}`, path.join(tmp, `f${String(n++).padStart(3, "0")}.png`)]);
+  }
+  const cols = portraitV ? 9 : 6;
+  run("ffmpeg", ["-v", "error", "-y", "-pattern_type", "glob", "-i", path.join(tmp, "f*.png"), "-vf", `tile=${cols}x${Math.ceil(n / cols)}`, "-frames:v", "1", path.join(qaDir, "shots_start_mid_end.jpg")]);
+  fs.rmSync(tmp, { recursive: true, force: true });
+  console.log(`  info  ${shots.length} shots sampled at start/middle/end → ${path.join(qaDir, "shots_start_mid_end.jpg")}`);
+}
+fs.writeFileSync(path.join(qaDir, "qa.json"), JSON.stringify({ video, duration: dur, fps, checks, cutsAt: jumps, contactSheets: pages, contactPages: pageRanges }, null, 1));
+const failed = checks.filter((c) => !c.ok);
+console.log(failed.length ? `\nQA: ${failed.length} check(s) FAILED — fix before delivering` : `\nQA: all ${checks.length} automated checks passed — now review ${qaDir}/*.jpg`);
+process.exit(failed.length ? 3 : 0);
+
+==== 6401 scripts/transcribe.mjs
+// Word timings for a voice-over → JSON [[word, start, end], …] (VO seconds).
+//   node scripts/transcribe.mjs <vo.mp3> --out=stories/<id>/words.json [--script=script.txt] [--lang=id]
+//   node scripts/transcribe.mjs <any/path/vo.mp3> --id=<id> [--script=…]   copies the VO to public/audio/<id>.<ext>
+//                                                                          and writes stories/<id>/words.json
+//
+// 1. whisper.cpp when available (WHISPER_CLI + WHISPER_MODEL, or `whisper-cli` on PATH with a model in
+//    ~/.cache/whisper.cpp or ./models) — real word timings.
+// 2. otherwise, with the script text: the VO's speech segments (silence detection) are matched to the
+//    script's sentences and words are spread by length inside each segment — close enough for beats
+//    and captions, not exact per word.
+// Without whisper and without a script there is nothing to align: the script text must be provided.
+
+import { spawnSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
+const args = process.argv.slice(2);
+const file = args.find((a) => !a.startsWith("--"));
+const opt = (k, d) => (args.find((a) => a.startsWith(`--${k}=`)) ?? `=${d ?? ""}`).split("=").slice(1).join("=");
+const id = opt("id");
+if (id && !/^[a-z0-9-]+$/.test(id)) { console.error(`--id "${id}" must use only a-z, 0-9 and "-"`); process.exit(1); }
+const out = opt("out") || (id ? `stories/${id}/words.json` : "");
+if (file && fs.existsSync(file) && id) {
+  const dst = path.join("public", "audio", `${id}${path.extname(file).toLowerCase() || ".mp3"}`);
+  fs.mkdirSync(path.dirname(dst), { recursive: true });
+  if (path.resolve(dst) !== path.resolve(file)) fs.copyFileSync(file, dst);
+  console.log(`vo: ${dst}  →  story.json "vo": { "file": "${path.relative("public", dst)}", "offset": 0.4 }`);
+}
+if (!file || !fs.existsSync(file) || !out) {
+  console.error("usage: node scripts/transcribe.mjs <vo.mp3> (--id=<id> | --out=stories/<id>/words.json) [--script=script.txt] [--lang=id]");
+  process.exit(1);
+}
+const run = (cmd, a) => spawnSync(cmd, a, { encoding: "utf8", maxBuffer: 1 << 28 });
+const duration = Number(run("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", file]).stdout.trim());
+
+const findWhisper = () => {
+  const home = os.homedir();
+  const cands = [process.env.WHISPER_CLI, run("sh", ["-c", "command -v whisper-cli"]).stdout.trim(), "/opt/homebrew/bin/whisper-cli", "/usr/local/bin/whisper-cli"].filter(Boolean);
+  const cli = cands.find((c) => fs.existsSync(c));
+  const modelDirs = [path.join(home, ".cache/whisper.cpp"), path.resolve("models"), "/opt/homebrew/share/whisper-cpp"];
+  let model = process.env.WHISPER_MODEL && fs.existsSync(process.env.WHISPER_MODEL) ? process.env.WHISPER_MODEL : null;
+  if (!model) for (const d of modelDirs) { if (!fs.existsSync(d)) continue; const m = fs.readdirSync(d).filter((f) => f.endsWith(".bin")).sort((a, b) => (b.includes("large") ? 1 : 0) - (a.includes("large") ? 1 : 0))[0]; if (m) { model = path.join(d, m); break; } }
+  return cli && model ? { cli, model } : null;
+};
+
+let words = null, method = "";
+const W = findWhisper();
+if (W) {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "cf-vo-"));
+  const wav = path.join(tmp, "vo16k.wav");
+  run("ffmpeg", ["-v", "error", "-y", "-i", file, "-ar", "16000", "-ac", "1", wav]);
+  run(W.cli, ["-m", W.model, "-f", wav, "-l", opt("lang", "id"), "-ml", "1", "-sow", "-ojf", "-of", path.join(tmp, "w")]);
+  try {
+    const j = JSON.parse(fs.readFileSync(path.join(tmp, "w.json"), "utf8"));
+    words = j.transcription.map((s) => [s.text.trim(), s.offsets.from / 1000, s.offsets.to / 1000]).filter((w) => w[0]);
+    method = `whisper.cpp (${path.basename(W.model)})`;
+  } catch { words = null; }
+  fs.rmSync(tmp, { recursive: true, force: true });
+}
+
+if (!words) {
+  const scriptFile = opt("script");
+  if (!scriptFile || !fs.existsSync(scriptFile)) {
+    console.error("No whisper.cpp found and no --script given. Provide the narration text (e.g. --script=stories/<id>/script.txt) or install whisper.cpp (see the skill's references/setup.md).");
+    process.exit(2);
+  }
+  const text = fs.readFileSync(scriptFile, "utf8").replace(/\s+/g, " ").trim();
+  // speech segments from silence detection
+  const log = run("ffmpeg", ["-v", "info", "-i", file, "-af", "silencedetect=n=-38dB:d=0.18", "-f", "null", "-"]).stderr;
+  const st = [...log.matchAll(/silence_start: ([\d.]+)/g)].map((m) => Number(m[1]));
+  const en = [...log.matchAll(/silence_end: ([\d.]+)/g)].map((m) => Number(m[1]));
+  const segs = [];
+  let cur = 0;
+  st.forEach((s, i) => { if (s - cur > 0.12) segs.push([cur, s]); cur = en[i] ?? duration; });
+  if (duration - cur > 0.12) segs.push([cur, duration]);
+  const toks = text.split(" ").filter(Boolean);
+  // sentences / clauses = groups ending in punctuation; map groups to segments by cumulative length
+  const total = toks.reduce((s, w) => s + w.length + 1, 0);
+  const speech = segs.reduce((s, [a, b]) => s + (b - a), 0);
+  // speech-time position for a fraction of the text, then into real time through the segments
+  const toTime = (frac) => {
+    let need = frac * speech;
+    for (const [a, b] of segs) { if (need <= b - a) return a + need; need -= b - a; }
+    return segs.length ? segs[segs.length - 1][1] : duration;
+  };
+  // snap clause ends to the nearest segment end when one is close
+  let acc = 0;
+  words = toks.map((w) => {
+    const a = acc / total;
+    acc += w.length + 1;
+    const b = (acc - 1) / total;
+    let t0 = toTime(a), t1 = toTime(b);
+    if (/[.,?!;:]$/.test(w)) { const near = segs.map((s) => s[1]).reduce((best, e) => (Math.abs(e - t1) < Math.abs(best - t1) ? e : best), t1); if (Math.abs(near - t1) < 0.6) t1 = near; }
+    return [w, +t0.toFixed(2), +Math.max(t0 + 0.08, t1).toFixed(2)];
+  });
+  // keep times monotonic
+  for (let i = 1; i < words.length; i++) if (words[i][1] < words[i - 1][2]) words[i][1] = words[i - 1][2];
+  method = `script aligned to ${segs.length} speech segments (approximate word timing)`;
+}
+
+fs.mkdirSync(path.dirname(out), { recursive: true });
+fs.writeFileSync(out, JSON.stringify(words.map(([w, a, b]) => [w, +a.toFixed(2), +b.toFixed(2)])));
+console.log(`words: ${out} — ${words.length} words, ${duration.toFixed(2)} s, via ${method}`);
+console.log(words.map(([w, a]) => `${a.toFixed(2)} ${w}`).join("  "));
+
+==== 14985 src/kits/panelverse/catalog/Catalog.tsx
+import React, { useLayoutEffect, useRef } from "react";
+import { AbsoluteFill, useCurrentFrame } from "remotion";
+import { Box3, Group, Vector3 } from "three";
+import { ComicStage } from "../engine/three/ComicStage.tsx";
+import { ComicCharacter } from "../engine/three/ComicCharacter.tsx";
+import { LOOKS } from "../engine/three/looks.ts";
+import { EXPR, STAND } from "../engine/three/rig.ts";
+import { LIB } from "../engine/three/library.tsx";
+import { SetRenderer } from "../engine/three/sets.tsx";
+import { SET_PRESETS } from "../engine/three/setPresets.ts";
+import type { SetSpec, StageLook } from "../engine/three/setTypes.ts";
+import { LANDSCAPE, LAYOUTS, PANEL0, wideFit, wideQuad, type Quad } from "../engine/panels/geometry.ts";
+import { LivingPanel } from "../engine/panels/LivingPanel.tsx";
+import { CaptionBox, ImpactTypography, InkBurst, ShockLines, SfxText, SpeedLines, Stamp } from "../engine/fx/ComicFx.tsx";
+import { PaperTexture } from "../engine/fx/PaperTexture.tsx";
+import { FontGate } from "../engine/FontGate.tsx";
+import { CanvasCtx } from "../engine/three/Toon.tsx";
+import { ShotRenderer } from "../director/ShotRenderer.tsx";
+import { frameCam } from "../director/kit.ts";
+import type { ShotDef } from "../director/types.ts";
+import { FONT_IMPACT, FONT_LETTER } from "../theme/fonts.ts";
+import { BLUE, INK, PAPER } from "../theme/palette.ts";
+
+// Element catalog: one still per page, so a director (or a buyer) can SEE what exists before writing
+// a story. `node scripts/stills.mjs out/catalog 0,1,2,… PanelverseCatalog` → contact sheet.
+
+const ORTHO = { pos: [0, 0, 120] as [number, number, number], target: [0, 0, 0] as [number, number, number], fov: (2 * Math.atan(8 / 120) * 180) / Math.PI, roll: 0 };
+const PX = 120; // px per world unit with ORTHO
+const wx = (px: number) => (px - 540) / PX;
+const wy = (py: number) => (960 - py) / PX;
+
+/** scales + centres its children to fit a cube of `size` world units */
+const Fit: React.FC<{ size: number; children: React.ReactNode }> = ({ size, children }) => {
+  const outer = useRef<Group>(null);
+  const inner = useRef<Group>(null);
+  useLayoutEffect(() => {
+    if (!outer.current || !inner.current) return;
+    inner.current.position.set(0, 0, 0);
+    outer.current.scale.setScalar(1);
+    outer.current.updateMatrixWorld(true);
+    const b = new Box3().setFromObject(inner.current);
+    const s = b.getSize(new Vector3()), c = b.getCenter(new Vector3());
+    const k = size / Math.max(s.x, s.y, s.z * 0.6, 1e-3);
+    inner.current.position.set(-c.x, -c.y, -c.z);
+    outer.current.scale.setScalar(k);
+  });
+  return (
+    <group ref={outer}>
+      <group ref={inner}>{children}</group>
+    </group>
+  );
+};
+
+const Title: React.FC<{ text: string; sub?: string }> = ({ text, sub }) => (
+  <div style={{ position: "absolute", left: 40, top: 40, right: 40, fontFamily: `"${FONT_IMPACT}"`, fontSize: 70, color: INK, letterSpacing: 3 }}>
+    {text}
+    {sub ? <div style={{ fontFamily: `"${FONT_LETTER}"`, fontWeight: 700, fontSize: 30 }}>{sub}</div> : null}
+  </div>
+);
+const Label: React.FC<{ x: number; y: number; text: string; w?: number }> = ({ x, y, text, w = 340 }) => (
+  <div style={{ position: "absolute", left: x - w / 2, top: y, width: w, textAlign: "center", fontFamily: `"${FONT_LETTER}"`, fontWeight: 700, fontSize: 30, color: INK, background: "rgba(246,232,200,0.85)" }}>{text}</div>
+);
+
+const ITEMS = () => Object.keys(LIB);
+const PER = 12;
+const itemPages = () => Math.ceil(ITEMS().length / PER);
+const SETS = Object.keys(SET_PRESETS);
+const STAGES: StageLook[] = ["burst", "spotlight", "split", "tunnel", "paper", "dots", "cliff", "void"];
+const LAYOUT_NAMES = Object.keys(LAYOUTS) as (keyof typeof LAYOUTS)[];
+const EXPRS = Object.keys(EXPR) as (keyof typeof EXPR)[];
+// page plan
+export const CATALOG_PAGES = 8 + 1 + 2 + SETS.length + 2 + 1 + 1; // items (≤8 pages) + looks + expressions + sets + stages + layouts + fx
+
+const ItemsPage: React.FC<{ page: number }> = ({ page }) => {
+  const names = ITEMS().slice(page * PER, page * PER + PER);
+  return (
+    <>
+      <ComicStage width={1080} height={1920} frame={0} cam={ORTHO} bg={PAPER} ink={1}>
+        {names.map((n, i) => {
+          const cx = 180 + (i % 3) * 360, cy = 300 + Math.floor(i / 3) * 420;
+          return (
+            <group key={n} position={[wx(cx), wy(cy), 0]} rotation={[0.3, -0.55, 0]}>
+              <Fit size={2.3}>{LIB[n].render({ f: 0, t: 10 })}</Fit>
+            </group>
+          );
+        })}
+      </ComicStage>
+      <Title text={`ITEMS ${page + 1}/${itemPages()}`} sub="set items / item props — type name below" />
+      {names.map((n, i) => (
+        <Label key={n} x={180 + (i % 3) * 360} y={300 + Math.floor(i / 3) * 420 + 150} text={n} />
+      ))}
+    </>
+  );
+};
+
+const LooksPage: React.FC = () => {
+  const names = Object.keys(LOOKS) as (keyof typeof LOOKS)[];
+  return (
+    <>
+      <ComicStage width={1080} height={1920} frame={0} cam={ORTHO} bg={PAPER} ink={1}>
+        {names.map((n, i) => {
+          const cx = 135 + (i % 4) * 270, cy = 470 + Math.floor(i / 4) * 540;
+          return (
+            <group key={n} position={[wx(cx), wy(cy) - 1.5, 0]} rotation={[0.12, 0.35, 0]} scale={1.15}>
+              <ComicCharacter look={LOOKS[n]} pose={STAND} expr={{ ...EXPR.calm, blink: false }} shadow={false} />
+            </group>
+          );
+        })}
+      </ComicStage>
+      <Title text="CAST LOOKS" sub="LOOKS.<name> or look({...}) — hair, outfit, colours, build" />
+      {names.map((n, i) => (
+        <Label key={n} x={135 + (i % 4) * 270} y={470 + Math.floor(i / 4) * 540 + 200} text={n} w={250} />
+      ))}
+    </>
+  );
+};
+
+const ExprPage: React.FC<{ page: number }> = ({ page }) => {
+  const names = EXPRS.slice(page * 12, page * 12 + 12);
+  return (
+    <>
+      <ComicStage width={1080} height={1920} frame={0} cam={ORTHO} bg={PAPER} ink={1} light={[-0.35, 0.55, 0.9]}>
+        {names.map((n, i) => {
+          const cx = 180 + (i % 3) * 360, cy = 330 + Math.floor(i / 3) * 420;
+          const look = i % 2 ? LOOKS.sari : LOOKS.raka;
+          return (
+            <group key={n} position={[wx(cx), wy(cy) - 2.25 * 2.5, 0]} scale={2.5} rotation={[0.05, 0.35, 0]}>
+              <ComicCharacter look={look} pose={STAND} expr={{ ...EXPR[n], blink: false }} shadow={false} bust />
+            </group>
+          );
+        })}
+      </ComicStage>
+      <Title text={`EXPRESSIONS ${page + 1}/2`} sub="EXPR.<name> (mix any fields: browIn, eyeSize, mouth, tears…)" />
+      {names.map((n, i) => (
+        <Label key={n} x={180 + (i % 3) * 360} y={330 + Math.floor(i / 3) * 420 + 165} text={n} />
+      ))}
+    </>
+  );
+};
+
+const SetPage: React.FC<{ name: string }> = ({ name }) => {
+  const set = SET_PRESETS[name];
+  const ext = set.kind === "exterior";
+  return (
+    <>
+      <ComicStage width={1080} height={1920} frame={30} cam={{ pos: [0, ext ? 2.6 : 2.3, ext ? 10 : 8.4], target: [0, 1.5, -1], fov: 44, roll: 0 }} bg={ext ? "#7FC3EA" : PAPER} ink={1}>
+        <SetRenderer set={set} f={30} />
+        <ComicCharacter look={LOOKS.raka} pose={{ ...STAND, pos: [-0.6, 0, 1.2], rotY: 0.4 }} expr={EXPR.calm} />
+      </ComicStage>
+      <Title text={`SET: ${name}`} sub="SET_PRESETS.<name> — remix colours / items per story" />
+    </>
+  );
+};
+
+const StagePage: React.FC<{ page: number }> = ({ page }) => {
+  const looks = STAGES.slice(page * 4, page * 4 + 4);
+  const quads = LAYOUTS.grid4();
+  return (
+    <>
+      {looks.map((l, i) => {
+        const set: SetSpec = { kind: "stage", look: l, a: i % 2 ? "navy" : "red", b: "yellow", gap: 1.2 };
+        return (
+          <LivingPanel key={l} geom={{ pts: quads[i] as Quad, move: [0, 0], rot: 0, scale: 1, border: 8, iris: 0, fit: 1 }}>
+            <ComicStage width={1080} height={1920} frame={20} cam={{ pos: [0, 2.4, 15], target: [0, 1.6, 0], fov: 40, roll: 0 }} bg={BLUE} ink={1}>
+              <SetRenderer set={set} f={20} />
+              <ComicCharacter look={LOOKS.dinda} pose={{ ...STAND, pos: [l === "cliff" ? 1.1 : 0, 0, 0] }} expr={EXPR.calm} />
+            </ComicStage>
+          </LivingPanel>
+        );
+      })}
+      <Title text={`STAGE LOOKS ${page + 1}/2`} sub="set { kind: 'stage', look, a, b } — abstract comic spaces" />
+      {looks.map((l, i) => (
+        <Label key={l} x={i % 2 ? 790 : 290} y={i < 2 ? 820 : 1500} text={l} />
+      ))}
+    </>
+  );
+};
+
+const LayoutsPage: React.FC = () => (
+  <>
+    <Title text="PANEL LAYOUTS" sub="LAYOUTS.<name>() → quads for panel(…)" />
+    <svg width="1080" height="1920" style={{ position: "absolute", left: 0, top: 0 }}>
+      {LAYOUT_NAMES.map((n, i) => {
+        const ox = 40 + (i % 4) * 255, oy = 230 + Math.floor(i / 4) * 560, k = 0.2;
+        return (
+          <g key={n} transform={`translate(${ox} ${oy}) scale(${k})`}>
+            <rect x={0} y={0} width={1080} height={1920} fill="#fff7e6" stroke={INK} strokeWidth={8} />
+            {(LAYOUTS[n] as () => Quad[])().map((q, j) => (
+              <path key={j} d={`M${q.map((p) => p.join(",")).join("L")}Z`} fill={["#F5CC27", "#EF4035", "#2674B9", "#1B927C"][j % 4]} stroke={INK} strokeWidth={14} opacity={0.9} />
+            ))}
+          </g>
+        );
+      })}
+    </svg>
+    {LAYOUT_NAMES.map((n, i) => (
+      <Label key={n} x={40 + (i % 4) * 255 + 108} y={230 + Math.floor(i / 4) * 560 + 392} text={n} w={230} />
+    ))}
+  </>
+);
+
+const FxPage: React.FC = () => (
+  <>
+    <SpeedLines f={20} from={0} to={100} opacity={0.35} />
+    <InkBurst f={20} at={0} dur={100} x={540} y={520} r={330} />
+    <ImpactTypography f={30} at={0} to={100} text="IMPACT!" x={540} y={520} size={150} />
+    <CaptionBox f={40} at={0} to={100} text="CAPTION..." x={60} y={210} size={70} />
+    <SfxText f={20} at={0} to={100} text="KRING!" x={300} y={980} size={140} />
+    <Stamp f={20} at={0} to={100} text="LUNAS" x={760} y={1000} size={100} />
+    <ShockLines f={20} from={0} to={100} x={540} y={1450} r={130} />
+    <div style={{ position: "absolute", left: 470, top: 1380, width: 140, height: 140, borderRadius: 70, background: "#F5CC27", border: `8px solid ${INK}` }} />
+    <Label x={540} y={1640} text="fx: impact · caption · burst · speed · sfxText · stamp · shock · flood · flash · impactFrame · halftoneWipe" w={1000} />
+  </>
+);
+
+export const Catalog: React.FC = () => {
+  const p = useCurrentFrame();
+  let page: React.ReactNode = null;
+  const ip = itemPages();
+  if (p < 8) page = p < ip ? <ItemsPage page={p} /> : <Title text="(no more items)" />;
+  else if (p === 8) page = <LooksPage />;
+  else if (p < 11) page = <ExprPage page={p - 9} />;
+  else if (p < 11 + SETS.length) page = <SetPage name={SETS[p - 11]} />;
+  else if (p < 13 + SETS.length) page = <StagePage page={p - 11 - SETS.length} />;
+  else if (p === 13 + SETS.length) page = <LayoutsPage />;
+  else page = <FxPage />;
+  return (
+    <AbsoluteFill style={{ background: PAPER }}>
+      <FontGate>{page}</FontGate>
+      <PaperTexture />
+    </AbsoluteFill>
+  );
+};
+
+// ── The wide (16:9) page: every layout's landscape arrangement, drawn and alive ────────────────
+// `node scripts/stills.mjs out/catalog-wide 0,1,…,13 PanelverseCatalogWide 0.5`. Page 0 = the 12 arrangements,
+// pages 1–12 = each layout with a shot framed the portrait way (subject as high as its portrait panel) and
+// re-fitted by wideFit — what an unchanged story looks like with --wide; page 13 = FX on the wide page.
+export const CATALOG_WIDE_PAGES = 1 + LAYOUT_NAMES.length + 1;
+const TONES = ["#F5CC27", "#EF4035", "#2674B9", "#1B927C"];
+const WideLayouts: React.FC = () => (
+  <>
+    <Title text="PANEL LAYOUTS 16:9" sub="the same LAYOUTS.<name>() quads on the wide page (--wide)" />
+    <svg width="1920" height="1080" style={{ position: "absolute", left: 0, top: 0 }}>
+      {LAYOUT_NAMES.map((n, i) => (
+        <g key={n} transform={`translate(${70 + (i % 4) * 460} ${190 + Math.floor(i / 4) * 290}) scale(0.2)`}>
+          <rect x={0} y={0} width={1920} height={1080} fill="#fff7e6" stroke={INK} strokeWidth={8} />
+          {(LAYOUTS[n] as () => Quad[])().map((q, j) => (
+            <path key={j} d={`M${wideQuad(q).map((p) => p.join(",")).join("L")}Z`} fill={TONES[j % 4]} stroke={INK} strokeWidth={14} opacity={0.9} />
+          ))}
+        </g>
+      ))}
+    </svg>
+    {LAYOUT_NAMES.map((n, i) => (
+      <Label key={n} x={70 + (i % 4) * 460 + 192} y={190 + Math.floor(i / 4) * 290 + 222} text={n} w={300} />
+    ))}
+  </>
+);
+const SWATCHES = ["red", "navy", "teal", "blue"] as const;
+const WideLive: React.FC<{ name: keyof typeof LAYOUTS }> = ({ name }) => (
+  <>
+    {(LAYOUTS[name] as () => Quad[])().map((q, i) => {
+      // framed the way a portrait story frames it: head and shoulders as high as the portrait panel
+      const frac = Math.min(1, (q[3][1] - q[0][1] + q[2][1] - q[1][1]) / 2 / 1920), tall = frac > 0.6;
+      const shot: ShotDef = {
+        start: 0, bg: BLUE, ink: 1.15,
+        set: i % 2 ? { kind: "stage", look: "spotlight", a: SWATCHES[i % 4], b: "yellow" } : { kind: "stage", look: "burst", a: SWATCHES[i % 4], b: "yellow" },
+        camera: [{ f: 0, v: frameCam([0, tall ? 1.5 : 1.9, 0], [0.15, tall ? 0.1 : -0.05, 1], tall ? 3.6 : 1.6, frac, tall ? 34 : 24) }],
+        actors: [{ cast: "a", pose: [{ f: 0, v: { ...STAND } }], expr: [{ f: 0, v: { ...EXPR.calm, blink: false } }] }],
+      };
+      const wide = wideQuad(q);
+      return (
+        <LivingPanel key={i} geom={{ ...PANEL0, pts: wide, border: wide === q ? 0 : 9 }}>
+          <ShotRenderer shot={shot} cast={{ a: i % 2 ? LOOKS.raka : LOOKS.dinda }} frame={0} fit={wideFit(q, wide)} />
+        </LivingPanel>
+      );
+    })}
+    <Label x={960} y={1034} text={`${name} — wide`} w={300} />
+  </>
+);
+const WideFx: React.FC = () => (
+  <>
+    <SpeedLines f={20} from={0} to={100} opacity={0.35} />
+    <InkBurst f={20} at={0} dur={100} x={960} y={470} r={330} />
+    <ImpactTypography f={30} at={0} to={100} text="IMPACT!" x={960} y={470} size={150} />
+    <CaptionBox f={40} at={0} to={100} text="CAPTION..." x={64} y={60} size={70} />
+    <SfxText f={20} at={0} to={100} text="KRING!" x={360} y={760} size={140} />
+    <Stamp f={20} at={0} to={100} text="LUNAS" x={1560} y={760} size={100} />
+    <ShockLines f={20} from={0} to={100} x={1560} y={300} r={130} />
+    <div style={{ position: "absolute", left: 1490, top: 230, width: 140, height: 140, borderRadius: 70, background: "#F5CC27", border: `8px solid ${INK}` }} />
+    <Label x={960} y={980} text="fx on the wide page: same sizes, lettering moved with its panel (override: wide: { x, y, size })" w={1500} />
+  </>
+);
+export const CatalogWide: React.FC = () => {
+  const p = useCurrentFrame();
+  return (
+    <AbsoluteFill style={{ background: PAPER }}>
+      <CanvasCtx.Provider value={LANDSCAPE}>
+        <FontGate>{p === 0 ? <WideLayouts /> : p <= LAYOUT_NAMES.length ? <WideLive name={LAYOUT_NAMES[p - 1]} /> : <WideFx />}</FontGate>
+      </CanvasCtx.Provider>
+      <PaperTexture />
+    </AbsoluteFill>
+  );
+};
+
+==== 11843 src/kits/panelverse/director/lint.ts
+// Story lint: validity + safe-zone + anti-monotony rules, run by scripts/pv-make.mjs before rendering.
+// Pure TS (Node + browser). Errors stop the make; warnings are printed for the director to judge.
+import { samplePanel, boundsOf } from "../engine/panels/geometry.ts";
+import { sampleCam } from "../engine/camera.ts";
+import type { StoryDef } from "./types.ts";
+
+export type LintContext = { voEndFrame: number; items: string[]; props: string[] };
+export type LintResult = { errors: string[]; warnings: string[]; stats: Record<string, string | number> };
+
+const sec = (f: number) => `${(f / 60).toFixed(1)} s`;
+/** width of one letter as a share of the font size, per lettering kind (an estimate, also used to place lettering on the wide page) */
+export const TEXT_W: Record<string, number> = { impact: 0.46, title: 0.6, sfxText: 0.52, stamp: 0.62, caption: 0.5 };
+
+/** what the viewer sees at frame f, reduced to a layout signature */
+const signature = (st: StoryDef, f: number) => {
+  const vis = st.panels.filter((p) => f >= p.from && f <= (p.shatter ? Math.max(p.to, p.shatter.at + p.shatter.dur) : p.to));
+  if (!vis.length) return "empty";
+  const parts = vis.map((p) => {
+    const g = samplePanel(p.geom, f);
+    const b = boundsOf(g.pts);
+    const [cw, ch] = st.wide ? [1920, 1080] : [1080, 1920];
+    const area = (Math.min(b.x1, cw) - Math.max(b.x0, 0)) * (Math.min(b.y1, ch) - Math.max(b.y0, 0)) * g.scale * g.scale;
+    return area / (cw * ch);
+  }).filter((a) => a > 0.02);
+  const full = parts.filter((a) => a > 0.92).length;
+  const small = parts.length - full;
+  if (full && small) return "full+inset";
+  if (full) return "full";
+  return small === 1 ? "page-1" : `page-${Math.min(small, 4)}`;
+};
+
+export const lintStory = (st: StoryDef, ctx: LintContext): LintResult => {
+  const E: string[] = [], W: string[] = [];
+  const D = st.durationInFrames;
+  // ── basics ────────────────────────────────────────────────────────────────────────────────
+  if (!/^[a-z0-9-]+$/.test(st.id)) E.push(`id "${st.id}" must use only a-z, 0-9 and "-"`);
+  if (D < ctx.voEndFrame + 12) E.push(`durationInFrames ${D} (${sec(D)}) ends before / right on the VO end ${sec(ctx.voEndFrame)} — the narration would be cut`);
+  if (D > ctx.voEndFrame + 300) W.push(`${sec(D - ctx.voEndFrame)} after the VO ends — keep the closing hold under ~3 s`);
+  // ── references ───────────────────────────────────────────────────────────────────────────
+  const shotIds = Object.keys(st.shots);
+  const items = new Set([...ctx.items, ...(st.elements ?? [])]);
+  const props = new Set(ctx.props);
+  for (const p of st.panels) {
+    if (!st.shots[p.shot]) E.push(`panel uses unknown shot "${p.shot}" (shots: ${shotIds.join(", ")})`);
+    if (p.to <= p.from) E.push(`panel "${p.shot}" ends (${p.to}) before it starts (${p.from})`);
+    if (!p.geom.length) E.push(`panel "${p.shot}" has no geometry keys`);
+  }
+  for (const id of shotIds) if (!st.panels.some((p) => p.shot === id)) W.push(`shot "${id}" is never shown in a panel`);
+  for (const [id, s] of Object.entries(st.shots)) {
+    if (!s.camera.length) E.push(`shot "${id}" has no camera keys`);
+    for (const it of s.set.items ?? []) if (!items.has(it.type)) E.push(`shot "${id}": set item "${it.type}" is not a library item or a declared story element`);
+    const allProps = [...(s.props ?? []), ...s.actors.flatMap((a) => [...(a.torso ?? []), ...(a.head ?? []), ...(a.heldR ? [a.heldR] : []), ...(a.heldL ? [a.heldL] : [])])];
+    for (const p of allProps) {
+      if (!props.has(p.kind)) E.push(`shot "${id}": prop kind "${p.kind}" does not exist (${[...props].join(", ")})`);
+      if (p.kind === "item") for (const k of p.keys) if (k.v.type && !items.has(String(k.v.type))) E.push(`shot "${id}": item prop "${k.v.type}" is not a library item or declared element`);
+    }
+    for (const a of s.actors) if (!st.cast[a.cast]) E.push(`shot "${id}": actor "${a.cast}" is not in cast (${Object.keys(st.cast).join(", ")})`);
+  }
+  // ── custom elements ("think up elements for THIS script") ────────────────────────────────
+  const used = new Set<string>();
+  for (const s of Object.values(st.shots)) {
+    for (const it of s.set.items ?? []) used.add(it.type);
+    for (const p of [...(s.props ?? []), ...s.actors.flatMap((a) => [...(a.torso ?? []), ...(a.head ?? []), ...(a.heldR ? [a.heldR] : []), ...(a.heldL ? [a.heldL] : [])])])
+      if (p.kind === "item") for (const k of p.keys) if (k.v.type) used.add(String(k.v.type));
+  }
+  if (!st.elements?.length) E.push("no story elements: design at least one element for this script in elements.tsx (registerItems) and list it in story.elements");
+  for (const el of st.elements ?? []) if (!used.has(el)) W.push(`story element "${el}" is declared but never placed`);
+  // ── beat sheet ───────────────────────────────────────────────────────────────────────────
+  const beats = st.beats ?? [];
+  const minBeats = Math.max(3, Math.floor(D / 60 / 3.5));
+  if (beats.length < minBeats) E.push(`beat sheet has ${beats.length} beats — write at least ${minBeats} (one per 2–3.5 s of VO, each with words, idea and device)`);
+  const devices = new Set(beats.map((b) => b.device.toLowerCase()));
+  if (beats.length && devices.size < Math.min(4, beats.length)) E.push(`only ${devices.size} different devices in the beat sheet — vary them (${[...devices].join(", ")})`);
+  for (let i = 1; i < beats.length; i++) if (beats[i].device.toLowerCase() === beats[i - 1].device.toLowerCase()) W.push(`beats ${i} and ${i + 1} use the same device "${beats[i].device}"`);
+  // ── variety: layouts / transitions / fx ──────────────────────────────────────────────────
+  const sigTime: Record<string, number> = {};
+  let empty = 0, emptyRun = 0;
+  for (let f = 0; f < D; f += 6) {
+    const s = signature(st, f);
+    sigTime[s] = (sigTime[s] ?? 0) + 6;
+    if (s === "empty") { emptyRun += 6; empty = Math.max(empty, emptyRun); } else emptyRun = 0;
+  }
+  const layouts = Object.entries(sigTime).filter(([k, t]) => k !== "empty" && t >= 24).map(([k]) => k);
+  if (D > 600 && layouts.length < 3) E.push(`only ${layouts.length} screen layout(s) (${layouts.join(", ")}) — use at least 3 (full-bleed, a 2–4 panel page, an inset, a printed page…)`);
+  if (empty > 30) W.push(`${sec(empty)} with no panel on screen (blank page)`);
+  const moves = st.panels.flatMap((p) => p.moves ?? []).filter((m) => m.type !== "cut" && m.type !== "drift").sort((a, b) => a.at - b.at);
+  const moveTypes = new Set(moves.map((m) => m.type));
+  if (D > 600 && moveTypes.size < 3) E.push(`only ${moveTypes.size} transition type(s) (${[...moveTypes].join(", ")}) — use at least 3 different panel moves`);
+  for (let i = 2; i < moves.length; i++) if (moves[i].type === moves[i - 1].type && moves[i].type === moves[i - 2].type && moves[i].at - moves[i - 2].at > 30) W.push(`three "${moves[i].type}" transitions in a row (${sec(moves[i - 2].at)}–${sec(moves[i].at)})`);
+  const fxKinds = new Set(st.fx.map((c) => c.kind));
+  if (D > 600 && fxKinds.size < 3) W.push(`only ${fxKinds.size} kinds of comic FX — mix lettering, bursts, speed lines, captions, stamps, shock lines…`);
+  // ── lettering ────────────────────────────────────────────────────────────────────────────
+  const texts = st.fx.filter((c) => c.kind === "impact" || c.kind === "sfxText" || c.kind === "stamp" || c.kind === "caption") as Extract<StoryDef["fx"][number], { text: string }>[];
+  const bigText = texts.filter((c) => c.kind !== "caption");
+  if (bigText.length > Math.max(3, Math.ceil(D / 60 / 2.5))) W.push(`${bigText.length} lettering hits in ${sec(D)} — more than one per 2.5 s turns into a slideshow of words`);
+  for (const c of texts) {
+    const words = c.text.trim().split(/\s+/).length;
+    if (words > 3 && c.kind !== "caption") W.push(`"${c.text}" is ${words} words — impact lettering reads best at 1–3 words`);
+    const size = "size" in c && c.size ? c.size : 84;
+    const k = c.kind === "impact" && "font" in c && c.font === "title" ? TEXT_W.title : TEXT_W[c.kind] ?? 0.55;
+    const w = c.text.length * size * k + (c.kind === "caption" ? 80 : 0);
+    const x0 = c.kind === "caption" ? c.x : c.x - w / 2, x1 = c.kind === "caption" ? c.x + w : c.x + w / 2;
+    // the wide (16:9) page has no phone UI: lettering only has to stay inside the 1920×1080 frame
+    if (x0 < (st.wide ? 30 : 50) || x1 > (st.wide ? 1890 : 1030)) E.push(`"${c.text}" (${c.kind} at ${sec(c.at)}) is ≈${Math.round(w)} px wide and leaves the ${st.wide ? "wide " : ""}frame (${Math.round(x0)}–${Math.round(x1)}) — smaller size or shorter text`);
+    else if (!st.wide && x1 > 920 && c.kind !== "caption") W.push(`"${c.text}" reaches x=${Math.round(x1)} — TikTok/Reels buttons sit on the right edge (keep ≤ 920)`);
+    if (st.wide ? c.y < 30 || c.y > 1050 : c.y < 200 || c.y > 1480) E.push(st.wide ? `"${c.text}" at y=${c.y} is outside the wide frame (30–1050)` : `"${c.text}" at y=${c.y} is outside the mobile safe zone (200–1480)`);
+  }
+  // ── pacing: long static stretches ────────────────────────────────────────────────────────
+  for (let f0 = 0; f0 + 270 < D; f0 += 30) {
+    const sig = signature(st, f0);
+    if (sig !== "full") continue;
+    const p = st.panels.find((x) => f0 >= x.from && f0 <= x.to && signature(st, f0) === "full");
+    if (!p) continue;
+    const s = st.shots[p.shot];
+    const a = sampleCam(s.camera, f0 - s.start), b = sampleCam(s.camera, f0 + 270 - s.start);
+    const move = Math.hypot(a.pos[0] - b.pos[0], a.pos[1] - b.pos[1], a.pos[2] - b.pos[2]) + Math.abs(a.fov - b.fov) * 0.05;
+    const sameShot = st.panels.filter((x) => x.from <= f0 + 270 && x.to >= f0).length === 1;
+    const fxNear = st.fx.some((c) => ("at" in c ? c.at : c.from) > f0 && ("at" in c ? c.at : c.from) < f0 + 270);
+    if (sameShot && move < 0.05 && !fxNear) { W.push(`static: one full-screen shot with no camera move and no FX for 4.5 s from ${sec(f0)}`); break; }
+  }
+  const shotsShown = new Set(st.panels.map((p) => p.shot)).size;
+  if (shotsShown < Math.min(4, Math.ceil(D / 60 / 4))) W.push(`only ${shotsShown} shots for ${sec(D)} — a new picture every 3–4 s keeps a comic alive`);
+  const setPrints = new Set(Object.values(st.shots).map((s) => JSON.stringify([s.set.kind, s.set.look, s.set.wall, s.set.floor, s.set.time, (s.set.items ?? []).map((i) => i.type).sort()])));
+  if (shotIds.length > 2 && setPrints.size < 2) W.push("every shot uses the same set — change place, stage look or colours between beats");
+  return {
+    errors: E,
+    warnings: W,
+    stats: {
+      duration: sec(D),
+      shots: shotIds.length,
+      panels: st.panels.length,
+      layouts: layouts.join(" · "),
+      transitions: [...moveTypes].join(" · "),
+      fx: [...fxKinds].join(" · "),
+      beats: beats.length,
+      devices: [...devices].join(" · "),
+      elements: (st.elements ?? []).join(" · "),
+      lettering: texts.map((t) => t.text).join(" · "),
+    },
+  };
+};
+
+==== 6978 src/kits/panelverse/director/ShotRenderer.tsx
+import React, { useContext } from "react";
+import { ComicStage, sampleCam } from "../engine/three/ComicStage.tsx";
+import { ComicCharacter } from "../engine/three/ComicCharacter.tsx";
+import { CanvasCtx } from "../engine/three/Toon.tsx";
+import { samplePose, sampleExpr } from "../engine/three/rig.ts";
+import { SetRenderer, PlacedItem, setAnchors } from "../engine/three/sets.tsx";
+import { ChatBubble3D, Phone, Sign, type BubbleContent, type PhoneScreen } from "../engine/three/props.tsx";
+import { BaksoBowl, BreakingHeart, BuzzArcs, FloatingHearts, ImpactStar, ShatterBubble, Spoon, SteamPuffs, SteamWisps, ThoughtCloud, ThoughtTrail } from "../engine/three/storyProps.tsx";
+import type { V3 } from "../engine/types.ts";
+import { sample, shake } from "../engine/keyframes.ts";
+import type { Look } from "../engine/three/looks.ts";
+import type { SetSpec } from "../engine/three/setTypes.ts";
+import type { PropSpec, ShotDef } from "./types.ts";
+import type { SwatchKey } from "../theme/palette.ts";
+
+type Params = Record<string, unknown>;
+const n = (v: unknown, d = 0) => (typeof v === "number" ? v : d);
+const v3 = (v: unknown, d: V3 = [0, 0, 0]): V3 => (Array.isArray(v) ? (v as V3) : d);
+const sc = (v: unknown, d = 1): number | V3 => (Array.isArray(v) ? (v as V3) : n(v, d));
+
+/** Prop kinds usable in shots (`props`, actor `torso` / `head` / `heldR` / `heldL`). */
+export const PROPS: Record<string, (p: Params, f: number) => React.ReactNode> = {
+  /** any library item or story element, animated: { type, pos, rot, scale, sw, sw2, text, on, n } */
+  item: (p, f) => <PlacedItem spec={{ type: String(p.type), pos: v3(p.pos), rot: p.rot as V3 | number | undefined, scale: sc(p.scale), sw: p.sw as SwatchKey, sw2: p.sw2 as SwatchKey, text: p.text as string, sub: p.sub as string, on: Boolean(p.on), n: p.n as number, t: p.t as number }} f={f} />,
+  phone: (p) => <Phone screen={(p.screen as PhoneScreen) ?? { kind: "off" }} case={(p.case as SwatchKey) ?? "red"} position={v3(p.pos)} rotation={v3(p.rot)} scale={n(p.scale, 1)} />,
+  bubble: (p) =>
+    n(p.scale, 1) > 0.001 ? (
+      <ChatBubble3D w={n(p.w, 0.5)} h={n(p.h, 0.3)} tail={(p.tail as "left" | "right" | "none") ?? "left"} fill={p.fill as string | undefined} content={p.content as BubbleContent} position={v3(p.pos)} rotation={v3(p.rot)} scale={n(p.scale, 1)} opacity={n(p.opacity, 1)} />
+    ) : null,
+  shatterBubble: (p) => <ShatterBubble w={n(p.w, 0.5)} h={n(p.h, 0.3)} tail={(p.tail as "left" | "right") ?? "left"} fill={p.fill as string | undefined} content={p.content as BubbleContent} position={v3(p.pos)} rotation={v3(p.rot)} scale={n(p.scale, 1)} t={n(p.t)} />,
+  sign: (p) => (n(p.scale, 1) > 0.001 ? <Sign text={String(p.text ?? "")} sub={p.sub as string} w={n(p.w, 1)} h={n(p.h, 0.4)} sw={(p.sw as SwatchKey) ?? "paper"} font={(p.font as "impact" | "letter") ?? "impact"} position={v3(p.pos)} rotation={v3(p.rot)} scale={n(p.scale, 1)} /> : null),
+  thoughtCloud: (p, f) => <ThoughtCloud position={v3(p.pos)} scale={n(p.scale)} f={f} />,
+  thoughtTrail: (p, f) => <ThoughtTrail from={v3(p.from)} to={v3(p.to)} f={f} at={n(p.at)} />,
+  steam: (p, f) => <SteamPuffs origin={v3(p.pos)} f={f} count={n(p.count, 4)} spread={n(p.spread, 0.35)} size={n(p.size, 0.12) * n(p.amount, 1)} rise={n(p.rise, 0.9)} period={n(p.period, 48)} />,
+  wisps: (p, f) => <SteamWisps origin={v3(p.pos)} f={f} count={n(p.count, 3)} height={n(p.height, 0.12)} />,
+  heart: (p, f) => <BreakingHeart position={v3(p.pos)} scale={n(p.scale, 0.3)} crack={n(p.crack)} split={n(p.split)} f={f} />,
+  bowl: (p, f) => <BaksoBowl position={v3(p.pos)} f={f} balls={n(p.balls, 4)} />,
+  spoon: (p) => (
+    <group position={v3(p.pos)} rotation={v3(p.rot)}>
+      <Spoon withBakso={Boolean(p.bakso)} />
+    </group>
+  ),
+  hearts: (p, f) => <FloatingHearts origin={v3(p.pos)} f={f} at={n(p.at)} />,
+  buzz: (p, f) => <BuzzArcs position={v3(p.pos)} rotation={v3(p.rot)} on={p.on !== false} f={f} />,
+  impactStar: (p) => <ImpactStar position={v3(p.pos)} scale={n(p.scale)} rot={n(p.rot)} />,
+};
+export const PROP_KINDS = Object.keys(PROPS);
+
+const renderProp = (spec: PropSpec, f: number, key: React.Key) => {
+  if (spec.from !== undefined && f < spec.from) return null;
+  if (spec.to !== undefined && f > spec.to) return null;
+  const make = PROPS[spec.kind];
+  if (!make) throw new Error(`PANELVERSE: unknown prop kind "${spec.kind}" (use one of ${PROP_KINDS.join(", ")}, or kind "item" with a registered element)`);
+  return <React.Fragment key={key}>{make(sample<Params>(spec.keys, f), f)}</React.Fragment>;
+};
+
+export const shotLocalFrame = (shot: ShotDef, globalFrame: number) => {
+  const f = Math.max(0, globalFrame - shot.start);
+  return shot.freezeAt !== undefined ? Math.min(f, shot.freezeAt) : f;
+};
+
+/**
+ * Renders a ShotDef as a live ComicStage at the given global frame. Cameras are written for the 1080×1920
+ * canvas; on the wide page the lens is re-fitted per panel (`fit` = zoom of the picture, see `wideFit`).
+ */
+export const ShotRenderer: React.FC<{ shot: ShotDef; cast: Record<string, Look>; frame: number; fit?: number }> = ({ shot, cast, frame, fit = 1 }) => {
+  const { w, h } = useContext(CanvasCtx);
+  const f = shotLocalFrame(shot, frame);
+  const cam0 = sampleCam(shot.camera, f), zoom = (fit * 1920) / h;
+  const cam = zoom === 1 ? cam0 : { ...cam0, fov: (Math.atan(Math.tan((cam0.fov * Math.PI) / 360) / zoom) * 360) / Math.PI };
+  const sh: V3 = [0, 0, 0];
+  for (const s of shot.shakes ?? []) {
+    sh[0] += shake(f, s.at, s.dur, s.amp, s.seed ?? 1);
+    sh[1] += shake(f, s.at, s.dur, s.amp * 0.8, (s.seed ?? 1) + 7);
+  }
+  const set: SetSpec = shot.setKeys ? { ...shot.set, ...sample<Partial<SetSpec>>(shot.setKeys, f) } : shot.set;
+  const anchors = setAnchors(set);
+  return (
+    <ComicStage width={w} height={h} frame={f} cam={cam} shake={sh} bg={shot.bg} light={shot.light} ink={shot.ink ?? 1.15}>
+      <SetRenderer set={set} f={f} />
+      {shot.actors.map((a, i) => {
+        const look = cast[a.cast];
+        if (!look) throw new Error(`PANELVERSE: actor "${a.cast}" is not in story.cast`);
+        const body = (
+          <ComicCharacter
+            key={i}
+            look={look}
+            pose={samplePose(a.pose, f)}
+            expr={sampleExpr(a.expr, f)}
+            shadow={a.shadow ?? true}
+            torsoExtras={a.torso?.map((p, k) => renderProp(p, f, k))}
+            headExtras={a.head?.map((p, k) => renderProp(p, f, k))}
+            heldR={a.heldR ? renderProp(a.heldR, f, "hr") : undefined}
+            heldL={a.heldL ? renderProp(a.heldL, f, "hl") : undefined}
+            holdRotR={a.holdRotR}
+            holdRotL={a.holdRotL}
+          />
+        );
+        const an = a.anchor ? anchors[a.anchor] : undefined;
+        return an ? (
+          <group key={i} position={an.pos} rotation={an.rot}>
+            {body}
+          </group>
+        ) : (
+          body
+        );
+      })}
+      {shot.props?.map((p, i) => renderProp(p, f, i))}
+    </ComicStage>
+  );
+};
+
+==== 5471 src/kits/panelverse/director/StoryPlayer.tsx
+import React from "react";
+import { AbsoluteFill, Audio, staticFile, useCurrentFrame } from "remotion";
+import { ShotRenderer } from "./ShotRenderer.tsx";
+import { LivingPanel, PageCamera, PanelShard } from "../engine/panels/LivingPanel.tsx";
+import { LANDSCAPE, PAGECAM0, PORTRAIT, centerOf, samplePanel, shardsOf, type PageCam, type Pt } from "../engine/panels/geometry.ts";
+import { CaptionBox, Flash, HalftoneWipe, ImpactFrame, ImpactTypography, InkBurst, InkFlood, ShockLines, SpeedLines, SfxText, Stamp } from "../engine/fx/ComicFx.tsx";
+import { PaperTexture } from "../engine/fx/PaperTexture.tsx";
+import { FontGate } from "../engine/FontGate.tsx";
+import { CanvasCtx, RenderScaleCtx } from "../engine/three/Toon.tsx";
+import { EASES, clamp, hash, sample, shake } from "../engine/keyframes.ts";
+import type { FxCue, PanelCue, StoryDef } from "./types.ts";
+
+const renderPanel = (story: StoryDef, cue: PanelCue, f: number, key: React.Key) => {
+  const end = cue.shatter ? Math.max(cue.to, cue.shatter.at + cue.shatter.dur) : cue.to;
+  if (f < cue.from || f > end) return null;
+  const shot = story.shots[cue.shot];
+  if (!shot) throw new Error(`PANELVERSE: panel uses unknown shot "${cue.shot}"`);
+  const geom = samplePanel(cue.geom, f);
+  const cc: Pt = cue.contentCenter ?? centerOf(geom.pts);
+  if (cue.shatter && f >= cue.shatter.at) {
+    const t = (f - cue.shatter.at) / cue.shatter.dur;
+    if (t > 1) return null;
+    const k = EASES.in(clamp(t));
+    const sh = cue.shatter;
+    return (
+      <React.Fragment key={key}>
+        {shardsOf(geom.pts, sh.impact, sh.cuts).map((pts, i) => {
+          const c = centerOf(pts);
+          const dx = c[0] - sh.impact[0], dy = c[1] - sh.impact[1];
+          const l = Math.hypot(dx, dy) || 1;
+          const pop = EASES.out(clamp(t * 3)) * 26;
+          return (
+            <PanelShard key={i} pts={pts} contentCenter={cc} move={[(dx / l) * (pop + k * 1100), (dy / l) * (pop + k * 700) + k * k * 900]} rot={hash(i * 3.3 + 1) * 6 * EASES.out(clamp(t * 3)) + hash(i * 1.7) * 55 * k}>
+              <ShotRenderer shot={shot} cast={story.cast} frame={sh.at} fit={geom.fit} />
+            </PanelShard>
+          );
+        })}
+      </React.Fragment>
+    );
+  }
+  return (
+    <LivingPanel key={key} geom={geom} contentCenter={cc} dropShadow={cue.shadow ?? true}>
+      <ShotRenderer shot={shot} cast={story.cast} frame={f} fit={geom.fit} />
+    </LivingPanel>
+  );
+};
+
+const renderFx = (c: FxCue, f: number, key: React.Key) => {
+  switch (c.kind) {
+    case "impact":
+      return <ImpactTypography key={key} f={f} at={c.at} to={c.to} text={c.text} x={c.x} y={c.y} size={c.size} rot={c.rot} fill={c.fill} font={c.font} />;
+    case "caption":
+      return <CaptionBox key={key} f={f} at={c.at} to={c.to} text={c.text} x={c.x} y={c.y} size={c.size} fill={c.fill} />;
+    case "burst":
+      return <InkBurst key={key} f={f} at={c.at} dur={c.dur} x={c.x} y={c.y} r={c.r} fill={c.fill} inner={c.inner} seed={c.seed} spikes={16} />;
+    case "speed":
+      return <SpeedLines key={key} f={f} from={c.from} to={c.to} cx={c.cx} cy={c.cy} inner={c.inner} opacity={c.opacity} color={c.color} />;
+    case "flood":
+      return <InkFlood key={key} f={f} at={c.at} dur={c.dur} to={c.to} origins={c.origins} />;
+    case "flash":
+      return <Flash key={key} f={f} at={c.at} dur={c.dur} color={c.color} />;
+    case "sfxText":
+      return <SfxText key={key} f={f} at={c.at} to={c.to} text={c.text} x={c.x} y={c.y} size={c.size} rot={c.rot} fill={c.fill} />;
+    case "impactFrame":
+      return <ImpactFrame key={key} f={f} at={c.at} dur={c.dur} />;
+    case "stamp":
+      return <Stamp key={key} f={f} at={c.at} to={c.to} text={c.text} x={c.x} y={c.y} size={c.size} rot={c.rot} color={c.color} />;
+    case "shock":
+      return <ShockLines key={key} f={f} from={c.from} to={c.to} x={c.x} y={c.y} r={c.r} />;
+    case "halftoneWipe":
+      return <HalftoneWipe key={key} f={f} at={c.at} dur={c.dur} to={c.to} color={c.color} reverse={c.reverse} />;
+  }
+};
+
+/** Plays any StoryDef (a `wideStory()` on the 1920×1080 page). `step` = story frames per composition frame (2 for a 30 fps preview). */
+export const StoryPlayer: React.FC<{ story: StoryDef; step?: number; scale?: number; audio?: string }> = ({ story, step = 1, scale = 1, audio }) => {
+  const f = useCurrentFrame() * step;
+  const canvas = story.wide ? LANDSCAPE : PORTRAIT;
+  const cam: PageCam = { ...PAGECAM0, ...sample<Partial<PageCam>>(story.page.cam, f) };
+  let sx = 0, sy = 0;
+  story.page.shakes.forEach((s, i) => {
+    sx += shake(f, s.at, s.dur, s.amp, 20 + i);
+    sy += shake(f, s.at, s.dur, s.amp, 40 + i);
+  });
+  return (
+    <AbsoluteFill style={{ background: story.page.bg, overflow: "hidden" }}>
+      {audio ? <Audio src={staticFile(audio)} /> : null}
+      <RenderScaleCtx.Provider value={scale}>
+        <CanvasCtx.Provider value={canvas}>
+          <AbsoluteFill style={{ width: canvas.w, height: canvas.h, transform: `scale(${scale})`, transformOrigin: "0 0" }}>
+            <FontGate>
+              <AbsoluteFill style={{ transform: `translate(${sx}px, ${sy}px)` }}>
+                <PageCamera cam={cam}>{story.panels.map((p, i) => renderPanel(story, p, f, i))}</PageCamera>
+                {story.fx.map((c, i) => renderFx(c, f, i))}
+              </AbsoluteFill>
+            </FontGate>
+            <PaperTexture />
+          </AbsoluteFill>
+        </CanvasCtx.Provider>
+      </RenderScaleCtx.Provider>
+    </AbsoluteFill>
+  );
+};
+
+==== 4597 src/kits/panelverse/director/types.ts
+// The PANELVERSE story schema (pure types). One file per video: src/pv-stories/<id>/story.ts.
+import type { Key } from "../engine/keyframes.ts";
+import type { V3 } from "../engine/types.ts";
+import type { CamKey } from "../engine/camera.ts";
+import type { PoseKey, ExprKey } from "../engine/three/rig.ts";
+import type { Look } from "../engine/three/looks.ts";
+import type { SetSpec } from "../engine/three/setTypes.ts";
+import type { PageCam, PanelKey, Pt } from "../engine/panels/geometry.ts";
+
+type Params = Record<string, unknown>;
+/** A prop that lives in a shot (bubble, phone, thought cloud, any library item…), keyframed. */
+export type PropSpec = { kind: string; keys: Key<Params>[]; from?: number; to?: number };
+export type ActorSpec = {
+  cast: string; // key into story.cast
+  pose: PoseKey[];
+  expr: ExprKey[];
+  anchor?: string; // parent to a set anchor (cliff halves…)
+  torso?: PropSpec[];
+  head?: PropSpec[];
+  heldR?: PropSpec;
+  heldL?: PropSpec;
+  holdRotR?: V3;
+  holdRotL?: V3;
+  shadow?: boolean;
+};
+export type ShakeSpec = { at: number; dur: number; amp: number; seed?: number };
+export type ShotDef = {
+  start: number; // global frame of shot-local frame 0
+  freezeAt?: number; // shot-local frame where time stops
+  set: SetSpec;
+  setKeys?: Key<Partial<SetSpec>>[]; // animate set fields (wall colour, cliff gap…) in shot frames
+  bg: string;
+  light?: V3;
+  ink?: number;
+  camera: CamKey[]; // shot-local frames
+  shakes?: ShakeSpec[];
+  actors: ActorSpec[];
+  props?: PropSpec[];
+};
+
+export type SegmentType = "cut" | "slam" | "slide" | "iris" | "expand" | "collapse" | "fall" | "slash" | "shatter" | "drift" | "zoom" | "flip";
+export type SfxCue = { at: number; src: string; volume: number; duck?: number; until?: number };
+export type PanelCue = {
+  shot: string;
+  from: number;
+  to: number;
+  geom: PanelKey[];
+  contentCenter?: Pt;
+  shadow?: boolean;
+  shatter?: { at: number; dur: number; impact: Pt; cuts: number[] };
+  /** transition vocabulary used by this panel (for variety lint + automatic sound) */
+  moves?: { type: SegmentType; at: number }[];
+};
+
+/** Optional hand-placed values for the wide (16:9) page, when the automatic placement of a cue is not good enough. */
+export type WideFix = { wide?: { x?: number; y?: number; size?: number; rot?: number; r?: number; cx?: number; cy?: number; inner?: number } };
+export type FxCue = WideFix & FxKind;
+type FxKind =
+  | { kind: "impact"; at: number; to: number; text: string; x: number; y: number; size: number; rot?: number; fill?: string; font?: "impact" | "title" }
+  | { kind: "caption"; at: number; to: number; text: string; x: number; y: number; size?: number; fill?: string }
+  | { kind: "burst"; at: number; dur: number; x: number; y: number; r: number; fill?: string; inner?: string; seed?: number }
+  | { kind: "speed"; from: number; to: number; cx?: number; cy?: number; inner?: number; opacity?: number; color?: string }
+  | { kind: "flood"; at: number; dur: number; to: number; origins: Pt[] }
+  | { kind: "flash"; at: number; dur?: number; color?: string }
+  | { kind: "sfxText"; at: number; to: number; text: string; x: number; y: number; size: number; rot?: number; fill?: string }
+  | { kind: "impactFrame"; at: number; dur?: number }
+  | { kind: "stamp"; at: number; to: number; text: string; x: number; y: number; size?: number; rot?: number; color?: string }
+  | { kind: "shock"; from: number; to: number; x: number; y: number; r?: number }
+  | { kind: "halftoneWipe"; at: number; dur: number; to: number; color?: string; reverse?: boolean };
+
+export type Ducking = { spans: [number, number][]; level: number; attack: number; release: number };
+export type Beat = { at: number; words: string; idea: string; device: string };
+
+export type StoryDef = {
+  id: string;
+  title?: string;
+  fps: 60;
+  durationInFrames: number;
+  vo: { file: string; offset: number }; // public/<file>, seconds of silence before the VO
+  cast: Record<string, Look>;
+  shots: Record<string, ShotDef>;
+  panels: PanelCue[];
+  fx: FxCue[];
+  sfx?: SfxCue[];
+  autoSfx?: boolean; // default true: transitions + FX get their sounds automatically
+  duck?: Ducking;
+  page: { bg: string; cam: Key<Partial<PageCam>>[]; shakes: { at: number; dur: number; amp: number }[] };
+  /** names of the story's own elements registered in elements.tsx */
+  elements?: string[];
+  /** the beat sheet the film was directed from (checked by the lint, kept for revisions) */
+  beats?: Beat[];
+  /** set by `wideStory()`: panels, FX and page camera are laid out on the 1920×1080 page (`--wide`) */
+  wide?: boolean;
+};
+
+==== 4469 src/kits/panelverse/engine/keyframes.ts
+// Deterministic keyframe engine. Every animated value in PANELVERSE is a pure function of a frame
+// number, so any frame renders identically in any tab, in any order.
+
+export type EaseName =
+  | "linear"
+  | "in"
+  | "out"
+  | "inOut"
+  | "outBack"
+  | "outBackBig"
+  | "inBack"
+  | "outElastic"
+  | "hold"
+  | "expoOut"
+  | "expoIn";
+
+const c1 = 1.70158;
+export const EASES: Record<EaseName, (t: number) => number> = {
+  linear: (t) => t,
+  in: (t) => t * t * t,
+  out: (t) => 1 - Math.pow(1 - t, 3),
+  inOut: (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2),
+  outBack: (t) => 1 + (c1 + 1) * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2),
+  outBackBig: (t) => {
+    const c = 3.2;
+    return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2);
+  },
+  inBack: (t) => (c1 + 1) * t * t * t - c1 * t * t,
+  outElastic: (t) =>
+    t === 0 || t === 1 ? t : Math.pow(2, -10 * t) * Math.sin((t * 10 - 0.75) * ((2 * Math.PI) / 3)) + 1,
+  hold: () => 0,
+  expoOut: (t) => (t >= 1 ? 1 : 1 - Math.pow(2, -10 * t)),
+  expoIn: (t) => (t <= 0 ? 0 : Math.pow(2, 10 * t - 10)),
+};
+
+export const clamp = (v: number, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+export const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+/** 0→1 progress of f through [a, b] with easing. */
+export const prog = (f: number, a: number, b: number, ease: EaseName = "linear") =>
+  EASES[ease](clamp((f - a) / Math.max(1e-6, b - a)));
+
+type Val = number | string | boolean | readonly unknown[] | { [k: string]: unknown } | undefined;
+
+const mix = (a: Val, b: Val, t: number): Val => {
+  if (typeof a === "number" && typeof b === "number") return lerp(a, b, t);
+  if (Array.isArray(a) && Array.isArray(b)) return a.map((x, i) => mix(x as Val, b[i] as Val, t));
+  if (a && b && typeof a === "object" && typeof b === "object" && !Array.isArray(a)) {
+    const out: Record<string, unknown> = {};
+    const ka = a as Record<string, unknown>;
+    const kb = b as Record<string, unknown>;
+    for (const k of new Set([...Object.keys(ka), ...Object.keys(kb)])) {
+      out[k] = k in ka && k in kb ? mix(ka[k] as Val, kb[k] as Val, t) : (kb[k] ?? ka[k]);
+    }
+    return out;
+  }
+  // discrete values switch at the halfway point of the transition
+  return t < 0.5 ? a : b;
+};
+
+const merge = (base: Val, over: Val): Val => {
+  if (over === undefined) return base;
+  if (base && over && typeof base === "object" && typeof over === "object" && !Array.isArray(base) && !Array.isArray(over)) {
+    const out: Record<string, unknown> = { ...(base as Record<string, unknown>) };
+    for (const [k, v] of Object.entries(over as Record<string, unknown>)) out[k] = merge(out[k] as Val, v as Val);
+    return out;
+  }
+  return over;
+};
+
+/** A keyframe: value `v` is reached at frame `f`, travelling from the previous key with `ease`. */
+export type Key<T> = { f: number; v: T; ease?: EaseName };
+
+/**
+ * Sample a sparse keyframe track. Object keys are cumulative: each key only needs the fields that
+ * change, the rest carry over from earlier keys.
+ */
+export function sample<T>(keys: readonly Key<T>[], f: number): T {
+  if (keys.length === 0) throw new Error("empty track");
+  // resolve cumulative values
+  const full: { f: number; v: Val; ease: EaseName }[] = [];
+  let acc: Val = undefined;
+  for (const k of keys) {
+    acc = merge(acc, k.v as Val);
+    full.push({ f: k.f, v: acc, ease: k.ease ?? "inOut" });
+  }
+  if (f <= full[0].f) return full[0].v as T;
+  for (let i = 1; i < full.length; i++) {
+    if (f <= full[i].f) {
+      const a = full[i - 1];
+      const b = full[i];
+      const t = EASES[b.ease](clamp((f - a.f) / Math.max(1e-6, b.f - a.f)));
+      return mix(a.v, b.v, t) as T;
+    }
+  }
+  return full[full.length - 1].v as T;
+}
+
+/** Deterministic hash noise in [-1, 1]. */
+export const hash = (n: number) => {
+  const s = Math.sin(n * 127.1 + 311.7) * 43758.5453;
+  return (s - Math.floor(s)) * 2 - 1;
+};
+/** Smooth 1D value noise in [-1, 1]. */
+export const noise1 = (x: number, seed = 0) => {
+  const i = Math.floor(x);
+  const fr = x - i;
+  const u = fr * fr * (3 - 2 * fr);
+  return lerp(hash(i + seed * 101.3), hash(i + 1 + seed * 101.3), u);
+};
+
+/** Decaying camera/impact shake: amplitude envelope starting at frame `at`. */
+export const shake = (f: number, at: number, dur: number, amp: number, seed = 1, freq = 0.9) => {
+  if (f < at || f > at + dur) return 0;
+  const e = 1 - (f - at) / dur;
+  return noise1((f - at) * freq, seed) * amp * e * e;
+};
+
+==== 14879 src/kits/panelverse/engine/panels/geometry.ts
+// Panel geometry: pure data + math (no React), so story files can use it from Node and the browser.
+import { sample, type Key } from "../keyframes.ts";
+
+export type Pt = [number, number];
+/** Clockwise from top-left, in 1080×1920 frame pixels (stories are always written for the portrait page). */
+export type Quad = [Pt, Pt, Pt, Pt];
+export type PanelGeom = {
+  pts: Quad;
+  move: Pt; // extra translation of the whole panel (slide in / fall away)
+  rot: number; // degrees, around the panel centre
+  scale: number;
+  border: number; // ink border px (0 = none)
+  /** 0 = quad window; >0 = circular window of this radius (px) centred on the quad (iris shots) */
+  iris: number;
+  /** zoom of the 3D picture inside the panel (1 on the portrait page; set per panel on the wide page, see `wideFit`) */
+  fit: number;
+};
+export type PanelKey = Key<Partial<PanelGeom>>;
+
+export const W = 1080;
+export const H = 1920;
+export const FULL: Quad = [
+  [-16, -16],
+  [1096, -16],
+  [1096, 1936],
+  [-16, 1936],
+];
+export const PANEL0: PanelGeom = { pts: FULL, move: [0, 0], rot: 0, scale: 1, border: 8, iris: 0, fit: 1 };
+export const samplePanel = (keys: readonly PanelKey[], f: number): PanelGeom => ({ ...PANEL0, ...sample<Partial<PanelGeom>>(keys, f) });
+
+export const centerOf = (q: readonly Pt[]): Pt => {
+  const xs = q.map((p) => p[0]);
+  const ys = q.map((p) => p[1]);
+  return [(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2];
+};
+export const boundsOf = (q: readonly Pt[]) => {
+  const xs = q.map((p) => p[0]);
+  const ys = q.map((p) => p[1]);
+  return { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) };
+};
+
+// ── Layout library ───────────────────────────────────────────────────────────────────────────
+// Every layout keeps panels inside the mobile-safe page area (x 56–1024, y 200–1580) with ≈28 px
+// gutters and slight slants, so pages read as printed comics, not UI grids.
+const X0 = 60, X1 = 1020, Y0 = 214, Y1 = 1572, G = 30;
+const q = (x0: number, y0: number, x1: number, y1: number, tl = 0, tr = 0, br = 0, bl = 0): Quad => [
+  [x0, y0 + tl],
+  [x1, y0 + tr],
+  [x1, y1 + br],
+  [x0, y1 + bl],
+];
+const rows = (n: number, slant: number) => {
+  const h = (Y1 - Y0 - G * (n - 1)) / n;
+  return Array.from({ length: n }, (_, i) => {
+    const y0 = Y0 + i * (h + G), y1 = y0 + h;
+    const s0 = i === 0 ? 0 : (i % 2 ? slant : -slant), s1 = i === n - 1 ? 0 : (i % 2 ? -slant : slant);
+    return q(X0, y0, X1, y1, s0, -s0, s1, -s1);
+  });
+};
+const TALL = {
+  /** one full-bleed image */
+  splash: (): Quad[] => [FULL],
+  /** one printed panel with paper margins (freeze / end page) */
+  page: (): Quad[] => [[[56, 210], [1024, 182], [1024, 1536], [56, 1572]]],
+  /** two stacked panels, slanted gutter */
+  twoUp: (slant = 26): Quad[] => rows(2, slant),
+  /** three stacked bands (the classic overthinking page) */
+  threeUp: (slant = 20): Quad[] => rows(3, slant),
+  /** four stacked strips (lists, countdowns) */
+  fourUp: (slant = 14): Quad[] => rows(4, slant),
+  /** 2 × 2 grid */
+  grid4: (): Quad[] => {
+    const xm = 540, ym = (Y0 + Y1) / 2;
+    return [
+      q(X0, Y0, xm - G / 2 + 10, ym - G / 2, 0, 0, -8, 6),
+      q(xm + G / 2 + 10, Y0, X1, ym - G / 2 - 8, 0, 0, 8, 0),
+      q(X0, ym + G / 2 + 6, xm - G / 2 - 10, Y1, 0, -8, 0, 0),
+      q(xm + G / 2 - 10, ym + G / 2 - 8, X1, Y1, 8, 0, 0, 0),
+    ];
+  },
+  /** two tall columns (side-by-side comparison: ekspektasi / realita) */
+  twoCol: (): Quad[] => [
+    [[X0, Y0], [540 - G / 2 + 24, Y0], [540 - G / 2 - 24, Y1], [X0, Y1]],
+    [[540 + G / 2 + 24, Y0], [X1, Y0], [X1, Y1], [540 + G / 2 - 24, Y1]],
+  ],
+  /** one big panel on top + two small side by side below */
+  bigTop: (): Quad[] => {
+    const ym = Y0 + (Y1 - Y0) * 0.6;
+    return [
+      q(X0, Y0, X1, ym - G / 2, 0, 0, -14, 14),
+      [[X0, ym + G / 2 + 14], [540 - G / 2 + 12, ym + G / 2 + 2], [540 - G / 2 - 12, Y1], [X0, Y1]],
+      [[540 + G / 2 + 12, ym + G / 2], [X1, ym + G / 2 - 14], [X1, Y1], [540 + G / 2 - 12, Y1]],
+    ];
+  },
+  /** two small side by side on top + one big panel below */
+  bigBottom: (): Quad[] => {
+    const ym = Y0 + (Y1 - Y0) * 0.4;
+    return [
+      [[X0, Y0], [540 - G / 2 + 12, Y0], [540 - G / 2 - 12, ym - G / 2 + 10], [X0, ym - G / 2 + 18]],
+      [[540 + G / 2 + 12, Y0], [X1, Y0], [X1, ym - G / 2], [540 + G / 2 - 12, ym - G / 2 + 8]],
+      q(X0, ym + G / 2 + 18, X1, Y1, 0, -18, 0, 0),
+    ];
+  },
+  /** three tall vertical strips (a moment in three beats) */
+  strip3: (): Quad[] => {
+    const w = (X1 - X0 - 2 * G) / 3;
+    return [0, 1, 2].map((i) => {
+      const x0 = X0 + i * (w + G), x1 = x0 + w;
+      return [[x0 + (i ? 14 : 0), Y0], [x1 + (i < 2 ? 14 : 0), Y0], [x1 - (i < 2 ? 14 : 0), Y1], [x0 - (i ? 14 : 0), Y1]] as Quad;
+    });
+  },
+  /** full-bleed diagonal split (no margins): versus / before-after */
+  diagonal: (cut = 160): Quad[] => [
+    [[-16, -16], [1096, -16], [1096, 960 - cut - 14], [-16, 960 + cut - 14]],
+    [[-16, 960 + cut + 14], [1096, 960 - cut + 14], [1096, 1936], [-16, 1936]],
+  ],
+  /** full-bleed image + a small inset panel in a corner */
+  inset: (corner: "br" | "bl" | "tr" | "tl" = "br", w = 440, h = 420): Quad[] => {
+    const x0 = corner.endsWith("r") ? 1030 - w : 50, y0 = corner.startsWith("b") ? 1560 - h : 230;
+    return [FULL, [[x0, y0 + 20], [x0 + w, y0], [x0 + w, y0 + h - 20], [x0, y0 + h]]];
+  },
+};
+
+// ── The wide page (16:9, `--wide`) ───────────────────────────────────────────────────────────
+// A landscape film is the SAME story on a 1920×1080 page: every layout has a landscape arrangement with
+// the same panels in the same reading order (stacked rows become columns side by side, top / bottom
+// becomes left / right), so a story written for the portrait page needs no second version.
+export type Canvas = { w: number; h: number };
+export const PORTRAIT: Canvas = { w: W, h: H };
+export const LANDSCAPE: Canvas = { w: H, h: W };
+export const FULL_WIDE: Quad = [
+  [-16, -16],
+  [1936, -16],
+  [1936, 1096],
+  [-16, 1096],
+];
+// no phone UI to stay clear of: even paper margins, the same gutters and borders as the portrait page
+const WX0 = 64, WX1 = 1856, WY0 = 60, WY1 = 1020;
+const cols = (n: number, slant: number, zig = true) => {
+  const w = (WX1 - WX0 - G * (n - 1)) / n;
+  return Array.from({ length: n }, (_, i) => {
+    const x0 = WX0 + i * (w + G), x1 = x0 + w;
+    const s0 = i === 0 ? 0 : (zig && i % 2 === 0 ? -slant : slant), s1 = i === n - 1 ? 0 : (zig && i % 2 ? -slant : slant);
+    return [[x0 + s0, WY0], [x1 + s1, WY0], [x1 - s1, WY1], [x0 - s0, WY1]] as Quad;
+  });
+};
+/** one big column + two stacked small panels (`big` 0 = big on the left, 1 = big on the right) */
+const bigSide = (big: 0 | 1, share: number): Quad[] => {
+  const xm = WX0 + (WX1 - WX0) * (big ? 1 - share : share), ym = (WY0 + WY1) / 2, s = 18, d = 12;
+  const gx = (y: number, side: number) => xm + (side * G) / 2 + s - (2 * s * (y - WY0)) / (WY1 - WY0); // the slanted column gutter
+  const large: Quad = big ? [[gx(WY0, 1), WY0], [WX1, WY0], [WX1, WY1], [gx(WY1, 1), WY1]] : [[WX0, WY0], [gx(WY0, -1), WY0], [gx(WY1, -1), WY1], [WX0, WY1]];
+  const yT = ym - G / 2, yB = ym + G / 2;
+  const small: Quad[] = big
+    ? [[[WX0, WY0], [gx(WY0, -1), WY0], [gx(yT - d, -1), yT - d], [WX0, yT + d]], [[WX0, yB + d], [gx(yB - d, -1), yB - d], [gx(WY1, -1), WY1], [WX0, WY1]]]
+    : [[[gx(WY0, 1), WY0], [WX1, WY0], [WX1, yT - d], [gx(yT + d, 1), yT + d]], [[gx(yB + d, 1), yB + d], [WX1, yB - d], [WX1, WY1], [gx(WY1, 1), WY1]]];
+  return big ? [...small, large] : [large, ...small];
+};
+/** The landscape arrangement of every layout: same names, same arguments, same panel order. */
+const WIDE: { [K in keyof typeof TALL]: (typeof TALL)[K] } = {
+  splash: () => [FULL_WIDE],
+  page: () => [[[60, 66], [1860, 44], [1860, 1008], [60, 1030]]],
+  /** two columns, gutter leaning back */
+  twoUp: (slant = 26) => cols(2, -slant * 1.5),
+  /** three columns, zig-zag gutters */
+  threeUp: (slant = 20) => cols(3, slant * 1.5),
+  /** four narrow columns */
+  fourUp: (slant = 14) => cols(4, slant * 1.6),
+  grid4: () => {
+    const xm = 960, ym = 540;
+    return [
+      q(WX0, WY0, xm - G / 2 + 16, ym - G / 2, 0, 0, -6, 8),
+      q(xm + G / 2 + 16, WY0, WX1, ym - G / 2 - 6, 0, 0, 8, 0),
+      q(WX0, ym + G / 2 + 8, xm - G / 2 - 16, WY1, 0, -6, 0, 0),
+      q(xm + G / 2 - 16, ym + G / 2 - 6, WX1, WY1, 8, 0, 0, 0),
+    ];
+  },
+  /** two columns, gutter leaning forward (versus) */
+  twoCol: () => cols(2, 46),
+  /** one big panel on the left + two small stacked on the right */
+  bigTop: () => bigSide(0, 0.6),
+  /** two small stacked on the left + one big panel on the right */
+  bigBottom: () => bigSide(1, 0.6),
+  /** three columns with parallel leaning gutters */
+  strip3: () => cols(3, 34, false),
+  /** full-bleed diagonal split, left / right */
+  diagonal: (cut = 160) => [
+    [[-16, -16], [960 + cut - 14, -16], [960 - cut - 14, 1096], [-16, 1096]],
+    [[960 + cut + 14, -16], [1936, -16], [1936, 1096], [960 - cut + 14, 1096]],
+  ],
+  inset: (corner = "br", w = 440, h = 420) => {
+    const x0 = corner.endsWith("r") ? 1870 - w : 50, y0 = corner.startsWith("b") ? 1030 - h : 50;
+    return [FULL_WIDE, [[x0, y0 + 20], [x0 + w, y0], [x0 + w, y0 + h - 20], [x0, y0 + h]]];
+  },
+};
+const WIDE_OF = new WeakMap<readonly Pt[], Quad>([[FULL, FULL_WIDE]]);
+/** Give a portrait quad its own landscape counterpart (the layouts and transitions do this themselves). */
+export const pairWide = (tall: Quad, wide: Quad): Quad => {
+  if (tall !== FULL) WIDE_OF.set(tall, wide);
+  return tall;
+};
+const paired = <A extends unknown[]>(tall: (...a: A) => Quad[], wide: (...a: A) => Quad[]) => (...a: A): Quad[] => {
+  const ws = wide(...a);
+  return tall(...a).map((t, i) => pairWide(t, ws[i]));
+};
+export const LAYOUTS = Object.fromEntries(
+  (Object.keys(TALL) as (keyof typeof TALL)[]).map((k) => [k, paired(TALL[k] as (...a: unknown[]) => Quad[], WIDE[k] as (...a: unknown[]) => Quad[])]),
+) as typeof TALL;
+export type LayoutName = keyof typeof LAYOUTS;
+
+const span = (v: number, a: number[], b: number[]) => {
+  if (v <= a[0]) return b[0] + (v - a[0]);
+  for (let i = 1; i < a.length; i++) if (v <= a[i]) return b[i - 1] + ((v - a[i - 1]) / (a[i] - a[i - 1])) * (b[i] - b[i - 1]);
+  return b[b.length - 1] + (v - a[a.length - 1]);
+};
+/** A point of the portrait page on the wide page: margins map to margins, the page area to the page area. */
+export const widePt = (p: Pt): Pt => [span(p[0], [0, X0, X1, W], [0, WX0, WX1, H]), span(p[1], [0, Y0, Y1, H], [0, WY0, WY1, W])];
+/** mean width and height of a quad (its slants do not count) */
+export const sizeOf = (p: Quad): Pt => [(p[1][0] - p[0][0] + p[2][0] - p[3][0]) / 2, (p[3][1] - p[0][1] + p[2][1] - p[1][1]) / 2];
+/**
+ * The landscape counterpart of a portrait quad: its layout's landscape panel, or — for a quad of your own —
+ *  · a tall or page-sized quad keeps its place on the page (a column stays a column, a page stays a page),
+ *  · a band across the page becomes a column (top → left), like the stacked layouts,
+ *  · a smaller block keeps its size and its place on the page.
+ * `pairWide(quad, wideQuad)` replaces this with a landscape quad of your own.
+ */
+export const wideQuad = (tall: Quad): Quad => {
+  const known = WIDE_OF.get(tall);
+  if (known) return known;
+  const [w, h] = sizeOf(tall);
+  if (w <= h * 0.707) return tall.map(widePt) as Quad;
+  if (w >= (X1 - X0) * 0.6) {
+    const t = tall.map((p): Pt => [span(p[1], [0, Y0, Y1, H], [0, WX0, WX1, H]), span(p[0], [0, X0, X1, W], [0, WY0, WY1, W])]);
+    return [t[0], t[3], t[2], t[1]];
+  }
+  const c = centerOf(tall), b = boundsOf(tall), m = widePt(c);
+  const dx = Math.min(Math.max(m[0], (b.x1 - b.x0) / 2 + 40), H - 40 - (b.x1 - b.x0) / 2) - c[0], dy = Math.min(Math.max(m[1], (b.y1 - b.y0) / 2 + 40), W - 40 - (b.y1 - b.y0) / 2) - c[1];
+  return tall.map((p): Pt => [p[0] + dx, p[1] + dy]) as Quad;
+};
+/** is the page point inside the (convex) quad? */
+export const inQuad = (q: readonly Pt[], x: number, y: number) => {
+  const side = q.map((a, i) => (q[(i + 1) % q.length][0] - a[0]) * (y - a[1]) - (q[(i + 1) % q.length][1] - a[1]) * (x - a[0]));
+  return side.every((s) => s >= 0) || side.every((s) => s <= 0);
+};
+/**
+ * Zoom of the 3D picture in a panel of the wide page. A portrait panel shows its subject over its full height
+ * (and at most as wide as it is tall); that box is fitted into the landscape panel, so heads stay inside and
+ * a band that became a column is not half empty. A full-bleed picture gives up the top and bottom 8 % that sit
+ * under the phone UI in 9:16 (zoom 0.67: the wide frame shows ≈ 2.6× the portrait width).
+ */
+export const wideFit = (tall: Quad, wide: Quad) => {
+  const size = (p: Quad, mw: number, mh: number) => [Math.max(1, Math.min(sizeOf(p)[0], mw)), Math.max(1, Math.min(sizeOf(p)[1], mh))];
+  const [tw, th] = size(tall, W, H * 0.84), [ww, wh] = size(wide, H, W);
+  return Math.min(ww / Math.min(tw, th), wh / th);
+};
+
+/** Split a quad into shards (fan from an impact point) for the panel-shatter transition. */
+export const shardsOf = (quad: readonly Pt[], impact: Pt, cuts: number[]): Pt[][] => {
+  const edges: [Pt, Pt][] = quad.map((p, i) => [p, quad[(i + 1) % quad.length]]);
+  const lens = edges.map(([a, b]) => Math.hypot(b[0] - a[0], b[1] - a[1]));
+  const total = lens.reduce((s, l) => s + l, 0);
+  const at = (t: number): Pt => {
+    let d = (((t % 1) + 1) % 1) * total;
+    for (let i = 0; i < edges.length; i++) {
+      if (d <= lens[i]) {
+        const [a, b] = edges[i];
+        const k = d / lens[i];
+        return [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k];
+      }
+      d -= lens[i];
+    }
+    return quad[0];
+  };
+  const corners: number[] = [];
+  let acc = 0;
+  for (const l of lens) {
+    corners.push(acc / total);
+    acc += l;
+  }
+  const sorted = [...cuts].sort((a, b) => a - b);
+  return sorted.map((c0, i) => {
+    const c1 = i === sorted.length - 1 ? sorted[0] + 1 : sorted[i + 1];
+    const pts: Pt[] = [impact, at(c0)];
+    for (const k of [...corners, ...corners.map((x) => x + 1)]) if (k > c0 && k < c1) pts.push(at(k));
+    pts.push(at(c1));
+    return pts;
+  });
+};
+
+// ── Page camera (2.5D move over the printed page) ─────────────────────────────────────────────
+export type PageCam = { x: number; y: number; scale: number; rot: number; tiltX: number; tiltY: number };
+export const PAGECAM0: PageCam = { x: 0, y: 0, scale: 1, rot: 0, tiltX: 0, tiltY: 0 };
+
+==== 4458 src/kits/panelverse/engine/panels/LivingPanel.tsx
+import React, { useContext } from "react";
+import { AbsoluteFill } from "remotion";
+import { INK, PAPER } from "../../theme/palette.ts";
+import { CanvasCtx } from "../three/Toon.tsx";
+import { centerOf, type PageCam, type PanelGeom, type Pt } from "./geometry.ts";
+
+const poly = (q: readonly Pt[]) => q.map((p) => `${p[0].toFixed(1)}px ${p[1].toFixed(1)}px`).join(",");
+const pathOf = (q: readonly Pt[]) => `M${q.map((p) => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join("L")}Z`;
+
+/**
+ * LivingPanel: a comic panel window. Its content (normally a full-frame ComicStage canvas) is centred
+ * on `contentCenter` and clipped to the panel quad — or to a circle (`geom.iris` > 0) — so panels can
+ * split, expand, collapse, tilt, iris and shatter while the 3D scene inside keeps rendering live.
+ */
+export const LivingPanel: React.FC<{
+  geom: PanelGeom;
+  contentCenter?: Pt;
+  bg?: string;
+  dropShadow?: boolean;
+  children: React.ReactNode;
+}> = ({ geom, contentCenter, bg = PAPER, dropShadow = true, children }) => {
+  const { w, h } = useContext(CanvasCtx);
+  const c = centerOf(geom.pts);
+  const cc = contentCenter ?? c;
+  const tf = `translate(${geom.move[0]}px, ${geom.move[1]}px) translate(${c[0]}px, ${c[1]}px) rotate(${geom.rot}deg) scale(${geom.scale}) translate(${-c[0]}px, ${-c[1]}px)`;
+  const iris = geom.iris > 0.5;
+  const clip = iris ? `circle(${geom.iris.toFixed(1)}px at ${c[0].toFixed(1)}px ${c[1].toFixed(1)}px)` : `polygon(${poly(geom.pts)})`;
+  return (
+    <AbsoluteFill style={{ transform: tf, transformOrigin: "0 0" }}>
+      {dropShadow ? (
+        <svg width={w} height={h} style={{ position: "absolute", left: 0, top: 0, overflow: "visible" }}>
+          {iris ? <circle cx={c[0] + 12} cy={c[1] + 14} r={geom.iris} fill={INK} /> : <path d={pathOf(geom.pts)} fill={INK} transform="translate(12 14)" />}
+        </svg>
+      ) : null}
+      <div style={{ position: "absolute", left: 0, top: 0, width: w, height: h, clipPath: clip, background: bg }}>
+        <div style={{ position: "absolute", left: cc[0] - w / 2, top: cc[1] - h / 2, width: w, height: h }}>{children}</div>
+      </div>
+      {geom.border > 0 ? (
+        <svg width={w} height={h} style={{ position: "absolute", left: 0, top: 0, overflow: "visible" }}>
+          {iris ? (
+            <circle cx={c[0]} cy={c[1]} r={geom.iris} fill="none" stroke={INK} strokeWidth={geom.border} />
+          ) : (
+            <path d={pathOf(geom.pts)} fill="none" stroke={INK} strokeWidth={geom.border} strokeLinejoin="miter" />
+          )}
+        </svg>
+      ) : null}
+    </AbsoluteFill>
+  );
+};
+
+export const PageCamera: React.FC<{ cam: PageCam; children: React.ReactNode }> = ({ cam, children }) => {
+  const { w, h } = useContext(CanvasCtx);
+  return (
+    <AbsoluteFill style={{ perspective: 2400, perspectiveOrigin: `${w / 2}px ${h / 2}px` }}>
+      <AbsoluteFill
+        style={{
+          transform: `translate(${cam.x}px, ${cam.y}px) scale(${cam.scale}) rotate(${cam.rot}deg) rotateX(${cam.tiltX}deg) rotateY(${cam.tiltY}deg)`,
+          transformOrigin: `${w / 2}px ${h / 2}px`,
+          transformStyle: "preserve-3d",
+        }}
+      >
+        {children}
+      </AbsoluteFill>
+    </AbsoluteFill>
+  );
+};
+
+/** A shard of a panel: clipped copy of the panel content, flying away. */
+export const PanelShard: React.FC<{ pts: Pt[]; contentCenter: Pt; move: Pt; rot: number; children: React.ReactNode }> = ({
+  pts,
+  contentCenter,
+  move,
+  rot,
+  children,
+}) => {
+  const { w, h } = useContext(CanvasCtx);
+  const c = centerOf(pts);
+  const tf = `translate(${move[0]}px, ${move[1]}px) translate(${c[0]}px, ${c[1]}px) rotate(${rot}deg) translate(${-c[0]}px, ${-c[1]}px)`;
+  return (
+    <AbsoluteFill style={{ transform: tf, transformOrigin: "0 0" }}>
+      <svg width={w} height={h} style={{ position: "absolute", left: 0, top: 0, overflow: "visible" }}>
+        <path d={pathOf(pts)} fill={INK} transform="translate(10 12)" />
+      </svg>
+      <div style={{ position: "absolute", left: 0, top: 0, width: w, height: h, clipPath: `polygon(${poly(pts)})` }}>
+        <div style={{ position: "absolute", left: contentCenter[0] - w / 2, top: contentCenter[1] - h / 2, width: w, height: h }}>{children}</div>
+      </div>
+      <svg width={w} height={h} style={{ position: "absolute", left: 0, top: 0, overflow: "visible" }}>
+        <path d={pathOf(pts)} fill="none" stroke={INK} strokeWidth={7} strokeLinejoin="round" />
+      </svg>
+    </AbsoluteFill>
+  );
+};
+
+==== 8036 src/kits/panelverse/engine/three/geometries.ts
+import {
+  BufferGeometry,
+  CapsuleGeometry,
+  CatmullRomCurve3,
+  CylinderGeometry,
+  ExtrudeGeometry,
+  LatheGeometry,
+  Shape,
+  SphereGeometry,
+  TorusGeometry,
+  TubeGeometry,
+  Vector2,
+  Vector3,
+  ConeGeometry,
+  CircleGeometry,
+  PlaneGeometry,
+} from "three";
+import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
+
+// Shared, cached geometry. Every geometry has a matching "hull" with welded, averaged normals so the
+// screen-space ink extrusion never cracks open at hard edges (boxes, extrusions, caps).
+
+const cache = new Map<string, BufferGeometry>();
+const hulls = new WeakMap<BufferGeometry, BufferGeometry>();
+
+export const memoGeo = (key: string, make: () => BufferGeometry) => {
+  let g = cache.get(key);
+  if (!g) {
+    g = make();
+    g.computeBoundingSphere();
+    cache.set(key, g);
+  }
+  return g;
+};
+
+export const hullOf = (g: BufferGeometry) => {
+  let h = hulls.get(g);
+  if (!h) {
+    const pos = g.getAttribute("position");
+    const bare = new BufferGeometry();
+    bare.setAttribute("position", pos.clone());
+    if (g.index) bare.setIndex(g.index.clone());
+    h = mergeVertices(bare, 1e-4);
+    h.computeVertexNormals();
+    hulls.set(g, h);
+  }
+  return h;
+};
+
+const smoothProfile = (pts: [number, number][], n: number) => {
+  const curve = new CatmullRomCurve3(pts.map(([x, y]) => new Vector3(x, y, 0)), false, "centripetal");
+  return curve.getPoints(n).map((p) => new Vector2(Math.max(0, p.x), p.y));
+};
+
+// Unit egg-shaped head, R = 1, chin at y≈-0.95, crown at y≈1.02 (later scaled per character).
+export const HEAD_PROFILE: [number, number][] = [
+  [0.0, -0.96],
+  [0.36, -0.9],
+  [0.64, -0.7],
+  [0.84, -0.42],
+  [0.96, -0.1],
+  [1.0, 0.18],
+  [0.96, 0.48],
+  [0.84, 0.74],
+  [0.6, 0.93],
+  [0.3, 1.01],
+  [0.0, 1.03],
+];
+export const headRadiusAt = (y: number) => {
+  const p = HEAD_PROFILE;
+  if (y <= p[0][1]) return 0;
+  for (let i = 1; i < p.length; i++) {
+    if (y <= p[i][1]) {
+      const t = (y - p[i - 1][1]) / (p[i][1] - p[i - 1][1]);
+      return p[i - 1][0] + (p[i][0] - p[i - 1][0]) * t;
+    }
+  }
+  return 0;
+};
+
+export const G = {
+  sphere: () => memoGeo("sphere", () => new SphereGeometry(1, 40, 28)),
+  sphereLo: () => memoGeo("sphereLo", () => new SphereGeometry(1, 20, 14)),
+  /** unit cylinder along +Y from y=0 to y=1, radius top rT / bottom rB (relative) */
+  limb: (rTop = 1, rBot = 1) =>
+    memoGeo(`limb${rTop}_${rBot}`, () => {
+      const g = new CylinderGeometry(rTop, rBot, 1, 28, 1, true);
+      g.translate(0, 0.5, 0);
+      return g;
+    }),
+  cylinder: (rTop = 1, rBot = 1, seg = 32) =>
+    memoGeo(`cyl${rTop}_${rBot}_${seg}`, () => new CylinderGeometry(rTop, rBot, 1, seg, 1, false)),
+  capsule: (r: number, len: number) => memoGeo(`cap${r}_${len}`, () => new CapsuleGeometry(r, len, 8, 20)),
+  head: () =>
+    memoGeo("head", () => {
+      const g = new LatheGeometry(smoothProfile(HEAD_PROFILE, 40), 56);
+      return g;
+    }),
+  lathe: (key: string, pts: [number, number][], seg = 48) =>
+    memoGeo(`lathe_${key}`, () => new LatheGeometry(smoothProfile(pts, 36), seg)),
+  roundedBox: (w: number, h: number, d: number, r: number) =>
+    memoGeo(`rbox${w}_${h}_${d}_${r}`, () => new RoundedBoxGeometry(w, h, d, 4, r)),
+  torusArc: (radius: number, tube: number, arc: number) =>
+    memoGeo(`tor${radius}_${tube}_${arc}`, () => new TorusGeometry(radius, tube, 10, 32, arc)),
+  sphereCap: (key: string, thetaStart: number, thetaLength: number) =>
+    memoGeo(`cap_${key}`, () => new SphereGeometry(1, 48, 32, 0, Math.PI * 2, thetaStart, thetaLength)),
+  cone: (seg = 32) => memoGeo(`cone${seg}`, () => new ConeGeometry(1, 1, seg, 1, false)),
+  circle: () => memoGeo("circle", () => new CircleGeometry(1, 48)),
+  plane: () => memoGeo("plane", () => new PlaneGeometry(1, 1)),
+  tube: (key: string, pts: [number, number, number][], r: number) =>
+    memoGeo(`tube_${key}`, () => new TubeGeometry(new CatmullRomCurve3(pts.map((p) => new Vector3(...p))), 40, r, 10, false)),
+  heart: () =>
+    memoGeo("heart", () => {
+      const s = new Shape();
+      s.moveTo(0, -1);
+      s.bezierCurveTo(-0.35, -0.62, -1.05, -0.25, -1.05, 0.32);
+      s.bezierCurveTo(-1.05, 0.82, -0.55, 1.02, -0.27, 0.98);
+      s.bezierCurveTo(-0.08, 0.95, 0, 0.78, 0, 0.66);
+      s.bezierCurveTo(0, 0.78, 0.08, 0.95, 0.27, 0.98);
+      s.bezierCurveTo(0.55, 1.02, 1.05, 0.82, 1.05, 0.32);
+      s.bezierCurveTo(1.05, -0.25, 0.35, -0.62, 0, -1);
+      const g = new ExtrudeGeometry(s, { depth: 0.35, bevelEnabled: true, bevelThickness: 0.22, bevelSize: 0.16, bevelSegments: 6, curveSegments: 40 });
+      g.center();
+      g.computeVertexNormals();
+      return g;
+    }),
+  /** half of the heart split along a jagged crack, side = -1 (left) or 1 (right) */
+  heartHalf: (side: -1 | 1) =>
+    memoGeo(`heartHalf${side}`, () => {
+      const crack: [number, number][] = [
+        [0, 0.66],
+        [0.12, 0.4],
+        [-0.1, 0.16],
+        [0.14, -0.1],
+        [-0.08, -0.38],
+        [0.06, -0.66],
+        [0, -1],
+      ];
+      const s = new Shape();
+      if (side === -1) {
+        s.moveTo(0, -1);
+        s.bezierCurveTo(-0.35, -0.62, -1.05, -0.25, -1.05, 0.32);
+        s.bezierCurveTo(-1.05, 0.82, -0.55, 1.02, -0.27, 0.98);
+        s.bezierCurveTo(-0.08, 0.95, 0, 0.78, 0, 0.66);
+        for (let i = 1; i < crack.length; i++) s.lineTo(crack[i][0], crack[i][1]);
+      } else {
+        s.moveTo(0, 0.66);
+        s.bezierCurveTo(0, 0.78, 0.08, 0.95, 0.27, 0.98);
+        s.bezierCurveTo(0.55, 1.02, 1.05, 0.82, 1.05, 0.32);
+        s.bezierCurveTo(1.05, -0.25, 0.35, -0.62, 0, -1);
+        for (let i = crack.length - 2; i >= 0; i--) s.lineTo(crack[i][0], crack[i][1]);
+      }
+      const g = new ExtrudeGeometry(s, { depth: 0.35, bevelEnabled: true, bevelThickness: 0.22, bevelSize: 0.12, bevelSegments: 5, curveSegments: 32 });
+      g.translate(0, 0, -0.175);
+      g.computeVertexNormals();
+      return g;
+    }),
+  extrude: (key: string, shape: () => Shape, depth: number, bevel = 0.02) =>
+    memoGeo(`ext_${key}`, () => {
+      const g = new ExtrudeGeometry(shape(), { depth, bevelEnabled: bevel > 0, bevelThickness: bevel, bevelSize: bevel, bevelSegments: 3, curveSegments: 24 });
+      g.translate(0, 0, -depth / 2);
+      g.computeVertexNormals();
+      return g;
+    }),
+};
+
+export const roundedRectShape = (w: number, h: number, r: number) => {
+  const s = new Shape();
+  const x = -w / 2;
+  const y = -h / 2;
+  s.moveTo(x + r, y);
+  s.lineTo(x + w - r, y);
+  s.quadraticCurveTo(x + w, y, x + w, y + r);
+  s.lineTo(x + w, y + h - r);
+  s.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  s.lineTo(x + r, y + h);
+  s.quadraticCurveTo(x, y + h, x, y + h - r);
+  s.lineTo(x, y + r);
+  s.quadraticCurveTo(x, y, x + r, y);
+  return s;
+};
+
+/** Chat bubble with a tail at bottom-left (tail = -1) or bottom-right (tail = 1). */
+export const chatBubbleShape = (w: number, h: number, r: number, tail: -1 | 1) => {
+  const s = new Shape();
+  const x = -w / 2;
+  const y = -h / 2;
+  s.moveTo(x + r, y);
+  if (tail === -1) {
+    s.lineTo(x + r * 0.2, y - h * 0.32);
+    s.lineTo(x + r * 1.6, y);
+  }
+  s.lineTo(x + w - r * (tail === 1 ? 1.6 : 1), y);
+  if (tail === 1) {
+    s.lineTo(x + w - r * 0.2, y - h * 0.32);
+    s.lineTo(x + w - r, y);
+  }
+  s.quadraticCurveTo(x + w, y, x + w, y + r);
+  s.lineTo(x + w, y + h - r);
+  s.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  s.lineTo(x + r, y + h);
+  s.quadraticCurveTo(x, y + h, x, y + h - r);
+  s.lineTo(x, y + r);
+  s.quadraticCurveTo(x, y, x + r, y);
+  return s;
+};
+
+/** n-point star outline (comic stars, star eyes, sparkles). */
+export const starShape = (r1: number, r2: number, n = 5) => {
+  const s = new Shape();
+  for (let i = 0; i <= n * 2; i++) {
+    const a = (i / (n * 2)) * Math.PI * 2 + Math.PI / 2;
+    const r = i % 2 === 0 ? r1 : r2;
+    const x = Math.cos(a) * r;
+    const y = Math.sin(a) * r;
+    if (i === 0) s.moveTo(x, y);
+    else s.lineTo(x, y);
+  }
+  return s;
+};
+
+==== 6964 src/kits/panelverse/engine/three/materials.ts
+import { Color, DoubleSide, FrontSide, BackSide, ShaderMaterial, Vector2, Vector3, Vector4, type Side } from "three";
+import { SW, INK, type Swatch, type SwatchKey } from "../../theme/palette.ts";
+
+// Colour pipeline: swatch hexes are sRGB, three converts them to linear on input and the shaders convert
+// back with <colorspace_fragment> on output (no tone mapping), so flat fills land on the exact palette hex.
+
+const COMMON = /* glsl */ `
+  float aastep(float th, float v) { float w = max(fwidth(v) * 0.75, 1e-4); return smoothstep(th - w, th + w, v); }
+  // Screen-space Ben-Day dot field (45°), dot coverage = tone in [0,1]. Locked to the canvas pixel grid
+  // so every surface in a shot prints with one coherent screen, like a real halftone plate.
+  float dots(float tone, float cell) {
+    vec2 p = gl_FragCoord.xy;
+    const float a = 0.785398;
+    vec2 q = mat2(cos(a), sin(a), -sin(a), cos(a)) * p / cell;
+    vec2 g = fract(q) - 0.5;
+    float d = length(g);
+    float r = sqrt(clamp(tone, 0.0, 1.0)) * 0.64;
+    float w = max(fwidth(d) * 0.8, 1e-4);
+    return 1.0 - smoothstep(r - w, r + w, d);
+  }
+`;
+
+const VERT = /* glsl */ `
+  varying vec3 vN;
+  varying vec3 vPos;
+  varying vec2 vUv;
+  varying vec3 vObj;
+  void main() {
+    vObj = position;
+    vec4 mv = modelViewMatrix * vec4(position, 1.0);
+    vPos = mv.xyz;
+    vN = normalize(normalMatrix * normal);
+    vUv = uv;
+    gl_Position = projectionMatrix * mv;
+  }
+`;
+
+const FRAG = /* glsl */ `
+  uniform vec3 uColor; uniform vec3 uShade; uniform vec3 uDot; uniform vec3 uSpecColor; uniform vec3 uRimColor;
+  uniform vec3 uLight;     // world-space direction TO the key light
+  uniform float uCut;      // cel terminator (n·l)
+  uniform float uCell;     // halftone cell size in px
+  uniform float uHalftone; // halftone strength
+  uniform float uPattern;  // flat all-over Ben-Day tone (walls / print fills)
+  uniform float uSpec; uniform float uSpecSize;
+  uniform float uRim;
+  uniform float uFlat;     // 1 = unlit graphic fill
+  uniform float uOpacity;
+  uniform float uDotOnly;  // 1 = print only the dot screen (graphic shadows, blush)
+  uniform vec4 uClip;      // object-space front ellipse cut-out: (halfW, halfH, centreY, minZ); halfW<=0 = off
+  varying vec3 vN; varying vec3 vPos; varying vec2 vUv; varying vec3 vObj;
+  ${COMMON}
+  void main() {
+    if (uClip.x > 0.0 && vObj.z > uClip.w) {
+      vec2 e = vec2(vObj.x / uClip.x, (vObj.y - uClip.z) / uClip.y);
+      if (dot(e, e) < 1.0) discard;
+    }
+    if (uDotOnly > 0.5) {
+      if (dots(uPattern, uCell) < 0.5) discard;
+      gl_FragColor = vec4(uDot, uOpacity);
+      #include <colorspace_fragment>
+      return;
+    }
+    vec3 N = normalize(vN);
+    if (!gl_FrontFacing) N = -N;
+    vec3 L = normalize((viewMatrix * vec4(uLight, 0.0)).xyz);
+    vec3 V = normalize(-vPos);
+    float ndl = dot(N, L);
+    vec3 col = uColor;
+    if (uFlat < 0.5) {
+      float lit = aastep(uCut, ndl);
+      col = mix(uShade, uColor, lit);
+      // halftone fade across the terminator (lit side) ...
+      float t1 = 1.0 - smoothstep(uCut, uCut + 0.42, ndl);
+      col = mix(col, uShade, dots(t1 * 0.62, uCell) * lit * uHalftone);
+      // ... and a deeper dot screen inside the core shadow
+      float t2 = smoothstep(uCut - 0.05, uCut - 0.85, ndl);
+      col = mix(col, uDot, dots(t2 * 0.55, uCell) * (1.0 - lit) * uHalftone);
+      // hard comic specular
+      vec3 H = normalize(L + V);
+      col = mix(col, uSpecColor, aastep(1.0 - uSpecSize, dot(N, H)) * uSpec);
+      // back rim (graphic kicker)
+      float rim = aastep(0.62, 1.0 - max(dot(N, V), 0.0)) * aastep(0.0, -ndl + 0.25);
+      col = mix(col, uRimColor, rim * uRim);
+    }
+    if (uPattern > 0.0) col = mix(col, uDot, dots(uPattern, uCell));
+    gl_FragColor = vec4(col, uOpacity);
+    #include <colorspace_fragment>
+  }
+`;
+
+export type ComicMatOpts = {
+  sw?: Swatch | SwatchKey;
+  light?: [number, number, number];
+  cut?: number;
+  cell?: number;
+  halftone?: number;
+  pattern?: number;
+  spec?: number;
+  specSize?: number;
+  specColor?: string;
+  rim?: number;
+  rimColor?: string;
+  flat?: boolean;
+  side?: "front" | "double" | "back";
+  opacity?: number;
+  dotOnly?: boolean;
+  clip?: [number, number, number, number];
+};
+
+const sideOf = (s?: ComicMatOpts["side"]): Side => (s === "double" ? DoubleSide : s === "back" ? BackSide : FrontSide);
+const col = (hex: string) => new Color().setStyle(hex);
+
+export const DEFAULT_LIGHT: [number, number, number] = [-0.55, 0.75, 0.6];
+export const DEFAULT_CELL = 9;
+
+/** HalftoneMaterial: cel bands + screen-locked Ben-Day dots + hard spec. */
+export const createComicMaterial = (o: ComicMatOpts = {}) => {
+  const sw: Swatch = typeof o.sw === "string" ? SW[o.sw] : (o.sw ?? SW.paper);
+  const L = new Vector3(...(o.light ?? DEFAULT_LIGHT)).normalize();
+  return new ShaderMaterial({
+    uniforms: {
+      uColor: { value: col(sw.c) },
+      uShade: { value: col(sw.s) },
+      uDot: { value: col(sw.d) },
+      uSpecColor: { value: col(o.specColor ?? "#FFF7E6") },
+      uRimColor: { value: col(o.rimColor ?? "#FFF7E6") },
+      uLight: { value: L },
+      uCut: { value: o.cut ?? 0.12 },
+      uCell: { value: o.cell ?? DEFAULT_CELL },
+      uHalftone: { value: o.halftone ?? 1 },
+      uPattern: { value: o.pattern ?? 0 },
+      uSpec: { value: o.spec ?? 0 },
+      uSpecSize: { value: o.specSize ?? 0.04 },
+      uRim: { value: o.rim ?? 0 },
+      uFlat: { value: o.flat ? 1 : 0 },
+      uOpacity: { value: o.opacity ?? 1 },
+      uDotOnly: { value: o.dotOnly ? 1 : 0 },
+      uClip: { value: new Vector4(...(o.clip ?? [0, 0, 0, 0])) },
+    },
+    vertexShader: VERT,
+    fragmentShader: FRAG,
+    side: sideOf(o.side),
+    transparent: (o.opacity ?? 1) < 1,
+  });
+};
+
+const OUTLINE_VERT = /* glsl */ `
+  uniform float uWidth; uniform vec2 uRes;
+  void main() {
+    vec4 clip = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    vec3 nv = normalize(normalMatrix * normal);
+    vec4 nc = projectionMatrix * vec4(nv, 0.0);
+    vec2 dpx = nc.xy * uRes;                // normal direction in pixel space
+    float l = length(dpx);
+    vec2 dir = l > 1e-6 ? dpx / l : vec2(0.0);
+    // constant on-screen ink width, softened for very close geometry so lines never balloon
+    clip.xy += dir * (2.0 * uWidth / uRes) * clip.w;
+    gl_Position = clip;
+  }
+`;
+const OUTLINE_FRAG = /* glsl */ `
+  uniform vec3 uInk; uniform float uOpacity;
+  void main() { gl_FragColor = vec4(uInk, uOpacity);
+    #include <colorspace_fragment>
+  }
+`;
+
+/** InkOutline: inverted-hull contour with constant pixel width (screen-space extrusion). */
+export const createInkMaterial = (widthPx: number, res: Vector2, ink = INK, opacity = 1) =>
+  new ShaderMaterial({
+    uniforms: {
+      uWidth: { value: widthPx },
+      uRes: { value: res },
+      uInk: { value: col(ink) },
+      uOpacity: { value: opacity },
+    },
+    vertexShader: OUTLINE_VERT,
+    fragmentShader: OUTLINE_FRAG,
+    side: BackSide,
+    transparent: opacity < 1,
+  });
+
+==== 14274 src/kits/panelverse/engine/three/props.tsx
+import React, { useMemo } from "react";
+import { DoubleSide, MeshBasicMaterial } from "three";
+import { Toon, type V3 } from "./Toon.tsx";
+import { G } from "./geometries.ts";
+import { roundRect, useCanvasTexture } from "./canvasTexture.ts";
+import { FONT_IMPACT, FONT_LETTER } from "../../theme/fonts.ts";
+import { BLUE, INK, PAPER, RED, SW, TEAL, YELLOW, type SwatchKey } from "../../theme/palette.ts";
+
+// ── hand-drawn squiggle "words" (comic convention for unreadable small lettering) ─────────────
+export const drawScribble = (ctx: CanvasRenderingContext2D, x: number, y: number, w: number, seed: number) => {
+  ctx.beginPath();
+  let cx = x;
+  let i = 0;
+  while (cx < x + w - 10) {
+    const ww = 18 + ((Math.sin(seed * 9.1 + i * 3.7) + 1) / 2) * 34;
+    const end = Math.min(cx + ww, x + w);
+    ctx.moveTo(cx, y);
+    for (let px = cx; px <= end; px += 4) ctx.lineTo(px, y + Math.sin(px * 0.55 + seed) * 3.2);
+    cx = end + 10;
+    i++;
+  }
+  ctx.stroke();
+};
+const heartPath = (ctx: CanvasRenderingContext2D, cx: number, cy: number, s: number) => {
+  ctx.beginPath();
+  ctx.moveTo(cx, cy + s * 0.9);
+  ctx.bezierCurveTo(cx - s * 1.3, cy + s * 0.1, cx - s * 0.9, cy - s * 0.9, cx, cy - s * 0.35);
+  ctx.bezierCurveTo(cx + s * 0.9, cy - s * 0.9, cx + s * 1.3, cy + s * 0.1, cx, cy + s * 0.9);
+  ctx.closePath();
+};
+
+// ── Phone with a live screen ───────────────────────────────────────────────────────────────────
+export type ChatMsg = { from: "me" | "them"; text?: string; scribble?: number; reveal?: number };
+export type PhoneScreen =
+  | { kind: "chat"; title: string; messages: ChatMsg[]; typing?: number; read?: boolean }
+  | { kind: "notif"; app: string; title: string; text: string; time?: string }
+  | { kind: "balance"; label: string; amount: string; note?: string; alert?: boolean }
+  | { kind: "lock"; time: string; date?: string; notif?: string }
+  | { kind: "off" };
+
+const drawScreen = (ctx: CanvasRenderingContext2D, w: number, h: number, s: PhoneScreen) => {
+  ctx.fillStyle = s.kind === "lock" ? "#1E3F6E" : "#F6E8C8";
+  ctx.fillRect(0, 0, w, h);
+  ctx.textBaseline = "middle";
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = INK;
+  if (s.kind === "chat") {
+    ctx.fillStyle = TEAL;
+    ctx.fillRect(0, 0, w, 96);
+    ctx.fillStyle = YELLOW;
+    ctx.beginPath();
+    ctx.arc(52, 50, 26, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = "#FFF7E6";
+    ctx.font = `700 34px "${FONT_LETTER}"`;
+    ctx.fillText(s.title, 92, 52);
+    let y = 128;
+    for (const [i, m] of s.messages.entries()) {
+      const r = m.reveal ?? 1;
+      if (r <= 0) continue;
+      const mine = m.from === "me";
+      ctx.font = `700 40px "${FONT_LETTER}"`;
+      const lines = m.scribble ?? 0;
+      const bw = lines ? 300 : Math.min(w - 60, ctx.measureText(m.text ?? "").width + 50);
+      const bh = lines ? 34 + lines * 30 : 76;
+      const bx = mine ? w - bw - 18 : 18;
+      ctx.globalAlpha = Math.min(1, r * 1.5);
+      ctx.fillStyle = mine ? YELLOW : "#F9EDD4";
+      roundRect(ctx, bx, y + (1 - r) * 24, bw, bh, 22);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = INK;
+      if (lines) {
+        ctx.lineCap = "round";
+        for (let l = 0; l < lines; l++) drawScribble(ctx, bx + 22, y + 34 + l * 30 + (1 - r) * 24, l === lines - 1 ? 140 : bw - 44, l + i * 3);
+      } else ctx.fillText(m.text ?? "", bx + 25, y + bh / 2 + (1 - r) * 24 + 2);
+      if (!mine === false && s.read && i === s.messages.length - 1) {
+        ctx.strokeStyle = BLUE;
+        for (const off of [0, 12]) {
+          ctx.beginPath();
+          ctx.moveTo(bx + bw - 44 + off, y + bh - 20);
+          ctx.lineTo(bx + bw - 38 + off, y + bh - 13);
+          ctx.lineTo(bx + bw - 26 + off, y + bh - 28);
+          ctx.stroke();
+        }
+        ctx.strokeStyle = INK;
+      }
+      ctx.globalAlpha = 1;
+      y += bh + 22;
+    }
+    if (s.typing !== undefined && s.typing >= 0) {
+      const bx = 18;
+      ctx.fillStyle = "#F9EDD4";
+      roundRect(ctx, bx, y, 132, 64, 30);
+      ctx.fill();
+      ctx.stroke();
+      for (let d = 0; d < 3; d++) {
+        const ph = Math.sin((s.typing - d * 6) * 0.22);
+        ctx.fillStyle = INK;
+        ctx.beginPath();
+        ctx.arc(bx + 36 + d * 30, y + 32 - Math.max(0, ph) * 8, 9, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    ctx.fillStyle = "#EADBB8";
+    ctx.fillRect(0, h - 90, w, 90);
+  } else if (s.kind === "notif") {
+    ctx.fillStyle = "#EADBB8";
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = "#F9EDD4";
+    roundRect(ctx, 20, 150, w - 40, 210, 26);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = RED;
+    roundRect(ctx, 40, 172, 56, 56, 14);
+    ctx.fill();
+    ctx.fillStyle = INK;
+    ctx.font = `700 28px "${FONT_LETTER}"`;
+    ctx.fillText(s.app, 110, 200);
+    if (s.time) ctx.fillText(s.time, w - 110, 200);
+    ctx.font = `700 38px "${FONT_LETTER}"`;
+    ctx.fillText(s.title, 44, 262);
+    ctx.font = `700 30px "${FONT_LETTER}"`;
+    ctx.fillText(s.text, 44, 316);
+  } else if (s.kind === "balance") {
+    ctx.fillStyle = TEAL;
+    ctx.fillRect(0, 0, w, 260);
+    ctx.fillStyle = "#FFF7E6";
+    ctx.font = `700 32px "${FONT_LETTER}"`;
+    ctx.fillText(s.label, 32, 80);
+    ctx.font = `64px "${FONT_IMPACT}"`;
+    ctx.fillStyle = s.alert ? YELLOW : "#FFF7E6";
+    ctx.fillText(s.amount, 32, 170);
+    if (s.note) {
+      ctx.fillStyle = INK;
+      ctx.font = `700 30px "${FONT_LETTER}"`;
+      ctx.fillText(s.note, 32, 320);
+    }
+    for (let i = 0; i < 4; i++) {
+      ctx.fillStyle = i % 2 ? "#F6E8C8" : "#EADBB8";
+      ctx.fillRect(0, 380 + i * 90, w, 90);
+      ctx.strokeStyle = "#cbb88f";
+      ctx.lineWidth = 3;
+      ctx.lineCap = "round";
+      drawScribble(ctx, 30, 425 + i * 90, 200, i * 2);
+      ctx.fillStyle = RED;
+      ctx.font = `40px "${FONT_IMPACT}"`;
+      ctx.fillText("-", w - 120, 425 + i * 90);
+    }
+  } else if (s.kind === "lock") {
+    ctx.fillStyle = "#FFF7E6";
+    ctx.textAlign = "center";
+    ctx.font = `150px "${FONT_IMPACT}"`;
+    ctx.fillText(s.time, w / 2, 230);
+    if (s.date) {
+      ctx.font = `700 34px "${FONT_LETTER}"`;
+      ctx.fillText(s.date, w / 2, 330);
+    }
+    if (s.notif) {
+      ctx.fillStyle = "#FFF7E6";
+      roundRect(ctx, 24, 420, w - 48, 110, 24);
+      ctx.fill();
+      ctx.fillStyle = INK;
+      ctx.font = `700 32px "${FONT_LETTER}"`;
+      ctx.fillText(s.notif, w / 2, 476);
+    }
+    ctx.textAlign = "left";
+  }
+};
+
+export const Phone: React.FC<{ screen: PhoneScreen; case?: SwatchKey; position?: V3; rotation?: V3; scale?: number }> = ({ screen, case: caseSw = "red", position, rotation, scale = 1 }) => {
+  const key = JSON.stringify(screen, (_k, v) => (typeof v === "number" ? Math.round(v * 20) / 20 : v));
+  const tex = useCanvasTexture(400, 800, key, (ctx, w, h) => drawScreen(ctx, w, h, screen));
+  const screenMat = useMemo(() => new MeshBasicMaterial({ map: tex, toneMapped: false }), [tex]);
+  const offMat = useMemo(() => new MeshBasicMaterial({ color: "#1d2a3a", toneMapped: false }), []);
+  return (
+    <group position={position} rotation={rotation} scale={scale}>
+      <Toon geo={G.roundedBox(0.23, 0.44, 0.045, 0.035)} sw={caseSw} mat={{ spec: 1, specSize: 0.03 }} outline={3.5} />
+      <Toon geo={G.roundedBox(0.205, 0.415, 0.01, 0.03)} sw="ink" mat={{ flat: true }} outline={0} position={[0, 0, 0.02]} />
+      <mesh position={[0, 0, 0.0262]} geometry={G.plane()} scale={[0.19, 0.38, 1]} material={screen.kind === "off" ? offMat : screenMat} />
+      <Toon geo={G.roundedBox(0.07, 0.07, 0.02, 0.015)} sw="ink" mat={{ flat: true }} outline={0} position={[0.06, 0.15, -0.026]} />
+    </group>
+  );
+};
+
+// ── Balloon cards: hand-inked speech / chat / thought balloons living in 3D space ─────────────
+export type BubbleIcon = "?" | "!" | "?!" | "..." | "zzz" | "heart" | "Rp" | "$";
+export type BubbleContent =
+  | { kind: "text"; text: string; font?: string; px?: number; color?: string }
+  | { kind: "squiggle"; lines: number }
+  | { kind: "dots"; phase: number }
+  | { kind: "icon"; icon: BubbleIcon; color?: string };
+export type BubbleOpts = { w: number; h: number; tail?: "left" | "right" | "none"; fill?: string; content: BubbleContent };
+
+const TAIL = 0.34;
+export const drawBubbleCard = (ctx: CanvasRenderingContext2D, cw: number, ch: number, o: BubbleOpts) => {
+  const bodyH = ch / (1 + TAIL);
+  const lw = Math.round(cw * 0.022);
+  const m = lw * 1.2;
+  const x = m, y = m, w = cw - 2 * m, h = bodyH - 2 * m;
+  const r = Math.min(w, h) * 0.38;
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  if (o.tail === "right") {
+    ctx.lineTo(x + w * 0.82, y + h);
+    ctx.quadraticCurveTo(x + w * 0.86, y + h + bodyH * 0.18, x + w * 0.95, y + h + bodyH * 0.3);
+    ctx.quadraticCurveTo(x + w * 0.72, y + h + bodyH * 0.16, x + w * 0.64, y + h);
+  }
+  if (o.tail === "left") {
+    ctx.lineTo(x + w * 0.36, y + h);
+    ctx.quadraticCurveTo(x + w * 0.28, y + h + bodyH * 0.16, x + w * 0.05, y + h + bodyH * 0.3);
+    ctx.quadraticCurveTo(x + w * 0.14, y + h + bodyH * 0.18, x + w * 0.18, y + h);
+  }
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+  ctx.fillStyle = o.fill ?? "#F9EDD4";
+  ctx.fill();
+  ctx.lineWidth = lw;
+  ctx.strokeStyle = INK;
+  ctx.lineJoin = "round";
+  ctx.stroke();
+  const c = o.content;
+  ctx.fillStyle = INK;
+  ctx.strokeStyle = INK;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  if (c.kind === "text" || c.kind === "icon") {
+    if (c.kind === "icon" && c.icon === "heart") {
+      heartPath(ctx, x + w / 2, y + h / 2, h * 0.32);
+      ctx.fillStyle = c.color ?? RED;
+      ctx.fill();
+      ctx.lineWidth = lw * 0.8;
+      ctx.stroke();
+      return;
+    }
+    const text = c.kind === "text" ? c.text : c.icon === "zzz" ? "Zzz" : c.icon;
+    const font = c.kind === "text" ? c.font ?? FONT_IMPACT : FONT_IMPACT;
+    let px = c.kind === "text" ? c.px ?? Math.round(h * 0.62) : Math.round(h * 0.78);
+    ctx.font = `${px}px "${font}"`;
+    while (ctx.measureText(text).width > w * 0.8 && px > 16) {
+      px -= 6;
+      ctx.font = `${px}px "${font}"`;
+    }
+    ctx.fillStyle = c.color ?? (c.kind === "icon" && (c.icon === "!" || c.icon === "?!") ? RED : INK);
+    ctx.fillText(text, x + w / 2, y + h / 2 + px * 0.06);
+  } else if (c.kind === "squiggle") {
+    ctx.lineWidth = lw * 0.75;
+    ctx.lineCap = "round";
+    for (let l = 0; l < c.lines; l++) {
+      const yy = y + h * (0.2 + (0.6 * l) / Math.max(1, c.lines - 1));
+      drawScribble(ctx, x + w * 0.14, yy, l === c.lines - 1 ? w * 0.42 : w * 0.72, l * 1.7 + 2);
+    }
+  } else {
+    for (let d = 0; d < 3; d++) {
+      const ph = Math.sin((c.phase - d * 6) * 0.22);
+      ctx.beginPath();
+      ctx.arc(x + w * (0.3 + d * 0.2), y + h / 2 - Math.max(0, ph) * h * 0.12, h * 0.11, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+};
+const bubbleKey = (o: BubbleOpts) => JSON.stringify([o.w, o.h, o.tail, o.fill, o.content.kind === "dots" ? { k: "dots", p: Math.round(o.content.phase) } : o.content]);
+export const useBubbleTexture = (o: BubbleOpts) => {
+  const cw = 1024;
+  const ch = Math.round((cw * o.h * (1 + TAIL)) / o.w);
+  return useCanvasTexture(cw, ch, bubbleKey(o), (ctx, w, h) => drawBubbleCard(ctx, w, h, o));
+};
+
+/** A balloon card in 3D: inked face + offset ink "print extrusion" behind it for depth. */
+export const ChatBubble3D: React.FC<BubbleOpts & { position?: V3; rotation?: V3; scale?: number | V3; opacity?: number }> = ({ position, rotation, scale = 1, opacity = 1, ...o }) => {
+  const tex = useBubbleTexture(o);
+  const face = useMemo(() => new MeshBasicMaterial({ map: tex, transparent: true, toneMapped: false, side: DoubleSide, alphaTest: 0.02 }), [tex]);
+  const back = useMemo(() => new MeshBasicMaterial({ map: tex, color: "#000000", transparent: true, toneMapped: false, side: DoubleSide, alphaTest: 0.02 }), [tex]);
+  face.opacity = opacity;
+  back.opacity = opacity;
+  const s: V3 = typeof scale === "number" ? [scale, scale, scale] : scale;
+  const H = o.h * (1 + TAIL);
+  return (
+    <group position={position} rotation={rotation} scale={s}>
+      <mesh geometry={G.plane()} material={back} position={[o.w * 0.035, -H / 2 + o.h / 2 - o.w * 0.04, -0.03]} scale={[o.w, H, 1]} />
+      <mesh geometry={G.plane()} material={face} position={[0, -H / 2 + o.h / 2, 0]} scale={[o.w, H, 1]} renderOrder={2} />
+    </group>
+  );
+};
+
+// ── Sign: an in-world inked card with lettering (shop signs, price tags, calendar pages, labels) ──
+export const Sign: React.FC<{
+  text: string;
+  sub?: string;
+  w?: number;
+  h?: number;
+  sw?: SwatchKey;
+  ink?: string;
+  font?: "impact" | "letter";
+  position?: V3;
+  rotation?: V3;
+  scale?: number;
+  depth?: number;
+}> = ({ text, sub, w = 1, h = 0.4, sw = "paper", ink = INK, font = "impact", position, rotation, scale = 1, depth = 0.04 }) => {
+  const bg = SW[sw].c;
+  const tex = useCanvasTexture(1024, Math.round((1024 * h) / w), `${text}|${sub}|${bg}|${ink}|${font}`, (ctx, cw, ch) => {
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, cw, ch);
+    ctx.fillStyle = ink;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    const fam = font === "impact" ? FONT_IMPACT : FONT_LETTER;
+    let px = Math.round(ch * (sub ? 0.5 : 0.66));
+    ctx.font = `${font === "letter" ? "700 " : ""}${px}px "${fam}"`;
+    while (ctx.measureText(text).width > cw * 0.86 && px > 14) {
+      px -= 6;
+      ctx.font = `${font === "letter" ? "700 " : ""}${px}px "${fam}"`;
+    }
+    ctx.fillText(text, cw / 2, sub ? ch * 0.4 : ch / 2 + px * 0.05);
+    if (sub) {
+      ctx.font = `700 ${Math.round(ch * 0.2)}px "${FONT_LETTER}"`;
+      ctx.fillText(sub, cw / 2, ch * 0.78);
+    }
+  });
+  const mat = useMemo(() => new MeshBasicMaterial({ map: tex, toneMapped: false }), [tex]);
+  return (
+    <group position={position} rotation={rotation} scale={scale}>
+      <Toon geo={G.roundedBox(w + 0.04, h + 0.04, depth, Math.min(0.03, depth / 2))} sw={sw} outline={4} />
+      <mesh geometry={G.plane()} material={mat} position={[0, 0, depth / 2 + 0.002]} scale={[w, h, 1]} />
+    </group>
+  );
+};
+
+export { PAPER };
+
+==== 8681 src/kits/panelverse/engine/three/rig.ts
+import { Quaternion, Vector3 } from "three";
+import type { V3 } from "../types.ts";
+import { sample, type Key } from "../keyframes.ts";
+
+// ── Body proportions ─────────────────────────────────────────────────────────────────────────────
+// Stylised ~3.6-heads-tall figure. Limbs are solved with analytic two-bone IK every frame and drawn as
+// tapered segments between joint positions, so arms and legs can never detach or break.
+export const BODY = {
+  pelvisH: 1.02,
+  hipX: 0.145,
+  hipY: -0.07,
+  thigh: 0.5,
+  shin: 0.47,
+  shoulderX: 0.33,
+  shoulderY: 0.7,
+  upperArm: 0.4,
+  foreArm: 0.36,
+  neckY: 0.78,
+  headPivotY: 0.9,
+  headR: 0.4,
+  headUp: 0.33,
+};
+
+// ── Pose ───────────────────────────────────────────────────────────────────────────────────────
+// Character space: +Y up, character faces +Z, +X is the character's LEFT.
+export type Pose = {
+  pos: V3; // root on the ground
+  rotY: number;
+  squash: number; // 1 = neutral; >1 stretch, <1 squash (volume-preserving)
+  pelvis: V3; // offset from standing pelvis (x, dy, z)
+  spine: V3; // torso euler (x = bend forward, y = twist, z = side lean)
+  head: V3; // head euler relative to torso (x = nod down, y = turn to own left, z = tilt)
+  shrug: number;
+  handL: V3; // wrist targets, torso space
+  handR: V3;
+  elbowL: V3; // elbow pole directions, torso space
+  elbowR: V3;
+  twistL: number; // hand twist around forearm
+  twistR: number;
+  fistL: number; // 0 open mitten → 1 fist
+  fistR: number;
+  footL: V3; // ankle targets, root space
+  footR: V3;
+  kneeL: V3; // knee pole directions, root space
+  kneeR: V3;
+};
+
+export const STAND: Pose = {
+  pos: [0, 0, 0],
+  rotY: 0,
+  squash: 1,
+  pelvis: [0, 0, 0],
+  spine: [0, 0, 0],
+  head: [0, 0, 0],
+  shrug: 0,
+  handL: [0.42, 0.02, 0.06],
+  handR: [-0.42, 0.02, 0.06],
+  elbowL: [0.6, -0.2, -0.8],
+  elbowR: [-0.6, -0.2, -0.8],
+  twistL: 0,
+  twistR: 0,
+  fistL: 0.3,
+  fistR: 0.3,
+  footL: [0.15, 0.08, 0.02],
+  footR: [-0.15, 0.08, 0.02],
+  kneeL: [0.1, 0, 1],
+  kneeR: [-0.1, 0, 1],
+};
+
+export type PoseKey = Key<Partial<Pose>>;
+export const samplePose = (keys: readonly PoseKey[], f: number): Pose => ({ ...STAND, ...sample<Partial<Pose>>(keys, f) });
+
+// ── Expression ─────────────────────────────────────────────────────────────────────────────────
+export type MouthShape = "smile" | "frown" | "flat" | "wobble" | "open" | "grin" | "shout" | "chew" | "o" | "smirk";
+export type EyeMode = "open" | "happy" | "shut" | "heart" | "star";
+export type Expr = {
+  browIn: number; // inner-end raise (+ worried, − angry)
+  browUp: number; // overall raise
+  browAsym: number;
+  eyeOpen: number; // vertical eye scale
+  eyeSize: number;
+  pupil: number;
+  look: [number, number]; // pupil offset −1..1
+  eyeMode: EyeMode;
+  mouth: MouthShape;
+  mouthOpen: number;
+  mouthW: number;
+  puff: number; // cheek puff (chewing)
+  blush: number;
+  sweat: number; // 0..1 sweat drops
+  tears: number; // 0..1 comic tear streams
+  tremble: number;
+  blink: boolean; // automatic blinks
+};
+
+export const NEUTRAL: Expr = {
+  browIn: 0,
+  browUp: 0,
+  browAsym: 0,
+  eyeOpen: 1,
+  eyeSize: 1,
+  pupil: 1,
+  look: [0, 0],
+  eyeMode: "open",
+  mouth: "smile",
+  mouthOpen: 0,
+  mouthW: 0.8,
+  puff: 0,
+  blush: 0,
+  sweat: 0,
+  tears: 0,
+  tremble: 0,
+  blink: true,
+};
+
+export const EXPR = {
+  neutral: NEUTRAL,
+  hopeful: { ...NEUTRAL, browUp: 0.5, browIn: 0.2, eyeSize: 1.06, mouth: "smile", mouthW: 1.1 } as Expr,
+  concerned: { ...NEUTRAL, browIn: 0.9, browUp: 0.2, mouth: "flat", mouthW: 0.7, eyeOpen: 1.0, pupil: 0.85 } as Expr,
+  worried: { ...NEUTRAL, browIn: 1.1, browUp: 0.35, mouth: "wobble", mouthW: 0.85, pupil: 0.75, sweat: 0.6 } as Expr,
+  panic: {
+    ...NEUTRAL,
+    browIn: 1.3,
+    browUp: 1,
+    eyeSize: 1.35,
+    eyeOpen: 1.2,
+    pupil: 0.42,
+    mouth: "wobble",
+    mouthW: 1.1,
+    sweat: 1,
+    tremble: 1,
+    blink: false,
+  } as Expr,
+  angry: { ...NEUTRAL, browIn: -1.2, browUp: -0.3, eyeOpen: 0.78, pupil: 0.9, mouth: "shout", mouthOpen: 0.85, mouthW: 1.1, tremble: 0.5, blink: false } as Expr,
+  guilty: { ...NEUTRAL, browIn: 1.2, browUp: 0.1, eyeOpen: 0.9, pupil: 0.7, look: [0.3, -0.6], mouth: "wobble", mouthW: 0.6, sweat: 0.8 } as Expr,
+  devastated: {
+    ...NEUTRAL,
+    browIn: 1.4,
+    browUp: 0.8,
+    eyeSize: 1.2,
+    eyeOpen: 1.15,
+    pupil: 0.5,
+    mouth: "o",
+    mouthOpen: 0.9,
+    mouthW: 0.8,
+    sweat: 1,
+    blink: false,
+  } as Expr,
+  cold: { ...NEUTRAL, browIn: -0.3, browUp: -0.1, eyeOpen: 0.55, look: [-0.7, 0], mouth: "flat", mouthW: 0.6 } as Expr,
+  calm: { ...NEUTRAL, browUp: 0.1, eyeOpen: 0.95, mouth: "smile", mouthW: 0.7 } as Expr,
+  bliss: { ...NEUTRAL, browUp: 0.45, browIn: 0.25, eyeMode: "happy", mouth: "chew", puff: 1, blush: 1, blink: false } as Expr,
+  yum: { ...NEUTRAL, browUp: 0.3, eyeOpen: 1.05, mouth: "o", mouthOpen: 0.75, mouthW: 0.75, blush: 0.6 } as Expr,
+  // added for PANELVERSE scripts beyond the prototype
+  shocked: { ...NEUTRAL, browUp: 1.2, browIn: 0.3, eyeSize: 1.3, eyeOpen: 1.25, pupil: 0.45, mouth: "o", mouthOpen: 1, mouthW: 0.9, blink: false } as Expr,
+  laugh: { ...NEUTRAL, browUp: 0.5, eyeMode: "happy", mouth: "grin", mouthOpen: 0.9, mouthW: 1.2, blush: 0.4, blink: false } as Expr,
+  sad: { ...NEUTRAL, browIn: 1.1, browUp: 0.1, eyeOpen: 0.85, pupil: 0.9, look: [0, -0.5], mouth: "frown", mouthW: 0.8 } as Expr,
+  cry: { ...NEUTRAL, browIn: 1.4, browUp: 0.3, eyeMode: "shut", mouth: "shout", mouthOpen: 0.7, mouthW: 1, tears: 1, tremble: 0.6, blink: false } as Expr,
+  smug: { ...NEUTRAL, browAsym: 1, browIn: -0.4, eyeOpen: 0.55, look: [0.4, 0], mouth: "smirk", mouthW: 0.9 } as Expr,
+  sleepy: { ...NEUTRAL, browUp: -0.2, eyeOpen: 0.28, look: [0, -0.3], mouth: "o", mouthOpen: 0.2, mouthW: 0.5, blink: false } as Expr,
+  determined: { ...NEUTRAL, browIn: -0.8, browUp: -0.1, eyeOpen: 0.9, mouth: "grin", mouthOpen: 0.35, mouthW: 1 } as Expr,
+  confused: { ...NEUTRAL, browAsym: 1.2, browIn: 0.5, look: [0.5, 0.6], mouth: "wobble", mouthW: 0.6 } as Expr,
+  love: { ...NEUTRAL, browUp: 0.5, eyeMode: "heart", mouth: "smile", mouthW: 1.1, blush: 1, blink: false } as Expr,
+  starry: { ...NEUTRAL, browUp: 0.8, eyeMode: "star", mouth: "grin", mouthOpen: 0.6, mouthW: 1.1, blink: false } as Expr,
+  embarrassed: { ...NEUTRAL, browIn: 0.8, eyeOpen: 0.8, look: [-0.6, -0.4], mouth: "wobble", mouthW: 0.6, blush: 1, sweat: 0.5 } as Expr,
+} satisfies Record<string, Expr>;
+
+export type ExprKey = Key<Partial<Expr>>;
+export const sampleExpr = (keys: readonly ExprKey[], f: number): Expr => ({ ...NEUTRAL, ...sample<Partial<Expr>>(keys, f) });
+
+// ── Two-bone IK ────────────────────────────────────────────────────────────────────────────────
+const _v = new Vector3();
+const _d = new Vector3();
+const _b = new Vector3();
+/** Returns [joint, end] for a chain root→joint→end of lengths a,b reaching for target, bending toward pole. */
+export const solveIK = (root: Vector3, target: Vector3, a: number, b: number, pole: Vector3): [Vector3, Vector3] => {
+  _d.copy(target).sub(root);
+  let dist = _d.length();
+  if (dist < 1e-5) {
+    _d.set(0, -1, 0);
+    dist = 1e-5;
+  }
+  _d.divideScalar(dist);
+  const d = Math.min(dist, a + b - 1e-4);
+  const dMin = Math.abs(a - b) + 1e-3;
+  const dd = Math.max(d, dMin);
+  const x = (a * a - b * b + dd * dd) / (2 * dd);
+  const h = Math.sqrt(Math.max(a * a - x * x, 0));
+  _b.copy(pole).addScaledVector(_d, -pole.dot(_d));
+  if (_b.lengthSq() < 1e-8) _b.set(0, 0, 1).addScaledVector(_d, -_d.z);
+  _b.normalize();
+  const joint = new Vector3().copy(root).addScaledVector(_d, x).addScaledVector(_b, h);
+  const end = new Vector3().copy(root).addScaledVector(_d, dd);
+  return [joint, end];
+};
+
+const UP = new Vector3(0, 1, 0);
+/** Placement (position, quaternion, length) of a +Y unit segment from a to b. */
+export const segment = (a: Vector3, b: Vector3) => {
+  _v.copy(b).sub(a);
+  const len = _v.length();
+  const q = new Quaternion().setFromUnitVectors(UP, len > 1e-6 ? _v.clone().divideScalar(len) : UP);
+  return { pos: [a.x, a.y, a.z] as V3, q, len };
+};
+
+==== 5166 src/kits/panelverse/engine/three/setPresets.ts
+// Ready-made sets. A story uses one as a base and remixes it — change colours, move, add or remove
+// items, swap the wall — so two videos never share the same room. Back wall is at z = -2.4.
+import type { SetSpec } from "./setTypes.ts";
+
+const WALL = -2.36;
+export const SET_PRESETS: Record<string, SetSpec> = {
+  bedroomNight: {
+    kind: "interior", floor: "wood", wall: "blue", wallDots: 0.2, wainscot: null, sideWall: "none",
+    items: [
+      { type: "bed", pos: [0.15, 0, -1.0] },
+      { type: "window", pos: [-1.35, 2.45, WALL], on: true },
+      { type: "poster", pos: [-3.0, 2.3, WALL], rot: [0, 0, 0.04] },
+      { type: "clock", pos: [1.35, 2.75, WALL + 0.03] },
+      { type: "lamp", pos: [2.45, 0.72, -1.6] },
+      { type: "shelf", pos: [3.3, 0, -1.9] },
+    ],
+  },
+  warung: {
+    kind: "interior", floor: "paper", floorDots: 0.1, wall: "yellow", wallDots: 0.12, wainscot: "teal", sideWall: "none",
+    items: [
+      { type: "window", pos: [-1.0, 2.5, WALL] },
+      { type: "frame", pos: [0.82, 2.62, WALL], rot: [0, 0, -0.04] },
+      { type: "bulb", pos: [0.1, 3.9, -0.3], on: true },
+      { type: "table", pos: [0, 0, 0.55], sw: "teal", on: true },
+      { type: "bottle", pos: [-0.6, 0.9, 0.2], sw: "red" },
+      { type: "bottle", pos: [-0.74, 0.9, 0.42], sw: "ink" },
+      { type: "glass", pos: [0.62, 0.9, 0.22] },
+    ],
+  },
+  cafe: {
+    kind: "interior", floor: "woodLight", wall: "teal", wallDots: 0.14, wainscot: "wood", sideWall: "none",
+    items: [
+      { type: "counter", pos: [1.8, 0, -1.6], sw: "wood", sw2: "white" },
+      { type: "sign", pos: [-1.8, 0, -2.0], text: "KOPI", sw: "yellow" },
+      { type: "bulb", pos: [-0.6, 4.0, -0.6], sw: "yellow" },
+      { type: "bulb", pos: [1.2, 4.0, -1.0], sw: "red" },
+      { type: "table", pos: [0, 0, 0.5], sw: "white", sw2: "dark" },
+      { type: "mug", pos: [-0.35, 0.9, 0.55], on: true },
+      { type: "plant", pos: [-2.8, 0, -1.8] },
+    ],
+  },
+  office: {
+    kind: "interior", floor: "grey", floorDots: 0.08, wall: "white", wallDots: 0.1, wainscot: null, sideWall: "none",
+    items: [
+      { type: "desk", pos: [0, 0, 0.45] },
+      { type: "laptop", pos: [-0.15, 0.9, 0.4] },
+      { type: "mug", pos: [0.45, 0.9, 0.55], sw: "blue" },
+      { type: "window", pos: [-1.6, 2.4, WALL] },
+      { type: "clock", pos: [1.4, 2.9, WALL + 0.03] },
+      { type: "shelf", pos: [2.4, 0, -1.9], sw: "grey" },
+      { type: "plant", pos: [-2.6, 0, -1.7], sw: "blue" },
+    ],
+  },
+  classroom: {
+    kind: "interior", floor: "woodLight", wall: "green", wallDots: 0.12, wainscot: "wood", sideWall: "none",
+    items: [
+      { type: "frame", pos: [0, 2.5, WALL], text: "PR!", scale: 2.2 },
+      { type: "clock", pos: [2.2, 3.1, WALL + 0.03] },
+      { type: "desk", pos: [0, 0, 0.5], sw: "woodLight", sw2: "metal" },
+      { type: "book", pos: [-0.3, 0.9, 0.5], n: 3 },
+      { type: "chair", pos: [0, 0, -0.2] },
+    ],
+  },
+  kitchen: {
+    kind: "interior", floor: "white", floorDots: 0.12, wall: "orange", wallDots: 0.1, wainscot: "white", sideWall: "none",
+    items: [
+      { type: "fridge", pos: [-2.0, 0, -1.9] },
+      { type: "counter", pos: [1.2, 0, -1.9], sw: "white", sw2: "woodLight" },
+      { type: "window", pos: [1.2, 2.4, WALL] },
+      { type: "table", pos: [0, 0, 0.5], sw: "red", on: true },
+    ],
+  },
+  livingroom: {
+    kind: "interior", floor: "woodLight", wall: "pink", wallDots: 0.12, wainscot: null, sideWall: "none",
+    items: [
+      { type: "sofa", pos: [0, 0, -1.2], sw: "teal" },
+      { type: "rug", pos: [0, 0, 0.3], sw: "yellow" },
+      { type: "tv", pos: [2.6, 0, -1.6], rot: -0.5, on: true },
+      { type: "frame", pos: [0, 2.6, WALL] },
+      { type: "plant", pos: [-1.8, 0, -1.8] },
+      { type: "bulb", pos: [0, 4.0, -0.5], sw: "yellow" },
+    ],
+  },
+  street: {
+    kind: "exterior", time: "day", ground: "grey", road: true,
+    items: [
+      { type: "building", pos: [-3.4, 0, -4.5], sw: "orange", n: 3 },
+      { type: "building", pos: [0, 0, -4.8], sw: "teal", n: 2, text: "TOKO" },
+      { type: "building", pos: [3.4, 0, -4.5], sw: "red", n: 4 },
+      { type: "streetlamp", pos: [-1.8, 0, -1.9] },
+      { type: "tree", pos: [2.2, 0, -2.4] },
+    ],
+  },
+  park: {
+    kind: "exterior", time: "day", ground: "green", road: false,
+    items: [
+      { type: "tree", pos: [-2.4, 0, -3.0] },
+      { type: "tree", pos: [2.8, 0, -4.0], sw: "teal" },
+      { type: "bench", pos: [0, 0, -1.2] },
+      { type: "bush", pos: [-1.2, 0, -2.2] },
+      { type: "streetlamp", pos: [1.6, 0, -2.2], on: false },
+      { type: "cloud", pos: [-2.0, 6.5, -10], scale: 2.5 },
+      { type: "sun", pos: [3.5, 7.5, -12], scale: 2.4 },
+    ],
+  },
+  shop: {
+    kind: "interior", floor: "white", floorDots: 0.1, wall: "sky", wallDots: 0.12, wainscot: "blue", sideWall: "none",
+    items: [
+      { type: "counter", pos: [0, 0, 0.2], sw: "red", sw2: "white" },
+      { type: "shelf", pos: [-2.2, 0, -1.9], sw: "white" },
+      { type: "shelf", pos: [2.2, 0, -1.9], sw: "white" },
+      { type: "sign", pos: [0, 0.4, -2.2], text: "DISKON", sw: "yellow", scale: 1.2 },
+    ],
+  },
+};
+export type SetPresetName = keyof typeof SET_PRESETS;
+
+==== 9315 src/kits/panelverse/engine/three/sets.tsx
+import React from "react";
+import { Shape } from "three";
+import { Toon, type V3 } from "./Toon.tsx";
+import { G } from "./geometries.ts";
+import { LIB, type ItemProps } from "./library.tsx";
+import { CliffHalf, Spotlight } from "./storyProps.tsx";
+import { sample } from "../keyframes.ts";
+import type { ItemSpec, SetSpec } from "./setTypes.ts";
+import type { SwatchKey } from "../../theme/palette.ts";
+
+/**
+ * Register a story's own elements (made for one script) next to the library items. Call it at the
+ * top level of `src/pv-stories/<id>/elements.tsx`; the names become usable as set items and as
+ * `item` props in that story.
+ */
+export const registerItems = (items: Record<string, { desc: string; render: (p: ItemProps) => React.ReactNode; wall?: boolean }>) => {
+  for (const [k, v] of Object.entries(items)) LIB[k] = v;
+};
+
+/** One placed item (animated fields sampled at the shot frame). */
+export const PlacedItem: React.FC<{ spec: ItemSpec; f: number }> = ({ spec, f }) => {
+  const s = spec.keys ? { ...spec, ...sample<Partial<ItemSpec>>(spec.keys, f) } : spec;
+  const item = LIB[s.type];
+  if (!item) throw new Error(`PANELVERSE: unknown item "${s.type}" — use a library item or registerItems() it in the story's elements.tsx`);
+  const rot: V3 = typeof s.rot === "number" ? [0, s.rot, 0] : s.rot ?? [0, 0, 0];
+  const scale: V3 = typeof s.scale === "number" ? [s.scale, s.scale, s.scale] : s.scale ?? [1, 1, 1];
+  return (
+    <group position={s.pos} rotation={rot} scale={scale}>
+      {item.render({ sw: s.sw, sw2: s.sw2, text: s.text, sub: s.sub, on: s.on, n: s.n, t: s.t ?? f / 60, f })}
+    </group>
+  );
+};
+
+// ── stage looks (abstract comic spaces) ────────────────────────────────────────────────────────
+export const BurstBackdrop: React.FC<{ position: V3; scale: number; a: SwatchKey; b: SwatchKey; rays?: number; spin?: number }> = ({ position, scale, a, b, rays = 18, spin = 0 }) => (
+  <group position={position}>
+    <Toon geo={G.circle()} sw={a} mat={{ flat: true, pattern: 0.12 }} outline={0} scale={scale} />
+    {Array.from({ length: rays }, (_, i) => (
+      <group key={i} rotation={[0, 0, (i / rays) * Math.PI * 2 + spin]}>
+        <Toon geo={G.cone(3)} sw={b} mat={{ flat: true }} outline={0} position={[0, scale * 0.5, 0.01]} scale={[scale * 0.09, scale, 0.001]} rotation={[0, 0, Math.PI]} />
+      </group>
+    ))}
+  </group>
+);
+const jag = () => {
+  const s = new Shape();
+  const pts: [number, number][] = [[0, 12], [0.6, 8], [-0.5, 4], [0.7, 0], [-0.6, -4], [0.5, -8], [0, -12]];
+  s.moveTo(-30, 12);
+  pts.forEach(([x, y]) => s.lineTo(x, y));
+  s.lineTo(-30, -12);
+  s.closePath();
+  return s;
+};
+
+const Stage: React.FC<{ set: SetSpec; f: number }> = ({ set, f }) => {
+  const a = set.a ?? "red", b = set.b ?? "yellow";
+  switch (set.look ?? "burst") {
+    case "burst":
+      return (
+        <group>
+          <Toon geo={G.circle()} sw={a} mat={{ pattern: 0.25, cut: -1 }} outline={0} rotation={[-Math.PI / 2, 0, 0]} scale={9} />
+          <BurstBackdrop position={[0, 2.2, -5]} scale={9} a={a} b={b} rays={20} spin={f * (set.spin ?? 0.004)} />
+        </group>
+      );
+    case "spotlight":
+      return (
+        <group>
+          <Toon geo={G.plane()} sw={a} mat={{ pattern: 0.3, cut: -1 }} outline={0} rotation={[-Math.PI / 2, 0, 0]} scale={[30, 30, 1]} />
+          <Toon geo={G.circle()} sw={b} mat={{ flat: true, pattern: 0.18 }} outline={0} position={[0, 0.01, 0]} rotation={[-Math.PI / 2, 0, 0]} scale={[1.35, 1.25, 1]} />
+          <Toon geo={G.plane()} sw={a} mat={{ pattern: 0.42, flat: true }} outline={0} position={[0, 4, -6]} scale={[30, 14, 1]} />
+          <Spotlight position={[0, 4.3, 0]} height={4.0} radius={1.35} swing={Math.sin(f * 0.05) * 0.03} />
+        </group>
+      );
+    case "split":
+      return (
+        <group>
+          <Toon geo={G.plane()} sw={b} mat={{ flat: true, pattern: 0.15 }} outline={0} position={[0, 3, -6]} scale={[60, 24, 1]} />
+          <Toon geo={G.extrude("splitJag", jag, 0.02, 0)} sw={a} mat={{ flat: true, pattern: 0.15 }} outline={6} position={[0, 3, -5.9]} />
+          <Toon geo={G.plane()} sw="paper" mat={{ pattern: 0.12, cut: -1 }} outline={0} rotation={[-Math.PI / 2, 0, 0]} scale={[30, 30, 1]} />
+        </group>
+      );
+    case "tunnel":
+      return (
+        <group>
+          {Array.from({ length: 14 }, (_, i) => {
+            const z = -((i * 2 + (f * 0.12) % 2) % 28);
+            return <Toon key={i} geo={G.torusArc(3.2, 0.5, Math.PI * 2)} sw={i % 2 ? a : b} mat={{ flat: true, pattern: 0.1 }} outline={5} position={[0, 2, z]} />;
+          })}
+        </group>
+      );
+    case "paper":
+      return <Toon geo={G.plane()} sw="paper" mat={{ flat: true, pattern: 0.06 }} outline={0} position={[0, 3, -6]} scale={[60, 30, 1]} />;
+    case "dots":
+      return (
+        <group>
+          <Toon geo={G.plane()} sw={a} mat={{ flat: true, pattern: 0.38 }} outline={0} position={[0, 3, -6]} scale={[60, 30, 1]} />
+          <Toon geo={G.plane()} sw={a} mat={{ pattern: 0.25, cut: -1 }} outline={0} rotation={[-Math.PI / 2, 0, 0]} scale={[30, 30, 1]} />
+        </group>
+      );
+    case "cliff":
+      return (
+        <group>
+          <Toon geo={G.plane()} sw={a === "red" ? "navy" : a} mat={{ pattern: 0.35, flat: true }} outline={0} position={[0, -3, -12]} scale={[60, 40, 1]} />
+          <CliffHalf side={-1} offset={(set.gap ?? 0) / 2} tilt={set.tilt ?? 0} drop={set.drop ?? 0} />
+          <CliffHalf side={1} offset={(set.gap ?? 0) / 2} tilt={set.tilt ?? 0} drop={set.drop ?? 0} />
+        </group>
+      );
+    case "void":
+    default:
+      return <Toon geo={G.plane()} sw={a} mat={{ flat: true, pattern: 0.1 }} outline={0} position={[0, 3, -8]} scale={[60, 30, 1]} />;
+  }
+};
+
+const SKY: Record<string, SwatchKey> = { day: "sky", sunset: "orange", night: "night" };
+
+/** Renders any SetSpec (interior / exterior / stage) plus its items. */
+export const SetRenderer: React.FC<{ set: SetSpec; f: number }> = ({ set, f }) => (
+  <group>
+    {set.kind === "interior" ? (
+      <group>
+        <Toon geo={G.plane()} sw={set.floor ?? "wood"} mat={{ pattern: set.floorDots ?? 0.1, cut: -1 }} outline={0} rotation={[-Math.PI / 2, 0, 0]} scale={[16, 12, 1]} />
+        <Toon geo={G.plane()} sw={set.wall ?? "blue"} mat={{ pattern: set.wallDots ?? 0.15, cut: -1 }} outline={0} position={[0, 3, -2.4]} scale={[16, 6, 1]} />
+        {set.wainscot ? (
+          <>
+            <Toon geo={G.roundedBox(16, 1.1, 0.06, 0.02)} sw={set.wainscot} mat={{ pattern: 0.15 }} outline={3.5} position={[0, 0.55, -2.36]} />
+            <Toon geo={G.roundedBox(16, 0.08, 0.1, 0.02)} sw="white" outline={3} position={[0, 1.12, -2.33]} />
+          </>
+        ) : (
+          <Toon geo={G.roundedBox(16, 0.18, 0.08, 0.02)} sw="white" outline={3} position={[0, 0.09, -2.36]} />
+        )}
+        {(set.sideWall === "left" || set.sideWall === "both") && (
+          <Toon geo={G.plane()} sw={set.wall ?? "blue"} mat={{ pattern: (set.wallDots ?? 0.15) + 0.1, cut: -1 }} outline={0} position={[-4.2, 3, 2]} rotation={[0, Math.PI / 2, 0]} scale={[9, 6, 1]} />
+        )}
+        {(set.sideWall === "right" || set.sideWall === "both") && (
+          <Toon geo={G.plane()} sw={set.wall ?? "blue"} mat={{ pattern: (set.wallDots ?? 0.15) + 0.1, cut: -1 }} outline={0} position={[4.2, 3, 2]} rotation={[0, -Math.PI / 2, 0]} scale={[9, 6, 1]} />
+        )}
+      </group>
+    ) : null}
+    {set.kind === "exterior" ? (
+      <group>
+        <Toon geo={G.plane()} sw={SKY[set.time ?? "day"]} mat={{ flat: true, pattern: set.time === "night" ? 0.22 : 0.06 }} outline={0} position={[0, 8, -16]} scale={[80, 30, 1]} />
+        {set.time === "sunset" ? <Toon geo={G.plane()} sw="pink" mat={{ flat: true, pattern: 0.2 }} outline={0} position={[0, 2.5, -15.9]} scale={[80, 6, 1]} /> : null}
+        <Toon geo={G.plane()} sw={set.ground ?? "grey"} mat={{ pattern: 0.12, cut: -1 }} outline={0} rotation={[-Math.PI / 2, 0, 0]} scale={[60, 40, 1]} />
+        {set.road ? (
+          <group>
+            <Toon geo={G.plane()} sw="dark" mat={{ pattern: 0.1, cut: -1 }} outline={0} position={[0, 0.01, 1.6]} rotation={[-Math.PI / 2, 0, 0]} scale={[60, 3, 1]} />
+            {Array.from({ length: 12 }, (_, i) => (
+              <Toon key={i} geo={G.plane()} sw="white" mat={{ flat: true }} outline={0} position={[-11 + i * 2, 0.02, 1.6]} rotation={[-Math.PI / 2, 0, 0]} scale={[0.9, 0.12, 1]} />
+            ))}
+            <Toon geo={G.roundedBox(60, 0.14, 0.3, 0.03)} sw="white" outline={3} position={[0, 0.07, 0.05]} />
+          </group>
+        ) : null}
+      </group>
+    ) : null}
+    {set.kind === "stage" ? <Stage set={set} f={f} /> : null}
+    {(set.items ?? []).map((it, i) => (
+      <PlacedItem key={i} spec={it} f={f} />
+    ))}
+  </group>
+);
+
+/** Anchors a set exposes for actors (e.g. the cliff halves drift apart carrying the people on them). */
+export const setAnchors = (set: SetSpec): Record<string, { pos: V3; rot: V3 }> => {
+  if (set.kind === "stage" && set.look === "cliff") {
+    const g = (set.gap ?? 0) / 2, t = set.tilt ?? 0, d = set.drop ?? 0;
+    return { "cliff-left": { pos: [-g, -d, 0], rot: [0, 0, t] }, "cliff-right": { pos: [g, -d, 0], rot: [0, 0, -t] } };
+  }
+  return {};
+};
+
+==== 2807 src/kits/panelverse/theme/palette.ts
+// PANELVERSE retro pop palette. The core six are the style's identity; every other swatch is a
+// hand-picked shade/dot companion in the same printed family so cel bands never drift off-palette.
+export const INK = "#171717";
+export const PAPER = "#F6E8C8";
+export const YELLOW = "#F5CC27";
+export const RED = "#EF4035";
+export const BLUE = "#2674B9";
+export const TEAL = "#1B927C";
+
+/** A cel-shaded surface: lit flat colour, shadow band colour, halftone dot colour (deep shadow). */
+export type Swatch = { c: string; s: string; d: string };
+
+export const SW = {
+  // core
+  paper: { c: PAPER, s: "#DCC69A", d: "#B89A68" },
+  white: { c: "#F9EDD4", s: "#E3CFA8", d: "#C4A878" }, // print cream (never pure white: stays below the QA burnt-white threshold)
+  yellow: { c: YELLOW, s: "#DDA01C", d: "#B5701A" },
+  red: { c: RED, s: "#C02A2A", d: "#8A1C22" },
+  blue: { c: BLUE, s: "#1B568F", d: "#123A66" },
+  teal: { c: TEAL, s: "#126A5A", d: "#0B4A3F" },
+  ink: { c: INK, s: INK, d: INK },
+  // print companions (accents)
+  navy: { c: "#1E3F6E", s: "#142C50", d: "#0C1C36" },
+  night: { c: "#1B3A66", s: "#132A4C", d: "#0B1A32" },
+  orange: { c: "#F28C28", s: "#CF6A18", d: "#A04C10" },
+  pink: { c: "#F29BB8", s: "#D67096", d: "#A84B70" },
+  purple: { c: "#7A55A8", s: "#5A3C82", d: "#3E2860" },
+  green: { c: "#5BAA3C", s: "#3D822A", d: "#285C1C" },
+  sky: { c: "#7FC3EA", s: "#58A0CC", d: "#3B7AA6" },
+  grey: { c: "#A8A39A", s: "#86817A", d: "#625E58" },
+  dark: { c: "#3A3733", s: "#2A2825", d: "#1C1A18" },
+  // materials
+  wood: { c: "#B9743F", s: "#94552A", d: "#6E3C1C" },
+  woodLight: { c: "#D9A46A", s: "#B7824A", d: "#8E6030" },
+  brown: { c: "#8A5A3A", s: "#6A4028", d: "#4A2A18" },
+  metal: { c: "#C9CCD0", s: "#9EA3AA", d: "#70757D" },
+  glass: { c: "#BFE3F2", s: "#93C4DC", d: "#679FBD" },
+  // skin tones (Indonesian range, light → deep)
+  skinA: { c: "#C9895A", s: "#A2633D", d: "#7E4428" },
+  skinB: { c: "#DFA57C", s: "#B97A55", d: "#93553A" },
+  skinC: { c: "#EFC29B", s: "#CF9A72", d: "#A8724E" },
+  skinD: { c: "#9E6440", s: "#7C4A2C", d: "#5A321C" },
+  // hair
+  hair: { c: "#232220", s: "#141414", d: "#0A0A0A" },
+  hairBrown: { c: "#5A3A26", s: "#3E2618", d: "#28170E" },
+  hairGrey: { c: "#C9C6C0", s: "#A29E97", d: "#7A766F" },
+  // faces / food / things
+  mouth: { c: "#5C1A16", s: "#40100E", d: "#2A0908" },
+  tongue: { c: "#E8655A", s: "#C2453F", d: "#9A2E2C" },
+  bakso: { c: "#A5835E", s: "#7F6244", d: "#5C442E" },
+  broth: { c: "#E7B25A", s: "#C88E3A", d: "#A06C26" },
+  noodle: { c: "#F7DC7A", s: "#E0B84A", d: "#BC9030" },
+  rice: { c: "#FFF9EE", s: "#E9DEC8", d: "#C9B998" },
+  money: { c: "#8FC98A", s: "#6BA866", d: "#4C8248" },
+} satisfies Record<string, Swatch>;
+
+export type SwatchKey = keyof typeof SW;
+export const SWATCH_KEYS = Object.keys(SW) as SwatchKey[];

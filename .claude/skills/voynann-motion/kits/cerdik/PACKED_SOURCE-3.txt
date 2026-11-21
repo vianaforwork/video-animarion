@@ -1,0 +1,421 @@
+VOYNANN Motion - packed source files of this folder. Do not edit by hand.
+The skill upload in the Claude app accepts at most 200 files, so the source files are packed here.
+`node <skill folder>/new-project.mjs <project folder> --kit=<style>` unpacks them into the project.
+Format: per file one line with four '=' signs, the byte length and the path, then exactly that many bytes.
+
+==== 664 project/remotion.config.ts
+// See all configuration options: https://remotion.dev/docs/config
+import fs from "node:fs";
+import { Config } from "@remotion/cli/config";
+
+Config.setVideoImageFormat("jpeg");
+Config.setJpegQuality(95);
+Config.setOverwriteOutput(true);
+// WebGL film: GPU-backed ANGLE path in headless Chrome, or software "swangle" when scripts/gl.mjs found
+// no usable GPU on this computer (remembered in .gl-mode). The GL env var overrides both.
+type GL = Parameters<typeof Config.setChromiumOpenGlRenderer>[0];
+const gl = (process.env.GL || (fs.existsSync(".gl-mode") ? fs.readFileSync(".gl-mode", "utf8").trim() : "") || "angle") as GL;
+Config.setChromiumOpenGlRenderer(gl);
+
+==== 901 project/src/cerdik/worlds/index.ts
+// World registry (pure data for the director). Pictures: src/cerdik/worlds/scenes.tsx.
+// Adding a world: write <id>.meta.ts (spots, colliders, bounds, views) + <Id>.tsx (the picture), register both.
+import type { WorldMeta } from "../types.ts";
+import { DESA } from "./desa.meta.ts";
+import { PASAR } from "./pasar.meta.ts";
+import { PANTAI } from "./pantai.meta.ts";
+import { RUANG } from "./ruang.meta.ts";
+import { ISTANA } from "./istana.meta.ts";
+
+export const WORLDS: Record<string, WorldMeta> = { desa: DESA, pasar: PASAR, pantai: PANTAI, ruang: RUANG, istana: ISTANA };
+
+/** Ground height under (x, z) in a world (raised streets, platforms, a pier). */
+export const floorAt = (w: WorldMeta, x: number, z: number) => {
+  for (const f of w.floor ?? []) {
+    const b = f.box;
+    if (!b || (x >= b.min[0] && x <= b.max[0] && z >= b.min[2] && z <= b.max[2])) return f.y;
+  }
+  return 0.012;
+};
+
+==== 868 project/src/cerdik/worlds/scenes.tsx
+// World pictures by id (the director's layouts are in worlds/index.ts).
+import React from "react";
+import type { TimeOfDay } from "../types.ts";
+import { Village } from "./Desa.tsx";
+import { Pasar } from "./Pasar.tsx";
+import { Pantai } from "./Pantai.tsx";
+import { Ruang } from "./Ruang.tsx";
+import { Istana } from "./Istana.tsx";
+
+type V3 = [number, number, number];
+export type SceneProps = { t: number; time: TimeOfDay; cutZ?: number; avoid: V3[] };
+
+export const SCENES: Record<string, React.FC<SceneProps>> = {
+  desa: ({ cutZ }) => <Village cutZ={cutZ} />,
+  pasar: ({ t, time, avoid }) => <Pasar t={t} night={time === "night"} avoid={avoid} />,
+  pantai: ({ t, time }) => <Pantai t={t} night={time === "night"} />,
+  ruang: ({ t, time }) => <Ruang t={t} night={time === "night"} />,
+  istana: ({ t, time }) => <Istana t={t} night={time === "night"} />,
+};
+
+==== 2661 project/src/kits/cerdik/Caption.tsx
+// CERDIK captions: the genre's word-at-a-time caption — one (sometimes two short) words, white heavy sans with a dark
+// outline, centred just below the middle of the frame, swapped exactly on the spoken word. No boxes, no colour pops.
+import React from "react";
+import { F_CAPTION } from "../bedah/fonts.ts";
+
+export type CapWord = { w: string; t0: number; t1: number };
+export type Chunk = { text: string; t0: number; t1: number };
+
+const JOIN_NEXT = new Set(["di", "ke", "si", "yang", "dan", "sang", "para", "tapi"]);
+const JOIN_PREV = new Set(["pun", "itu", "ini", "lah", "kah"]);
+
+/** Group words into display chunks (1–2 words, ≤ maxChars). Times are in the same clock as the words. */
+export const chunkWords = (words: CapWord[], maxChars = 13, gap = 0.55): Chunk[] => {
+  const out: CapWord[][] = [];
+  for (let i = 0; i < words.length; i++) {
+    const w = words[i];
+    const bare = w.w.toLowerCase().replace(/[^a-z-]/g, "");
+    const last = out[out.length - 1];
+    const lastText = last ? last.map((x) => x.w).join(" ") : "";
+    const lastBare = last ? last[last.length - 1].w.toLowerCase().replace(/[^a-z-]/g, "") : "";
+    const lastEnds = last ? /[,.!?]$/.test(last[last.length - 1].w) : true;
+    const fits = last && last.length < 2 && lastText.length + 1 + w.w.length <= maxChars && !lastEnds;
+    if (fits && (JOIN_NEXT.has(lastBare) || JOIN_PREV.has(bare))) last.push(w);
+    else out.push([w]);
+  }
+  return out.map((c, i) => {
+    const next = out[i + 1];
+    const end = c[c.length - 1].t1;
+    return { text: c.map((x) => x.w).join(" "), t0: c[0].t0, t1: next ? Math.min(next[0].t0, end + gap) : end + gap };
+  });
+};
+
+export const WordCaption: React.FC<{ t: number; chunks: Chunk[]; y?: number; size?: number }> = ({ t, chunks, y = 1170, size = 84 }) => {
+  const c = chunks.find((k) => t >= k.t0 - 0.02 && t < k.t1);
+  if (!c) return null;
+  const age = t - c.t0;
+  const pop = age < 0.05 ? 0.94 + (age / 0.05) * 0.06 : 1;
+  const text = c.text.replace(/["“”]/g, "");
+  return (
+    <div style={{ position: "absolute", left: 0, right: 0, top: y, textAlign: "center", pointerEvents: "none" }}>
+      <span
+        style={{
+          display: "inline-block",
+          transform: `scale(${pop})`,
+          fontFamily: F_CAPTION,
+          fontWeight: 700,
+          fontSize: size,
+          letterSpacing: -0.5,
+          lineHeight: 1,
+          color: "#ffffff",
+          WebkitTextStroke: `${Math.round(size * 0.13)}px #111111`,
+          paintOrder: "stroke fill",
+          textShadow: "0 4px 10px rgba(0,0,0,0.35)",
+          whiteSpace: "nowrap",
+        }}
+      >
+        {text}
+      </span>
+    </div>
+  );
+};
+
+==== 1089 project/src/kits/cerdik/look.ts
+// CERDIK look types (pure data, shared by the director and the renderer).
+import type { Build } from "./rig.ts";
+
+export type Costume = {
+  base: string;
+  vest?: string;
+  collar?: string;
+  belt?: string;
+  buttons?: string;
+  sash?: string;
+  hem?: string;
+  scarf?: string;
+  trim?: string;
+  /** horizontal stripes (fisherman shirt) */
+  stripes?: string;
+  /** long garment flares at the hem (dress / robe / lab coat) */
+  long?: boolean;
+};
+
+export type HairStyle = "none" | "tuft" | "cap" | "side" | "bald-ring" | "bun" | "neat";
+export type HairSpec = { color: string; style: HairStyle };
+export type FaceSpec = {
+  brows?: "thin" | "thick" | "bushy";
+  mustache?: boolean;
+  beard?: boolean;
+  glasses?: boolean;
+  lashes?: boolean;
+  blush?: boolean;
+  ink?: string;
+};
+export type HatKind = "none" | "headband" | "peci" | "crown" | "caping" | "kerudung" | "topi" | "blangkon";
+
+export type Look = {
+  build?: Build;
+  costume: Costume;
+  hair?: HairSpec;
+  face?: FaceSpec;
+  hat?: { kind: HatKind; color?: string; color2?: string };
+  necklace?: string;
+  towel?: string;
+};
+
+==== 1063 project/src/kits/cerdik/ShotCanvas.tsx
+import React from "react";
+import { useVideoConfig } from "remotion";
+import { ThreeCanvas } from "@remotion/three";
+import { QaProbe } from "../../core/qa/scene-qa.tsx";
+import { PCFShadowMap } from "three";
+import { Stage, type Look } from "./Stage.tsx";
+import type { Shot } from "../bedah/cam.ts";
+
+/** One CERDIK shot: a Remotion-synchronised canvas with the BEDAH Stage (sun, sky, post chain) around the set. */
+export const ShotCanvas: React.FC<{ shot: Shot; look: Look; frame: number; t: number; children: React.ReactNode }> = ({ shot, look, frame, t, children }) => {
+  const { width, height } = useVideoConfig();
+  return (
+    <ThreeCanvas
+      width={width}
+      height={height}
+      shadows={{ type: PCFShadowMap }}
+      dpr={1}
+      gl={{ antialias: false, preserveDrawingBuffer: true, powerPreference: "high-performance" }}
+      camera={{ fov: shot.fov, position: shot.pos, near: 0.08, far: 1500 }}
+    >
+      <Stage shot={shot} look={look} frame={frame} t={t}>
+        {children}
+      </Stage>
+      <QaProbe />
+    </ThreeCanvas>
+  );
+};
+
+==== 490 project/src/kits/cerdik/Voiceover.tsx
+// Voice-over placed `offset` seconds into the film (file under public/).
+import React from "react";
+import { Html5Audio, Sequence, staticFile, useVideoConfig } from "remotion";
+
+export const Voiceover: React.FC<{ src: string; offset: number; volume?: number }> = ({ src, offset, volume = 1 }) => {
+  const { fps } = useVideoConfig();
+  return (
+    <Sequence from={Math.round(offset * fps)} layout="none">
+      <Html5Audio src={staticFile(src)} volume={volume} />
+    </Sequence>
+  );
+};
+
+==== 2097 project/src/scenes/lookdev/WorldLook.tsx
+// World lookdev: frame 0/1 = the world's establish move (a, b), 2/3 = aerial (a, b), 4… = a medium view of each spot.
+import React, { useEffect, useState } from "react";
+import { AbsoluteFill, continueRender, delayRender, getInputProps, useCurrentFrame } from "remotion";
+import { ShotCanvas } from "../../kits/cerdik/ShotCanvas.tsx";
+import { fontsReady } from "../../kits/bedah/fonts.ts";
+import { LOOKS } from "../../kits/cerdik/looks.ts";
+import { WORLDS } from "../../cerdik/worlds/index.ts";
+import { SCENES } from "../../cerdik/worlds/scenes.tsx";
+import type { TimeOfDay } from "../../cerdik/types.ts";
+
+export const WorldLook: React.FC = () => {
+  const f = useCurrentFrame();
+  const raw = getInputProps() as { world?: string; time?: TimeOfDay; plan?: { world?: string; time?: TimeOfDay } };
+  const ip = raw.plan ?? raw;
+  const id = ip.world ?? "pasar", time = ip.time ?? "day";
+  const W = WORLDS[id], Scene = SCENES[id];
+  const [h] = useState(() => delayRender("fonts"));
+  useEffect(() => { fontsReady().then(() => continueRender(h)); }, [h]);
+  const spots = Object.entries(W.spots);
+  let cam;
+  if (f < 4) { const v = W.views[f < 2 ? "establish" : "aerial"]; cam = f % 2 ? v.b : v.a; }
+  else {
+    const [, s] = spots[(f - 4) % spots.length];
+    const d = 3.2, fx = Math.sin(s.face), fz = Math.cos(s.face);
+    const sx = -Math.cos(s.face), sz = Math.sin(s.face);
+    cam = { pos: [s.pos[0] + fx * d + sx * 1.2, 1.6, s.pos[2] + fz * d + sz * 1.2] as [number, number, number], target: [s.pos[0], 1.0, s.pos[2]] as [number, number, number], fov: 44 };
+  }
+  return (
+    <AbsoluteFill style={{ background: "#000" }}>
+      <ShotCanvas shot={{ ...cam, shadowAt: cam.target, shadowBox: f < 4 ? 30 : 8 }} look={LOOKS[time]} frame={f} t={f / 30}>
+        <Scene t={f / 30} time={time} avoid={[]} />
+      </ShotCanvas>
+      <div style={{ position: "absolute", left: 12, top: 10, color: "#fff", fontFamily: "sans-serif", fontSize: 18, textShadow: "0 1px 3px #000" }}>{f < 4 ? (f < 2 ? "establish" : "aerial") : spots[(f - 4) % spots.length][0]}</div>
+    </AbsoluteFill>
+  );
+};
+
+==== 1454 project/stories/nelayan/story.json
+{
+  "id": "nelayan", "title": "Lampu di Tengah Laut", "world": "pantai", "time": "night",
+  "cast": {
+    "pak": { "preset": "nelayan" },
+    "teman": { "preset": "petani", "look": { "costume": { "base": "#c8572f" } } }
+  },
+  "props": { "lampu1": { "kind": "lampu", "at": "dermaga" } },
+  "extras": [{ "at": "pantai", "n": 4, "mode": "laugh", "from": "diketawain", "until": "cumi" }],
+  "lines": [
+    { "text": "Dia melaut malam-malam, tapi bawa lampu paling terang di kampung.",
+      "cast": { "pak": { "at": "dermaga", "hold": "lampu1", "do": "hold", "expr": "proud" } },
+      "beats": [{ "shot": "establish" }, { "at": "lampu", "shot": "close", "on": "pak", "fx": [{ "kind": "glow", "on": "lampu1", "at": "terang" }] }] },
+    { "text": "Nelayan lain diketawain dia buang minyak.",
+      "cast": { "teman": { "at": "dermaga-pangkal", "do": "mock", "to": "pak", "expr": "laugh", "flush": 0.4 } },
+      "shot": "medium", "on": "teman" },
+    { "text": "Tapi cahaya itu narik cumi dari kedalaman.",
+      "shot": "wide", "on": "pak", "fx": [{ "kind": "sparkle", "on": "lampu1" }] },
+    { "text": "Paginya, cuma perahunya yang penuh.",
+      "time": "dawn", "dissolve": true,
+      "cast": { "pak": { "at": "pantai", "hold": "", "do": "cheer", "expr": "happy" }, "teman": { "at": "perahu", "do": "shock", "expr": "surprised" } },
+      "beats": [{ "shot": "wide", "on": ["pak", "teman"] }, { "at": "penuh", "shot": "close", "on": "teman" }] }
+  ]
+}
+
+==== 1355 project/stories/raja/story.json
+{
+  "id": "raja", "title": "Raja dan Guci", "world": "istana",
+  "cast": {
+    "raja": { "preset": "raja" },
+    "ahli": { "preset": "ilmuwan", "look": { "costume": { "base": "#e9e2d0" }, "hat": { "kind": "blangkon", "color": "#3a2a1e" } } },
+    "pengawal": { "preset": "prajurit" }
+  },
+  "props": { "guci": { "kind": "kendi", "at": { "at": "depan-singgasana", "ahead": 0.8 }, "scale": 2.2 } },
+  "extras": [{ "at": "halaman", "n": 5, "mode": "watch" }],
+  "lines": [
+    { "text": "Seorang ahli membawa guci aneh ke hadapan raja.",
+      "cast": { "raja": { "at": "singgasana", "do": "sit", "expr": "neutral" }, "ahli": { "at": "depan-singgasana", "do": "bow", "expr": "happy" }, "pengawal": { "at": "pengawal", "do": "crossed", "expr": "sly" } },
+      "beats": [{ "shot": "establish" }, { "at": "guci", "shot": "medium", "on": "ahli" }] },
+    { "text": "Katanya guci ini bisa merasakan gempa dari jauh.",
+      "beats": [{ "shot": "insert", "on": "guci", "fx": [{ "kind": "glow", "on": "guci", "at": "gempa" }] }, { "at": "dari", "shot": "close", "on": "raja", "cast": { "raja": { "do": "sit-talk", "expr": "surprised" } } }] },
+    { "text": "Seluruh istana tertawa.",
+      "cast": { "pengawal": { "do": "laugh", "expr": "laugh" }, "raja": { "do": "sit", "expr": "laugh", "flush": 0.5 } },
+      "shot": "wide", "on": ["raja", "pengawal"] }
+  ]
+}
+
+==== 1904 project/stories/rumah/story.json
+{
+  "id": "rumah",
+  "title": "Gelas yang Berkeringat",
+  "world": "ruang",
+  "cast": {
+    "ibu": {
+      "preset": "ibu"
+    },
+    "anak": {
+      "preset": "anak"
+    }
+  },
+  "props": {
+    "es": {
+      "kind": "gelas",
+      "at": "meja-makan",
+      "on": "surface",
+      "fill": {
+        "color": "#e07b3a",
+        "level": 0.8
+      }
+    }
+  },
+  "lines": [
+    {
+      "text": "Anak itu bingung, kenapa gelas es tehnya basah di luar.",
+      "cast": {
+        "anak": {
+          "at": "kursi-makan",
+          "do": "sit",
+          "expr": "worried"
+        },
+        "ibu": {
+          "at": "depan-sofa",
+          "do": "stand",
+          "expr": "neutral"
+        }
+      },
+      "beats": [
+        {
+          "shot": "establish"
+        },
+        {
+          "at": "kenapa",
+          "shot": "close",
+          "on": "anak"
+        },
+        {
+          "at": "basah",
+          "shot": "insert",
+          "on": "es",
+          "fx": [
+            {
+              "kind": "sweat",
+              "on": "es",
+              "until": "end"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "text": "Dia kira gelasnya bocor.",
+      "cast": {
+        "anak": {
+          "do": "sit-talk",
+          "expr": "scared"
+        }
+      },
+      "shot": "medium",
+      "on": "anak"
+    },
+    {
+      "text": "Ibunya ketawa, itu cuma uap air dari udara.",
+      "cast": {
+        "ibu": {
+          "at": "meja-makan",
+          "walk": true,
+          "do": "laugh",
+          "expr": "laugh"
+        }
+      },
+      "beats": [
+        {
+          "shot": "wide",
+          "on": [
+            "ibu",
+            "anak"
+          ]
+        },
+        {
+          "at": "uap",
+          "shot": "insert",
+          "on": "es",
+          "fx": [
+            {
+              "kind": "chill",
+              "on": "es"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+==== 484 project/tsconfig.json
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "Preserve",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "noEmit": true,
+    "lib": ["ES2022", "DOM"],
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "noUnusedLocals": true,
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true
+  },
+  "include": ["src", "scripts/*.ts"],
+  "exclude": ["remotion.config.ts"]
+}

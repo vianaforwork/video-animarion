@@ -1,0 +1,1883 @@
+VOYNANN Motion - packed source files of this folder. Do not edit by hand.
+The skill upload in the Claude app accepts at most 200 files, so the source files are packed here.
+`node <skill folder>/new-project.mjs <project folder> --kit=<style>` unpacks them into the project.
+Format: per file one line with four '=' signs, the byte length and the path, then exactly that many bytes.
+
+==== 51 project/.gitignore
+node_modules
+out
+.gl-mode
+.DS_Store
+public/stories
+
+==== 4402 project/OFL-plus-jakarta-sans.txt
+Copyright 2020 The Plus Jakarta Sans Project Authors (https://github.com/tokotype/PlusJakartaSans)
+
+This Font Software is licensed under the SIL Open Font License, Version 1.1.
+This license is copied below, and is also available with a FAQ at:
+http://scripts.sil.org/OFL
+
+
+-----------------------------------------------------------
+SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007
+-----------------------------------------------------------
+
+PREAMBLE
+The goals of the Open Font License (OFL) are to stimulate worldwide
+development of collaborative font projects, to support the font creation
+efforts of academic and linguistic communities, and to provide a free and
+open framework in which fonts may be shared and improved in partnership
+with others.
+
+The OFL allows the licensed fonts to be used, studied, modified and
+redistributed freely as long as they are not sold by themselves. The
+fonts, including any derivative works, can be bundled, embedded, 
+redistributed and/or sold with any software provided that any reserved
+names are not used by derivative works. The fonts and derivatives,
+however, cannot be released under any other type of license. The
+requirement for fonts to remain under this license does not apply
+to any document created using the fonts or their derivatives.
+
+DEFINITIONS
+"Font Software" refers to the set of files released by the Copyright
+Holder(s) under this license and clearly marked as such. This may
+include source files, build scripts and documentation.
+
+"Reserved Font Name" refers to any names specified as such after the
+copyright statement(s).
+
+"Original Version" refers to the collection of Font Software components as
+distributed by the Copyright Holder(s).
+
+"Modified Version" refers to any derivative made by adding to, deleting,
+or substituting -- in part or in whole -- any of the components of the
+Original Version, by changing formats or by porting the Font Software to a
+new environment.
+
+"Author" refers to any designer, engineer, programmer, technical
+writer or other person who contributed to the Font Software.
+
+PERMISSION & CONDITIONS
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of the Font Software, to use, study, copy, merge, embed, modify,
+redistribute, and sell modified and unmodified copies of the Font
+Software, subject to the following conditions:
+
+1) Neither the Font Software nor any of its individual components,
+in Original or Modified Versions, may be sold by itself.
+
+2) Original or Modified Versions of the Font Software may be bundled,
+redistributed and/or sold with any software, provided that each copy
+contains the above copyright notice and this license. These can be
+included either as stand-alone text files, human-readable headers or
+in the appropriate machine-readable metadata fields within text or
+binary files as long as those fields can be easily viewed by the user.
+
+3) No Modified Version of the Font Software may use the Reserved Font
+Name(s) unless explicit written permission is granted by the corresponding
+Copyright Holder. This restriction only applies to the primary font name as
+presented to the users.
+
+4) The name(s) of the Copyright Holder(s) or the Author(s) of the Font
+Software shall not be used to promote, endorse or advertise any
+Modified Version, except to acknowledge the contribution(s) of the
+Copyright Holder(s) and the Author(s) or with their explicit written
+permission.
+
+5) The Font Software, modified or unmodified, in part or in whole,
+must be distributed entirely under this license, and must not be
+distributed under any other license. The requirement for fonts to
+remain under this license does not apply to any document created
+using the Font Software.
+
+TERMINATION
+This license becomes null and void if any of the above conditions are
+not met.
+
+DISCLAIMER
+THE FONT SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT
+OF COPYRIGHT, PATENT, TRADEMARK, OR OTHER RIGHT. IN NO EVENT SHALL THE
+COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+INCLUDING ANY GENERAL, SPECIAL, INDIRECT, INCIDENTAL, OR CONSEQUENTIAL
+DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
+OTHER DEALINGS IN THE FONT SOFTWARE.
+
+==== 1269 project/package.json
+{
+  "name": "voynann-bedah-project",
+  "version": "1.0.0",
+  "private": true,
+  "description": "VOYNANN Motion BEDAH project (Remotion + React Three Fiber): story.json (+ voice-over) -> realistic 3D build-up explainer with the ground cut open, 9:16.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "scripts": {
+    "dev": "remotion studio",
+    "typecheck": "tsc --noEmit",
+    "check-env": "node scripts/check-env.mjs",
+    "make": "node scripts/make.mjs",
+    "parts": "node scripts/make.mjs --parts",
+    "smoke": "node scripts/make.mjs pondasi --stills 4s,11.8s,15.8s,25.5s --silent",
+    "qa:pose": "node scripts/qa-pose.mjs",
+    "qa": "node scripts/qa-scene.mjs",
+    "qa:video": "node scripts/qa-video.mjs"
+  },
+  "dependencies": {
+    "@react-three/fiber": "9.8.2",
+    "@remotion/cli": "4.0.539",
+    "@remotion/google-fonts": "4.0.539",
+    "@remotion/three": "4.0.539",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "remotion": "4.0.539",
+    "three": "0.186.1",
+    "three-mesh-bvh": "0.9.16"
+  },
+  "devDependencies": {
+    "@remotion/bundler": "4.0.539",
+    "@remotion/renderer": "4.0.539",
+    "@types/react": "19.2.7",
+    "@types/three": "0.186.0",
+    "typescript": "5.9.3"
+  },
+  "overrides": {
+    "zod": "4.6.7"
+  }
+}
+
+==== 3806 project/scripts/check-env.mjs
+// Environment check before any VOYNANN render. Prints a plain report and exits non-zero only
+// when something required is missing. Installs nothing.
+//   node scripts/check-env.mjs
+
+import { execFileSync, spawnSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+
+const rows = [];
+const add = (name, ok, detail, required = true) => rows.push({ name, ok, detail, required });
+
+const [maj, min] = process.versions.node.split(".").map(Number);
+// 22.18+ runs the .ts director directly (type stripping on by default)
+add("Node.js ≥ 22.18", maj > 22 || (maj === 22 && min >= 18), `found ${process.versions.node}`);
+
+const has = (cmd, args = ["-version"]) => {
+  const r = spawnSync(cmd, args, { encoding: "utf8" });
+  return r.status === 0 ? (r.stdout || r.stderr).split("\n")[0].trim() : null;
+};
+const npmV = has(process.platform === "win32" ? "npm.cmd" : "npm", ["-v"]);
+add("npm", !!npmV, npmV ?? "not found");
+const ff = has("ffmpeg");
+add("ffmpeg (audio analysis, contact sheets, final audio)", !!ff, ff ? ff.slice(0, 60) : "not found — rendering still works, VO analysis/delivery does not");
+const fp = has("ffprobe");
+add("ffprobe", !!fp, fp ? "ok" : "not found");
+
+// optional: real word timings (whisper.cpp) and offline narration (macOS `say`)
+const whisperCli = [process.env.WHISPER_CLI, spawnSync("sh", ["-c", "command -v whisper-cli"], { encoding: "utf8" }).stdout?.trim(), "/opt/homebrew/bin/whisper-cli", "/usr/local/bin/whisper-cli"].filter(Boolean).find((c) => fs.existsSync(c));
+const modelDirs = [`${os.homedir()}/.cache/whisper.cpp`, "models", "/opt/homebrew/share/whisper-cpp"];
+const whisperModel = (process.env.WHISPER_MODEL && fs.existsSync(process.env.WHISPER_MODEL) && process.env.WHISPER_MODEL) || modelDirs.flatMap((d) => (fs.existsSync(d) ? fs.readdirSync(d).filter((f) => f.endsWith(".bin")).map((f) => `${d}/${f}`) : []))[0];
+add("whisper.cpp (exact word timing from any VO)", !!(whisperCli && whisperModel), whisperCli && whisperModel ? `${whisperCli} + ${whisperModel.split("/").pop()}` : `${whisperCli ? "model" : "whisper-cli"} not found — without it the VO script text is needed (timing ≈0.3 s less precise)`, false);
+const say = process.platform === "darwin" && spawnSync("say", ["-v", "?"], { encoding: "utf8" }).stdout?.includes("id_ID");
+add("Offline Indonesian narration (macOS say, voice Damayanti)", !!say, say ? "available (used only with the user's approval)" : "not available — bring a recorded VO", false);
+
+let freeGb = null;
+try {
+  const st = fs.statfsSync(process.cwd());
+  freeGb = (st.bavail * st.bsize) / 1e9;
+} catch {}
+add("Free disk ≥ 5 GB", freeGb === null ? true : freeGb >= 5, freeGb === null ? "unknown" : `${freeGb.toFixed(1)} GB free`);
+add("RAM", true, `${(os.totalmem() / 1e9).toFixed(0)} GB total`, false);
+
+const plat = { darwin: "macOS (recommended)", win32: "Windows: run npm run smoke to confirm 3D rendering", linux: "Linux: run npm run smoke; without a GPU use GL=swangle (slow)" }[process.platform] ?? process.platform;
+add("Platform", true, plat, false);
+
+const deps = fs.existsSync("node_modules/remotion") && fs.existsSync("node_modules/three");
+add("Project packages installed (npm ci)", deps, deps ? "ok" : "run: npm ci", false);
+let browser = false;
+try {
+  browser = fs.readdirSync("node_modules/.remotion").some((d) => d.includes("chrome"));
+} catch {}
+add("Remotion headless browser downloaded", browser, browser ? "ok" : "downloads automatically on first render (~100–200 MB)", false);
+
+for (const r of rows) console.log(`${r.ok ? "✓" : r.required ? "✗" : "!"} ${r.name}: ${r.detail}`);
+const missing = rows.filter((r) => r.required && !r.ok);
+console.log(missing.length ? `\n${missing.length} required item(s) missing.` : "\nReady.");
+process.exit(missing.length ? 1 : 0);
+
+==== 1469 project/scripts/gl.mjs
+// WebGL renderer choice for headless Chrome, shared by every render script.
+// Order: GL env var > the project's .gl-mode file > "angle" (GPU). When the GPU path cannot create a WebGL
+// context (no GPU, some VMs/drivers), the scripts switch to "swangle" (software, much slower) automatically
+// and remember it in .gl-mode, so later renders and `npx remotion render` (remotion.config.ts) use it too.
+import fs from "node:fs";
+
+const FILE = ".gl-mode";
+
+// When the GPU path crashes, Remotion may reject an internal "Target closed" promise that nothing awaits.
+// That rejection is noise from the dead tab, not a render failure; real errors still reach the caller.
+export const tolerateClosedTargets = () =>
+  process.on("unhandledRejection", (e) => {
+    if (/Target closed/i.test(String(e?.message ?? e))) return;
+    console.error(e);
+    process.exit(1);
+  });
+
+export const glMode = () =>
+  process.env.GL || (fs.existsSync(FILE) ? fs.readFileSync(FILE, "utf8").trim() : "") || "angle";
+
+export const isWebGLError = (e) =>
+  /webgl|WebGLRenderer|GL context|BindToCurrentSequence|GL_VENDOR = Disabled/i.test(String(e?.stack ?? e?.message ?? e));
+
+export const switchToSoftware = () => {
+  fs.writeFileSync(FILE, "swangle\n");
+  console.log(
+    "\n! GPU 3D rendering is not available on this computer: switched to software rendering (GL=swangle, much slower)." +
+      "\n  Saved in .gl-mode; delete that file to try the GPU again.\n",
+  );
+  return "swangle";
+};
+
+==== 1838 project/scripts/qa-blink.mjs
+// Blink scan: mean absolute luma difference between consecutive frames; reports spikes that are not at a cut.
+//   node scripts/qa-blink.mjs <video> <cutSeconds,comma,separated> [threshold=6]
+import { execFileSync } from "node:child_process";
+const [file, cutsArg = "", thrArg = "6"] = process.argv.slice(2);
+const cuts = cutsArg.split(",").filter(Boolean).map(Number);
+const probe = execFileSync("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=r_frame_rate", "-of", "csv=p=0", file], { encoding: "utf8" }).trim();
+const [n, d] = probe.split("/").map(Number);
+const fps = n / (d || 1);
+const W = 90, H = 160;
+const raw = execFileSync("ffmpeg", ["-v", "error", "-i", file, "-vf", `scale=${W}:${H},format=gray`, "-f", "rawvideo", "-"], { maxBuffer: 1 << 30 });
+const frames = raw.length / (W * H);
+const diffs = [];
+for (let f = 1; f < frames; f++) {
+  let s = 0;
+  const a = (f - 1) * W * H, b = f * W * H;
+  for (let i = 0; i < W * H; i++) s += Math.abs(raw[b + i] - raw[a + i]);
+  diffs.push(s / (W * H));
+}
+const sorted = [...diffs].sort((x, y) => x - y);
+const med = sorted[Math.floor(sorted.length / 2)];
+const thr = Number(thrArg);
+const hits = [];
+diffs.forEach((v, i) => {
+  const t = (i + 1) / fps;
+  const atCut = cuts.some((c) => Math.abs(c - t) <= 1.5 / fps);
+  // a pop = a one-frame jump well above its neighbours
+  const nb = Math.max(diffs[i - 1] ?? 0, diffs[i + 1] ?? 0);
+  if (!atCut && v > thr && v > nb * 2.2) hits.push(`${t.toFixed(2)}s (frame ${i + 1}) diff ${v.toFixed(1)} vs neighbours ${nb.toFixed(1)}`);
+});
+console.log(`${frames} frames @ ${fps.toFixed(2)} fps, median diff ${med.toFixed(2)}, max ${Math.max(...diffs).toFixed(1)}`);
+console.log(hits.length ? `pops outside cuts: ${hits.length}\n  ` + hits.join("\n  ") : "no pops outside cuts");
+process.exit(hits.length ? 1 : 0);
+
+==== 3511 project/scripts/qa-flicker.mjs
+// Local flicker map: where does brightness oscillate frame-to-frame (up-down-up), as opposed to moving smoothly?
+//   node scripts/qa-flicker.mjs <video> <cutSeconds,…> [outDir]
+// Per shot: per-pixel count of sign flips of the temporal derivative with amplitude above a threshold, block-averaged.
+// Writes <outDir>/flicker_shot<N>.png (heat over the shot's middle frame) and prints the worst blocks.
+import { execFileSync } from "node:child_process";
+import fs from "node:fs";
+const [file, cutsArg = "", outDir = "out/flicker"] = process.argv.slice(2);
+fs.mkdirSync(outDir, { recursive: true });
+const probe = execFileSync("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=r_frame_rate,width,height", "-of", "csv=p=0", file], { encoding: "utf8" }).trim().split(",");
+const [n, d] = probe[2].split("/").map(Number);
+const fps = n / (d || 1);
+const W = 270, H = 480;
+const raw = execFileSync("ffmpeg", ["-v", "error", "-i", file, "-vf", `scale=${W}:${H}:flags=area,format=gray`, "-f", "rawvideo", "-"], { maxBuffer: 1024 * 1024 * 1024 });
+const frames = raw.length / (W * H);
+const cuts = [0, ...cutsArg.split(",").filter(Boolean).map(Number), frames / fps];
+const B = 15; // block size
+const bw = W / B, bh = H / B;
+let report = [];
+for (let s = 0; s < cuts.length - 1; s++) {
+  const f0 = Math.round(cuts[s] * fps) + 1, f1 = Math.round(cuts[s + 1] * fps) - 1;
+  const score = new Float32Array(W * H);
+  for (let p = 0; p < W * H; p++) {
+    let flips = 0, prev = 0;
+    for (let f = f0 + 1; f < f1; f++) {
+      const dv = raw[f * W * H + p] - raw[(f - 1) * W * H + p];
+      if (Math.abs(dv) >= 7) {
+        const sg = Math.sign(dv);
+        if (prev && sg !== prev) flips++;
+        prev = sg;
+      }
+    }
+    score[p] = flips / Math.max(1, f1 - f0) * fps; // flips per second
+  }
+  const blocks = [];
+  for (let by = 0; by < bh; by++)
+    for (let bx = 0; bx < bw; bx++) {
+      let a = 0;
+      for (let y = 0; y < B; y++) for (let x = 0; x < B; x++) a += score[(by * B + y) * W + bx * B + x];
+      blocks.push({ bx, by, v: a / (B * B) });
+    }
+  blocks.sort((a, b) => b.v - a.v);
+  const mean = blocks.reduce((a, b) => a + b.v, 0) / blocks.length;
+  report.push(`shot ${s + 1} [${cuts[s].toFixed(2)}–${cuts[s + 1].toFixed(2)}s] mean ${mean.toFixed(2)} flips/s/px, worst: ` + blocks.slice(0, 5).map((b) => `(${(b.bx + 0.5) / bw * 100 | 0}%,${(b.by + 0.5) / bh * 100 | 0}%)=${b.v.toFixed(1)}`).join(" "));
+  // heat image: red channel = score, over the grey mid frame
+  const mid = Math.floor((f0 + f1) / 2);
+  const rgb = Buffer.alloc(W * H * 3);
+  for (let p = 0; p < W * H; p++) {
+    const g = raw[mid * W * H + p] * 0.55, h = Math.min(1, score[p] / 6);
+    rgb[p * 3] = Math.min(255, g + h * 255); rgb[p * 3 + 1] = g * (1 - h); rgb[p * 3 + 2] = g * (1 - h);
+  }
+  fs.writeFileSync(`${outDir}/s${s + 1}.rgb`, rgb);
+  execFileSync("ffmpeg", ["-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", `${W}x${H}`, "-i", `${outDir}/s${s + 1}.rgb`, `${outDir}/flicker_shot${s + 1}.png`]);
+  fs.rmSync(`${outDir}/s${s + 1}.rgb`);
+}
+console.log(report.join("\n"));
+const list = Array.from({ length: cuts.length - 1 }, (_, i) => ["-i", `${outDir}/flicker_shot${i + 1}.png`]).flat();
+if (cuts.length - 1 > 1) execFileSync("ffmpeg", ["-v", "error", "-y", ...list, "-filter_complex", `hstack=inputs=${cuts.length - 1}`, `${outDir}/_all.jpg`]);
+else execFileSync("ffmpeg", ["-v", "error", "-y", ...list, `${outDir}/_all.jpg`]);
+console.log(`map: ${outDir}/_all.jpg`);
+
+==== 1560 project/scripts/qa-pose.mjs
+// Pose QA: every library pose must keep all joints above the ground, limbs un-stretched, and hands on target.
+//   node scripts/qa-pose.mjs
+import { DIM, POSES, solve } from "../src/kits/bedah/rig.ts";
+
+const d = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+let bad = 0;
+for (const [name, make] of Object.entries(POSES)) {
+  const p = make();
+  const j = solve(p);
+  const issues = [];
+  const R = { kneeL: 0.05, kneeR: 0.05, elbowL: 0.04, elbowR: 0.04, wristL: 0.03, wristR: 0.03, ankleL: 0.06, ankleR: 0.06 };
+  for (const [k, r] of Object.entries(R)) if (j[k][1] < r - 0.005) issues.push(`${k} below ground (y=${j[k][1].toFixed(3)})`);
+  for (const s of ["L", "R"]) {
+    const miss = d(j["wrist" + s], p["hand" + s]);
+    if (miss > 0.01) issues.push(`hand${s} misses target by ${(miss * 100).toFixed(1)} cm`);
+    const fm = d(j["ankle" + s], p["foot" + s]);
+    if (fm > 0.01) issues.push(`foot${s} misses target by ${(fm * 100).toFixed(1)} cm`);
+    const legStretch = d(j["hip" + s], j["ankle" + s]) / (DIM.thigh + DIM.shin);
+    if (legStretch > 0.985) issues.push(`leg${s} locked (${legStretch.toFixed(3)})`);
+  }
+  if (j.head[1] < 0.3) issues.push("head too low");
+  const fmt = (v) => v.map((x) => x.toFixed(2)).join(",");
+  console.log(`${issues.length ? "✗" : "✓"} ${name.padEnd(8)} knee ${fmt(j.kneeL)} | elbow ${fmt(j.elbowL)} | head ${fmt(j.head)}${issues.length ? "\n    " + issues.join("\n    ") : ""}`);
+  bad += issues.length;
+}
+console.log(bad ? `\n${bad} issue(s)` : "\nall poses clean");
+process.exit(bad ? 1 : 0);
+
+==== 3754 project/scripts/stills.mjs
+// Visual QA: bundle once, render chosen frames of a composition, tile them into a contact sheet.
+//   node scripts/stills.mjs <outDir> <frame,frame,...> <compositionId> [scale]
+// Frames may be given in seconds with an "s" suffix (e.g. 4.5s), using the composition's fps.
+
+import path from "node:path";
+import fs from "node:fs";
+import { execFileSync } from "node:child_process";
+import { bundle } from "@remotion/bundler";
+import { openBrowser, renderStill, selectComposition } from "@remotion/renderer";
+import { glMode, isWebGLError, switchToSoftware, tolerateClosedTargets } from "./gl.mjs";
+
+tolerateClosedTargets();
+
+const [outDir, list, id, scaleArg = "1", propsFile] = process.argv.slice(2);
+const inputProps = propsFile ? JSON.parse(fs.readFileSync(propsFile, "utf8")) : {};
+if (!outDir || !list || !id) {
+  console.error("usage: node scripts/stills.mjs <outDir> <frame,frame,...|4.5s,...> <compositionId> [scale]");
+  process.exit(1);
+}
+fs.mkdirSync(outDir, { recursive: true });
+
+const serveUrl = await bundle({ entryPoint: path.resolve("src/index.ts") });
+// bundles are ~50 MB each; never leave them in the temp dir, even when a render throws
+const cleanup = () => fs.rmSync(serveUrl, { recursive: true, force: true });
+process.on("exit", cleanup);
+const composition = await selectComposition({ serveUrl, id, inputProps: propsFile ? { plan: inputProps } : {} });
+const frames = list.split(",").map((t) => (t.endsWith("s") ? Math.round(parseFloat(t) * composition.fps) : parseInt(t, 10)));
+const files = [];
+const renderAll = async (gl) => {
+  // one browser for all stills: WebGL contexts are expensive to create and tear down
+  const puppeteerInstance = await openBrowser("chrome", { chromiumOptions: { gl } });
+  try {
+    files.length = 0;
+    for (const frame of frames) {
+      const output = path.join(outDir, `f${String(frame).padStart(4, "0")}.png`);
+      await renderStill({ composition, serveUrl, output, frame, inputProps: propsFile ? { plan: inputProps } : {}, scale: Number(scaleArg), chromiumOptions: { gl }, timeoutInMilliseconds: 180000, puppeteerInstance });
+      files.push(output);
+      process.stdout.write(`${frame} `);
+    }
+  } finally {
+    // after a WebGL crash the tab may already be gone; closing must not hide the original error
+    await puppeteerInstance.close({ silent: true }).catch(() => {});
+  }
+};
+const gl = glMode();
+try {
+  await renderAll(gl);
+} catch (e) {
+  if (gl === "swangle" || !isWebGLError(e)) throw e;
+  await renderAll(switchToSoftware());
+}
+console.log();
+cleanup();
+
+// contact sheet (needs ffmpeg; skipped if missing)
+try {
+  const w = Math.round(composition.width * Number(scaleArg)), h = Math.round(composition.height * Number(scaleArg));
+  const cols = Math.min(4, files.length), rows = Math.ceil(files.length / cols), n = cols * rows;
+  if (n > 1) {
+    const inputs = files.flatMap((f) => ["-i", f]);
+    const pads = Array.from({ length: n - files.length }, () => ["-f", "lavfi", "-i", `color=c=black:s=${w}x${h}`]).flat();
+    const filter =
+      Array.from({ length: n }, (_, i) => `[${i}:v]scale=${w}:${h},setsar=1[v${i}]`).join(";") + ";" +
+      Array.from({ length: n }, (_, i) => `[v${i}]`).join("") +
+      `xstack=inputs=${n}:layout=` + Array.from({ length: n }, (_, i) => `${(i % cols) * w}_${Math.floor(i / cols) * h}`).join("|") +
+      `,scale='min(2160,iw)':-2`;
+    execFileSync("ffmpeg", ["-v", "error", "-y", ...inputs, ...pads, "-filter_complex", filter, "-frames:v", "1", path.join(outDir, "_sheet.jpg")]);
+    console.log(`sheet: ${path.join(outDir, "_sheet.jpg")}`);
+  }
+} catch {
+  console.log("(contact sheet skipped: ffmpeg not available)");
+}
+// a render that failed on the GPU path leaves its timeout timer behind; do not wait for it
+process.exit(0);
+
+==== 2937 project/src/core/motion/easing.ts
+// PRECISION easing vocabulary. Every curve is a pure function of normalised time, so the
+// whole film stays deterministic: same frame in, same pose out.
+
+export const clamp = (x: number, lo = 0, hi = 1) => Math.min(hi, Math.max(lo, x));
+export const mix = (a: number, b: number, t: number) => a + (b - a) * t;
+export const remap = (x: number, a: number, b: number) => clamp((x - a) / (b - a));
+
+export const smoothstep = (t: number) => {
+  const x = clamp(t);
+  return x * x * (3 - 2 * x);
+};
+
+/** C2-continuous: zero velocity and acceleration at both ends. The house curve. */
+export const smootherstep = (t: number) => {
+  const x = clamp(t);
+  return x * x * x * (x * (x * 6 - 15) + 10);
+};
+
+/** CSS-style cubic bezier easing (x1,y1,x2,y2), solved by Newton + bisection. */
+export const bezier = (x1: number, y1: number, x2: number, y2: number) => {
+  const cx = 3 * x1, bx = 3 * (x2 - x1) - cx, ax = 1 - cx - bx;
+  const cy = 3 * y1, by = 3 * (y2 - y1) - cy, ay = 1 - cy - by;
+  const sx = (t: number) => ((ax * t + bx) * t + cx) * t;
+  const sy = (t: number) => ((ay * t + by) * t + cy) * t;
+  const dx = (t: number) => (3 * ax * t + 2 * bx) * t + cx;
+  return (x: number) => {
+    const X = clamp(x);
+    let t = X;
+    for (let i = 0; i < 8; i++) {
+      const e = sx(t) - X;
+      const d = dx(t);
+      if (Math.abs(e) < 1e-6) return sy(t);
+      if (Math.abs(d) < 1e-6) break;
+      t -= e / d;
+    }
+    let lo = 0, hi = 1;
+    t = X;
+    for (let i = 0; i < 30; i++) {
+      const v = sx(t);
+      if (Math.abs(v - X) < 1e-6) break;
+      if (v < X) lo = t;
+      else hi = t;
+      t = (lo + hi) / 2;
+    }
+    return sy(t);
+  };
+};
+
+// Named curves, tuned for product cinematography (long, confident tails; no bounce).
+export const ease = {
+  /** Default move: decisive start, very long settle. */
+  glide: bezier(0.45, 0, 0.12, 1),
+  /** Symmetric, weighty. Camera and large objects. */
+  inOut: bezier(0.65, 0, 0.35, 1),
+  /** Soft symmetric for subtle drifts. */
+  sine: (t: number) => 0.5 - 0.5 * Math.cos(Math.PI * clamp(t)),
+  /** Starts with energy (a magnet letting go), long deceleration. */
+  release: bezier(0.2, 0.7, 0.1, 1),
+  /** Gathers speed and arrives fast (magnetic pull into a dock). */
+  attract: bezier(0.55, 0, 0.95, 0.55),
+  /** Typographic reveal. */
+  type: bezier(0.2, 0, 0, 1),
+  out: bezier(0, 0, 0.2, 1),
+  in: bezier(0.6, 0, 1, 1),
+  smoother: smootherstep,
+};
+
+/** Eased progress of `frame` through [start, end]. */
+export const seg = (frame: number, start: number, end: number, curve: (t: number) => number = ease.inOut) =>
+  curve(remap(frame, start, end));
+
+/**
+ * Critically damped settle used after a mechanical stop: decays to zero with at most one
+ * tiny overshoot. `t` in frames since the stop, `amp` the initial offset.
+ */
+export const settle = (t: number, amp: number, freq = 0.11, damping = 0.16) =>
+  t <= 0 ? 0 : amp * Math.exp(-damping * t) * Math.cos(freq * t * Math.PI);
+
+==== 2286 project/src/core/motion/track.ts
+// Keyframe tracks with C1 continuity. Interior keys pass through with Catmull-Rom tangents
+// (so a camera never "kinks" when one move hands over to the next); `hold` keys and the
+// ends get zero tangents (a soft ease in/out). Tangents are clamped Fritsch–Carlson style
+// so a curve never overshoots its keys — no accidental bounces.
+
+/**
+ * `m` overrides the tangent (units per frame), e.g. to arrive at speed for a magnetic snap;
+ * `stop` makes the key an impact: it is reached at `m` and left at rest.
+ */
+export type Key = { f: number; v: number[]; hold?: boolean; m?: number[]; stop?: boolean };
+
+const hermite = (p0: number, p1: number, m0: number, m1: number, t: number, h: number) => {
+  const t2 = t * t, t3 = t2 * t;
+  return (2 * t3 - 3 * t2 + 1) * p0 + (t3 - 2 * t2 + t) * h * m0 + (-2 * t3 + 3 * t2) * p1 + (t3 - t2) * h * m1;
+};
+
+const tangent = (keys: Key[], i: number, c: number) => {
+  const k = keys[i];
+  if (k.m) return k.m[c];
+  if (k.hold || i === 0 || i === keys.length - 1) return 0;
+  const a = keys[i - 1], b = keys[i + 1];
+  const m = (b.v[c] - a.v[c]) / (b.f - a.f);
+  // Monotone clamp: no overshoot past either neighbour.
+  const d0 = (k.v[c] - a.v[c]) / (k.f - a.f);
+  const d1 = (b.v[c] - k.v[c]) / (b.f - k.f);
+  if (d0 * d1 <= 0) return 0;
+  const lim = 3 * Math.min(Math.abs(d0), Math.abs(d1));
+  return Math.sign(m) * Math.min(Math.abs(m), lim);
+};
+
+/** Sample a multi-channel track at `frame`. */
+export const sample = (keys: Key[], frame: number): number[] => {
+  if (frame <= keys[0].f) return keys[0].v.slice();
+  const last = keys[keys.length - 1];
+  if (frame >= last.f) return last.v.slice();
+  let i = 0;
+  while (i < keys.length - 2 && frame >= keys[i + 1].f) i++;
+  const a = keys[i], b = keys[i + 1];
+  const h = b.f - a.f;
+  const t = (frame - a.f) / h;
+  return a.v.map((_, c) =>
+    hermite(a.v[c], b.v[c], a.stop ? 0 : tangent(keys, i, c), tangent(keys, i + 1, c), t, h),
+  );
+};
+
+/** Convenience: build keys from [frame, ...values] tuples; append "hold" to pin a key. */
+export const keys = (...rows: (number | "hold")[][]): Key[] =>
+  rows.map((r) => {
+    const hold = r[r.length - 1] === "hold";
+    const nums = r.filter((x): x is number => typeof x === "number");
+    return { f: nums[0], v: nums.slice(1), hold };
+  });
+
+==== 4285 project/src/director/camera.ts
+// Camera grammar: a shot kind + what to frame → a camera that fits it in 9:16, with a slow steady drift.
+// Angles are in degrees: azimuth 0 looks from the front (+z) at the subject, positive swings toward +x (the right
+// gable); elevation is the camera's height angle above the subject's centre.
+
+import type { Box, Cam, ShotKind, V3 } from "./types.ts";
+
+type Preset = { az: number; el: number; fov: number; fit: number; rise: number; minY: number };
+// fit = how much of the frame width the subject's bounding sphere takes (smaller = closer);
+// rise = where the subject sits: the camera aims this fraction of the subject's height above its centre
+const PRESETS: Record<ShotKind, Preset> = {
+  wide: { az: 30, el: 4, fov: 42, fit: 0.98, rise: -0.2, minY: 1.6 },
+  front: { az: 6, el: 5, fov: 32, fit: 1.05, rise: -0.24, minY: 1.6 },
+  gable: { az: 80, el: 2, fov: 31, fit: 1.0, rise: -0.16, minY: 1.6 },
+  close: { az: 38, el: 9, fov: 35, fit: 0.82, rise: 0.0, minY: 1.2 },
+  high: { az: 42, el: 27, fov: 34, fit: 0.9, rise: 0.02, minY: 1.2 },
+  top: { az: 56, el: 33, fov: 30, fit: 0.84, rise: -0.08, minY: 1.2 },
+  low: { az: 40, el: -9, fov: 34, fit: 0.66, rise: 0.12, minY: 0.9 },
+  section: { az: 4, el: -3, fov: 34, fit: 1.0, rise: 0.02, minY: 1.1 },
+  detail: { az: 58, el: 10, fov: 30, fit: 1.0, rise: 0, minY: 0.6 },
+  ground: { az: 34, el: 10, fov: 34, fit: 0.85, rise: -0.05, minY: 1.0 },
+};
+
+const rad = (d: number) => (d * Math.PI) / 180;
+export const unionBox = (bs: Box[]): Box => ({
+  min: [Math.min(...bs.map((b) => b.min[0])), Math.min(...bs.map((b) => b.min[1])), Math.min(...bs.map((b) => b.min[2]))],
+  max: [Math.max(...bs.map((b) => b.max[0])), Math.max(...bs.map((b) => b.max[1])), Math.max(...bs.map((b) => b.max[2]))],
+});
+export const boxAround = (p: V3, r: number): Box => ({ min: [p[0] - r, Math.max(0, p[1] - r), p[2] - r], max: [p[0] + r, p[1] + r, p[2] + r] });
+
+/** Camera for `kind` framing `box`. side = +1 swings toward +x, −1 toward −x; seed nudges the angle shot to shot. */
+export const frame = (kind: ShotKind, box: Box, side: 1 | -1, move: "push" | "pull" | "still", cutZ: number, seed = 0, aspect = 9 / 16): { a: Cam; b: Cam } => {
+  const P = PRESETS[kind];
+  const c: V3 = [(box.min[0] + box.max[0]) / 2, (box.min[1] + box.max[1]) / 2, (box.min[2] + box.max[2]) / 2];
+  const sx = box.max[0] - box.min[0], sy = box.max[1] - box.min[1], sz = box.max[2] - box.min[2];
+  // landscape: a narrower vertical angle keeps the same lens feel across the wider frame
+  const fov = aspect > 1 ? P.fov * 0.74 : P.fov;
+  const hv = rad(fov) / 2, hh = Math.atan(Math.tan(hv) * aspect);
+  const at = (azDeg: number, scale: number): Cam => {
+    const az = rad(azDeg) * side, el = rad(P.el);
+    // the subject's silhouette as seen from this azimuth: width across the view, height
+    const w = Math.abs(sx * Math.cos(az)) + Math.abs(sz * Math.sin(az)), dpt = Math.abs(sx * Math.sin(az)) + Math.abs(sz * Math.cos(az));
+    // landscape: more room above and below (the frame is short), aim a little lower so the cut ground shows
+    const vk = aspect > 1 ? 1.75 : 1.25, rise = P.rise - (aspect > 1 ? 0.14 : 0);
+    const dist = Math.max((w / 2 / Math.tan(hh)) * P.fit, (sy / 2 / Math.tan(hv)) * P.fit * vk) * scale + dpt / 2;
+    const target: V3 = [c[0], c[1] + sy * rise, c[2]];
+    let pos: V3 = [target[0] + Math.sin(az) * Math.cos(el) * dist, target[1] + Math.sin(el) * dist, target[2] + Math.cos(az) * Math.cos(el) * dist];
+    if (pos[1] < P.minY) pos = [pos[0], P.minY, pos[2]];
+    // "wide" shows the ground in section: stand beyond the cut, low
+    if (kind === "wide" && pos[2] < cutZ + 4.5) pos = [pos[0], pos[1], cutZ + 4.5];
+    return { pos, target, fov, shadowAt: [c[0], 0, c[2]], shadowBox: Math.min(22, Math.max(8, Math.hypot(sx, sz) * 1.15 + 3)) };
+  };
+  const wob = ((seed * 37) % 7) - 3; // ±3° so two shots of one kind never match exactly
+  const far = at(P.az + wob, 1), near = at(P.az + wob - 3, 0.92);
+  if (move === "still") return { a: far, b: far };
+  if (move === "pull") {
+    const out = at(P.az + wob + 4, kind === "wide" ? 1.35 : 1.18);
+    return { a: near, b: { ...out, pos: [out.pos[0], out.pos[1] + (kind !== "wide" ? 0.5 : out.pos[1] < 3 ? 2.2 : 0.8), out.pos[2]] } };
+  }
+  return { a: far, b: near };
+};
+
+==== 5806 project/src/director/Film.tsx
+// BEDAH director — the generic film. It only reads a Plan: which shot is on, the state of every part right now,
+// the camera, the weather, the worker, pins / marks / tags and captions. What the parts look like comes from the
+// plan's domain (src/domains).
+
+import React, { useEffect, useState } from "react";
+import { AbsoluteFill, Audio, continueRender, delayRender, staticFile, useCurrentFrame, useVideoConfig, type CalculateMetadataFunction } from "remotion";
+import { ShotCanvas } from "../kits/bedah/ShotCanvas.tsx";
+import { DAY, RAIN, mixLook } from "../kits/bedah/Stage.tsx";
+import { fontsReady } from "../kits/bedah/fonts.ts";
+import { project, type Shot } from "../kits/bedah/cam.ts";
+import { Captions, chunk, Frame, Pin, Stroke, Tag } from "../kits/bedah/Overlay.tsx";
+import { Worker } from "../kits/bedah/Worker.tsx";
+import { DOMAINS } from "../domains/index.ts";
+import { VIEWS } from "../domains/views.tsx";
+import { actPose } from "./acts.ts";
+import { anchorAt, markAt, stateAt } from "./plan.ts";
+import type { Plan, V3 } from "./types.ts";
+import { qaNoOverlay, Solid } from "../core/qa/scene-qa.tsx";
+
+const c01 = (x: number) => (x < 0 ? 0 : x > 1 ? 1 : x);
+const sm = (x: number) => { const t = c01(x); return t * t * (3 - 2 * t); };
+const mix = (a: number, b: number, t: number) => a + (b - a) * t;
+const mix3 = (a: V3, b: V3, t: number): V3 => [mix(a[0], b[0], t), mix(a[1], b[1], t), mix(a[2], b[2], t)];
+
+export const bedahMetadata: CalculateMetadataFunction<{ plan: Plan }> = ({ props }) => ({ durationInFrames: Math.max(1, Math.round(props.plan.duration * 60)) });
+export const bedahMetadata30: CalculateMetadataFunction<{ plan: Plan }> = ({ props }) => ({ durationInFrames: Math.max(1, Math.round(props.plan.duration * 30)) });
+
+export const BedahFilm: React.FC<{ plan: Plan }> = ({ plan }) => {
+  const frame = useCurrentFrame();
+  const { fps, width, height } = useVideoConfig();
+  const t = frame / fps;
+  const [h] = useState(() => delayRender("fonts"));
+  const [ok, setOk] = useState(false);
+  useEffect(() => { fontsReady().then(() => { setOk(true); continueRender(h); }); }, [h]);
+
+  const D = DOMAINS[plan.domain], V = VIEWS[plan.domain];
+  if (!D || !V) throw new Error(`unknown domain "${plan.domain}"`);
+  const caps = React.useMemo(() => {
+    const per = plan.lines.map((l) => ({ l, cs: chunk(l.words, 3) }));
+    return { chunks: per.flatMap((p) => p.cs), ends: per.flatMap((p) => p.cs.map(() => p.l.t1 + 0.22)) };
+  }, [plan]);
+
+  if (!plan.shots.length) return <AbsoluteFill style={{ background: "#000" }} />;
+  let si = 0;
+  for (let i = 0; i < plan.shots.length; i++) if (t >= plan.shots[i].t0) si = i;
+  const S = plan.shots[si];
+  const s = t - S.t0, d = S.t1 - S.t0;
+  const st = stateAt(S, s);
+  // camera: a steady drift (push / still) or an eased pull-back
+  const k = S.cam.move === "pull" ? sm(s / d) : c01(s / d);
+  const shot: Shot = { pos: mix3(S.cam.a.pos, S.cam.b.pos, k), target: mix3(S.cam.a.target, S.cam.b.target, k), fov: mix(S.cam.a.fov, S.cam.b.fov, k), shadowAt: S.cam.a.shadowAt, shadowBox: S.cam.a.shadowBox };
+  // weather blends over the first second of the shot
+  const rain = mix(S.rain[0], S.rain[1], sm(s / Math.min(1.0, d * 0.4)));
+  const look = rain <= 0 ? DAY : rain >= 1 ? RAIN : mixLook(DAY, RAIN, rain);
+  const P = (p: V3) => project(shot, width / height, p);
+  const wide = width > height, LW = wide ? 1920 : 1080, LH = wide ? 1080 : 1920, pk = wide ? 0.62 : 1;
+  const present = st.parts.map((p) => p.name);
+
+  return (
+    <AbsoluteFill style={{ background: "#000" }}>
+      {ok && (
+        <>
+          <ShotCanvas shot={shot} look={look} frame={frame} t={t}>
+            <V.World />
+            <group key={si}>
+              {/* <Solid>: the build and the worker for the scene QA (scripts/qa-scene.mjs); parts may overlap each other */}
+              <Solid id="house" kind="set" touch={["*"]}>
+                {st.parts.map((p) => {
+                  const C = V.PARTS[p.name];
+                  if (!C) throw new Error(`domain "${plan.domain}" has no picture for part "${p.name}"`);
+                  return p.e <= 0 ? null : <C key={p.key} e={p.e} p={p.params} g={st.globals} t={t} />;
+                })}
+              </Solid>
+              <V.Weather t={t} amount={rain} center={shot.target} present={present} g={st.globals} />
+              {S.worker ? <Solid id="worker"><Worker pos={[S.worker.pos[0], S.worker.y ?? 0, S.worker.pos[1]]} rotY={S.worker.face} pose={actPose(S.worker.do, s, S.worker.reach?.[1])} /></Solid> : null}
+            </group>
+          </ShotCanvas>
+          {/* the QA pass scans the 3D alone */}
+          {qaNoOverlay() ? null : <Frame scale={width / LW} w={LW} h={LH}>
+            {S.marks.map((m, i) => (markAt(D, st, m.use) ?? []).map((path, j) => (
+              <Stroke key={`${i}_${j}`} s={s} t0={m.a + j * 0.09} t1={d} dur={path.style === "arrow" ? 0.55 : 0.6} arrow={path.style === "arrow"} close={path.style === "outline" || path.style === "dashloop"}
+                dash={path.style === "dash" || path.style === "dashloop" ? "16 14" : undefined} width={path.style === "dash" || path.style === "dashloop" ? 5 : 7} pts={path.pts.map(P)} />
+            )))}
+            {S.tags.map((g, i) => { const a = anchorAt(D, st, g.on); return a ? <Tag key={i} s={s} t0={g.a} t1={d} at={P(a)} text={g.text} dy={-36 * pk} /> : null; })}
+            {S.pins.map((p, i) => { const a = anchorAt(D, st, p.on); return a ? <Pin key={i} s={s} t0={p.a} t1={d} at={P(a)} text={p.text} dx={(p.dx ?? (i % 2 ? -70 : 60)) * (wide ? 1.3 : 1)} dy={(p.dy ?? -190) * pk} /> : null; })}
+            <Captions s={t} chunks={caps.chunks} ends={caps.ends} />
+          </Frame>}
+        </>
+      )}
+      {plan.audio ? <Audio src={staticFile(plan.audio)} /> : null}
+    </AbsoluteFill>
+  );
+};
+
+==== 6076 project/src/director/types.ts
+// BEDAH director — data types. A Story is what an author writes (JSON); a Plan is the compiled film (JSON too).
+// Everything here is pure data: the same Plan drives the picture (Film.tsx), the sound (scripts/lib/sound.mjs) and QA.
+
+export type V3 = [number, number, number];
+export type Box = { min: V3; max: V3 };
+export type Params = Record<string, number>;
+export type Cam = { pos: V3; target: V3; fov: number; shadowAt?: V3; shadowBox?: number };
+
+// ------------------------------------------------------------------ domain (what can be built)
+export type MarkStyle = "arrow" | "line" | "dash" | "outline" | "dashloop";
+export type MarkGeo = { pts: V3[]; style: MarkStyle }[];
+export type WorkSpot = { pos: [number, number]; face: number; do: string; reach?: V3; y?: number };
+
+/** Pure description of one buildable thing. Its picture lives in the domain's view file under the same name. */
+export type PartMeta = {
+  /** what it is, for authors (shown by `make.mjs --parts`) */
+  about: string;
+  /** parts sharing a slot replace each other (a tile roof replaces a thatch roof) */
+  slot?: string;
+  /** default parameters; a story may set or animate any of them */
+  params?: Params;
+  /** the volume the camera frames when this part is the focus */
+  box: (p: Params, g: Params) => Box;
+  /** named points for pins, tags and camera focus */
+  anchors?: (p: Params, g: Params) => Record<string, V3>;
+  /** ready-made annotation geometry (flow arrows, load paths, outlines …) */
+  marks?: (p: Params, g: Params) => Record<string, MarkGeo>;
+  /** seconds a natural arrival takes when the part is built on screen */
+  build?: number;
+  /** sound of its arrival */
+  sound?: "wood" | "clay" | "soft" | "none";
+  /** where the worker stands and what he does when working on it */
+  work?: (p: Params, g: Params) => WorkSpot;
+  /** set dressing: never part of the default camera focus */
+  scenery?: boolean;
+};
+
+export type DomainMeta = {
+  id: string;
+  about: string;
+  /** shared numbers parts read (roof slope, sag …); a story sets them as "g.<name>" */
+  globals: Params;
+  /** globals that follow from what is present (e.g. timber walls → the raised timber roof) */
+  derive?: (present: string[], g: Params) => Params;
+  /** default focus when a shot names none */
+  subject: (present: string[], g: Params) => Box;
+  /** the ground is cut open at this z; "wide" shots keep the cut in frame */
+  cutZ: number;
+  parts: Record<string, PartMeta>;
+  /** what the worker can do */
+  acts: string[];
+  /** sounds tied to a parameter being animated, e.g. { "tungku.api": "fire", "g.sag": "thud" } */
+  paramSound?: Record<string, "fire" | "thud">;
+};
+
+// ------------------------------------------------------------------ story (authoring format)
+export type ShotKind = "wide" | "front" | "gable" | "close" | "high" | "top" | "low" | "section" | "detail" | "ground";
+/** a moment inside a shot: a word of the sentence ("gording") or a fraction of the shot (0…1) */
+export type When = string | number;
+
+export type ShotSpec = {
+  /** state changes at the cut: parts as "name", "name:param=1,other=0" or "name#2:x=3" (a second instance) */
+  add?: string[];
+  remove?: string[];
+  only?: string[];
+  /** parts that arrive during the shot */
+  build?: (string | { part: string; at?: When; over?: number; from?: number })[];
+  /** parameter changes: what = "part.param" or "g.global"; without `over` the value jumps at the cut */
+  set?: { what: string; to: number; from?: number; at?: When; over?: number }[];
+  /** what the camera frames: a part, "part.anchor", or several */
+  focus?: string | string[];
+  shot?: ShotKind;
+  side?: "left" | "right";
+  move?: "push" | "pull" | "still";
+  weather?: "clear" | "rain";
+  /** worker: an act name (stands at the focus part's work spot) or an explicit place */
+  worker?: string | { do: string; at?: [number, number]; face?: number; on?: string };
+  pin?: { text: string; on: string; at?: When; dx?: number; dy?: number }[];
+  mark?: { use: string; at?: When }[];
+  tag?: { text: string; on: string; at?: When }[];
+  /** escape hatch: exact camera (start → end) instead of a preset */
+  cam?: { from: Cam; to?: Cam };
+  /** the same escape hatch for 16:9 renders (used instead of `cam` when the film is landscape) */
+  camWide?: { from: Cam; to?: Cam };
+};
+export type StoryLine = ShotSpec & {
+  /** the sentence, exactly as spoken */
+  text: string;
+  /** further shots inside this sentence, each starting at a word */
+  then?: (ShotSpec & { at: string })[];
+  /** no cut: the previous shot keeps running under this sentence */
+  same?: boolean;
+};
+export type Story = {
+  id: string;
+  title?: string;
+  domain: string;
+  /** parts present before the first shot */
+  start?: string[];
+  lines: StoryLine[];
+};
+
+// ------------------------------------------------------------------ timing + plan (compiled)
+export type Word = { w: string; t: number };
+export type Timed = { text: string; t0: number; t1: number; words: Word[] };
+
+export type PPart = { key: string; name: string; params: Params; e0: number; build?: { a: number; b: number; from: number } };
+export type PAnim = { what: string; from: number; to: number; a: number; b: number };
+export type PShot = {
+  t0: number; t1: number; line0: number; line1: number; kind: ShotKind;
+  parts: PPart[];
+  globals: Params;
+  anims: PAnim[];
+  cam: { a: Cam; b: Cam; move: "push" | "pull" | "still" };
+  /** rain amount at the cut and at the end of the shot (0 clear … 1 rain) */
+  rain: [number, number];
+  worker?: { pos: [number, number]; face: number; do: string; reach?: V3; y?: number };
+  pins: { text: string; on: string; a: number; dx?: number; dy?: number }[];
+  marks: { use: string; a: number }[];
+  tags: { text: string; on: string; a: number }[];
+};
+export type Plan = {
+  id: string; title: string; domain: string;
+  duration: number;
+  /** staticFile path of the mix, when there is sound */
+  audio?: string;
+  /** width / height of the film (default 9:16 portrait) */
+  aspect?: number;
+  lines: Timed[];
+  shots: PShot[];
+  warnings: string[];
+};
+
+==== 252 project/src/domains/index.ts
+// Registry of domains (pure metadata). Add a domain here and its view in views.tsx.
+import type { DomainMeta } from "../director/types.ts";
+import { RUMAH } from "./rumah/meta.ts";
+
+export const DOMAINS: Record<string, DomainMeta> = { rumah: RUMAH };
+
+==== 2980 project/src/domains/rumah/pondasi.ts
+// Domain "rumah" — parts for the foundation topic. A wall line runs from the yard straight into the cut (x = WX,
+// z = Z0 … the cut), so everything under it shows in section on the cut face: trench, stone footing, ground beam.
+// (Worked example of adding parts: metadata here, pictures in pondasi.view.tsx, both merged into the domain.)
+
+import type { MarkGeo, PartMeta, V3 } from "../../director/types.ts";
+
+export const FOUND = { x: 1.0, z0: 1.4, z1: 6.2, depth: 0.78, top: 0.36, bottom: 0.78, sloofW: 0.22, sloofTop: 0.22, wallT: 0.14, wallH: 2.3 };
+const F = FOUND, zc = F.z1 + 0.012;
+const under = { min: [F.x - 1.0, -1.25, F.z0] as V3, max: [F.x + 1.0, 0.5, F.z1] as V3 };
+
+export const PONDASI: Record<string, PartMeta> = {
+  tembok: {
+    about: "tembok bata lurus ke arah potongan tanah. dasar = tinggi alasnya (0 di tanah, 0.22 di atas sloof); turun = ambles sekian meter (dan miring)",
+    params: { dasar: 0, turun: 0 }, build: 2.6, sound: "clay",
+    box: (p) => ({ min: [F.x - 0.75, Math.min(0, p.dasar - p.turun) - 0.15, F.z0], max: [F.x + 0.75, p.dasar + F.wallH + 0.1, F.z1] }),
+    anchors: (p) => ({ tengah: [F.x + 0.08, p.dasar + 1.25, 4.4], kaki: [F.x, p.dasar - p.turun + 0.05, F.z1], atas: [F.x, p.dasar + F.wallH, 5.2] }),
+    marks: (p) => {
+      const x = F.x + F.wallT / 2 + 0.012, y = p.dasar - p.turun;
+      return { retak: [{ pts: ([[2.05, 5.05], [1.7, 4.86], [1.42, 5.08], [1.05, 4.84], [0.72, 5.0], [0.38, 4.8], [0.08, 4.92]] as [number, number][]).map(([h, z]) => [x, y + h, z] as V3), style: "line" }] };
+    },
+  },
+  galian: {
+    about: "parit galian untuk pondasi, terlihat di potongan tanah",
+    slot: "pondasi", build: 1.6, sound: "soft",
+    box: () => under,
+    anchors: () => ({ dasar: [F.x, -F.depth - 0.02, zc], tepi: [F.x + 0.5, -0.1, zc] }),
+  },
+  "batu-kali": {
+    about: "pondasi batu kali berbentuk trapesium (melebar ke bawah) mengisi parit",
+    slot: "pondasi", build: 2.4, sound: "wood",
+    box: () => under,
+    anchors: () => ({ badan: [F.x, -F.depth * 0.5, zc], dasar: [F.x, -F.depth, zc] }),
+    marks: () => {
+      const y0 = -F.depth, y1 = -0.02;
+      const out: Record<string, MarkGeo> = {
+        trapesium: [{ pts: [[F.x - F.top / 2, y1, zc], [F.x + F.top / 2, y1, zc], [F.x + F.bottom / 2, y0, zc], [F.x - F.bottom / 2, y0, zc]], style: "outline" }],
+        sebar: ([[-0.26, -0.62], [0, 0], [0.26, 0.62]] as [number, number][]).map(([a, b]) => ({ pts: [[F.x + a, y0 - 0.06, zc], [F.x + b, y0 - 0.72, zc]] as V3[], style: "arrow" as const })),
+        turun: [{ pts: [[F.x + 0.24, 1.7, zc], [F.x + 0.24, 0.32, zc]], style: "arrow" }],
+      };
+      return out;
+    },
+  },
+  sloof: {
+    about: "balok beton di atas pondasi, mengikat pondasi dan jadi alas tembok",
+    build: 1.5, sound: "soft",
+    box: () => ({ min: [F.x - 0.8, -0.5, F.z0], max: [F.x + 0.8, 0.75, F.z1] }),
+    anchors: () => ({ tengah: [F.x + F.sloofW / 2, F.sloofTop * 0.5, 5.4], ujung: [F.x, F.sloofTop * 0.5, zc] }),
+  },
+};
+
+==== 5695 project/src/domains/rumah/pondasi.view.tsx
+// Pictures of the foundation parts (see pondasi.ts). Everything that crosses the cut ends a few millimetres proud
+// of the cut face, so it reads in section without z-fighting.
+
+import React, { useEffect, useMemo } from "react";
+import { BufferGeometry, Float32BufferAttribute, Shape, ShapeGeometry } from "three";
+import { boxUV } from "../../kits/bedah/geo.tsx";
+import { flat, mat } from "../../kits/bedah/mats.ts";
+import { brick, dirt, plaster, rubble } from "../../kits/bedah/tex.ts";
+import type { Params } from "../../director/types.ts";
+import { FOUND as F } from "./pondasi.ts";
+
+type Ctx = { e: number; p: Params; g: Params; t: number };
+const c01 = (x: number) => (x < 0 ? 0 : x > 1 ? 1 : x);
+const ease = (x: number) => { const t = c01(x); return t * t * (3 - 2 * t); };
+const PROUD = 0.006;
+
+/** Trapezoid prism along z: width w0 at y0 (bottom), w1 at y1 (top). Metre UVs. */
+const prism = (x: number, y0: number, y1: number, w0: number, w1: number, z0: number, z1: number) => {
+  const a = [x - w0 / 2, y0], b = [x + w0 / 2, y0], c = [x + w1 / 2, y1], d = [x - w1 / 2, y1];
+  const pos: number[] = [], nor: number[] = [], uv: number[] = [], idx: number[] = [];
+  const quad = (p: number[][], n: number[], uvs: number[][]) => {
+    const base = pos.length / 3;
+    p.forEach((v, i) => { pos.push(...v); nor.push(...n); uv.push(...uvs[i]); });
+    idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+  };
+  // front end (toward +z), top, the two battered sides
+  quad([[a[0], a[1], z1], [b[0], b[1], z1], [c[0], c[1], z1], [d[0], d[1], z1]], [0, 0, 1], [[a[0], a[1]], [b[0], b[1]], [c[0], c[1]], [d[0], d[1]]]);
+  quad([[d[0], d[1], z1], [c[0], c[1], z1], [c[0], c[1], z0], [d[0], d[1], z0]], [0, 1, 0], [[d[0], z1], [c[0], z1], [c[0], z0], [d[0], z0]]);
+  const sl = Math.hypot((w0 - w1) / 2, y1 - y0), nx = (y1 - y0) / sl, ny = (w0 - w1) / 2 / sl;
+  quad([[b[0], b[1], z1], [b[0], b[1], z0], [c[0], c[1], z0], [c[0], c[1], z1]], [nx, ny, 0], [[z1, 0], [z0, 0], [z0, sl], [z1, sl]]);
+  quad([[a[0], a[1], z0], [a[0], a[1], z1], [d[0], d[1], z1], [d[0], d[1], z0]], [-nx, ny, 0], [[z0, 0], [z1, 0], [z1, sl], [z0, sl]]);
+  const g = new BufferGeometry();
+  g.setAttribute("position", new Float32BufferAttribute(pos, 3));
+  g.setAttribute("normal", new Float32BufferAttribute(nor, 3));
+  g.setAttribute("uv", new Float32BufferAttribute(uv, 2));
+  g.setIndex(idx);
+  return g;
+};
+const useGeo = <T extends BufferGeometry>(make: () => T, deps: unknown[]) => {
+  const g = useMemo(make, deps); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => g.dispose(), [g]);
+  return g;
+};
+
+const Tembok: React.FC<Ctx> = ({ e, p }) => {
+  const h = Math.max(0.02, ease(e) * F.wallH), len = F.z1 + PROUD - F.z0;
+  const g = useGeo(() => boxUV(F.wallT, h, len), [h, len]);
+  const m = mat("tembokBata", brick(), { repeat: [1 / 1.45, 1 / 1.62], roughness: 0.9, bump: 1.3 });
+  // a wall that settles goes down and leans a little
+  return (
+    <group position={[F.x, p.dasar - p.turun, 0]} rotation={[0, 0, -p.turun * 0.16]}>
+      <mesh geometry={g} material={m} position={[0, h / 2, F.z0 + len / 2]} castShadow receiveShadow />
+    </group>
+  );
+};
+
+const Galian: React.FC<Ctx> = ({ e }) => {
+  const k = ease(e), depth = Math.max(0.02, k * (F.depth + 0.04)), w = F.bottom + 0.1;
+  const g = useGeo(() => {
+    const s = new Shape();
+    s.moveTo(-w / 2, 0); s.lineTo(w / 2, 0); s.lineTo(w / 2 - 0.03, -depth); s.lineTo(-w / 2 + 0.03, -depth); s.closePath();
+    return new ShapeGeometry(s);
+  }, [depth, w]);
+  // the trench reads as a hole, not a black block: shaded soil on the cut, a darker mouth on the ground
+  const mVoid = flat("#2a1f17", 1), mWall = mat("galianDinding", dirt({ seed: 83, base: "#5a402c", dark: "#3a281b" }), { repeat: [1 / 1.2, 1 / 1.2], roughness: 1, bump: 1.5 }), mHeap = mat("galianTanah", dirt({ seed: 81, base: "#8a5f3f", dark: "#5e3f29" }), { repeat: [1.2, 1.2], roughness: 1, bump: 1.4 });
+  return (
+    <group>
+      <mesh geometry={g} material={mWall} position={[F.x, 0.001, F.z1 + 0.004]} receiveShadow />
+      {/* the open trench seen from above, and the spoil heaped beside it */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[F.x, 0.018, (F.z0 + F.z1) / 2]} scale={[k, 1, 1]} material={mVoid}><planeGeometry args={[w, F.z1 - F.z0]} /></mesh>
+      {[2.4, 3.6, 4.9].map((z, i) => (
+        <mesh key={i} position={[F.x - 0.95 - (i % 2) * 0.12, 0.02, z]} scale={[0.42 * k, (0.2 + (i % 2) * 0.06) * k, 0.55 * k]} material={mHeap} castShadow receiveShadow><sphereGeometry args={[1, 18, 12]} /></mesh>
+      ))}
+    </group>
+  );
+};
+
+const BatuKali: React.FC<Ctx> = ({ e }) => {
+  const k = Math.max(0.02, ease(e));
+  const y0 = -F.depth, y1 = y0 + k * (F.depth - 0.02), w1 = F.bottom + (F.top - F.bottom) * k;
+  const g = useGeo(() => prism(F.x, y0, y1, F.bottom, w1, F.z0, F.z1 + PROUD), [y1, w1]);
+  const m = mat("batuKali", rubble(), { repeat: [1 / 0.9, 1 / 0.9], roughness: 0.95, bump: 1.6 });
+  return <mesh geometry={g} material={m} castShadow receiveShadow />;
+};
+
+const Sloof: React.FC<Ctx> = ({ e }) => {
+  // poured from the far end toward the cut
+  const len = Math.max(0.02, ease(e) * (F.z1 + PROUD + 0.003 - F.z0)), h = F.sloofTop + 0.03;
+  const g = useGeo(() => boxUV(F.sloofW, h, len), [len, h]);
+  const m = mat("sloof", plaster({ seed: 71, rough: 1.4 }), { repeat: [1 / 1.6, 1 / 1.6], color: "#a9a8a3", roughness: 0.93 });
+  return <mesh geometry={g} material={m} position={[F.x, F.sloofTop - h / 2, F.z1 + PROUD + 0.003 - len / 2]} castShadow receiveShadow />;
+};
+
+export const PONDASI_VIEW: Record<string, React.FC<Ctx>> = { tembok: Tembok, galian: Galian, "batu-kali": BatuKali, sloof: Sloof };
+
+==== 2399 project/src/domains/rumah/world.tsx
+// The village every "rumah" film plays in: slab with a packed-earth yard, neighbours, trees, palms, a power line.
+import React from "react";
+import { Ground } from "../../kits/bedah/Ground.tsx";
+import { Banana, House, Palm, PowerLine, TreeLine, Trees, type HouseSpec, type TreeSpec } from "../../kits/bedah/props.tsx";
+
+export const CUT_Z = 6.2;
+
+const HOUSES: HouseSpec[] = [
+  { pos: [-15, 0, -13], rotY: 0.35, w: 7.5, d: 5.5, wall: "#e6d6b2" },
+  { pos: [12, 0, -17], rotY: -0.25, w: 8, d: 6, wall: "#d9dcc6" },
+  { pos: [-4, 0, -27], rotY: 0.05, w: 9, d: 6, wall: "#e9cfa6" },
+  { pos: [27, 0, -9], rotY: -0.9, w: 7, d: 5.5, wall: "#e2d9c4" },
+  { pos: [-31, 0, -24], rotY: 0.6, w: 8, d: 6, wall: "#d8c7a4" },
+  { pos: [22, 0, -34], rotY: -0.1, w: 9, d: 6, wall: "#e6d2b0" },
+  { pos: [-20, 0, -42], rotY: 0.2, w: 8, d: 6, wall: "#dfd3bb" },
+  { pos: [-24, 0, 1], rotY: 1.2, w: 7, d: 5.5, wall: "#e4d4b0" },
+];
+const TREES: TreeSpec[] = [
+  { pos: [-9.5, 0, -8], h: 6.5, r: 2.8, seed: 2 }, { pos: [8.5, 0, -9], h: 7, r: 3, seed: 3 }, { pos: [18, 0, -22], h: 8, r: 3.4, seed: 4 },
+  { pos: [-22, 0, -16], h: 7.5, r: 3.2, seed: 5 }, { pos: [3, 0, -19], h: 6, r: 2.6, seed: 6 }, { pos: [-12, 0, -30], h: 8, r: 3.5, seed: 7 },
+  { pos: [33, 0, -20], h: 7, r: 3, seed: 8 }, { pos: [-36, 0, -8], h: 8, r: 3.4, seed: 9 }, { pos: [10, 0, -40], h: 8.5, r: 3.6, seed: 10 },
+  { pos: [-28, 0, -36], h: 8, r: 3.3, seed: 11 }, { pos: [38, 0, -38], h: 9, r: 3.8, seed: 12 }, { pos: [17, 0, -3], h: 5.5, r: 2.3, seed: 13 },
+];
+
+export const World: React.FC = () => (
+  <group>
+    <Ground cutZ={CUT_Z} yards={[{ x0: -6.5, x1: 11, z0: -4.2, z1: CUT_Z, seed: 2 }]} />
+    {HOUSES.map((h, i) => <House key={i} {...h} />)}
+    <Trees trees={TREES} />
+    <Palm pos={[-7.4, 0, -4.6]} h={9.5} lean={1.1} yaw={0.4} seed={1} />
+    <Palm pos={[6.6, 0, -6.4]} h={11} lean={-1.0} yaw={-0.3} seed={2} />
+    <Palm pos={[15, 0, -13]} h={10} lean={0.8} yaw={2} seed={3} />
+    <Palm pos={[-18, 0, -8]} h={10.5} lean={-0.9} yaw={1} seed={4} />
+    <Palm pos={[1, 0, -33]} h={12} lean={1.2} yaw={3} seed={5} />
+    <Banana pos={[-5.9, 0, 0.2]} s={1.25} yaw={0.6} seed={1} />
+    <Banana pos={[-6.7, 0, -1.3]} s={1.05} yaw={2.1} seed={2} />
+    <Banana pos={[6.4, 0, -2.6]} s={1.2} yaw={4} seed={3} />
+    <PowerLine poles={[[-40, 0, -6.5], [-14, 0, -5.8], [11.5, 0, -5.2], [38, 0, -4.4]]} />
+    <TreeLine />
+  </group>
+);
+
+==== 493 project/src/domains/views.tsx
+// Registry of domain pictures (React). Same keys as src/domains/index.ts.
+import type React from "react";
+import type { Params, V3 } from "../director/types.ts";
+import * as rumah from "./rumah/view.tsx";
+
+export type DomainView = {
+  PARTS: Record<string, React.FC<{ e: number; p: Params; g: Params; t: number }>>;
+  World: React.FC;
+  Weather: React.FC<{ t: number; amount: number; center: V3; present: string[]; g: Params }>;
+};
+export const VIEWS: Record<string, DomainView> = { rumah };
+
+==== 3641 project/src/kits/bedah/cam.ts
+// Camera moves for BEDAH shots: keyed in seconds, C1-smooth through the keys (Catmull-Rom tangents,
+// zero speed at the first and last key), plus a deterministic handheld drift and impact shake.
+// The same function drives the 3D camera and the 2D overlay projection (map labels, pins, lines).
+
+import { PerspectiveCamera, Vector3 } from "three";
+import { sample, type Key } from "../../core/motion/track.ts";
+
+export type V3 = [number, number, number];
+export type Shot = { pos: V3; target: V3; fov: number; roll?: number; focus?: number; blur?: number; shadowAt?: V3; shadowBox?: number };
+export type CamKey = { t: number; pos: V3; target: V3; fov?: number; roll?: number; hold?: boolean };
+
+export const clamp01 = (x: number) => (x < 0 ? 0 : x > 1 ? 1 : x);
+export const lin = (s: number, a: number, b: number) => clamp01((s - a) / (b - a));
+export const sm = (t: number) => {
+  const x = clamp01(t);
+  return x * x * (3 - 2 * x);
+};
+export const smoother = (t: number) => {
+  const x = clamp01(t);
+  return x * x * x * (x * (x * 6 - 15) + 10);
+};
+export const mix = (a: number, b: number, t: number) => a + (b - a) * t;
+export const mix3 = (a: V3, b: V3, t: number): V3 => [mix(a[0], b[0], t), mix(a[1], b[1], t), mix(a[2], b[2], t)];
+
+/** Smooth hash noise in 1D (deterministic). */
+const h1 = (n: number) => {
+  const x = Math.sin(n * 127.1 + 311.7) * 43758.5453;
+  return x - Math.floor(x);
+};
+export const noise1 = (x: number, seed = 0) => {
+  const i = Math.floor(x), f = x - i;
+  const u = f * f * (3 - 2 * f);
+  return mix(h1(i + seed * 57.3), h1(i + 1 + seed * 57.3), u) * 2 - 1;
+};
+
+/** Sample a list of camera keys at time s (seconds, local to the shot). */
+export const camAt = (keys: CamKey[], s: number): Shot => {
+  const k: Key[] = keys.map((c) => ({ f: c.t, v: [...c.pos, ...c.target, c.fov ?? 32, c.roll ?? 0], hold: c.hold }));
+  const v = sample(k, s);
+  return { pos: [v[0], v[1], v[2]], target: [v[3], v[4], v[5]], fov: v[6], roll: v[7] };
+};
+
+/**
+ * Handheld drift (always on, tiny) + impact shake (decaying bursts at `hits` seconds).
+ * Amplitudes are in world units at the target distance, so they scale with the framing.
+ */
+export const handheld = (shot: Shot, s: number, o: { drift?: number; hits?: number[]; hit?: number; seed?: number } = {}): Shot => {
+  const seed = o.seed ?? 1;
+  const d = new Vector3(...shot.pos).distanceTo(new Vector3(...shot.target));
+  let ax = noise1(s * 0.35, seed) * (o.drift ?? 0.004) * d;
+  let ay = noise1(s * 0.31, seed + 3) * (o.drift ?? 0.004) * d * 0.7;
+  let roll = shot.roll ?? 0;
+  for (const t of o.hits ?? []) {
+    const a = s - t;
+    if (a < 0 || a > 1.6) continue;
+    const env = Math.exp(-a * 3.2) * (o.hit ?? 0.012) * d;
+    ax += noise1(a * 22, seed + t) * env;
+    ay += noise1(a * 25, seed + t + 9) * env;
+    roll += noise1(a * 18, seed + t + 4) * env * 0.02 / Math.max(d, 1e-3);
+  }
+  const target: V3 = [shot.target[0] + ax, shot.target[1] + ay, shot.target[2]];
+  return { ...shot, target, roll };
+};
+
+const tmpCam = new PerspectiveCamera();
+/** Project a world point to overlay space (0..1, y down). `vis` is false behind the camera. */
+export const project = (shot: Shot, aspect: number, p: V3, near = 0.1, far = 5000) => {
+  tmpCam.fov = shot.fov;
+  tmpCam.aspect = aspect;
+  tmpCam.near = near;
+  tmpCam.far = far;
+  tmpCam.position.set(...shot.pos);
+  tmpCam.up.set(Math.sin(shot.roll ?? 0), Math.cos(shot.roll ?? 0), 0);
+  tmpCam.lookAt(...shot.target);
+  tmpCam.updateProjectionMatrix();
+  tmpCam.updateMatrixWorld();
+  const v = new Vector3(...p).project(tmpCam);
+  return { x: (v.x + 1) / 2, y: (1 - v.y) / 2, vis: v.z < 1 && v.z > -1 };
+};
+
+==== 1076 project/src/kits/bedah/fonts.ts
+import { continueRender, delayRender, staticFile } from "remotion";
+
+// BEDAH type: Plus Jakarta Sans Bold (SIL OFL — licence text in OFL-plus-jakarta-sans.txt at the project root),
+// bundled in public/fonts, for captions, labels and annotations.
+export const F_CAPTION = "Plus Jakarta Sans";
+
+let ready: Promise<void> | null = null;
+export const fontsReady = (): Promise<void> => {
+  if (ready) return ready;
+  if (typeof document === "undefined") return (ready = Promise.resolve());
+  const handle = delayRender("bedah fonts");
+  const ttf = (file: string, weight: string) => new FontFace(F_CAPTION, `url(${staticFile(`fonts/${file}`)}) format("truetype")`, { weight });
+  // one file: labels ask for 800 and get this bold
+  const faces = [ttf("PlusJakartaSans_700Bold.ttf", "700")];
+  ready = Promise.all(
+    faces.map(async (f) => {
+      await f.load();
+      (document.fonts as unknown as { add(f: FontFace): void }).add(f);
+    }),
+  ).then(
+    () => continueRender(handle),
+    (e) => {
+      continueRender(handle);
+      throw e;
+    },
+  );
+  return ready;
+};
+
+==== 5692 project/src/kits/bedah/geo.tsx
+// Geometry helpers. All UVs are in metres (1 UV unit = 1 m) so one material repeat value means the same real size
+// on every piece; offsets decorrelate neighbouring pieces.
+
+import React, { useEffect, useMemo } from "react";
+import { BoxGeometry, BufferAttribute, BufferGeometry, CylinderGeometry, Float32BufferAttribute, Matrix4, PlaneGeometry, Quaternion, Vector3, type Material } from "three";
+import type { V3 } from "./cam.ts";
+
+/** Box with metre UVs. Faces: ±x use (d, h), ±y use (w, d), ±z use (w, h). `along` = axis the texture's u runs on for long members. */
+export const boxUV = (w: number, h: number, d: number, ou = 0, ov = 0) => {
+  const g = new BoxGeometry(w, h, d);
+  const uv = g.getAttribute("uv") as BufferAttribute;
+  const dims: [number, number][] = [[d, h], [d, h], [w, d], [w, d], [w, h], [w, h]];
+  for (let f = 0; f < 6; f++)
+    for (let i = 0; i < 4; i++) {
+      const k = f * 4 + i;
+      uv.setXY(k, uv.getX(k) * dims[f][0] + ou + f * 0.37, uv.getY(k) * dims[f][1] + ov + f * 0.21);
+    }
+  return g;
+};
+
+/** Plane in XY with metre UVs. */
+export const planeUV = (w: number, h: number, ou = 0, ov = 0, sx = 1, sy = 1) => {
+  const g = new PlaneGeometry(w, h, sx, sy);
+  const uv = g.getAttribute("uv") as BufferAttribute;
+  for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * w + ou, uv.getY(i) * h + ov);
+  return g;
+};
+
+const X = new Vector3(1, 0, 0), Y = new Vector3(0, 1, 0);
+/** Matrix placing a unit-length +X member from a to b (returns length too). `roll` spins it about its own axis. */
+export const spanMatrix = (a: V3, b: V3, roll = 0) => {
+  const A = new Vector3(...a), B = new Vector3(...b);
+  const dir = B.clone().sub(A);
+  const len = dir.length();
+  dir.normalize();
+  const q = new Quaternion().setFromUnitVectors(X, dir);
+  // keep the member's local Y as close to world up as possible (no random twist), then apply the roll
+  const up = Y.clone().applyQuaternion(q);
+  const want = Y.clone().sub(dir.clone().multiplyScalar(Y.dot(dir)));
+  if (want.lengthSq() > 1e-6) {
+    want.normalize();
+    const ang = Math.atan2(up.clone().cross(want).dot(dir), up.dot(want));
+    q.premultiply(new Quaternion().setFromAxisAngle(dir, ang));
+  }
+  if (roll) q.premultiply(new Quaternion().setFromAxisAngle(dir, roll));
+  const m = new Matrix4().compose(A.clone().add(B).multiplyScalar(0.5), q, new Vector3(1, 1, 1));
+  return { m, len };
+};
+
+/** Rectangular member (timber, batten) from a to b: section w (horizontal) × h (vertical). Texture u runs along it. */
+export const Beam: React.FC<{ a: V3; b: V3; w: number; h: number; material: Material; roll?: number; seed?: number; shadow?: boolean }> = ({ a, b, w, h, material, roll = 0, seed = 0, shadow = true }) => {
+  const { m, len } = useMemo(() => spanMatrix(a, b, roll), [a[0], a[1], a[2], b[0], b[1], b[2], roll]); // eslint-disable-line react-hooks/exhaustive-deps
+  const g = useMemo(() => boxUV(len, h, w, seed * 1.7, seed * 0.9), [len, h, w, seed]);
+  useEffect(() => () => g.dispose(), [g]);
+  return <mesh geometry={g} material={material} matrix={m} matrixAutoUpdate={false} castShadow={shadow} receiveShadow />;
+};
+
+/** Bamboo culm geometry along +X, length L: slightly swollen node rings every ~`node` metres. u around, v along (metres). */
+export const culmGeometry = (L: number, r: number, node = 0.38, seed = 0) => {
+  const rings: number[] = [];
+  const n = Math.max(1, Math.round(L / node));
+  for (let i = 0; i <= n; i++) {
+    const x = (i / n) * L;
+    if (i > 0) rings.push(x - 0.012);
+    rings.push(x);
+    if (i < n) rings.push(x + 0.012);
+  }
+  const seg = 10;
+  const pos: number[] = [], nor: number[] = [], uv: number[] = [], idx: number[] = [];
+  rings.forEach((x, ri) => {
+    const isNode = ri % 3 === 1 || rings.length < 3;
+    const rr = r * (isNode ? 1.09 : 1) * (1 - 0.1 * (x / L));
+    for (let s = 0; s <= seg; s++) {
+      const a = (s / seg) * Math.PI * 2;
+      pos.push(x - L / 2, Math.cos(a) * rr, Math.sin(a) * rr);
+      nor.push(0, Math.cos(a), Math.sin(a));
+      uv.push(s / seg, x / (node * 4) + seed * 0.31);
+    }
+  });
+  for (let ri = 0; ri < rings.length - 1; ri++)
+    for (let s = 0; s < seg; s++) {
+      const a = ri * (seg + 1) + s, b = a + seg + 1;
+      idx.push(a, a + 1, b, a + 1, b + 1, b);
+    }
+  const g = new BufferGeometry();
+  g.setAttribute("position", new Float32BufferAttribute(pos, 3));
+  g.setAttribute("normal", new Float32BufferAttribute(nor, 3));
+  g.setAttribute("uv", new Float32BufferAttribute(uv, 2));
+  g.setIndex(idx);
+  return g;
+};
+
+/** Bamboo pole from a to b. */
+export const Culm: React.FC<{ a: V3; b: V3; r?: number; material: Material; seed?: number }> = ({ a, b, r = 0.035, material, seed = 0 }) => {
+  const { m, len } = useMemo(() => spanMatrix(a, b), [a[0], a[1], a[2], b[0], b[1], b[2]]); // eslint-disable-line react-hooks/exhaustive-deps
+  const g = useMemo(() => culmGeometry(len, r, 0.38, seed), [len, r, seed]);
+  useEffect(() => () => g.dispose(), [g]);
+  return <mesh geometry={g} material={material} matrix={m} matrixAutoUpdate={false} castShadow receiveShadow />;
+};
+
+/** Round post / pole from a to b (smooth cylinder, metre UVs). */
+export const Rod: React.FC<{ a: V3; b: V3; r: number; material: Material; shadow?: boolean }> = ({ a, b, r, material, shadow = true }) => {
+  const { m, len } = useMemo(() => spanMatrix(a, b), [a[0], a[1], a[2], b[0], b[1], b[2]]); // eslint-disable-line react-hooks/exhaustive-deps
+  const g = useMemo(() => {
+    const c = new CylinderGeometry(r, r, len, 12, 1);
+    c.rotateZ(Math.PI / 2);
+    return c;
+  }, [len, r]);
+  return <mesh geometry={g} material={material} matrix={m} matrixAutoUpdate={false} castShadow={shadow} receiveShadow />;
+};
+
+==== 4370 project/src/kits/bedah/Ground.tsx
+// Ground — the BEDAH diorama slab: a wide grass field with packed-earth yards, sliced open at z = cutZ so the
+// camera sees the soil in section (fill, topsoil, subsoil, rock), stepping down once to a second clay shelf.
+
+import React, { useMemo } from "react";
+import { BufferAttribute, Shape, ShapeGeometry } from "three";
+import { planeUV } from "./geo.tsx";
+import { mat } from "./mats.ts";
+import { dirt, fbm, grass, soilSection } from "./tex.ts";
+
+export type Yard = { x0: number; x1: number; z0: number; z1: number; seed?: number };
+
+/** Rounded rectangle with a wandering edge (worn ground never ends on a ruler line). Flat in XZ at y. */
+const patch = (y: Yard, grow: number, wobble: number, cutZ: number) => {
+  const x0 = y.x0 - grow, x1 = y.x1 + grow, z0 = y.z0 - grow, z1 = Math.min(y.z1 + grow, cutZ);
+  const s = new Shape();
+  const pts: [number, number][] = [];
+  const N = 160;
+  const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2, hx = (x1 - x0) / 2, hz = (z1 - z0) / 2;
+  for (let i = 0; i < N; i++) {
+    const a = (i / N) * Math.PI * 2;
+    // superellipse → soft-cornered rectangle
+    const c = Math.cos(a), sn = Math.sin(a);
+    const e = 0.28;
+    let px = cx + hx * Math.sign(c) * Math.pow(Math.abs(c), e), pz = cz + hz * Math.sign(sn) * Math.pow(Math.abs(sn), e);
+    const n = (fbm(i / N, 0.5, 14, 3, (y.seed ?? 1) * 7 + 3, 1) - 0.5) * wobble;
+    px += c * n;
+    pz += sn * n;
+    // the slab is cut straight at cutZ
+    if (y.z1 + grow >= cutZ && pz > cutZ - 0.02) pz = cutZ;
+    pts.push([px, Math.min(pz, cutZ)]);
+  }
+  pts.forEach(([px, pz], i) => (i ? s.lineTo(px, -pz) : s.moveTo(px, -pz)));
+  const g = new ShapeGeometry(s);
+  g.rotateX(-Math.PI / 2);
+  // metre UVs from world xz
+  const pos = g.getAttribute("position") as BufferAttribute, uv = g.getAttribute("uv") as BufferAttribute;
+  for (let i = 0; i < pos.count; i++) uv.setXY(i, pos.getX(i), -pos.getZ(i));
+  return g;
+};
+
+export const Ground: React.FC<{ cutZ?: number; yards?: Yard[]; depth?: number; shelf?: number }> = ({ cutZ = 6, yards = [], depth = 2.4, shelf = 3.2 }) => {
+  const G = useMemo(() => {
+    const W = 600;
+    const field = planeUV(W, W);
+    field.rotateX(-Math.PI / 2);
+    field.translate(0, 0, cutZ - W / 2);
+    const face = planeUV(W, depth);
+    face.translate(0, -depth / 2, cutZ);
+    const shelfG = planeUV(W, shelf);
+    shelfG.rotateX(-Math.PI / 2);
+    shelfG.translate(0, -depth, cutZ + shelf / 2);
+    const face2 = planeUV(W, 12);
+    face2.translate(0, -depth - 6, cutZ + shelf);
+    return { field, face, shelfG, face2, yards: yards.map((y) => ({ rim: patch(y, 0.32, 0.5, cutZ), top: patch(y, 0, 0.45, cutZ), y })) };
+  }, [cutZ, depth, shelf, JSON.stringify(yards)]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const mGrass = mat("grass", grass(), { repeat: [1 / 4.5, 1 / 4.5], roughness: 0.95, bump: 1.2 });
+  const mRim = mat("grassRim", grass(), { repeat: [1 / 3.1, 1 / 3.1], roughness: 0.95, color: "#d9e08e", bump: 1 });
+  const mDirt = mat("dirt", dirt(), { repeat: [1 / 3.4, 1 / 3.4], roughness: 0.96, bump: 0.55 });
+  const mFace = mat("soil", soilSection(), { repeat: [1 / 7.5, 1 / depth], roughness: 0.97, bump: 1.6 });
+  const mShelf = mat("shelf", dirt({ seed: 77, base: "#8c4a2c", dark: "#643220" }), { repeat: [1 / 3.8, 1 / 3.8], roughness: 0.97, bump: 1.3 });
+  const mFace2 = mat("soil2", dirt({ seed: 91, base: "#5b4638", dark: "#3a2c22" }), { repeat: [1 / 5, 1 / 5], roughness: 0.98, bump: 1.6 });
+
+  return (
+    <group>
+      <mesh geometry={G.field} material={mGrass} receiveShadow />
+      {G.yards.map((y, i) => (
+        <group key={i}>
+          <mesh geometry={y.rim} material={mRim} position={[0, 0.006, 0]} receiveShadow />
+          <mesh geometry={y.top} material={mDirt} position={[0, 0.012, 0]} receiveShadow />
+          {/* the yard's fill layer shows as a pale band at the top of the cut */}
+          {y.y.z1 >= cutZ - 0.4 ? (
+            <mesh position={[(y.y.x0 + y.y.x1) / 2, -0.055, cutZ + 0.003]} material={mDirt} receiveShadow>
+              <planeGeometry args={[y.y.x1 - y.y.x0 - 0.5, 0.13]} />
+            </mesh>
+          ) : null}
+        </group>
+      ))}
+      <mesh geometry={G.face} material={mFace} receiveShadow />
+      <mesh geometry={G.shelfG} material={mShelf} receiveShadow />
+      <mesh geometry={G.face2} material={mFace2} receiveShadow />
+    </group>
+  );
+};
+
+==== 1984 project/src/kits/bedah/mats.ts
+// Material helpers: PBR materials from the procedural maps, with per-use repeat (textures are shared, only the
+// transform differs) and cached by key so a set never builds the same material twice.
+
+import { Color, DoubleSide, MeshStandardMaterial, Vector2, type Side, type Texture } from "three";
+import type { Maps } from "./tex.ts";
+
+const rep = (t: Texture, rx: number, ry: number, ox = 0, oy = 0) => {
+  const c = t.clone();
+  c.repeat.set(rx, ry);
+  c.offset.set(ox, oy);
+  c.needsUpdate = true;
+  return c;
+};
+
+export type MatOpts = {
+  /** texture repeats per UV unit (geometry UVs are in metres when built with the geo helpers) */
+  repeat?: [number, number];
+  offset?: [number, number];
+  color?: string;
+  roughness?: number;
+  metalness?: number;
+  bump?: number;
+  alphaTest?: number;
+  side?: Side;
+  double?: boolean;
+  emissive?: string;
+  emissiveIntensity?: number;
+};
+
+const cache = new Map<string, MeshStandardMaterial>();
+
+export const mat = (key: string, maps: Maps | null, o: MatOpts = {}) => {
+  const k = key + JSON.stringify(o);
+  let mm = cache.get(k);
+  if (mm) return mm;
+  const [rx, ry] = o.repeat ?? [1, 1];
+  const [ox, oy] = o.offset ?? [0, 0];
+  mm = new MeshStandardMaterial({
+    color: new Color(o.color ?? "#ffffff"),
+    roughness: o.roughness ?? 0.9,
+    metalness: o.metalness ?? 0,
+    map: maps ? rep(maps.map, rx, ry, ox, oy) : null,
+    normalMap: maps ? rep(maps.normalMap, rx, ry, ox, oy) : null,
+    normalScale: new Vector2(o.bump ?? 1, o.bump ?? 1),
+    alphaTest: o.alphaTest ?? 0,
+    emissive: new Color(o.emissive ?? "#000000"),
+    emissiveIntensity: o.emissiveIntensity ?? 1,
+  });
+  if (o.alphaTest) mm.alphaToCoverage = true;
+  if (o.double) mm.side = DoubleSide;
+  else if (o.side !== undefined) mm.side = o.side;
+  cache.set(k, mm);
+  return mm;
+};
+
+/** Plain coloured material (no maps). */
+export const flat = (color: string, roughness = 0.85, extra: MatOpts = {}) => mat("flat", null, { color, roughness, ...extra });
+
+==== 7736 project/src/kits/bedah/rig.ts
+// Worker rig — pure maths, no React/three (so poses can be checked in node: scripts/qa-pose.mjs).
+// The body is posed from a few targets: where the pelvis is, how the torso leans, where the hands and ankles go.
+// Elbows and knees come from two-bone IK, so hands land exactly on props (no "tembus") and feet stay on the ground.
+// Local frame: the worker faces +z, up is +y, the LEFT side is +x.
+
+export type V3 = [number, number, number];
+
+export type Pose = {
+  pelvis: V3;
+  /** torso lean forward (+) in radians, side lean toward the left (+), twist of the shoulders to the left (+) */
+  pitch: number;
+  roll?: number;
+  twist?: number;
+  /** head: nod down (+), turn left (+) — relative to the torso */
+  nod?: number;
+  turn?: number;
+  handL: V3;
+  handR: V3;
+  /** ankle targets; `toe` pitches the foot (+ = heel up, as on a kneeling leg) */
+  footL: V3;
+  footR: V3;
+  toeL?: number;
+  toeR?: number;
+  /** foot yaw (toes out +) */
+  splay?: number;
+  /** elbow pole bias: 0 = down/back, 1 = out to the side */
+  elbowOut?: number;
+  /** knee pole bias sideways (squat: knees apart) */
+  kneeOut?: number;
+};
+
+export const DIM = {
+  hipW: 0.09, hipDrop: 0.04, thigh: 0.42, shin: 0.41, ankle: 0.075,
+  spine: 0.47, shoulderW: 0.185, shoulderUp: 0.43, upper: 0.29, fore: 0.26, hand: 0.075,
+  neck: 0.07, head: 0.115,
+};
+
+const add = (a: V3, b: V3): V3 => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+const sub = (a: V3, b: V3): V3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const mul = (a: V3, s: number): V3 => [a[0] * s, a[1] * s, a[2] * s];
+const dot = (a: V3, b: V3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const cross = (a: V3, b: V3): V3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const len = (a: V3) => Math.hypot(a[0], a[1], a[2]);
+const norm = (a: V3): V3 => {
+  const l = len(a) || 1;
+  return [a[0] / l, a[1] / l, a[2] / l];
+};
+
+/** Two-bone IK: joint between root and target (lengths a, b), bent toward `pole`. Returns [mid, end]. */
+export const ik2 = (root: V3, target: V3, a: number, b: number, pole: V3): [V3, V3] => {
+  let d = sub(target, root);
+  let L = len(d);
+  const max = (a + b) * 0.999, min = Math.abs(a - b) + 1e-3;
+  if (L < 1e-6) { d = [0, -1, 0]; L = 1e-6; }
+  const dir = mul(d, 1 / L);
+  const Lc = Math.min(max, Math.max(min, L));
+  const x = (a * a - b * b + Lc * Lc) / (2 * Lc);
+  const h = Math.sqrt(Math.max(0, a * a - x * x));
+  let bend = sub(pole, mul(dir, dot(pole, dir)));
+  if (len(bend) < 1e-5) bend = cross(dir, [1, 0, 0]);
+  bend = norm(bend);
+  const mid = add(add(root, mul(dir, x)), mul(bend, h));
+  return [mid, add(root, mul(dir, Lc))];
+};
+
+export type Joints = {
+  pelvis: V3; chest: V3; neck: V3; head: V3; up: V3; right: V3; fwd: V3; headUp: V3; headFwd: V3;
+  hipL: V3; hipR: V3; kneeL: V3; kneeR: V3; ankleL: V3; ankleR: V3;
+  shL: V3; shR: V3; elbowL: V3; elbowR: V3; wristL: V3; wristR: V3;
+};
+
+const rotX = (v: V3, a: number): V3 => [v[0], v[1] * Math.cos(a) - v[2] * Math.sin(a), v[1] * Math.sin(a) + v[2] * Math.cos(a)];
+const rotY = (v: V3, a: number): V3 => [v[0] * Math.cos(a) + v[2] * Math.sin(a), v[1], -v[0] * Math.sin(a) + v[2] * Math.cos(a)];
+const rotZ = (v: V3, a: number): V3 => [v[0] * Math.cos(a) - v[1] * Math.sin(a), v[0] * Math.sin(a) + v[1] * Math.cos(a), v[2]];
+
+/** Solve a pose into joint positions (worker-local metres). */
+export const solve = (p: Pose): Joints => {
+  const D = DIM;
+  const tw = p.twist ?? 0, rl = p.roll ?? 0;
+  // torso frame: lean forward about x, lean sideways about z, twist about its own up axis
+  const tf = (v: V3) => rotZ(rotX(rotY(v, tw), p.pitch), -rl);
+  const up = tf([0, 1, 0]), right = tf([1, 0, 0]), fwd = tf([0, 0, 1]);
+  const pelvis = p.pelvis;
+  const chest = add(pelvis, mul(up, D.shoulderUp));
+  const neck = add(pelvis, mul(up, D.spine));
+  const hf = (v: V3) => tf(rotX(rotY(v, p.turn ?? 0), p.nod ?? 0));
+  const headUp = hf([0, 1, 0]), headFwd = hf([0, 0, 1]);
+  const head = add(neck, mul(headUp, D.neck + D.head * 0.75));
+  // hips follow the pelvis without the shoulder twist
+  const pr: V3 = rotZ([1, 0, 0], -rl * 0.5);
+  const hipL = add(pelvis, add(mul(pr, D.hipW), [0, -D.hipDrop, 0]));
+  const hipR = add(pelvis, add(mul(pr, -D.hipW), [0, -D.hipDrop, 0]));
+  const ko = p.kneeOut ?? 0.15;
+  const [kneeL, ankleL] = ik2(hipL, p.footL, D.thigh, D.shin, [ko, 0.25, 1]);
+  const [kneeR, ankleR] = ik2(hipR, p.footR, D.thigh, D.shin, [-ko, 0.25, 1]);
+  const shL = add(chest, mul(right, D.shoulderW)), shR = add(chest, mul(right, -D.shoulderW));
+  const eo = p.elbowOut ?? 0.35;
+  const poleL = add(add(mul(right, eo * 1.6), mul(up, -1)), mul(fwd, -0.55)), poleR = add(add(mul(right, -eo * 1.6), mul(up, -1)), mul(fwd, -0.55));
+  const [elbowL, wristL] = ik2(shL, p.handL, D.upper, D.fore, poleL);
+  const [elbowR, wristR] = ik2(shR, p.handR, D.upper, D.fore, poleR);
+  return { pelvis, chest, neck, head, up, right, fwd, headUp, headFwd, hipL, hipR, kneeL, kneeR, ankleL, ankleR, shL, shR, elbowL, elbowR, wristL, wristR };
+};
+
+const mixN = (a: number | undefined, b: number | undefined, t: number, d = 0) => (a ?? d) + ((b ?? d) - (a ?? d)) * t;
+const mixV = (a: V3, b: V3, t: number): V3 => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+/** Blend two poses (targets are blended, then IK is solved again, so limbs never stretch or pop). */
+export const mixPose = (a: Pose, b: Pose, t: number): Pose => {
+  if (t <= 0) return a;
+  if (t >= 1) return b;
+  return {
+    pelvis: mixV(a.pelvis, b.pelvis, t), pitch: mixN(a.pitch, b.pitch, t), roll: mixN(a.roll, b.roll, t), twist: mixN(a.twist, b.twist, t),
+    nod: mixN(a.nod, b.nod, t), turn: mixN(a.turn, b.turn, t), handL: mixV(a.handL, b.handL, t), handR: mixV(a.handR, b.handR, t),
+    footL: mixV(a.footL, b.footL, t), footR: mixV(a.footR, b.footR, t), toeL: mixN(a.toeL, b.toeL, t), toeR: mixN(a.toeR, b.toeR, t),
+    splay: mixN(a.splay, b.splay, t, 0.18), elbowOut: mixN(a.elbowOut, b.elbowOut, t, 0.35), kneeOut: mixN(a.kneeOut, b.kneeOut, t, 0.15),
+  };
+};
+
+// ------------------------------------------------------------------ pose library
+const A = DIM.ankle;
+export const POSES = {
+  /** relaxed stand, arms by the sides */
+  stand: (): Pose => ({
+    pelvis: [0, 0.925, 0], pitch: 0.03, handL: [0.25, 0.86, 0.04], handR: [-0.25, 0.86, 0.04],
+    footL: [0.1, A, 0.01], footR: [-0.1, A, -0.01], elbowOut: 0.25,
+  }),
+  /** squat (jongkok), both hands working on the ground in front; (x, z) offsets move each hand */
+  squat: (hl: [number, number] = [0, 0], hr: [number, number] = [0, 0], y = 0.07): Pose => ({
+    pelvis: [0, 0.34, -0.12], pitch: 0.98, nod: -0.3, handL: [0.13 + hl[0], y, 0.43 + hl[1]], handR: [-0.13 + hr[0], y, 0.43 + hr[1]],
+    footL: [0.17, A, 0.06], footR: [-0.17, A, 0.06], splay: 0.45, kneeOut: 0.75, elbowOut: 0.5,
+  }),
+  /** stand and work at a height in front (bench, wall, eave): hands at (±spread, y, z) */
+  work: (y = 1.05, z = 0.42, spread = 0.14, lean = 0.22): Pose => ({
+    pelvis: [0, 0.91, -0.02], pitch: lean, nod: 0.25 - (y - 1.05) * 0.9, handL: [spread, y, z], handR: [-spread, y, z],
+    footL: [0.13, A, 0.08], footR: [-0.13, A, -0.1], elbowOut: 0.55,
+  }),
+  /** carry something against the belly/chest with both hands */
+  carry: (y = 1.0, spread = 0.16): Pose => ({
+    pelvis: [0, 0.92, 0], pitch: 0.06, handL: [spread, y, 0.3], handR: [-spread, y, 0.3],
+    footL: [0.1, A, 0.02], footR: [-0.1, A, -0.02], elbowOut: 0.7,
+  }),
+  /** hands on hips, looking at the work */
+  akimbo: (): Pose => ({
+    pelvis: [0, 0.925, 0], pitch: -0.03, nod: -0.12, handL: [0.2, 0.97, 0.03], handR: [-0.2, 0.97, 0.03],
+    footL: [0.14, A, 0.02], footR: [-0.14, A, -0.02], elbowOut: 1.4, splay: 0.3,
+  }),
+} as const;
+
+==== 3768 project/src/kits/bedah/roofmath.ts
+// Roof maths — pure (no React / three), shared by the kit, the director and the node scripts.
+// A gable roof is described by RoofDims; `roofFrame` turns (side, x along the ridge, distance down the slope, lift
+// above the plane) into world points, including the sag of an under-built frame.
+
+export type V3 = [number, number, number];
+
+export type RoofDims = {
+  /** half length along the ridge (x), including the gable overhang */
+  hw: number;
+  ridgeY: number;
+  /** horizontal run and vertical drop from the ridge to the eave edge */
+  run: number;
+  drop: number;
+  /** sag of the ridge at mid-span in metres (a frame too weak for its load) */
+  sag?: number;
+  /** slope distance of the wall line that holds the rafters up (no sag there); default 75 % of the slope */
+  support?: number;
+};
+
+export const roofFrame = (d: RoofDims) => {
+  const sl = Math.hypot(d.run, d.drop);
+  const cy = d.drop / sl, cz = d.run / sl;
+  const sup = d.support ?? sl * 0.75;
+  // the ridge hangs between the gables, the rafters bow between ridge and wall plate, the wall line stays put
+  const sagAt = (x: number, dist: number) => {
+    if (!d.sag) return 0;
+    const ax = Math.pow(Math.max(0, Math.sin((Math.PI * (x + d.hw)) / (2 * d.hw))), 0.8);
+    const u = Math.min(1, Math.max(0, dist / sup));
+    const tail = dist > sup ? -0.25 * ((dist - sup) / Math.max(1e-3, sl - sup)) : 0; // the overhang tips up a little
+    return d.sag * ax * (1 - u + 0.45 * Math.sin(Math.PI * u) + tail * 0.3);
+  };
+  return {
+    sl,
+    /** point on side s (+1 front, −1 back) at ridge-position x, `dist` metres down the slope, `lift` above the plane */
+    pt: (s: number, x: number, dist: number, lift = 0): V3 => [x, d.ridgeY - dist * cy + lift * cz - sagAt(x, dist), s * (dist * cz + lift * cy)],
+    normal: (s: number): V3 => [0, cz, s * cy],
+    down: (s: number): V3 => [0, -cy, s * cz],
+    sagAt,
+  };
+};
+
+export const TILE = { W: 0.24, cover: 0.2, L: 0.34, gauge: 0.25, A: 0.013, T: 0.012 };
+
+
+/** plate = where the roof plane crosses the wall line; bamboo members stop below it so nothing pokes through the thatch */
+export const HUT = { hx: 2.1, hz: 1.5, plate: 2.25 };
+/** tan of the roof pitch used by the film (≈ 32°, the usual "about 30°" for clay tiles) */
+export const PITCH = 0.625;
+/** Roof whose plane passes through the wall line (z = ±hz) at plate height, for a given slope (rise / run). */
+export const roofForSlope = (slope: number, run = 2.0, hw = 2.5): RoofDims => ({ hw, ridgeY: HUT.plate + HUT.hz * slope, run, drop: run * slope });
+export const HUT_ROOF: RoofDims = roofForSlope(PITCH);
+
+
+/** Rows a ThatchRoof needs before its ridge cap (add 1.3 for cap + pole). */
+export const thatchRows = (dims: RoofDims, gauge = 0.2) => Math.ceil((roofFrame(dims).sl + 0.06 - 0.3) / gauge) + 1;
+
+
+// Stack under the roof plane (perpendicular metres): reng 0…0.025 above, usuk −0.08…−0.01, purlins −0.205…−0.085,
+// principal rafter −0.345…−0.205. Nothing interpenetrates.
+const UNDER = 0.275;
+/** Joints of one truss (in an x = const plane): chord top `seatY`, apex height, and where the rafter meets the chord. */
+export const trussJoints = (dims: RoofDims, plate: number) => {
+  const f = roofFrame(dims);
+  const cy = dims.drop / f.sl, cz = dims.run / f.sl;
+  const seatY = plate + 0.27;
+  const apexY = dims.ridgeY - UNDER / cz;
+  const footZ = ((apexY - seatY) / cy) * cz;
+  return { seatY, apexY, footZ };
+};
+/** Ridge height that makes a truss with these slopes sit exactly on walls at z = ±hz with top plate `plate`. */
+export const ridgeForWalls = (hz: number, plate: number, run: number, drop: number) => {
+  const sl = Math.hypot(run, drop), cy = drop / sl, cz = run / sl;
+  return plate + 0.27 + (hz / cz) * cy + UNDER / cz;
+};
+
+
+==== 1055 project/src/kits/bedah/ShotCanvas.tsx
+import React from "react";
+import { useVideoConfig } from "remotion";
+import { ThreeCanvas } from "@remotion/three";
+import { QaProbe } from "../../core/qa/scene-qa.tsx";
+import { PCFShadowMap } from "three";
+import { Stage, type Look } from "./Stage.tsx";
+import type { Shot } from "./cam.ts";
+
+/** One BEDAH shot: a Remotion-synchronised canvas with the BEDAH Stage (sun, sky, post chain) around the set. */
+export const ShotCanvas: React.FC<{ shot: Shot; look: Look; frame: number; t: number; children: React.ReactNode }> = ({ shot, look, frame, t, children }) => {
+  const { width, height } = useVideoConfig();
+  return (
+    <ThreeCanvas
+      width={width}
+      height={height}
+      shadows={{ type: PCFShadowMap }}
+      dpr={1}
+      gl={{ antialias: false, preserveDrawingBuffer: true, powerPreference: "high-performance" }}
+      camera={{ fov: shot.fov, position: shot.pos, near: 0.08, far: 1500 }}
+    >
+      <Stage shot={shot} look={look} frame={frame} t={t}>
+        {children}
+      </Stage>
+      <QaProbe />
+    </ThreeCanvas>
+  );
+};
+
+==== 1808 project/src/Root.tsx
+import React from "react";
+import { Composition } from "remotion";
+import { BedahFilm, bedahMetadata, bedahMetadata30 } from "./director/Film.tsx";
+import type { Plan } from "./director/types.ts";
+
+const EMPTY = { id: "-", title: "-", domain: "rumah", duration: 1, lines: [], shots: [], warnings: [] } as unknown as Plan;
+
+// Films are rendered by scripts/make.mjs with the compiled plan as props (out/<id>/props.json).
+// BedahPreviewSS is the preview rendered at 2× and downscaled; BedahPreview (540 × 960) is used for stills.
+// The …Wide compositions are the same film in 16:9 (make.mjs --wide); portrait 9:16 is the default.
+export const RemotionRoot: React.FC = () => (
+  <>
+    <Composition id="BedahPreview" component={BedahFilm} defaultProps={{ plan: EMPTY }} calculateMetadata={bedahMetadata30} durationInFrames={30} fps={30} width={540} height={960} />
+    <Composition id="BedahPreviewSS" component={BedahFilm} defaultProps={{ plan: EMPTY }} calculateMetadata={bedahMetadata30} durationInFrames={30} fps={30} width={1080} height={1920} />
+    <Composition id="BedahPreviewWide" component={BedahFilm} defaultProps={{ plan: EMPTY }} calculateMetadata={bedahMetadata30} durationInFrames={30} fps={30} width={960} height={540} />
+    <Composition id="BedahPreviewSSWide" component={BedahFilm} defaultProps={{ plan: EMPTY }} calculateMetadata={bedahMetadata30} durationInFrames={30} fps={30} width={1920} height={1080} />
+    <Composition id="BedahFinalWide" component={BedahFilm} defaultProps={{ plan: EMPTY }} calculateMetadata={bedahMetadata} durationInFrames={60} fps={60} width={1920} height={1080} />
+    <Composition id="BedahFinal" component={BedahFilm} defaultProps={{ plan: EMPTY }} calculateMetadata={bedahMetadata} durationInFrames={60} fps={60} width={1080} height={1920} />
+  </>
+);
+
+==== 6109 project/stories/atap/story.json
+{
+  "id": "atap",
+  "title": "Atap",
+  "domain": "rumah",
+  "start": ["gubuk", "rangka-bambu:reng=0", "panel-rumbia:x=-2.094,z=5.127,ry=0.5", "panel-rumbia#2:x=0.9,z=4.3,ry=-0.25,n=3"],
+  "lines": [
+    { "text": "Kalau kamu ikat daun rumbia di rangka bambu, kamu udah punya atap.",
+      "shot": "wide", "side": "left",
+      "build": [{ "part": "rumbia", "from": 0.82, "at": 0, "over": 0.6 }],
+      "worker": { "do": "ikat", "on": "rumbia" },
+      "pin": [{ "text": "Rumbia", "on": "rumbia.lereng", "at": "rumbia" }] },
+
+    { "text": "Tapi tiap musim hujan, daunnya busuk, terus bocor.",
+      "weather": "rain", "shot": "low", "side": "right", "focus": "rumbia",
+      "set": [{ "what": "rumbia.basah", "to": 1, "at": 0.05, "over": 0.3 }, { "what": "rumbia.rot", "to": 1, "at": 0.22, "over": 0.62 }] },
+
+    { "text": "Jadi kamu cetak tanah liat jadi genteng, terus kamu bakar sampai keras.",
+      "only": ["gubuk", "rangka-bambu", "cetakan"],
+      "build": [{ "part": "jemuran", "from": 0.68, "at": 0, "over": 0.9 }],
+      "focus": ["cetakan", "jemuran"], "shot": "ground", "side": "left", "worker": "cetak",
+      "then": [
+        { "at": "terus", "only": ["tungku", "tumpukan", "jemuran"], "focus": "tungku", "shot": "close", "side": "left",
+          "set": [{ "what": "tungku.api", "to": 1, "at": 0, "over": 0.25 }, { "what": "tungku.matang", "to": 1, "at": 0.12, "over": 0.72 }] }
+      ] },
+
+    { "text": "Gentengnya kamu susun tumpang-tindih dari bawah, biar air hujan ngalir di atasnya.",
+      "only": ["gubuk", "rangka-bambu", "tumpukan:x=2.6,z=3.3,ry=0.3,n=16,baris=1"],
+      "build": [{ "part": "genteng", "at": 0.04, "over": 0.6 }, { "part": "kerpus", "at": 0.62, "over": 0.2 }],
+      "shot": "high", "side": "left", "focus": "genteng", "worker": "pasang",
+      "mark": [{ "use": "genteng.alir", "at": "air" }],
+      "pin": [{ "text": "Genteng", "on": "genteng.lereng", "at": "ngalir" }] },
+
+    { "text": "Tapi kalau atapnya terlalu landai, airnya malah balik masuk lewat celah.",
+      "weather": "rain", "set": [{ "what": "g.slope", "to": 0.2126 }],
+      "shot": "high", "side": "right", "focus": "gubuk",
+      "mark": [{ "use": "genteng.balik", "at": "balik" }],
+      "tag": [{ "text": "air balik", "on": "genteng.atas", "at": "balik" }] },
+
+    { "text": "Jadi atapnya kamu bikin miring, kira-kira tiga puluh derajat.",
+      "set": [{ "what": "g.slope", "to": 0.625, "at": 0.08, "over": 0.5 }],
+      "shot": "gable", "side": "right",
+      "mark": [{ "use": "gubuk.sudut-dasar", "at": 0.07 }, { "use": "gubuk.sudut", "at": 0.12 }],
+      "tag": [{ "text": "30°", "on": "gubuk.sudut-label", "at": "tiga" }] },
+
+    { "text": "Tapi genteng itu berat. Rangka bambunya melendut.",
+      "shot": "front", "side": "right",
+      "set": [{ "what": "g.sag", "to": 0.34, "at": 0.15, "over": 0.55 }],
+      "mark": [{ "use": "rangka-bambu.lendut-garis", "at": 0.22 }, { "use": "rangka-bambu.lendut-panah", "at": 0.36 }] },
+
+    { "text": "Jadi kamu bikin kuda-kuda dari kayu, bentuknya segitiga.",
+      "only": ["rumah-kayu"], "set": [{ "what": "g.sag", "to": 0 }],
+      "build": [{ "part": "kuda-kuda", "at": 0.04, "over": 0.62 }],
+      "shot": "close", "side": "right", "focus": "rumah-kayu",
+      "mark": [{ "use": "kuda-kuda.segitiga", "at": "bentuknya" }],
+      "pin": [{ "text": "Kuda-kuda", "on": "kuda-kuda.puncak", "at": "kayu", "dx": -40, "dy": -200 }] },
+
+    { "text": "Segitiga itu kaku. Bebannya turun ke dinding, bukan ke tengah ruangan.",
+      "shot": "gable", "side": "right", "focus": "rumah-kayu",
+      "mark": [{ "use": "kuda-kuda.beban-atas", "at": 0.04 }, { "use": "kuda-kuda.beban-miring", "at": "bebannya" }, { "use": "kuda-kuda.beban-tiang", "at": "ke" }, { "use": "kuda-kuda.bukan-tengah", "at": "bukan" }] },
+
+    { "text": "Di atasnya kamu pasang gording, usuk, terus reng.",
+      "build": [{ "part": "gording", "at": "gording" }, { "part": "usuk", "at": "usuk" }, { "part": "reng", "at": "reng" }],
+      "shot": "high", "side": "right", "focus": "rumah-kayu",
+      "pin": [{ "text": "Gording", "on": "gording.tengah", "dx": 70, "dy": -250 }, { "text": "Usuk", "on": "usuk.tengah", "dx": -80, "dy": -300 }, { "text": "Reng", "on": "reng.tengah", "dx": -90, "dy": 150 }] },
+
+    { "text": "Genteng tinggal dicantolin ke reng.",
+      "build": [{ "part": "genteng:sampai=0.5", "at": 0.04, "over": 0.8 }],
+      "shot": "detail", "side": "right", "focus": "genteng.potongan",
+      "pin": [{ "text": "Reng", "on": "reng.ujung", "at": "reng", "dx": 60, "dy": 170 }] },
+
+    { "text": "Tapi di puncak, dua sisi atap ketemu, dan di situ ada celah.",
+      "add": ["rumah-kayu:segitiga=1"], "set": [{ "what": "genteng.sampai", "to": 2.5 }],
+      "shot": "top", "side": "right", "focus": "genteng.puncak",
+      "mark": [{ "use": "genteng.celah", "at": "situ" }],
+      "tag": [{ "text": "celah", "on": "genteng.celah", "at": "celah" }] },
+
+    { "text": "Jadi kamu tutup pakai genteng bubungan, namanya kerpus.",
+      "build": [{ "part": "kerpus", "at": 0.08, "over": 0.5 }],
+      "shot": "top", "side": "left", "focus": "genteng.puncak",
+      "pin": [{ "text": "Kerpus", "on": "kerpus.tengah", "at": "kerpus", "dx": 60, "dy": -190 }] },
+
+    { "text": "Terakhir, kamu pasang plafon, biar panas genteng nggak langsung turun ke kepala.",
+      "add": ["rumah-kayu:depan=0", "genteng:sisi=-1", "gording:sisi=-1", "usuk:sisi=-1", "reng:sisi=-1"],
+      "build": [{ "part": "plafon", "at": "plafon" }],
+      "shot": "section", "side": "right", "focus": "plafon", "worker": "lihat-atas",
+      "mark": [{ "use": "plafon.panas", "at": "panas" }],
+      "pin": [{ "text": "Plafon", "on": "plafon.tepi", "at": "plafon", "dx": -10, "dy": 170 }] },
+
+    { "text": "Selamat, kamu udah bikin atap rumah.",
+      "add": ["rumah-kayu:depan=1,buka=0", "genteng:sisi=0", "gording:sisi=0", "usuk:sisi=0", "reng:sisi=0", "tumpukan:x=-4.6,z=3.6,ry=0.4,n=12,baris=1"],
+      "shot": "wide", "side": "left", "move": "pull",
+      "worker": { "do": "lihat", "at": [-1.6, 5.2], "face": 2.84 } },
+
+    { "text": "Habis ini, mau kita bedah apa?", "same": true }
+  ]
+}
+
+==== 2137 project/stories/pondasi/story.json
+{
+  "id": "pondasi",
+  "title": "Pondasi",
+  "domain": "rumah",
+  "lines": [
+    { "text": "Kalau kamu tumpuk bata langsung di atas tanah, kamu udah punya tembok.",
+      "build": [{ "part": "tembok", "at": 0.05, "over": 0.7 }],
+      "shot": "wide", "side": "left", "focus": "tembok",
+      "worker": { "do": "lihat", "at": [-0.9, 4.7], "face": 1.35 } },
+
+    { "text": "Tapi tanah itu lunak. Lama-lama temboknya turun, terus retak.",
+      "set": [{ "what": "tembok.turun", "to": 0.3, "at": "lama", "over": 0.4 }],
+      "shot": "close", "side": "right", "focus": "tembok",
+      "mark": [{ "use": "tembok.retak", "at": "retak" }] },
+
+    { "text": "Jadi kamu gali parit sampai ketemu tanah keras.",
+      "only": [],
+      "build": [{ "part": "galian", "at": 0.08, "over": 0.55 }],
+      "shot": "section", "side": "left", "focus": "galian",
+      "pin": [{ "text": "Tanah keras", "on": "galian.dasar", "at": "tanah", "dx": 120, "dy": 130 }] },
+
+    { "text": "Paritnya kamu isi batu kali, bentuknya melebar ke bawah.",
+      "build": [{ "part": "batu-kali", "at": 0.06, "over": 0.5 }],
+      "shot": "section", "side": "right", "focus": "batu-kali",
+      "mark": [{ "use": "batu-kali.trapesium", "at": "melebar" }],
+      "pin": [{ "text": "Batu kali", "on": "batu-kali.badan", "at": "batu", "dx": 90, "dy": 150 }] },
+
+    { "text": "Di atasnya kamu cor sloof, balok beton yang ngiket pondasinya.",
+      "build": [{ "part": "sloof", "at": "sloof" }],
+      "shot": "close", "side": "left", "focus": "sloof",
+      "pin": [{ "text": "Sloof", "on": "sloof.tengah", "at": "sloof" }] },
+
+    { "text": "Baru temboknya kamu pasang di atas sloof.",
+      "build": [{ "part": "tembok:dasar=0.22", "at": 0.05, "over": 0.75 }],
+      "shot": "wide", "side": "right", "focus": ["tembok", "batu-kali"],
+      "worker": { "do": "lihat", "at": [2.9, 4.6], "face": -1.3 } },
+
+    { "text": "Sekarang bebannya nyebar ke tanah yang lebih luas.",
+      "shot": "section", "side": "left", "focus": ["batu-kali", "sloof"], "move": "pull",
+      "mark": [{ "use": "batu-kali.turun", "at": 0.08 }, { "use": "batu-kali.sebar", "at": "nyebar" }] }
+  ]
+}
+
+==== 484 project/tsconfig.json
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "Preserve",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "noEmit": true,
+    "lib": ["ES2022", "DOM"],
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "noUnusedLocals": true,
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true
+  },
+  "include": ["src", "scripts/*.ts"],
+  "exclude": ["remotion.config.ts"]
+}

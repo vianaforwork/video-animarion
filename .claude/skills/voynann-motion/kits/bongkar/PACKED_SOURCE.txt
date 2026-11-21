@@ -1,0 +1,3433 @@
+VOYNANN Motion - packed source files of this folder. Do not edit by hand.
+The skill upload in the Claude app accepts at most 200 files, so the source files are packed here.
+`node <skill folder>/new-project.mjs <project folder> --kit=<style>` unpacks them into the project.
+Format: per file one line with four '=' signs, the byte length and the path, then exactly that many bytes.
+
+==== 1154 project/package.json
+{
+  "name": "voynann-bongkar-project",
+  "version": "1.0.0",
+  "private": true,
+  "description": "VOYNANN Motion BONGKAR project (Remotion + React Three Fiber): object.json (+ optional voice-over) -> the object takes itself apart into labelled parts, exploded view, push-in to the core, reassembly loop, 9:16 (16:9 on request).",
+  "type": "module",
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "scripts": {
+    "dev": "remotion studio",
+    "typecheck": "tsc --noEmit",
+    "check-env": "node scripts/check-env.mjs",
+    "make": "node scripts/make.ts",
+    "smoke": "node scripts/make.ts rice-cooker --stills --no-vo"
+  },
+  "dependencies": {
+    "@react-three/fiber": "9.8.2",
+    "@remotion/cli": "4.0.539",
+    "@remotion/google-fonts": "4.0.539",
+    "@remotion/three": "4.0.539",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "remotion": "4.0.539",
+    "three": "0.186.1",
+    "three-mesh-bvh": "0.9.16"
+  },
+  "devDependencies": {
+    "@remotion/bundler": "4.0.539",
+    "@remotion/renderer": "4.0.539",
+    "@types/react": "19.2.7",
+    "@types/three": "0.186.0",
+    "typescript": "5.9.3"
+  },
+  "overrides": {
+    "zod": "4.6.7"
+  }
+}
+
+==== 664 project/remotion.config.ts
+// See all configuration options: https://remotion.dev/docs/config
+import fs from "node:fs";
+import { Config } from "@remotion/cli/config";
+
+Config.setVideoImageFormat("jpeg");
+Config.setJpegQuality(95);
+Config.setOverwriteOutput(true);
+// WebGL film: GPU-backed ANGLE path in headless Chrome, or software "swangle" when scripts/gl.mjs found
+// no usable GPU on this computer (remembered in .gl-mode). The GL env var overrides both.
+type GL = Parameters<typeof Config.setChromiumOpenGlRenderer>[0];
+const gl = (process.env.GL || (fs.existsSync(".gl-mode") ? fs.readFileSync(".gl-mode", "utf8").trim() : "") || "angle") as GL;
+Config.setChromiumOpenGlRenderer(gl);
+
+==== 10046 project/scripts/lib/dsound.ts
+// BONGKAR auto-director sound: the same synth workshop score + SFX as the motor film, driven by any plan.json.
+import fs from "node:fs";
+import path from "node:path";
+import { execFileSync, spawnSync } from "node:child_process";
+import { Vector3 } from "three";
+import { createRuntime, type Plan } from "../../src/director/runtime.ts";
+import { partBox, type Built } from "../../src/director/spec.ts";
+
+export const buildSound = (plan: Plan, built: Built[], outDir: string, vo?: { file: string; at: number }) => {
+const DUR = plan.dur, T = plan.T;
+const rt = createRuntime(plan, built);
+const teAt = rt.teAt;
+const SR = 48000, N = Math.round(DUR * SR);
+const mk = () => [new Float32Array(N), new Float32Array(N)] as const;
+let seed = 4242;
+const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+type Buf = readonly [Float32Array, Float32Array];
+const add = (buf: Buf, t: number, pan: number, len: number, fn: (x: number) => number) => {
+  const i0 = Math.round(t * SR), n = Math.round(len * SR);
+  const gl = Math.cos(((pan + 1) * Math.PI) / 4), gr = Math.sin(((pan + 1) * Math.PI) / 4);
+  for (let i = 0; i < n; i++) { const v = fn(i / SR); const k = (((i0 + i) % N) + N) % N; buf[0][k] += v * gl; buf[1][k] += v * gr; }
+};
+const hz = (m: number) => 440 * Math.pow(2, (m - 69) / 12);
+const tExplode = (te: number) => { let lo = T.hook, hi = T.split; for (let i = 0; i < 40; i++) { const mid = (lo + hi) / 2; if (teAt(mid) < te) lo = mid; else hi = mid; } return (lo + hi) / 2; };
+const tBack = (te: number) => { let lo = T.hold, hi = T.back; for (let i = 0; i < 40; i++) { const mid = (lo + hi) / 2; if (teAt(mid) > te) lo = mid; else hi = mid; } return (lo + hi) / 2; };
+const sizes = new Map(built.map((b) => [b.id, partBox(b).getSize(new Vector3()).length()]));
+const objSize = Math.max(...sizes.values(), 0.1);
+
+// ---------------------------------------------------------------- music (120 bpm, 13 bars)
+const mus = mk();
+const NB = Math.max(4, Math.round(DUR / 2)), bar = DUR / NB, beat = bar / 4; // whole bars fill the loop exactly (~120 bpm)
+// intensity: hook light, build while it comes apart, airy at the hold, drive on reassembly, settle at the end
+const energy = (t: number) => {
+  if (t < T.hook) return 0.35;
+  if (t < T.split) return 0.55 + 0.45 * ((t - T.hook) / (T.split - T.hook));
+  if (t < T.hold) return 0.45;
+  if (t < T.back) return 0.9;
+  return 0.4;
+};
+const PROG = [[45, 52, 57, 60], [41, 48, 53, 57], [43, 50, 55, 59], [40, 47, 52, 55]]; // Am F G Em
+const SCALE = [57, 60, 62, 64, 67, 69, 72, 74];
+for (let b = 0; b < NB; b++) {
+  const t0 = b * bar, ch = PROG[b % 4], e = energy(t0 + 1);
+  // pad
+  for (const m of ch.slice(1)) for (const det of [-0.08, 0.08]) {
+    const f = hz(m + 12 + det);
+    add(mus, t0, det * 5, bar + 0.8, (x) => (Math.sin(2 * Math.PI * f * x) + 0.2 * Math.sin(4 * Math.PI * f * x)) * 0.011 * Math.min(1, x / 0.6) * Math.min(1, (bar + 0.8 - x) / 0.8));
+  }
+  for (let q = 0; q < 4; q++) {
+    const t = t0 + q * beat;
+    // bass pulse
+    const fb = hz(ch[0] - 12);
+    add(mus, t, 0, 0.42, (x) => (Math.sin(2 * Math.PI * fb * x) + 0.3 * Math.sin(4 * Math.PI * fb * x)) * 0.07 * e * Math.min(1, x / 0.006) * Math.exp(-x * 7));
+    // soft kick on 1 and 3 when it is moving
+    if (q % 2 === 0 && e > 0.5) add(mus, t, 0, 0.3, (x) => Math.sin(2 * Math.PI * (48 + 90 * Math.exp(-x * 30)) * x) * 0.16 * (e - 0.3) * Math.exp(-x * 11));
+    // 8th hats
+    for (const h of [0, 0.5]) {
+      if (e < 0.5 && h === 0) continue;
+      let lp = 0;
+      add(mus, t + h * beat, 0.3, 0.06, (x) => { const n = rnd() * 2 - 1; lp += (n - lp) * 0.7; return (n - lp) * 0.035 * e * Math.exp(-x * 70); });
+    }
+  }
+  // pluck arpeggio, 16ths when busy, 8ths when calm
+  const step = e > 0.6 ? beat / 4 : beat / 2;
+  for (let k = 0; k * step < bar - 1e-6; k++) {
+    if (rnd() < 0.18) continue;
+    const pool = SCALE.filter((p) => ch.some((c) => (p - c) % 12 === 0));
+    const m = pool[(k * 3 + b) % pool.length] + (k % 8 === 7 ? 12 : 0);
+    const f = hz(m), vel = (k % 4 === 0 ? 0.05 : 0.034) * (0.6 + 0.5 * e);
+    add(mus, t0 + k * step, ((k % 5) - 2) * 0.15, 0.5, (x) => (Math.sin(2 * Math.PI * f * x) * Math.exp(-x * 9) + 0.25 * Math.sin(2 * Math.PI * f * 2.01 * x) * Math.exp(-x * 16)) * vel * Math.min(1, x / 0.002));
+  }
+}
+
+// ---------------------------------------------------------------- SFX
+const sfx = mk();
+const ratchet = (t: number, len: number, pan: number, g = 0.05) => {
+  const n = Math.max(3, Math.round(len * 22));
+  for (let k = 0; k < n; k++) {
+    const f = 3200 + rnd() * 1400;
+    add(sfx, t + (len * k) / n, pan, 0.03, (x) => (Math.sin(2 * Math.PI * f * x) + (rnd() * 2 - 1) * 0.6) * g * Math.exp(-x * 260));
+  }
+};
+const tink = (t: number, pan: number, g = 0.05, f = 3800) => add(sfx, t, pan, 0.35, (x) => (Math.sin(2 * Math.PI * f * x) * Math.exp(-x * 18) + 0.5 * Math.sin(2 * Math.PI * f * 2.76 * x) * Math.exp(-x * 30)) * g * Math.min(1, x / 0.001));
+const whoosh = (t: number, len: number, pan: number, g: number, rising = false) => {
+  let lp = 0, lp2 = 0;
+  add(sfx, t, pan, len, (x) => {
+    const u = x / len, env = Math.sin(Math.PI * u) ** 2;
+    const k = 0.02 + 0.12 * (rising ? u : 1 - u);
+    const n = rnd() * 2 - 1; lp += (n - lp) * k; lp2 += (lp - lp2) * k;
+    return (lp - lp2) * g * env * 3;
+  });
+};
+const clack = (t: number, kind: "metal" | "plastic" | "rubber", pan: number, g: number) => {
+  if (kind === "metal") {
+    const f = 900 + rnd() * 900;
+    add(sfx, t, pan, 0.5, (x) => (Math.sin(2 * Math.PI * f * x) * Math.exp(-x * 14) + 0.6 * Math.sin(2 * Math.PI * f * 1.52 * x) * Math.exp(-x * 20) + (rnd() * 2 - 1) * 0.4 * Math.exp(-x * 160)) * g);
+  } else if (kind === "plastic") {
+    const f = 380 + rnd() * 160;
+    add(sfx, t, pan, 0.2, (x) => (Math.sin(2 * Math.PI * f * x) * Math.exp(-x * 40) + (rnd() * 2 - 1) * 0.5 * Math.exp(-x * 120)) * g);
+  } else {
+    add(sfx, t, pan, 0.3, (x) => Math.sin(2 * Math.PI * (70 + 60 * Math.exp(-x * 25)) * x) * g * 1.4 * Math.exp(-x * 14));
+  }
+};
+const pop = (t: number, pan: number) => add(sfx, t, pan, 0.12, (x) => Math.sin(2 * Math.PI * (900 + 900 * Math.exp(-x * 60)) * x) * 0.03 * Math.exp(-x * 40));
+const chime = (t: number) => { [76, 81, 88].forEach((m, k) => add(sfx, t + k * 0.06, 0.1 * (k - 1), 1.6, (x) => Math.sin(2 * Math.PI * hz(m) * x) * 0.03 * Math.min(1, x / 0.004) * Math.exp(-x * 3))); };
+
+
+const events: string[] = [];
+for (const b of plan.screws) {
+  const pan = Math.max(-0.6, Math.min(0.6, (b.p[0] - b.p[2]) / objSize));
+  const a = tExplode(b.t0), z = tExplode(b.t0 + 0.45);
+  ratchet(a, z - a, pan, 0.03); tink(z, pan, 0.018);
+  const ra = tBack(b.t0 + 0.45), rz = tBack(b.t0);
+  ratchet(ra, rz - ra, pan, 0.025); tink(rz, pan, 0.02, 2600);
+}
+for (const p of plan.parts) {
+  if (!p.moves.length) continue;
+  const rel = sizes.get(p.id)! / objSize; // 0…1 of the whole object
+  const g = Math.min(0.07, 0.022 + rel * 0.05);
+  const off = p.moves.reduce((a, m) => [a[0] + m.off[0], a[1] + m.off[2]], [0, 0]);
+  const pan = Math.max(-0.7, Math.min(0.7, ((off[0] - off[1]) / objSize) * 0.8));
+  const last = p.moves[p.moves.length - 1];
+  const a = tExplode(p.own), z = tExplode(last.t1);
+  whoosh(a, Math.min(1.2, z - a + 0.1), pan, g);
+  clack(z, p.kind, pan * 0.8, g * 0.35);
+  const ra = tBack(last.t1), rz = tBack(p.own);
+  whoosh(ra, Math.min(1.0, rz - ra + 0.05), pan, g * 0.8, true);
+  clack(rz, p.kind, pan * 0.8, g * 1.1);
+  events.push(`${a.toFixed(2)} ${p.id}`);
+}
+plan.labelsA.forEach((_, i) => pop(T.split + 0.2 + i * 0.2, ((i % 3) - 1) * 0.3));
+plan.labelsB.forEach((_, i) => pop(T.push + 1.4 + i * 0.2, ((i % 3) - 1) * 0.3));
+if (plan.cam.push) { whoosh(T.push, 1.5, 0, 0.06, true); whoosh(T.pull, 1.2, 0, 0.05); }
+chime(T.back - 0.05);
+
+const wav = (file: string, buf: Buf) => {
+  const data = Buffer.alloc(N * 4);
+  for (let i = 0; i < N; i++) for (let c = 0; c < 2; c++) data.writeInt16LE(Math.round(Math.max(-1, Math.min(1, buf[c][i])) * 32767), i * 4 + c * 2);
+  const h = Buffer.alloc(44);
+  h.write("RIFF", 0); h.writeUInt32LE(36 + data.length, 4); h.write("WAVEfmt ", 8); h.writeUInt32LE(16, 16); h.writeUInt16LE(1, 20); h.writeUInt16LE(2, 22);
+  h.writeUInt32LE(SR, 24); h.writeUInt32LE(SR * 4, 28); h.writeUInt16LE(4, 32); h.writeUInt16LE(16, 34); h.write("data", 36); h.writeUInt32LE(data.length, 40);
+  fs.writeFileSync(file, Buffer.concat([h, data]));
+};
+
+fs.mkdirSync(outDir, { recursive: true });
+const mf = path.join(outDir, "music.wav"), sf = path.join(outDir, "sfx.wav"), mix = path.join(outDir, "mix.wav"), tmp = path.join(outDir, "pre.wav");
+wav(mf, mus); wav(sf, sfx);
+const graph = vo
+  ? [`[2:a]adelay=${Math.round(vo.at * 1000)}|${Math.round(vo.at * 1000)},apad=whole_dur=${DUR},atrim=0:${DUR},highpass=f=70,acompressor=threshold=-20dB:ratio=2.5:attack=8:release=140:makeup=3,asplit=2[v][vk]`,
+     "[0:a]volume=0.75[m0]", "[m0][vk]sidechaincompress=threshold=0.03:ratio=7:attack=25:release=380[m]", "[1:a]volume=1.5[s]",
+     `[v]volume=1.25[vv];[vv][m][s]amix=inputs=3:normalize=0,atrim=0:${DUR}[out]`].join(";")
+  : `[0:a]volume=0.8[m];[1:a]volume=1.9[s];[m][s]amix=inputs=2:normalize=0,apad=whole_dur=${DUR},atrim=0:${DUR}[out]`;
+execFileSync("ffmpeg", ["-y", "-v", "error", "-i", mf, "-i", sf, ...(vo ? ["-i", vo.file] : []), "-filter_complex", graph, "-map", "[out]", "-ac", "2", "-ar", "48000", tmp]);
+const meas = spawnSync("ffmpeg", ["-hide_banner", "-i", tmp, "-af", "loudnorm=print_format=summary", "-f", "null", "-"], { encoding: "utf8" }).stderr;
+const I0 = Number((meas.match(/Input Integrated:\s+(-?[\d.]+)/) ?? [])[1]);
+execFileSync("ffmpeg", ["-y", "-v", "error", "-i", tmp, "-af", `volume=${(-14.2 - I0).toFixed(2)}dB,aresample=192000,alimiter=limit=0.76:attack=0.5:release=50:level=false,aresample=48000`, mix]);
+const m = spawnSync("ffmpeg", ["-hide_banner", "-i", mix, "-af", "loudnorm=print_format=summary", "-f", "null", "-"], { encoding: "utf8" }).stderr;
+return { mix, lufs: (m.match(/Input Integrated:\s+(-?[\d.]+)/) ?? [])[1], tp: (m.match(/Input True Peak:\s+(-?[\d.]+)/) ?? [])[1], events };
+};
+
+==== 22605 project/scripts/lib/planner.ts
+// BONGKAR auto-director planner: object.json → plan.json.
+//  1. build the meshes (same builder as the film) + a BVH per part
+//  2. directional blocking: for every part and every exit direction, which parts would it hit sliding out?
+//  3. greedy disassembly: repeatedly take the best part that can slide out unblocked, land it beyond the
+//     remaining assembly and clear of everything already landed (exploded view along assembly directions)
+//  4. timing (paced, or locked to a voice-over's word times), labels, captions, camera fit table
+//  5. tembus QA over the whole explode clock (mesh vs mesh), with an automatic sequential fallback
+import { Box3, BufferAttribute, BufferGeometry, Matrix4, PerspectiveCamera, Quaternion, Vector3 } from "three";
+import { MeshBVH } from "three-mesh-bvh";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import { buildParts, partBox, type Built, type ObjectSpec } from "../../src/director/spec.ts";
+import { offsetOf, smooth, type Plan, type PlanPart } from "../../src/director/runtime.ts";
+import type { V3 } from "../../src/bongkar/geo.ts";
+
+export type Word = { w: string; t0: number; t1: number };
+type Col = { b: Built; geo: BufferGeometry; bvh: MeshBVH; box: Box3; c: Vector3 };
+
+const METAL = ["chrome", "alu", "steel", "gold", "copper"];
+const kindOf = (b: Built): PlanPart["kind"] => {
+  const ms = b.pieces.map((p) => p.m);
+  if (ms.includes("rubber") && ms.length <= 2) return "rubber";
+  return ms.filter((m) => METAL.includes(m)).length >= ms.length / 2 ? "metal" : "plastic";
+};
+
+const collider = (b: Built): Col => {
+  const gs = b.pieces.map((pc) => {
+    const g = new BufferGeometry();
+    const src = pc.g.index ? pc.g.toNonIndexed() : pc.g;
+    g.setAttribute("position", (src.getAttribute("position") as BufferAttribute).clone());
+    g.applyMatrix4(new Matrix4().compose(new Vector3(...pc.p), new Quaternion(...pc.q), new Vector3(1, 1, 1)));
+    return g;
+  });
+  const geo = mergeGeometries(gs)!;
+  geo.computeBoundingBox();
+  const bvh = new MeshBVH(geo);
+  (geo as unknown as { boundsTree: MeshBVH }).boundsTree = bvh;
+  const box = partBox(b);
+  return { b, geo, bvh, box, c: box.getCenter(new Vector3()) };
+};
+
+/** do meshes a (moved by oa) and b (moved by ob) intersect? */
+const hits = (a: Col, oa: Vector3, b: Col, ob: Vector3) => {
+  const ba = a.box.clone().translate(oa), bb = b.box.clone().translate(ob);
+  if (!ba.intersectsBox(bb)) return false;
+  const rel = new Matrix4().makeTranslation(ob.x - oa.x, ob.y - oa.y, ob.z - oa.z);
+  return a.bvh.intersectsGeometry(b.geo, rel);
+};
+
+const AXES: V3[] = [[0, 1, 0], [1, 0, 0], [0, 0, 1], [-1, 0, 0], [0, 0, -1], [0, -1, 0]];
+const R2 = Math.SQRT1_2;
+/** screen-ish weight of a direction seen from azimuth 45°: up is cheapest, horizontal costs. The same in both formats,
+ *  so portrait and landscape take the object apart in the same order (one naskah, one VO for both). */
+const dirCost = (d: Vector3) => (d.y > 0.7 ? 0 : d.y < -0.7 ? 0.6 : 0.25);
+
+export type PlanOptions = { words?: Word[]; voFile?: string; voAt?: number; voEnd?: number; sequential?: boolean; wide?: boolean };
+export type PlanReport = { plan: Plan; order: string[]; stuck: string[]; qa: string[]; notes: string[] };
+
+export const planObject = (spec: ObjectSpec, opt: PlanOptions = {}): PlanReport => {
+  const built = buildParts(spec);
+  const cols = built.map(collider);
+  const n = cols.length;
+  const notes: string[] = [];
+  const all = new Box3();
+  cols.forEach((c) => all.union(c.box));
+  const S = all.getSize(new Vector3()).length();
+  const C = all.getCenter(new Vector3());
+  const wide = !!opt.wide;
+  const gap = S * 0.055;
+  const step = S / 260;
+  const contact = S * 0.012;
+  const restHit = cols.map((a, i) => cols.map((b, j) => (j > i ? hits(a, new Vector3(), b, new Vector3()) : false)));
+  const rest = (i: number, j: number) => (i < j ? restHit[i][j] : restHit[j][i]);
+
+  // ---------------------------------------------------------------- directional blocking graph
+  const dirsOf = (i: number): Vector3[] => {
+    const ds = AXES.map((a) => new Vector3(...a));
+    const o = cols[i].b.out;
+    if (o) ds.unshift(new Vector3(...o).normalize());
+    return ds;
+  };
+  /** distance along d until part i's box leaves box B entirely */
+  const clearDist = (box: Box3, d: Vector3, B: Box3) => {
+    let lo = 0, hi = S * 4;
+    for (let k = 0; k < 40; k++) { const mid = (lo + hi) / 2; if (box.clone().translate(d.clone().multiplyScalar(mid)).intersectsBox(B)) lo = mid; else hi = mid; }
+    return hi;
+  };
+  const extentAlong = (b: Box3, d: Vector3) => { const sz = b.getSize(new Vector3()); return Math.abs(sz.x * d.x) + Math.abs(sz.y * d.y) + Math.abs(sz.z * d.z); };
+  const blockers = new Map<string, Set<number>>();
+  const blockKey = (i: number, k: number) => `${i}:${k}`;
+  for (let i = 0; i < n; i++) {
+    dirsOf(i).forEach((d, k) => {
+      const L = clearDist(cols[i].box, d, all) + step;
+      const set = new Set<number>();
+      const sweep = cols[i].box.clone().union(cols[i].box.clone().translate(d.clone().multiplyScalar(L)));
+      const cand = cols.map((_, j) => j).filter((j) => j !== i && cols[j].box.intersectsBox(sweep));
+      // a part seated in another at rest (peg in a hole, flange on a rim) may slide out along d, but only as a short
+      // prefix: once free it must stay free, and the pull-out may not exceed ~45 % of its own depth along d
+      // along the part's declared `out` axis (cap off a shaft, hub off an axle) the whole seated depth may slide out
+      const trusted = !!cols[i].b.out && k === 0;
+      const embed = Math.max(contact, (trusted ? 1.05 : 0.45) * extentAlong(cols[i].box, d));
+      const freed = new Set<number>();
+      for (let s = step; s <= L; s += step) {
+        const o = d.clone().multiplyScalar(s);
+        for (const j of cand) {
+          if (set.has(j)) continue;
+          const h = hits(cols[i], o, cols[j], new Vector3());
+          if (rest(i, j) && !freed.has(j)) {
+            if (!h) freed.add(j);
+            else if (s > embed) set.add(j);
+            continue;
+          }
+          if (h) set.add(j);
+        }
+      }
+      blockers.set(blockKey(i, k), set);
+    });
+  }
+
+  if (process.env.DEBUG_BLOCK) for (let i = 0; i < n; i++) dirsOf(i).forEach((d, k) => console.log(cols[i].b.id, d.toArray().map(Math.round).join(','), [...blockers.get(blockKey(i, k))!].map((j) => cols[j].b.id).join(' ')));
+  // ---------------------------------------------------------------- greedy disassembly + landing
+  const remaining = new Set(cols.map((_, i) => i));
+  const order: { i: number; d: Vector3; D: number }[] = [];
+  const finalOf = (o: { i: number; d: Vector3; D: number }) => cols[o.i].box.clone().translate(o.d.clone().multiplyScalar(o.D));
+  const pathOf = (o: { i: number; d: Vector3; D: number }) => cols[o.i].box.clone().union(finalOf(o)).expandByScalar(gap * 0.25);
+  /** make room for a new path P: landed parts sitting in it are pushed further out along their own direction
+   *  (outer parts end further out than the inner ones that follow them — the classic exploded-view stack) */
+  const makeRoom = (land: { i: number; d: Vector3; D: number }[], P: Box3, skip: Set<number> = new Set(), depth = 0): boolean => {
+    if (depth > 10) return false;
+    for (let k = 0; k < land.length; k++) {
+      if (skip.has(k)) continue;
+      const o = land[k];
+      if (!finalOf(o).intersectsBox(P)) continue;
+      const moved = { ...o, D: o.D + clearDist(finalOf(o), o.d, P) + gap * 0.5 };
+      if (finalOf(moved).intersectsBox(P)) return false;
+      // its longer travel must not run into anything else that has landed: push those too
+      const seg = finalOf(o).union(finalOf(moved)).expandByScalar(gap * 0.25);
+      land[k] = moved;
+      if (!makeRoom(land, seg, new Set([...skip, k]), depth + 1)) return false;
+    }
+    return true;
+  };
+  const minLayer = () => Math.min(...[...remaining].map((i) => cols[i].b.layer));
+  while (remaining.size > 1) {
+    let best: { i: number; d: Vector3; D: number; score: number; land: typeof order } | null = null;
+    const ml = minLayer();
+    for (const i of remaining) {
+      const ci = cols[i];
+      const rel = ci.c.clone().sub(C);
+      const radial = rel.length() > 1e-6 ? rel.clone().normalize() : new Vector3(0, 1, 0);
+      dirsOf(i).forEach((d, k) => {
+        const bl = blockers.get(blockKey(i, k))!;
+        for (const j of bl) if (remaining.has(j)) return;
+        // land just beyond what is left of the assembly
+        const rem = new Box3();
+        for (const j of remaining) if (j !== i) rem.union(cols[j].box);
+        // land just beyond what is left — but always travel far enough to read as a separate piece
+        const D = Math.max((rem.isEmpty() ? 0 : clearDist(ci.box, d, rem)) + gap, S * 0.13);
+        const cand = { i, d: d.clone(), D };
+        if (finalOf(cand).min.y < 0.002) return; // never through the floor
+        const land = order.map((o) => ({ ...o }));
+        if (!makeRoom(land, pathOf(cand))) return;
+        const layerPenalty = (ci.b.layer - ml) * 10;
+        const outBonus = ci.b.out && k === 0 ? -2 : 0;
+        const pushCost = land.reduce((a, o, m) => a + (o.D - order[m].D), 0) / S;
+        const score = layerPenalty + outBonus + dirCost(d) - d.dot(radial) * 1.2 - rel.length() / S + D / S * 0.6 + pushCost * 0.8;
+        if (!best || score < best.score) best = { ...cand, score, land };
+      });
+    }
+    if (!best) break;
+    const pick = best as { i: number; d: Vector3; D: number; land: typeof order };
+    pick.land.forEach((o, m) => (order[m] = o));
+    order.push({ i: pick.i, d: pick.d, D: pick.D });
+    remaining.delete(pick.i);
+  }
+  const stuck = [...remaining].map((i) => cols[i].b.id);
+  if (stuck.length > 1) notes.push(`stuck together (no free way out): ${stuck.join(", ")} — they stay as the base`);
+
+  // ---------------------------------------------------------------- explode clock (te units)
+  const screwsIn = (spec.screws ?? []).flatMap((s) => {
+    const twin = spec.parts.find((p) => p.id === s.parent)?.mirror === "z";
+    return twin ? [s, { p: [s.p[0], s.p[1], -s.p[2]] as V3, n: [s.n[0], s.n[1], -s.n[2]] as V3, parent: s.parent + "L" }] : [s];
+  });
+  const lead = screwsIn.length ? 0.5 : 0;
+  const build = (stag: number, dur: number) => {
+    const parts: PlanPart[] = cols.map((c) => ({ id: c.b.id, label: c.b.label, core: c.b.core, kind: kindOf(c.b), own: 0, moves: [] }));
+    order.forEach((o, k) => {
+      const t0 = lead + k * stag;
+      const p = parts[o.i];
+      p.own = t0;
+      p.moves = [{ off: o.d.clone().multiplyScalar(o.D).toArray() as V3, t0, t1: t0 + dur }];
+    });
+    const teEnd = order.length ? lead + (order.length - 1) * stag + dur : 1;
+    const byId = new Map(parts.map((p) => [p.id, p]));
+    const screws = screwsIn.filter((s) => byId.get(s.parent)?.moves.length).map((s) => ({ ...s, t0: Math.max(0, byId.get(s.parent)!.own - 0.5) }));
+    return { parts, teEnd, screws };
+  };
+
+  // ---------------------------------------------------------------- tembus QA over the clock
+  const qa = (parts: PlanPart[], teEnd: number) => {
+    const found = new Map<string, number>();
+    for (let te = 0.04; te <= teEnd + 1e-6; te += 0.04) {
+      const offs = parts.map((p) => new Vector3(...offsetOf(p, te)));
+      for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
+        const rel = offs[i].clone().sub(offs[j]).length();
+        if (rest(i, j)) {
+          const dv = offs[i].clone().sub(offs[j]);
+          const u = dv.length() > 1e-9 ? dv.clone().normalize() : new Vector3(0, 1, 0);
+          if (rel < Math.max(contact * 2.5, 0.46 * Math.min(extentAlong(cols[i].box, u), extentAlong(cols[j].box, u)))) continue;
+        }
+        if (hits(cols[i], offs[i], cols[j], offs[j])) { const k = `${cols[i].b.id} × ${cols[j].b.id}`; if (!found.has(k)) found.set(k, te); }
+      }
+    }
+    return [...found].map(([k, te]) => `te ${te.toFixed(2)}  ${k}`);
+  };
+  let stag = opt.sequential ? 1.0 : 0.38, dur = 1.0;
+  let res = build(stag, dur);
+  let qaList = qa(res.parts, res.teEnd);
+  if (qaList.length && !opt.sequential) {
+    notes.push(`overlapping moves collided (${qaList.length}) → one part at a time`);
+    stag = dur;
+    res = build(stag, dur);
+    qaList = qa(res.parts, res.teEnd);
+  }
+  const { parts, teEnd, screws } = res;
+
+  // ---------------------------------------------------------------- labels
+  const seq = order.map((o) => cols[o.i]);
+  const sizeOf = (c: Col) => c.box.getSize(new Vector3()).length();
+  let coreSet = new Set(seq.filter((c) => c.b.core).map((c) => c.b.id));
+  if (!coreSet.size) coreSet = new Set(seq.slice(Math.floor(seq.length * 0.65)).map((c) => c.b.id));
+  const labeled = seq.filter((c) => c.b.label);
+  const labelsB = labeled.filter((c) => coreSet.has(c.b.id)).slice(0, 6).map((c) => c.b.id);
+  const labelsA = labeled.filter((c) => !coreSet.has(c.b.id)).sort((a, b) => sizeOf(b) - sizeOf(a)).slice(0, 7)
+    .sort((a, b) => seq.indexOf(a) - seq.indexOf(b)).map((c) => c.b.id);
+  const count = parts.filter((p) => p.moves.length).length + screws.length;
+
+  // ---------------------------------------------------------------- timing (seconds)
+  const name = spec.name ?? `${spec.title} ini`;
+  let T: Plan["T"], keys: [number, number][], dur_s: number;
+  const ownOf = (id: string) => parts.find((p) => p.id === id)!.own;
+  const W = opt.words;
+  if (W && W.length) {
+    const at = opt.voAt ?? 0.3;
+    const norm = (s: string) => s.toLowerCase().normalize("NFD").replace(/[^a-z0-9]/g, "");
+    const ws = W.map((w) => ({ ...w, n: norm(w.w), t0: w.t0 + at, t1: w.t1 + at }));
+    const find = (pred: (s: string) => boolean, from = 0) => { for (let i = from; i < ws.length; i++) if (pred(ws[i].n)) return i; return -1; };
+    const iBongkar = find((s) => s.startsWith("bongkar"));
+    T = { hook: 0, split: 0, push: 0, pull: 0, hold: 0, back: 0, outro: 0 };
+    T.hook = iBongkar >= 0 ? ws[iBongkar].t0 - 0.15 : 3;
+    keys = [[T.hook, 0]];
+    let cursor = Math.max(0, iBongkar + 1);
+    // screws come out on "baut"
+    const iBaut = find((s) => s === "baut", cursor);
+    if (iBaut >= 0 && screws.length) { keys.push([ws[iBaut].t0, 0.05]); cursor = iBaut + 1; }
+    for (const c of seq) {
+      const say = (c.b.say.length ? c.b.say : []).map((s) => s.split(/\s+/).map(norm).filter(Boolean));
+      if (!say.length) continue;
+      let hit = -1;
+      for (const toks of say) {
+        for (let i = cursor; i < ws.length; i++) {
+          if (ws[i].n !== toks[0]) continue;
+          if (toks.slice(1).every((tk, k) => ws[i + 1 + k] && ws[i + 1 + k].n.startsWith(tk.slice(0, 4)))) { hit = i; break; }
+        }
+        if (hit >= 0) break;
+      }
+      if (hit < 0) continue;
+      const te = ownOf(c.b.id);
+      if (te > keys[keys.length - 1][1] + 1e-3 && ws[hit].t0 > keys[keys.length - 1][0] + 0.12) { keys.push([ws[hit].t0, te]); cursor = hit + 1; }
+    }
+    const iVersi = find((s) => s === "versi" || s === "totalnya" || s === "total", cursor);
+    const lastMention = keys[keys.length - 1][0];
+    T.split = Math.max(lastMention + 0.9, iVersi >= 0 ? ws[iVersi].t0 - 0.05 : lastMention + 1.6);
+    keys.push([T.split, teEnd]);
+    const iJantung = find((s) => s.startsWith("jantung") || s === "inti" || s === "intinya", cursor);
+    const iPasang = find((s) => s === "pasang" || s.startsWith("rakit"), cursor);
+    const iAkhir = find((s) => s.startsWith("terakhir"), Math.max(0, iPasang));
+    const iMau = find((s) => s === "mau", Math.max(0, iPasang));
+    T.push = iJantung >= 0 ? ws[iJantung].t0 - 0.35 : T.split + 3;
+    T.hold = iPasang >= 0 ? ws[iPasang].t0 - 0.5 : T.push + 4.5;
+    T.pull = Math.max(T.push + 2.6, T.hold - 1.0);
+    T.back = iAkhir >= 0 ? ws[iAkhir].t1 + 0.1 : T.hold + 3.4;
+    T.outro = iMau >= 0 ? ws[iMau].t0 : T.back + 0.3;
+    dur_s = Math.max((opt.voEnd ?? ws[ws.length - 1].t1) + 0.7, T.outro + 2.2);
+    // reassembly reads as one calm move: at least ~0.32 s per part (the outro line may start over its last second)
+    T.back = Math.min(Math.max(T.back, T.hold + Math.max(3.4, 0.32 * order.length)), dur_s - 0.8);
+    notes.push(`VO sync: ${keys.length - 2} part keys matched`);
+  } else {
+    const E = Math.min(14, Math.max(7, 1.6 + 0.22 * order.length + 0.05 * screws.length));
+    T = { hook: 2.6, split: 2.6 + E, push: 0, pull: 0, hold: 0, back: 0, outro: 0 };
+    keys = [[T.hook, 0], [T.split, teEnd]];
+    T.push = T.split + 2.8;
+    T.pull = T.push + 3.6;
+    T.hold = T.pull + 0.6;
+    T.back = T.hold + Math.max(4.2, 0.32 * order.length);
+    T.outro = T.back + 0.1;
+    dur_s = T.back + 2.6;
+  }
+
+  const captions = [
+    { text: `${name.replace(/ ini$/, "")} ada berapa part?`.replace(/^./, (s) => s.toUpperCase()), t0: 0.15, t1: T.hook + 0.2 },
+    { text: `${count} part, satu ${spec.title.toLowerCase()}.`, t0: T.split + 0.1, t1: T.push + 0.3 },
+    { text: "Jantungnya ada di sini.", t0: T.push + 0.7, t1: T.pull + 0.4 },
+    { text: "Mau kita bongkar apa lagi?", t0: T.outro - 0.1, t1: dur_s + 1 },
+  ];
+
+  // ---------------------------------------------------------------- camera fit table
+  const FOV = wide ? 24 : 30, ASPECT = wide ? 16 / 9 : 9 / 16;
+  const SAFE = wide ? { x0: 0.19, x1: 0.92, y0: 0.2, y1: 0.86 } : { x0: 0.05, x1: 0.95, y0: 0.235, y1: 0.83 };
+  const corners = (b: Box3, o: Vector3) => Array.from({ length: 8 }, (_, i) => new Vector3(i & 1 ? b.max.x : b.min.x, i & 2 ? b.max.y : b.min.y, i & 4 ? b.max.z : b.min.z).add(o));
+  // view angle that reads best when everything is apart: least overlap between the parts' silhouettes on screen,
+  // with a mild pull toward the classic 45° three-quarter view and toward a tall (portrait-friendly) layout
+  const AZ = (() => {
+    let best = 0.78, bestScore = Infinity;
+    for (const az of [0.35, 0.5, 0.65, 0.78, 0.92, 1.05, 1.2]) {
+      const right = new Vector3(Math.sin(az), 0, -Math.cos(az));
+      const rects = cols.map((c, i) => {
+        const pts = corners(c.box, new Vector3(...offsetOf(parts[i], teEnd)));
+        const xs = pts.map((p) => p.dot(right)), ys = pts.map((p) => p.y);
+        return [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+      });
+      let overlap = 0, area = 0;
+      rects.forEach((r, i) => {
+        area += (r[1] - r[0]) * (r[3] - r[2]);
+        for (let j = i + 1; j < rects.length; j++) {
+          const q = rects[j];
+          overlap += Math.max(0, Math.min(r[1], q[1]) - Math.max(r[0], q[0])) * Math.max(0, Math.min(r[3], q[3]) - Math.max(r[2], q[2]));
+        }
+      });
+      const W = Math.max(...rects.map((r) => r[1])) - Math.min(...rects.map((r) => r[0]));
+      const Hh = Math.max(...rects.map((r) => r[3])) - Math.min(...rects.map((r) => r[2]));
+      const score = overlap / Math.max(1e-9, area) + Math.abs(az - 0.78) * 0.25 + (wide ? Math.max(0, 1.4 - W / Hh) : Math.max(0, W / Hh - 0.8)) * 0.15;
+      if (score < bestScore) { bestScore = score; best = az; }
+    }
+    return best;
+  })();
+  notes.push(`camera azimuth ${AZ.toFixed(2)} rad`);
+  const ptsAt = (te: number, only?: Set<string>) => cols.flatMap((c, i) => (only && !only.has(c.b.id) ? [] : corners(c.box, new Vector3(...offsetOf(parts[i], te)))));
+  const fit = (pts: Vector3[], target: Vector3, az: number, el: number) => {
+    const cam = new PerspectiveCamera(FOV, ASPECT, 0.02, 200);
+    const v = new Vector3();
+    const ok = (d: number) => {
+      cam.position.set(target.x + Math.cos(el) * Math.cos(az) * d, target.y + Math.sin(el) * d, target.z + Math.cos(el) * Math.sin(az) * d);
+      cam.lookAt(target); cam.updateMatrixWorld();
+      for (const p of pts) { v.copy(p).project(cam); const x = v.x * 0.5 + 0.5, y = -v.y * 0.5 + 0.5; if (v.z > 1 || x < SAFE.x0 || x > SAFE.x1 || y < SAFE.y0 || y > SAFE.y1) return false; }
+      return true;
+    };
+    let lo = 0.05, hi = 60;
+    for (let k = 0; k < 30; k++) { const mid = (lo + hi) / 2; if (ok(mid)) hi = mid; else lo = mid; }
+    return hi;
+  };
+  const frame = (pts: Vector3[], el: number) => {
+    const c = new Box3().setFromPoints(pts).getCenter(new Vector3());
+    let d = 0;
+    for (const az of [AZ - 0.25, AZ, AZ + 0.25]) d = Math.max(d, fit(pts, c, az, el));
+    c.y += ((SAFE.y0 + SAFE.y1) / 2 - 0.5) * 2 * Math.tan((FOV / 2) * Math.PI / 180) * d;
+    d = 0;
+    for (const az of [AZ - 0.25, AZ, AZ + 0.25]) d = Math.max(d, fit(pts, c, az, el));
+    return { target: c.toArray() as V3, dist: d };
+  };
+  const GRID = 40;
+  const raw = Array.from({ length: GRID + 1 }, (_, i) => { const te = (teEnd * i) / GRID; return frame(ptsAt(te), 0.2 + 0.1 * smooth(te / teEnd)); });
+  for (let i = 1; i <= GRID; i++) raw[i].dist = Math.max(raw[i].dist, raw[i - 1].dist);
+  const blur = (a: number[]) => a.map((_, i) => { let s = 0, w = 0; for (let k = -4; k <= 4; k++) { const j = Math.min(GRID, Math.max(0, i + k)); const ww = 5 - Math.abs(k); s += a[j] * ww; w += ww; } return s / w; });
+  const bd = blur(raw.map((r) => r.dist));
+  const tx = [0, 1, 2].map((k) => blur(raw.map((r) => r.target[k])));
+  const grid = raw.map((r, i) => ({ dist: Math.max(bd[i], r.dist * 0.98), target: [tx[0][i], tx[1][i], tx[2][i]] as V3 }));
+  // the push-in drops to eye level with the core so the stack above does not hide it
+  const FOCUS_EL = 0.08;
+  const focusF = { ...frame(ptsAt(teEnd, coreSet), FOCUS_EL), el: FOCUS_EL };
+  focusF.dist *= 1.12;
+  const push = focusF.dist < grid[GRID].dist * 0.85 ? 0.72 : 0;
+  if (!push) notes.push("core already fills the frame → no push-in");
+
+  const plan: Plan = {
+    id: spec.id, title: spec.title, kicker: spec.kicker ?? "BONGKAR", dur: Math.round(dur_s * 100) / 100, T, keys, teEnd, parts, screws,
+    labelsA, labelsB, captions, cam: { az: AZ, fov: FOV, grid, focus: focusF, push }, count, spec, ...(wide ? { wide: true } : {}),
+    ...(opt.voFile ? { vo: { file: opt.voFile, at: opt.voAt ?? 0.3 } } : {}),
+  };
+  return { plan, order: order.map((o) => `${cols[o.i].b.id}→${o.d.toArray().map((x) => Math.round(x * 100) / 100).join(",")}·${o.D.toFixed(2)}`), stuck, qa: qaList, notes };
+};
+
+/** Indonesian number words (0–999) for the narration */
+export const terbilang = (n: number): string => {
+  const a = ["nol", "satu", "dua", "tiga", "empat", "lima", "enam", "tujuh", "delapan", "sembilan", "sepuluh", "sebelas"];
+  if (n < 12) return a[n];
+  if (n < 20) return `${a[n - 10]} belas`;
+  if (n < 100) return `${a[Math.floor(n / 10)]} puluh${n % 10 ? " " + a[n % 10] : ""}`;
+  if (n < 200) return `seratus${n % 100 ? " " + terbilang(n % 100) : ""}`;
+  return `${a[Math.floor(n / 100)]} ratus${n % 100 ? " " + terbilang(n % 100) : ""}`;
+};
+export { R2 };
+
+==== 10540 project/scripts/make.ts
+// BONGKAR auto-director CLI.
+//   node scripts/make.ts <id> --look          the assembled model from four sides (check it reads as the real thing)
+//   node scripts/make.ts <id> --naskah        object.json → naskah.txt + VO-elevenlabs-v3.txt (names in disassembly order)
+//   node scripts/make.ts <id> --plan          object.json (+ vo.* if present) → plan.json, tembus QA, report
+//   node scripts/make.ts <id> --stills        contact sheet of six key moments
+//   node scripts/make.ts <id> --preview       540×960 30 fps silent MP4 + QA gate report
+//   node scripts/make.ts <id> --final         QA gate (stops on FAIL / open CHECK) + 1080×1920 60 fps + score/SFX (+ VO) + delivery scan
+// Flags: --wide (16:9, only when the buyer asks), --no-vo (ignore vo.*), --no-qa, --force-qa.
+// Story folder: stories/<id>/object.json (required), vo.mp3|wav|m4a (optional), naskah.txt (the words of the VO).
+// Output: out/<id>/ (…-wide for landscape).
+import fs from "node:fs";
+import path from "node:path";
+import { execFileSync, spawnSync } from "node:child_process";
+import { planObject, terbilang, type Word } from "./lib/planner.ts";
+import { buildSound } from "./lib/dsound.ts";
+// @ts-ignore plain JS helpers shared with the other VOYNANN kits
+import { syncVo } from "./lib/vo.mjs";
+// @ts-ignore plain JS helpers shared with the other VOYNANN kits
+import { deliveryScan, sceneGate } from "./qa-gate.mjs";
+import { buildParts, type ObjectSpec } from "../src/director/spec.ts";
+import type { Plan } from "../src/director/runtime.ts";
+
+const [id, ...flags] = process.argv.slice(2);
+const flag = (f: string) => flags.includes(f);
+if (!id || !flags.length) { console.log("usage: node scripts/make.ts <id> --look|--naskah|--plan|--stills|--preview|--final [--wide] [--no-vo] [--no-qa] [--force-qa]"); process.exit(1); }
+const dir = `stories/${id}`;
+if (!fs.existsSync(`${dir}/object.json`)) { console.error(`✗ ${dir}/object.json not found`); process.exit(1); }
+const wide = flag("--wide");
+const tag = wide ? "-wide" : "";
+const out = `out/${id}${tag}`;
+fs.mkdirSync(out, { recursive: true });
+const spec: ObjectSpec = JSON.parse(fs.readFileSync(`${dir}/object.json`, "utf8"));
+const voFile = ["vo.mp3", "vo.wav", "vo.m4a"].map((f) => `${dir}/${f}`).find((f) => fs.existsSync(f));
+const hasVo = !!voFile && !flag("--no-vo");
+const VO_AT = 0.3;
+const planFile = `${dir}/plan${tag}.json`;
+const comp = (k: "Preview" | "Final") => `Director${k}${wide ? "Wide" : ""}`;
+const sh = (cmd: string, a: string[]) => { const r = spawnSync(cmd, a, { stdio: ["ignore", "inherit", "inherit"] }); if (r.status) process.exit(r.status ?? 1); };
+
+// ---------------------------------------------------------------- narration text (the words the VO says)
+const naskahLines = (): string[] | null => {
+  const f = `${dir}/naskah.txt`;
+  if (!fs.existsSync(f)) return null;
+  const txt = fs.readFileSync(f, "utf8").replace(/\r/g, "");
+  // a generated naskah has a 2-line header and a blank line; a buyer's own script is used whole
+  const body = /— naskah VO/.test(txt.split("\n")[0]) ? txt.slice(txt.indexOf("\n\n") + 2) : txt;
+  const lines = body.split("\n").map((l) => l.replace(/\[[^\]]*\]/g, "").trim()).filter(Boolean);
+  return lines.length ? lines : null;
+};
+
+// ---------------------------------------------------------------- VO words: whisper.cpp when installed, else the naskah laid onto the speech runs
+const voWords = (): { words: Word[]; end: number } => {
+  const texts = naskahLines();
+  if (!texts) { console.error(`✗ ${dir}/naskah.txt missing — write the words of the VO there (one sentence per line), or run --naskah and record from it`); process.exit(1); }
+  const r = syncVo(voFile, texts, `${out}/vo`, 0);
+  console.log(r.method === "whisper" ? `voice: ${voFile} — whisper matched all but ${r.missed} word(s)` : `voice: ${voFile} — whisper.cpp not found: naskah laid onto the speech runs (sentence starts ≈ exact, words paced)`);
+  const flat: { w: string; t: number }[] = r.lines.flatMap((l: { words: { w: string; t: number }[] }) => l.words);
+  const words: Word[] = flat.map((w, i) => ({ w: w.w, t0: w.t, t1: Math.min(flat[i + 1]?.t ?? w.t + 0.3, w.t + 0.6) }));
+  return { words, end: r.duration };
+};
+
+const makePlan = (withVo: boolean): Plan => {
+  const vo = withVo ? voWords() : null;
+  const r = planObject(spec, { wide, ...(vo ? { words: vo.words, voFile, voAt: VO_AT, voEnd: vo.end + VO_AT } : {}) });
+  console.log(`order (${r.order.length}): ${r.order.join("  ")}`);
+  if (r.stuck.length) console.log(`base (stays): ${r.stuck.join(", ")}`);
+  for (const n of r.notes) console.log(`note: ${n}`);
+  console.log(r.qa.length ? `QA tembus: FAIL\n  ${r.qa.join("\n  ")}` : "QA tembus: PASS — no part passes through another");
+  const p = r.plan;
+  console.log(`count ${p.count} · dur ${p.dur}s · hook ${p.T.hook.toFixed(1)} split ${p.T.split.toFixed(1)} push ${p.T.push.toFixed(1)} hold ${p.T.hold.toFixed(1)} back ${p.T.back.toFixed(1)}`);
+  console.log(`labels A: ${p.labelsA.join(", ")} · labels B (core): ${p.labelsB.join(", ")}`);
+  fs.writeFileSync(planFile, JSON.stringify(p));
+  if (r.qa.length) { console.error("✗ fix the model (see PANDUAN › Aturan supaya tidak tembus) before rendering"); process.exitCode = 2; }
+  return p;
+};
+// a plan is reused only while it is newer than object.json, the VO and the naskah
+const fresh = () => fs.existsSync(planFile) && [`${dir}/object.json`, voFile, `${dir}/naskah.txt`].every((f) => !f || !fs.existsSync(f) || fs.statSync(f).mtimeMs <= fs.statSync(planFile).mtimeMs);
+const loadPlan = (): Plan => {
+  const p: Plan = fresh() ? JSON.parse(fs.readFileSync(planFile, "utf8")) : makePlan(hasVo);
+  if (process.exitCode === 2) process.exit(2);
+  if (!!p.vo !== hasVo) return makePlan(hasVo);
+  return p;
+};
+const writeProps = (p: Plan) => { const f = `${out}/props.json`; fs.writeFileSync(f, JSON.stringify({ plan: p })); return f; };
+const gateOf = (props: string) => ({ comp: comp("Preview"), cuts: [] as number[], out: `${out}/qa-gate`, props, extra: ["--concurrency=1"] });
+
+// ---------------------------------------------------------------- narration
+if (flag("--naskah")) {
+  const p = makePlan(false);
+  const built = new Map(buildParts(spec).map((b) => [b.id, b]));
+  const moving = p.parts.filter((x) => x.moves.length).sort((a, b) => a.own - b.own);
+  const said = (pid: string) => built.get(pid)?.say[0]?.toLowerCase();
+  const outer = moving.filter((x) => !p.labelsB.includes(x.id) && x.label).map((x) => said(x.id)!).filter(Boolean);
+  const inner = moving.filter((x) => p.labelsB.includes(x.id)).map((x) => said(x.id)!).filter(Boolean);
+  const chunk = <T,>(a: T[], k: number) => Array.from({ length: Math.ceil(a.length / k) }, (_, i) => a.slice(i * k, i * k + k));
+  const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+  const name = spec.name ?? `${spec.title} ini`;
+  const lines: [string, string][] = [
+    ["curious", `${cap(name)}... isinya ada berapa part?`],
+    ["confident", `Kita bongkar.${p.screws.length ? " Baut dulu." : ""} ${chunk(outer, 4).map((c) => cap(c.join(", ")) + ".").join(" ")}`.trim()],
+    ...(inner.length ? [["building excitement", `Terus bagian dalamnya... ${inner.length > 1 ? inner.slice(0, -1).join(", ") + ", sampai " + inner[inner.length - 1] : inner[0]}.`] as [string, string]] : []),
+    ["pause", `Versi sederhananya aja: ${terbilang(p.count)} part.`],
+    ["impressed", spec.coreLine ?? "Dan jantungnya di sini."],
+    ["relaxed", p.screws.length ? "Sekarang pasang lagi... baut terakhir..." : "Sekarang pasang lagi..."],
+    ["friendly", "Mau kita bongkar apa lagi? Tulis di komen."],
+  ];
+  fs.writeFileSync(`${dir}/naskah.txt`, `${spec.title} — naskah VO (BONGKAR auto-director)\nBaca santai tapi tegas. Sebut nama part persis seperti di naskah (dipakai untuk sinkron).\n\n` + lines.map(([, l]) => l).join("\n") + "\n");
+  fs.writeFileSync(`${dir}/VO-elevenlabs-v3.txt`, lines.map(([t, l]) => `[${t}] ${l}`).join("\n\n") + "\n");
+  console.log(fs.readFileSync(`${dir}/VO-elevenlabs-v3.txt`, "utf8"));
+}
+
+// the assembled model from four sides + from above-front: does it read as the real object? (before any film work)
+if (flag("--look")) {
+  const p = planObject(spec, { wide }).plan;
+  const az = [p.cam.az, p.cam.az + Math.PI / 2, p.cam.az + Math.PI, p.cam.az - Math.PI / 2];
+  const f = `${out}/look-plan.json`;
+  fs.writeFileSync(f, JSON.stringify({ ...p, look: az, dur: Math.max(p.dur, 1) }));
+  sh("node", ["scripts/stills.mjs", `${out}/look`, "0,1,2,3", comp("Preview"), "1", f]);
+}
+
+if (flag("--plan")) makePlan(hasVo);
+
+if (flag("--stills")) {
+  const p = loadPlan();
+  const T = p.T;
+  const ts = [0.6, T.hook + (T.split - T.hook) * 0.35, T.hook + (T.split - T.hook) * 0.7, T.split + 1.6, T.push + 2.6, (T.hold + T.back) / 2].map((x) => `${x.toFixed(2)}s`).join(",");
+  // stills.mjs wraps the file's JSON as { plan }
+  sh("node", ["scripts/stills.mjs", `${out}/stills`, ts, comp("Preview"), "1", planFile]);
+}
+
+if (flag("--preview")) {
+  const p = loadPlan();
+  const props = writeProps(p);
+  const file = `${out}/${id}_preview_${wide ? "960x540" : "540x960"}.mp4`;
+  sh("npx", ["remotion", "render", "src/index.ts", comp("Preview"), file, `--props=${props}`, "--concurrency=3", "--muted", "--log=error"]);
+  console.log(`preview: ${file}`);
+  if (!flag("--no-qa")) sceneGate({ ...gateOf(props), force: true });
+}
+
+if (flag("--final")) {
+  const p = loadPlan();
+  const props = writeProps(p);
+  if (!flag("--no-qa")) sceneGate({ ...gateOf(props), force: flag("--force-qa") });
+  const silent = `${out}/_silent.mp4`;
+  sh("npx", ["remotion", "render", "src/index.ts", comp("Final"), silent, `--props=${props}`, "--concurrency=3", "--muted", "--crf=16", "--log=error"]);
+  const s = buildSound(p, buildParts(spec), `${out}/sound`, p.vo ? { file: p.vo.file, at: p.vo.at } : undefined);
+  const final = `${out}/${id}_${wide ? "1920x1080" : "1080x1920"}_60fps.mp4`;
+  execFileSync("ffmpeg", ["-v", "error", "-y", "-i", silent, "-i", s.mix, "-map", "0:v", "-map", "1:a", "-c:v", "copy", "-c:a", "aac", "-b:a", "256k", "-shortest", "-movflags", "+faststart", final]);
+  fs.rmSync(silent, { force: true });
+  console.log(`final: ${final}  (${s.lufs} LUFS, ${s.tp} dBTP${p.vo ? ", VO" : ", no VO"})`);
+  if (!flag("--no-qa") && deliveryScan({ file: final, cuts: [], out: path.join(out, "qa-gate", "delivered") }) === "FAIL") {
+    console.error(`✗ the delivered film has a hard glitch (see ${out}/qa-gate/delivered) — fix it before delivery`);
+    process.exitCode = 1;
+  }
+}
+
+==== 3754 project/scripts/stills.mjs
+// Visual QA: bundle once, render chosen frames of a composition, tile them into a contact sheet.
+//   node scripts/stills.mjs <outDir> <frame,frame,...> <compositionId> [scale]
+// Frames may be given in seconds with an "s" suffix (e.g. 4.5s), using the composition's fps.
+
+import path from "node:path";
+import fs from "node:fs";
+import { execFileSync } from "node:child_process";
+import { bundle } from "@remotion/bundler";
+import { openBrowser, renderStill, selectComposition } from "@remotion/renderer";
+import { glMode, isWebGLError, switchToSoftware, tolerateClosedTargets } from "./gl.mjs";
+
+tolerateClosedTargets();
+
+const [outDir, list, id, scaleArg = "1", propsFile] = process.argv.slice(2);
+const inputProps = propsFile ? JSON.parse(fs.readFileSync(propsFile, "utf8")) : {};
+if (!outDir || !list || !id) {
+  console.error("usage: node scripts/stills.mjs <outDir> <frame,frame,...|4.5s,...> <compositionId> [scale]");
+  process.exit(1);
+}
+fs.mkdirSync(outDir, { recursive: true });
+
+const serveUrl = await bundle({ entryPoint: path.resolve("src/index.ts") });
+// bundles are ~50 MB each; never leave them in the temp dir, even when a render throws
+const cleanup = () => fs.rmSync(serveUrl, { recursive: true, force: true });
+process.on("exit", cleanup);
+const composition = await selectComposition({ serveUrl, id, inputProps: propsFile ? { plan: inputProps } : {} });
+const frames = list.split(",").map((t) => (t.endsWith("s") ? Math.round(parseFloat(t) * composition.fps) : parseInt(t, 10)));
+const files = [];
+const renderAll = async (gl) => {
+  // one browser for all stills: WebGL contexts are expensive to create and tear down
+  const puppeteerInstance = await openBrowser("chrome", { chromiumOptions: { gl } });
+  try {
+    files.length = 0;
+    for (const frame of frames) {
+      const output = path.join(outDir, `f${String(frame).padStart(4, "0")}.png`);
+      await renderStill({ composition, serveUrl, output, frame, inputProps: propsFile ? { plan: inputProps } : {}, scale: Number(scaleArg), chromiumOptions: { gl }, timeoutInMilliseconds: 180000, puppeteerInstance });
+      files.push(output);
+      process.stdout.write(`${frame} `);
+    }
+  } finally {
+    // after a WebGL crash the tab may already be gone; closing must not hide the original error
+    await puppeteerInstance.close({ silent: true }).catch(() => {});
+  }
+};
+const gl = glMode();
+try {
+  await renderAll(gl);
+} catch (e) {
+  if (gl === "swangle" || !isWebGLError(e)) throw e;
+  await renderAll(switchToSoftware());
+}
+console.log();
+cleanup();
+
+// contact sheet (needs ffmpeg; skipped if missing)
+try {
+  const w = Math.round(composition.width * Number(scaleArg)), h = Math.round(composition.height * Number(scaleArg));
+  const cols = Math.min(4, files.length), rows = Math.ceil(files.length / cols), n = cols * rows;
+  if (n > 1) {
+    const inputs = files.flatMap((f) => ["-i", f]);
+    const pads = Array.from({ length: n - files.length }, () => ["-f", "lavfi", "-i", `color=c=black:s=${w}x${h}`]).flat();
+    const filter =
+      Array.from({ length: n }, (_, i) => `[${i}:v]scale=${w}:${h},setsar=1[v${i}]`).join(";") + ";" +
+      Array.from({ length: n }, (_, i) => `[v${i}]`).join("") +
+      `xstack=inputs=${n}:layout=` + Array.from({ length: n }, (_, i) => `${(i % cols) * w}_${Math.floor(i / cols) * h}`).join("|") +
+      `,scale='min(2160,iw)':-2`;
+    execFileSync("ffmpeg", ["-v", "error", "-y", ...inputs, ...pads, "-filter_complex", filter, "-frames:v", "1", path.join(outDir, "_sheet.jpg")]);
+    console.log(`sheet: ${path.join(outDir, "_sheet.jpg")}`);
+  }
+} catch {
+  console.log("(contact sheet skipped: ffmpeg not available)");
+}
+// a render that failed on the GPU path leaves its timeout timer behind; do not wait for it
+process.exit(0);
+
+==== 1046 project/src/bongkar/fonts.ts
+import { continueRender, delayRender, staticFile } from "remotion";
+
+// BONGKAR type: Plus Jakarta Sans (SIL OFL, bundled in public/fonts) for captions, labels and annotations.
+export const F_CAPTION = "Plus Jakarta Sans";
+
+let ready: Promise<void> | null = null;
+export const fontsReady = (): Promise<void> => {
+  if (ready) return ready;
+  if (typeof document === "undefined") return (ready = Promise.resolve());
+  const handle = delayRender("bongkar fonts");
+  const ttf = (file: string, weight: string) => new FontFace(F_CAPTION, `url(${staticFile(`fonts/${file}`)}) format("truetype")`, { weight });
+  const faces = [ttf("PlusJakartaSans_500Medium.ttf", "500"), ttf("PlusJakartaSans_700Bold.ttf", "700"), ttf("PlusJakartaSans_800ExtraBold.ttf", "800")];
+  ready = Promise.all(
+    faces.map(async (f) => {
+      await f.load();
+      (document.fonts as unknown as { add(f: FontFace): void }).add(f);
+    }),
+  ).then(
+    () => continueRender(handle),
+    (e) => {
+      continueRender(handle);
+      throw e;
+    },
+  );
+  return ready;
+};
+
+==== 8038 project/src/bongkar/geo.ts
+// Geometry helpers for BONGKAR parts. Pure three.js (no DOM) so node QA scripts can build the same meshes.
+import {
+  BufferGeometry, CatmullRomCurve3, CylinderGeometry, ExtrudeGeometry, LatheGeometry, Matrix4, Quaternion, Shape,
+  SphereGeometry, TorusGeometry, TubeGeometry, Vector2, Vector3,
+} from "three";
+import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
+
+export type V3 = [number, number, number];
+export type Mat =
+  | "paint" | "paintDark" | "black" | "satin" | "chrome" | "alu" | "steel" | "rubber" | "lens" | "amber" | "redLens"
+  | "seat" | "stripe" | "gold" | "copper";
+
+/** One mesh of a part: geometry in its own space, placed in WORLD space by p (position) and q (quaternion). */
+export type Piece = { g: BufferGeometry; m: Mat; p: V3; q: [number, number, number, number] };
+
+const Q0: [number, number, number, number] = [0, 0, 0, 1];
+const UP = new Vector3(0, 1, 0);
+
+export const piece = (g: BufferGeometry, m: Mat, p: V3 = [0, 0, 0], q = Q0): Piece => ({ g, m, p, q });
+
+/** Euler (radians, XYZ) → quaternion tuple. */
+export const eq = (x: number, y: number, z: number): [number, number, number, number] => {
+  const q = new Quaternion().setFromRotationMatrix(new Matrix4().makeRotationFromEuler({ x, y, z, order: "XYZ", isEuler: true } as never));
+  return [q.x, q.y, q.z, q.w];
+};
+
+/** Quaternion turning +Y onto dir. */
+export const qAlong = (dir: V3): [number, number, number, number] => {
+  const q = new Quaternion().setFromUnitVectors(UP, new Vector3(...dir).normalize());
+  return [q.x, q.y, q.z, q.w];
+};
+const Z90 = (): [number, number, number, number] => qAlong([0, 0, 1]);
+
+/** Cylinder from a to b (radius r, optional second radius). */
+export const rod = (a: V3, b: V3, r: number, m: Mat, r2 = r, seg = 20): Piece => {
+  const d: V3 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+  const len = Math.hypot(...d);
+  return piece(new CylinderGeometry(r2, r, len, seg), m, [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2], qAlong(d));
+};
+
+/** Disc / short cylinder with its axis along z. */
+export const discZ = (c: V3, r: number, w: number, m: Mat, seg = 40): Piece => piece(new CylinderGeometry(r, r, w, seg), m, c, Z90());
+
+/** Torus around the z axis (wheel tyre etc.). */
+export const torusZ = (c: V3, R: number, tube: number, m: Mat, arc = Math.PI * 2, rotZ = 0): Piece =>
+  piece(new TorusGeometry(R, tube, 18, 72, arc), m, c, eq(0, 0, rotZ));
+
+export const box = (c: V3, size: V3, m: Mat, radius = 0.006, q = Q0): Piece =>
+  piece(new RoundedBoxGeometry(size[0], size[1], size[2], 3, Math.min(radius, Math.min(...size) / 2 - 1e-4)), m, c, q);
+
+export const ball = (c: V3, r: number, m: Mat, s: V3 = [1, 1, 1]): Piece => {
+  const g = new SphereGeometry(r, 28, 18);
+  g.scale(...s);
+  return piece(g, m, c);
+};
+
+/** Tube along a smooth curve through world points. */
+export const tube = (pts: V3[], r: number, m: Mat, closed = false, seg = 64): Piece => {
+  const curve = new CatmullRomCurve3(pts.map((p) => new Vector3(...p)), closed, "centripetal");
+  return piece(new TubeGeometry(curve, seg, r, 12, closed), m);
+};
+
+/** Side-profile panel: 2D outline in the x–y plane (world metres), extruded across z from z0 to z1 with a soft bevel. */
+export const slab = (outline: [number, number][], z0: number, z1: number, m: Mat, bevel = 0.008, smooth = true, holes: [number, number, number][] = []): Piece => {
+  const sh = new Shape(outline.map(([x, y]) => new Vector2(x, y)));
+  for (const [hx, hy, hr] of holes) { const h = new Shape(); h.absarc(hx, hy, hr, 0, Math.PI * 2, true); sh.holes.push(h); }
+  const depth = Math.max(z1 - z0 - 2 * bevel, 0.001);
+  const g = new ExtrudeGeometry(sh, {
+    depth, bevelEnabled: bevel > 0, bevelThickness: bevel, bevelSize: bevel * 0.9, bevelSegments: 3, curveSegments: smooth ? 24 : 4,
+  });
+  g.translate(0, 0, z0 + bevel);
+  return piece(g, m);
+};
+
+/** Front-profile panel: outline in the z–y plane, extruded along x from x0 to x1. */
+export const slabX = (outline: [number, number][], x0: number, x1: number, m: Mat, bevel = 0.008, tilt = 0, pivot: V3 = [0, 0, 0]): Piece => {
+  const sh = new Shape(outline.map(([z, y]) => new Vector2(z, y)));
+  const depth = Math.max(x1 - x0 - 2 * bevel, 0.001);
+  const g = new ExtrudeGeometry(sh, { depth, bevelEnabled: bevel > 0, bevelThickness: bevel, bevelSize: bevel * 0.9, bevelSegments: 3, curveSegments: 24 });
+  // shape x → world z, shape y → world y, extrude z → world x
+  g.applyMatrix4(new Matrix4().set(0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1));
+  g.translate(x0 + bevel, 0, 0);
+  if (tilt) {
+    g.translate(-pivot[0], -pivot[1], -pivot[2]);
+    g.applyMatrix4(new Matrix4().makeRotationZ(tilt));
+    g.translate(pivot[0], pivot[1], pivot[2]);
+  }
+  return piece(g, m);
+};
+
+/** Lathe around the z axis through c: profile = [radius, z-offset] pairs. */
+export const latheZ = (c: V3, prof: [number, number][], m: Mat, seg = 56): Piece =>
+  piece(new LatheGeometry(prof.map(([r, y]) => new Vector2(r, y)), seg), m, c, Z90());
+
+/** Lathe around an arbitrary axis starting at a: profile = [radius, distance along axis]. */
+export const latheAlong = (a: V3, dir: V3, prof: [number, number][], m: Mat, seg = 40): Piece =>
+  piece(new LatheGeometry(prof.map(([r, y]) => new Vector2(r, y)), seg), m, a, qAlong(dir));
+
+/** Open band (fender): part of a cylinder around z, width w across z, angles in radians measured like atan2(y, x). */
+export const bandZ = (c: V3, r: number, w: number, a0: number, a1: number, m: Mat, thick = 0.006): Piece => {
+  const n = 40;
+  const outline: [number, number][] = [];
+  for (let i = 0; i <= n; i++) {
+    const a = a0 + ((a1 - a0) * i) / n;
+    outline.push([c[0] + Math.cos(a) * (r + thick), c[1] + Math.sin(a) * (r + thick)]);
+  }
+  for (let i = n; i >= 0; i--) {
+    const a = a0 + ((a1 - a0) * i) / n;
+    outline.push([c[0] + Math.cos(a) * r, c[1] + Math.sin(a) * r]);
+  }
+  return slab(outline, c[2] - w / 2, c[2] + w / 2, m, Math.min(0.004, w / 4), false);
+};
+
+/** Coil spring along a → b. */
+export const spring = (a: V3, b: V3, R: number, wire: number, turns: number, m: Mat): Piece => {
+  const d = new Vector3(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
+  const len = d.length();
+  const pts: Vector3[] = [];
+  const N = Math.round(turns * 24);
+  for (let i = 0; i <= N; i++) {
+    const s = i / N, ang = s * turns * Math.PI * 2;
+    pts.push(new Vector3(Math.cos(ang) * R, s * len - len / 2, Math.sin(ang) * R));
+  }
+  const g = new TubeGeometry(new CatmullRomCurve3(pts), N * 2, wire, 8, false);
+  return piece(g, m, [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2], qAlong([d.x, d.y, d.z]));
+};
+
+/** Square cooling fin with a round bore: plate w × h, thickness t, centred at c, normal along dir (bore axis). */
+export const finPlate = (c: V3, dir: V3, w: number, h: number, bore: number, t: number, m: Mat, rollZ = 0): Piece => {
+  const r = Math.min(w, h) * 0.12;
+  const sh = new Shape();
+  sh.moveTo(-w / 2 + r, -h / 2);
+  sh.lineTo(w / 2 - r, -h / 2); sh.quadraticCurveTo(w / 2, -h / 2, w / 2, -h / 2 + r);
+  sh.lineTo(w / 2, h / 2 - r); sh.quadraticCurveTo(w / 2, h / 2, w / 2 - r, h / 2);
+  sh.lineTo(-w / 2 + r, h / 2); sh.quadraticCurveTo(-w / 2, h / 2, -w / 2, h / 2 - r);
+  sh.lineTo(-w / 2, -h / 2 + r); sh.quadraticCurveTo(-w / 2, -h / 2, -w / 2 + r, -h / 2);
+  const hole = new Shape();
+  hole.absarc(0, 0, bore, 0, Math.PI * 2, true);
+  sh.holes.push(hole);
+  const g = new ExtrudeGeometry(sh, { depth: t, bevelEnabled: false, curveSegments: 32 });
+  g.translate(0, 0, -t / 2);
+  // plate lies in local x–y with normal +z; turn +z onto dir, keeping local y close to world up
+  const q = new Quaternion().setFromUnitVectors(new Vector3(0, 0, 1), new Vector3(...dir).normalize());
+  if (rollZ) q.multiply(new Quaternion().setFromAxisAngle(new Vector3(0, 0, 1), rollZ));
+  return piece(g, m, c, [q.x, q.y, q.z, q.w]);
+};
+
+export const add =(a: V3, b: V3): V3 => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+export const mul = (a: V3, s: number): V3 => [a[0] * s, a[1] * s, a[2] * s];
+
+==== 1469 project/src/bongkar/mats.ts
+import { Color, MeshPhysicalMaterial, MeshStandardMaterial, type Material } from "three";
+import type { Mat } from "./geo.ts";
+
+/** Real-paint palette, no glow: red clear-coat body, satin black plastics, cast aluminium, chrome. */
+export const makeMats = (colors: Partial<Record<"paint" | "paintDark" | "stripe" | "satin" | "alu", string>> = {}): Record<Mat, Material> => {
+  const std = (color: string, roughness: number, metalness = 0) => new MeshStandardMaterial({ color: new Color(color), roughness, metalness });
+  return {
+    paint: new MeshPhysicalMaterial({ color: colors.paint ?? "#b3121c", roughness: 0.34, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.07 }),
+    paintDark: std(colors.paintDark ?? "#9c1219", 0.4, 0.2),
+    black: std("#17181b", 0.42),
+    satin: std(colors.satin ?? "#1e1f22", 0.55, 0.15),
+    chrome: std("#eceef0", 0.1, 1),
+    alu: std(colors.alu ?? "#bfc2c6", 0.36, 0.85),
+    steel: std("#80858b", 0.42, 0.8),
+    rubber: std("#1b1b1c", 0.88),
+    lens: new MeshPhysicalMaterial({ color: "#e7edf0", roughness: 0.06, metalness: 0.1, clearcoat: 1 }),
+    amber: std("#ef9420", 0.22),
+    redLens: new MeshPhysicalMaterial({ color: "#c0141c", roughness: 0.12, clearcoat: 1 }),
+    seat: new MeshPhysicalMaterial({ color: "#151515", roughness: 0.62, sheen: 0.4, sheenColor: new Color("#3a3a3a") }),
+    stripe: std(colors.stripe ?? "#f1f1ef", 0.4),
+    gold: std("#7d7360", 0.45, 0.85),
+    copper: std("#b0693a", 0.35, 0.9),
+  };
+};
+
+==== 5182 project/src/bongkar/Stage.tsx
+// Studio stage: light seamless cyc, soft key with crisp contact shadows, room reflections for metal/paint.
+// Chain: MSAA scene → NaN guard → GTAO (contact shadows) → output (neutral tone map, sRGB).
+import React, { useLayoutEffect, useMemo } from "react";
+import { useFrame, useThree } from "@react-three/fiber";
+import {
+  Color, DirectionalLight, Fog, HalfFloatType, HemisphereLight, Mesh, MeshStandardMaterial, NeutralToneMapping, Object3D,
+  PerspectiveCamera, PlaneGeometry, PMREMGenerator, WebGLRenderTarget,
+} from "three";
+import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
+import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
+import { GTAOPass } from "three/examples/jsm/postprocessing/GTAOPass.js";
+import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
+import { ShaderPass } from "three/examples/jsm/postprocessing/ShaderPass.js";
+/** what the camera needs each frame (same shape as the director runtime's Cam) */
+type Cam = { pos: [number, number, number]; target: [number, number, number]; fov: number };
+
+export const BG = "#dddbd6"; // backdrop + haze
+const FLOOR = "#d0cec9";
+
+const SanitizeShader = {
+  uniforms: { tDiffuse: { value: null } },
+  vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: `uniform sampler2D tDiffuse; varying vec2 vUv;
+    void main() { vec4 c = texture2D(tDiffuse, vUv); if (any(isnan(c)) || any(isinf(c))) c = vec4(0.0, 0.0, 0.0, 1.0); gl_FragColor = vec4(clamp(c.rgb, 0.0, 32.0), 1.0); }`,
+};
+
+/** objSize = object diagonal in metres (the motor ≈ 2.2): shadow box, AO radius and haze scale with it */
+export const Stage: React.FC<{ cam: Cam; objSize?: number; children: React.ReactNode }> = ({ cam, objSize = 2.2, children }) => {
+  const k = objSize / 2.2;
+  const { gl, scene, camera, size } = useThree();
+
+  const rig = useMemo(() => {
+    const target = new Object3D();
+    target.position.set(0, 0.6 * k, 0);
+    const key = new DirectionalLight("#fffaf2", 2.4);
+    key.position.set(1.6 * k, 6.5 * k, 3.2 * k);
+    key.target = target;
+    key.castShadow = true;
+    key.shadow.mapSize.set(4096, 4096);
+    key.shadow.radius = 3;
+    key.shadow.bias = -0.0002;
+    key.shadow.normalBias = 0.012;
+    const sc = key.shadow.camera;
+    sc.left = -2.6 * k; sc.right = 2.6 * k; sc.top = 2.6 * k; sc.bottom = -2.6 * k; sc.near = 0.5 * k; sc.far = 14 * k;
+    key.shadow.normalBias = 0.012 * k;
+    const rim = new DirectionalLight("#f3f6ff", 1.1);
+    rim.position.set(-4 * k, 3 * k, -3 * k);
+    rim.target = target;
+    const hemi = new HemisphereLight("#ffffff", "#cfc9bf", 0.55);
+    const floor = new Mesh(new PlaneGeometry(60, 60), new MeshStandardMaterial({ color: FLOOR, roughness: 0.92 }));
+    floor.rotation.x = -Math.PI / 2;
+    floor.receiveShadow = true;
+    return { target, key, rim, hemi, floor };
+  }, [k]);
+
+  const env = useMemo(() => {
+    const pm = new PMREMGenerator(gl);
+    const tex = pm.fromScene(new RoomEnvironment(), 0.03).texture;
+    pm.dispose();
+    return tex;
+  }, [gl]);
+
+  const chain = useMemo(() => {
+    const w = size.width, h = size.height;
+    const rt = new WebGLRenderTarget(w, h, { type: HalfFloatType, samples: 8 });
+    const composer = new EffectComposer(gl, rt);
+    composer.setPixelRatio(1);
+    composer.setSize(w, h);
+    composer.addPass(new RenderPass(scene, camera));
+    composer.addPass(new ShaderPass(SanitizeShader));
+    const gtao = new GTAOPass(scene, camera, w, h);
+    gtao.updateGtaoMaterial({ radius: 0.12 * k, distanceExponent: 1.6, thickness: 0.6, scale: 1.0, samples: 16, distanceFallOff: 1.0, screenSpaceRadius: false });
+    gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 5, rings: 2, samples: 16 });
+    gtao.blendIntensity = 0.85;
+    composer.addPass(gtao);
+    composer.addPass(new OutputPass());
+    return { composer };
+  }, [gl, scene, camera, size.width, size.height, k]);
+
+  useLayoutEffect(() => {
+    scene.background = new Color(BG);
+    scene.environment = env;
+    scene.environmentIntensity = 0.75;
+    scene.fog = new Fog(BG, 7 * k, 30 * k);
+    gl.toneMapping = NeutralToneMapping;
+    gl.toneMappingExposure = 0.94;
+  }, [scene, env, gl, k]);
+
+  const aim = () => {
+    const c = camera as PerspectiveCamera;
+    c.fov = cam.fov;
+    c.near = 0.02 * k;
+    c.far = 200;
+    c.position.set(...cam.pos);
+    c.up.set(0, 1, 0);
+    c.lookAt(...cam.target);
+    c.updateProjectionMatrix();
+    c.updateMatrixWorld();
+  };
+  // aimed on every render, before any frame callback runs (the QA probe reads the camera in its own useFrame:
+  // on frame 0 it must already see this shot, not three's default camera)
+  useLayoutEffect(aim);
+  useFrame(() => {
+    aim();
+    chain.composer.render();
+  }, 1);
+
+  return (
+    <>
+      <primitive object={rig.target} />
+      <primitive object={rig.key} />
+      <primitive object={rig.rim} />
+      <primitive object={rig.hemi} />
+      <primitive object={rig.floor} />
+      {children}
+    </>
+  );
+};
+
+==== 10574 project/src/director/Film.tsx
+// BONGKAR auto-director film: renders any plan.json (props.plan) — geometry is rebuilt from plan.spec.
+import React, { useLayoutEffect, useMemo, useRef } from "react";
+import { AbsoluteFill, useCurrentFrame, useVideoConfig, type CalculateMetadataFunction } from "remotion";
+import { ThreeCanvas } from "@remotion/three";
+import { CylinderGeometry, InstancedMesh, Matrix4, PCFShadowMap, Vector3 } from "three";
+import { Stage } from "../bongkar/Stage.tsx";
+import { makeMats } from "../bongkar/mats.ts";
+import { F_CAPTION, fontsReady } from "../bongkar/fonts.ts";
+import { buildParts, partBox, type Built } from "./spec.ts";
+import { createRuntime, smooth, type Plan } from "./runtime.ts";
+import { QaProbe, Solid, qaNoOverlay } from "../core/qa/scene-qa.tsx";
+import type { Material } from "three";
+
+type Props = { plan: Plan };
+const INK = "#121212";
+const RED = "#b3121c";
+const win = (t: number, a: number, b: number, f = 0.25) => smooth((t - a) / f) * (1 - smooth((t - b + f) / f));
+
+export const directorMeta = (fps: number): CalculateMetadataFunction<Props> => ({ props }) => ({ durationInFrames: Math.max(1, Math.round(props.plan.dur * fps)) });
+
+type Mats = ReturnType<typeof makeMats>;
+/** a part as one tagged solid for the scene QA; `ghost` mats (see-through) while the camera looks at the core */
+// tol: parts are seated in each other in the assembled object (a lamp in its lid, a peg in a hole); a few mm of
+// seating scaled to the object is touching, not tembus (the planner's own QA checks every move mesh against mesh)
+const PartMesh: React.FC<{ part: Built; off: [number, number, number]; mats: Mats; ghost: boolean; tol: number }> = ({ part, off, mats, ghost, tol }) => (
+  <Solid id={part.id} kind="prop" touch={["*"]} tol={tol} position={off}>
+    {part.pieces.map((pc, i) => (
+      <mesh key={i} geometry={pc.g} material={mats[pc.m]} position={pc.p} quaternion={pc.q} castShadow={!ghost} receiveShadow />
+    ))}
+  </Solid>
+);
+/** the same palette, transparent: non-core parts fade back during the push-in so the core reads */
+const ghostOf = (m: Mats): Mats => Object.fromEntries(Object.entries(m).map(([k, v]) => {
+  const g = (v as Material).clone();
+  g.transparent = true;
+  g.depthWrite = false;
+  return [k, g];
+})) as Mats;
+
+const Screws: React.FC<{ plan: Plan; rt: ReturnType<typeof createRuntime>; te: number; mats: ReturnType<typeof makeMats>; size: number }> = ({ plan, rt, te, mats, size }) => {
+  const ref = useRef<InstancedMesh>(null);
+  const geo = useMemo(() => {
+    const r = Math.min(0.009, size * 0.012);
+    const g = new CylinderGeometry(r, r, r * 0.65, 6);
+    g.translate(0, r * 0.32, 0);
+    return g;
+  }, [size]);
+  useLayoutEffect(() => {
+    const m = ref.current;
+    if (!m) return;
+    const tmp = new Matrix4();
+    plan.screws.forEach((b, i) => m.setMatrixAt(i, rt.boltMatrix(b, te, tmp)));
+    m.instanceMatrix.needsUpdate = true;
+    m.computeBoundingSphere();
+  }, [te, plan, rt]);
+  if (!plan.screws.length) return null;
+  return <instancedMesh ref={ref} args={[geo, mats.chrome, plan.screws.length]} castShadow frustumCulled={false} />;
+};
+
+type Lab = { id: string; text: string; ax: number; ay: number; x: number; y: number; w: number; side: 1 | -1; a: number };
+
+const Labels: React.FC<{ plan: Plan; rt: ReturnType<typeof createRuntime>; built: Map<string, Built>; t: number; te: number; W: number; H: number }> = ({ plan, rt, built, t, te, W, H }) => {
+  const U = Math.min(W, H), fs = U * 0.03;
+  const cam = rt.makeCamera(rt.camAt(t), W / H);
+  const v = new Vector3();
+  const round = (ids: string[], t0: number, t1: number): Lab[] => {
+    const labs: Lab[] = [];
+    ids.forEach((id, i) => {
+      const b = built.get(id)!;
+      const c = rt.centers.get(id)!;
+      const o = rt.offset(id, te);
+      v.set(c.x + o[0], c.y + o[1], c.z + o[2]).project(cam);
+      const ax = (v.x * 0.5 + 0.5) * W, ay = (-v.y * 0.5 + 0.5) * H;
+      const a = smooth((t - (t0 + i * 0.2)) / 0.25) * (1 - smooth((t - t1 + 0.3) / 0.3));
+      if (a <= 0.001 || ax < 0 || ax > W || ay < H * 0.2 || ay > H * 0.86) return;
+      const w = b.label!.length * fs * 0.56 + fs * 1.3, len = U * 0.06;
+      let side: 1 | -1 = ax > W / 2 ? 1 : -1;
+      if (side > 0 && ax + len + w > W * 0.98) side = -1;
+      else if (side < 0 && ax - len - w < W * 0.02) side = 1;
+      const x = side > 0 ? Math.min(ax + len, W * 0.98 - w) : Math.max(ax - len - w, W * 0.02);
+      labs.push({ id, text: b.label!, ax, ay, x, y: ay, w, side, a });
+    });
+    const gap = fs * 2.15;
+    const sorted = [...labs].sort((p, q) => p.ay - q.ay);
+    for (let i = 1; i < sorted.length; i++) for (let j = 0; j < i; j++) {
+      const A = sorted[j], B = sorted[i];
+      if (A.x < B.x + B.w && B.x < A.x + A.w && B.y - A.y < gap) B.y = A.y + gap;
+    }
+    return labs;
+  };
+  const { T } = plan;
+  const labs = [...round(plan.labelsA, T.split + 0.2, T.push + 0.1), ...round(plan.labelsB, T.push + 1.4, T.pull + 0.3)];
+  return (
+    <>
+      {labs.map((l) => {
+        const ex = l.side > 0 ? l.x : l.x + l.w;
+        return (
+          <div key={l.id} style={{ position: "absolute", left: 0, top: 0, width: W, height: H, opacity: l.a }}>
+            <svg width={W} height={H} style={{ position: "absolute", left: 0, top: 0 }}>
+              <polyline points={`${l.ax},${l.ay} ${ex - l.side * U * 0.02},${l.y} ${ex},${l.y}`} fill="none" stroke={INK} strokeWidth={U * 0.0026} />
+              <circle cx={l.ax} cy={l.ay} r={U * 0.0075} fill={RED} stroke="#fff" strokeWidth={U * 0.0025} />
+            </svg>
+            <div style={{
+              position: "absolute", top: l.y - fs * 0.9, left: l.x, width: l.w, boxSizing: "border-box", textAlign: "center",
+              background: INK, color: "#fff", fontFamily: F_CAPTION, fontWeight: 700, fontSize: fs, lineHeight: 1,
+              padding: `${fs * 0.4}px 0`, borderRadius: fs * 0.28, whiteSpace: "nowrap", transform: `translateY(${(1 - l.a) * fs * 0.4}px)`,
+            }}>{l.text}</div>
+          </div>
+        );
+      })}
+    </>
+  );
+};
+
+const Hud: React.FC<{ plan: Plan; rt: ReturnType<typeof createRuntime>; t: number; te: number; W: number; H: number }> = ({ plan, rt, t, te, W, H }) => {
+  const { T } = plan;
+  const U = Math.min(W, H), wide = W > H;
+  const inPush = plan.cam.push ? win(t, T.push + 0.1, T.pull + 0.6, 0.4) : 0;
+  const showCount = win(t, T.hook - 0.2, T.back + 0.6, 0.3) * (1 - inPush);
+  const titleSize = plan.title.length > 14 ? U * 0.062 : U * 0.075;
+  return (
+    <>
+      <div style={{ position: "absolute", top: H * (wide ? 0.05 : 0.045), left: 0, right: 0, textAlign: "center", opacity: 1 - inPush * 0.85 }}>
+        <div style={{ fontFamily: F_CAPTION, fontWeight: 800, fontSize: U * 0.04, letterSpacing: U * 0.004, color: RED }}>{plan.kicker}</div>
+        <div style={{ fontFamily: F_CAPTION, fontWeight: 800, fontSize: titleSize, color: INK, marginTop: U * 0.006, letterSpacing: -0.5 }}>{plan.title}</div>
+      </div>
+      <div style={wide
+        ? { position: "absolute", top: H * 0.42, left: W * 0.045, textAlign: "left", opacity: showCount }
+        : { position: "absolute", top: H * 0.142, left: 0, right: 0, textAlign: "center", opacity: showCount }}>
+        <span style={{ fontFamily: F_CAPTION, fontWeight: 800, fontSize: U * 0.085, color: INK, fontVariantNumeric: "tabular-nums" }}>{rt.looseCount(te)}</span>
+        <span style={{ fontFamily: F_CAPTION, fontWeight: 700, fontSize: U * 0.04, color: INK, opacity: 0.55 }}> / {plan.count} part</span>
+      </div>
+      {plan.captions.map((c, i) => {
+        const a = win(t, c.t0, c.t1);
+        return a <= 0.001 ? null : (
+          <div key={i} style={{ position: "absolute", left: W * 0.08, right: W * 0.08, bottom: H * (wide ? 0.06 : 0.075), textAlign: "center", opacity: a, transform: `translateY(${(1 - a) * H * 0.01}px)` }}>
+            <span style={{ fontFamily: F_CAPTION, fontWeight: 800, fontSize: U * 0.052, lineHeight: 1.2, color: INK, letterSpacing: -0.5 }}>{c.text}</span>
+          </div>
+        );
+      })}
+    </>
+  );
+};
+
+export const DirectorFilm: React.FC<Props> = ({ plan }) => {
+  const frame = useCurrentFrame();
+  const { fps, width: W, height: H } = useVideoConfig();
+  const t = frame / fps;
+  const built = useMemo(() => buildParts(plan.spec), [plan]);
+  const builtMap = useMemo(() => new Map(built.map((b) => [b.id, b])), [built]);
+  // --look: every frame is the assembled object seen from another side (model check before the film is planned)
+  const lookAz = plan.look?.[frame];
+  const rt = useMemo(() => createRuntime(lookAz === undefined ? plan : { ...plan, cam: { ...plan.cam, az: lookAz } }, built), [plan, built, lookAz]);
+  const size = useMemo(() => { const bb = partBox({ id: "all", say: [], layer: 0, core: false, pieces: built.flatMap((b) => b.pieces) }); return bb.getSize(new Vector3()).length(); }, [built]);
+  const mats = useMemo(() => makeMats(plan.spec.colors), [plan]);
+  const ghost = useMemo(() => ghostOf(mats), [mats]);
+  const coreIds = useMemo(() => new Set(plan.labelsB.length ? plan.labelsB : plan.parts.filter((p) => p.core).map((p) => p.id)), [plan]);
+  useMemo(() => fontsReady(), []);
+  const te = lookAz === undefined ? rt.teAt(t) : 0;
+  const cam = rt.camAt(lookAz === undefined ? t : 0);
+  // while the camera is in on the core, everything else fades back (opacity 1 → 0.12)
+  const fade = plan.cam.push ? rt.pushAt(t) / plan.cam.push : 0;
+  const ghostOn = fade > 0.02;
+  if (ghostOn) for (const m of Object.values(ghost)) (m as Material).opacity = 1 - 0.88 * fade;
+  const overlay = !qaNoOverlay() && lookAz === undefined;
+  return (
+    <AbsoluteFill>
+      <ThreeCanvas width={W} height={H} shadows={{ type: PCFShadowMap }} dpr={1}
+        gl={{ antialias: false, preserveDrawingBuffer: true, powerPreference: "high-performance" }}
+        camera={{ fov: cam.fov, position: cam.pos, near: 0.02, far: 200 }}>
+        <Stage cam={cam} objSize={Math.max(0.3, size)}>
+          {built.map((b) => {
+            const g = ghostOn && !coreIds.has(b.id);
+            return <PartMesh key={b.id} part={b} off={rt.offset(b.id, te)} mats={g ? ghost : mats} ghost={g} tol={Math.max(0.002, size * 0.008)} />;
+          })}
+          <Screws plan={plan} rt={rt} te={te} mats={ghostOn ? ghost : mats} size={size} />
+        </Stage>
+        <QaProbe />
+      </ThreeCanvas>
+      {overlay && (
+        <AbsoluteFill>
+          <Labels plan={plan} rt={rt} built={builtMap} t={t} te={te} W={W} H={H} />
+          <Hud plan={plan} rt={rt} t={t} te={te} W={W} H={H} />
+        </AbsoluteFill>
+      )}
+    </AbsoluteFill>
+  );
+};
+
+==== 6245 project/src/director/runtime.ts
+// Plan (computed by scripts/make.ts) + built geometry → everything the film needs per frame. Pure TS.
+import { Matrix4, PerspectiveCamera, Quaternion, Vector3 } from "three";
+import type { V3 } from "../bongkar/geo.ts";
+import { partBox, type Built, type ObjectSpec } from "./spec.ts";
+
+export type PMove = { off: V3; t0: number; t1: number };
+export type PlanPart = { id: string; label?: string; core: boolean; kind: "metal" | "plastic" | "rubber"; own: number; moves: PMove[] };
+export type Plan = {
+  id: string;
+  title: string;
+  kicker: string;
+  dur: number;
+  T: { hook: number; split: number; push: number; pull: number; hold: number; back: number; outro: number };
+  /** explode clock keys [seconds, te] (monotone) */
+  keys: [number, number][];
+  teEnd: number;
+  parts: PlanPart[];
+  screws: { p: V3; n: V3; parent: string; t0: number }[];
+  labelsA: string[];
+  labelsB: string[];
+  captions: { text: string; t0: number; t1: number }[];
+  cam: { az: number; fov: number; grid: { target: V3; dist: number }[]; focus: { target: V3; dist: number; el?: number }; push: number };
+  count: number;
+  spec: ObjectSpec;
+  vo?: { file: string; at: number };
+  /** laid out for 16:9 (DirectorPreviewWide / DirectorFinalWide) */
+  wide?: boolean;
+  /** look-check mode (make.ts --look): frame n shows the assembled object from azimuth look[n], no overlay */
+  look?: number[];
+};
+
+const clamp = (x: number, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+export const smooth = (x: number) => { const t = clamp(x); return t * t * (3 - 2 * t); };
+export const smoother = (x: number) => { const t = clamp(x); return t * t * t * (t * (t * 6 - 15) + 10); };
+const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+
+/** monotone cubic through [x, y] keys (Fritsch–Carlson, harmonic-mean slopes) */
+export const monotone = (keys: [number, number][]) => {
+  const n = keys.length, d: number[] = [], m: number[] = [0];
+  for (let i = 0; i < n - 1; i++) d.push((keys[i + 1][1] - keys[i][1]) / Math.max(1e-6, keys[i + 1][0] - keys[i][0]));
+  for (let i = 1; i < n - 1; i++) m.push(d[i - 1] * d[i] <= 0 ? 0 : 2 / (1 / d[i - 1] + 1 / d[i]));
+  m.push(0);
+  return (x: number) => {
+    if (x <= keys[0][0]) return keys[0][1];
+    if (x >= keys[n - 1][0]) return keys[n - 1][1];
+    let i = 0;
+    while (i < n - 2 && x > keys[i + 1][0]) i++;
+    const [x0, y0] = keys[i], [x1, y1] = keys[i + 1], h = x1 - x0, u = (x - x0) / h;
+    return (2 * u ** 3 - 3 * u ** 2 + 1) * y0 + (u ** 3 - 2 * u ** 2 + u) * h * m[i] + (-2 * u ** 3 + 3 * u ** 2) * y1 + (u ** 3 - u ** 2) * h * m[i + 1];
+  };
+};
+
+export const moveE = (te: number, t0: number, t1: number) => smoother((te - t0) / Math.max(1e-6, t1 - t0));
+export const offsetOf = (p: PlanPart, te: number): V3 => {
+  const o: V3 = [0, 0, 0];
+  for (const m of p.moves) { const e = moveE(te, m.t0, m.t1); o[0] += m.off[0] * e; o[1] += m.off[1] * e; o[2] += m.off[2] * e; }
+  return o;
+};
+
+export type Cam = { pos: V3; target: V3; fov: number };
+
+export const createRuntime = (plan: Plan, built: Built[]) => {
+  const { T } = plan;
+  const clock = monotone(plan.keys);
+  const teAt = (t: number) => {
+    if (t <= T.hook) return 0;
+    if (t <= T.split) return clamp(clock(t), 0, plan.teEnd);
+    if (t <= T.hold) return plan.teEnd;
+    // reassembly: gentle ease (peak speed 1.5× the mean, not smoother's 1.9×)
+    if (t <= T.back) return plan.teEnd * (1 - smooth((t - T.hold) / (T.back - T.hold)));
+    return 0;
+  };
+  const byId = new Map(plan.parts.map((p) => [p.id, p]));
+  const centers = new Map(built.map((b) => [b.id, partBox(b).getCenter(new Vector3())]));
+  const BOLT_OUT = 0.12;
+  const boltE = (t0: number, te: number) => smooth((te - t0) / 0.45);
+  const boltMatrix = (b: Plan["screws"][number], te: number, out = new Matrix4()) => {
+    const e = boltE(b.t0, te);
+    const par = offsetOf(byId.get(b.parent)!, te);
+    const n = new Vector3(...b.n).normalize();
+    const pos = new Vector3(...b.p).add(new Vector3(...par)).addScaledVector(n, BOLT_OUT * e);
+    const q = new Quaternion().setFromUnitVectors(new Vector3(0, 1, 0), n);
+    q.multiply(new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), e * Math.PI * 5));
+    return out.compose(pos, q, new Vector3(1, 1, 1));
+  };
+  const looseCount = (te: number) => plan.parts.filter((p) => p.moves.length && te > p.own + 0.02).length + plan.screws.filter((b) => te > b.t0 + 0.05).length;
+
+  const grid = plan.cam.grid, G = grid.length - 1;
+  const fitAt = (te: number) => {
+    const f = clamp(te / plan.teEnd, 0, 1) * G;
+    const i = Math.min(G - 1, Math.floor(f)), u = f - i;
+    const a = grid[i], b = grid[Math.min(G, i + 1)];
+    return { dist: lerp(a.dist, b.dist, u), target: [0, 1, 2].map((k) => lerp(a.target[k], b.target[k], u)) as V3 };
+  };
+  const pushAt = (t: number) => plan.cam.push * smoother((t - T.push) / 1.5) * (1 - smoother((t - T.pull) / 1.2));
+  const camAt = (t: number): Cam => {
+    const te = teAt(t);
+    const spread = smooth(te / plan.teEnd);
+    const az = plan.cam.az + 0.2 * Math.sin((2 * Math.PI * t) / plan.dur) - 0.05 * Math.sin((4 * Math.PI * t) / plan.dur);
+    let el = lerp(0.2, 0.3, spread);
+    let { dist, target } = fitAt(te);
+    const w = pushAt(t);
+    if (w > 0) {
+      const f = plan.cam.focus;
+      // aim and height go all the way to the core; the distance only `push` of the way in (log space)
+      const u = w / Math.max(1e-6, plan.cam.push);
+      el = lerp(el, f.el ?? el, u);
+      dist = Math.exp(lerp(Math.log(dist), Math.log(f.dist), w));
+      target = [0, 1, 2].map((k) => lerp(target[k], f.target[k], u)) as V3;
+    }
+    return { pos: [target[0] + Math.cos(el) * Math.cos(az) * dist, target[1] + Math.sin(el) * dist, target[2] + Math.cos(el) * Math.sin(az) * dist], target, fov: plan.cam.fov };
+  };
+  const makeCamera = (c: Cam, aspect: number, cam = new PerspectiveCamera()) => {
+    cam.fov = c.fov; cam.aspect = aspect; cam.near = 0.02; cam.far = 200;
+    cam.position.set(...c.pos); cam.up.set(0, 1, 0); cam.lookAt(...c.target);
+    cam.updateProjectionMatrix(); cam.updateMatrixWorld();
+    return cam;
+  };
+  return { teAt, offset: (id: string, te: number) => offsetOf(byId.get(id)!, te), centers, boltMatrix, looseCount, camAt, makeCamera, pushAt };
+};
+
+==== 6171 project/src/director/spec.ts
+// BONGKAR auto-director: the object a story describes (stories/<id>/object.json) and its geometry builder.
+// Pure three.js — the planner (node) and the film (browser) build exactly the same meshes from the same JSON.
+//
+// World: metres, y up, the object stands on the floor (y = 0). The hold camera looks from +x/+z (azimuth ≈ 45°),
+// so +x and +z are the "front" sides the viewer sees. Every piece is given in WORLD coordinates of the assembled object.
+import { Box3, BufferGeometry, Matrix4, Quaternion, TorusGeometry, Vector3 } from "three";
+import {
+  ball, bandZ, box, eq, finPlate, latheAlong, piece, qAlong, rod, slab, slabX, spring, tube,
+  type Mat, type Piece, type V3,
+} from "../bongkar/geo.ts";
+
+export type PieceSpec =
+  | { t: "box"; c: V3; size: V3; m: Mat; r?: number; rot?: V3 }
+  | { t: "rod"; a: V3; b: V3; r: number; r2?: number; m: Mat; seg?: number }
+  | { t: "disc"; c: V3; r: number; w: number; axis: V3; m: Mat; seg?: number }
+  | { t: "torus"; c: V3; R: number; tube: number; axis: V3; m: Mat; arc?: number }
+  | { t: "ball"; c: V3; r: number; m: Mat; scale?: V3 }
+  | { t: "tube"; pts: V3[]; r: number; m: Mat; closed?: boolean }
+  | { t: "slab"; outline: [number, number][]; z0: number; z1: number; m: Mat; bevel?: number; holes?: [number, number, number][] }
+  | { t: "slabX"; outline: [number, number][]; x0: number; x1: number; m: Mat; bevel?: number }
+  | { t: "lathe"; a: V3; dir: V3; profile: [number, number][]; m: Mat; seg?: number }
+  | { t: "band"; c: V3; r: number; w: number; a0: number; a1: number; m: Mat; thick?: number }
+  | { t: "spring"; a: V3; b: V3; R: number; wire: number; turns: number; m: Mat }
+  | { t: "fin"; c: V3; dir: V3; w: number; h: number; bore: number; thick: number; m: Mat };
+
+export type PartSpec = {
+  id: string;
+  /** on-screen label (Indonesian); parts without a label still count and fly, but get no chip */
+  label?: string;
+  /** spoken aliases for VO sync (defaults to the label) */
+  say?: string[];
+  /** lower = comes off earlier (optional hint; the planner still checks it can actually come off) */
+  layer?: number;
+  /** preferred way out (unit-ish vector), tried before the six axes — e.g. the bore axis of a piston */
+  out?: V3;
+  /** belongs to the "heart" of the object: the push-in shot frames these and labels them */
+  core?: boolean;
+  /** "z" → also build a mirrored twin across z = 0 (id + "L", label kept only on the original) */
+  mirror?: "z";
+  pieces: PieceSpec[];
+};
+
+export type ObjectSpec = {
+  id: string;
+  title: string; // "Rice Cooker"
+  /** spoken name in the hook, e.g. "Rice cooker ini" */
+  name?: string;
+  kicker?: string; // default "BONGKAR"
+  /** paint colour overrides (real colours, flat) */
+  colors?: Partial<Record<"paint" | "paintDark" | "stripe" | "satin" | "alu", string>>;
+  parts: PartSpec[];
+  /** screws: unscrew along n just before their parent comes off */
+  screws?: { p: V3; n: V3; parent: string }[];
+  /** core line for the push-in, e.g. "Dan jantungnya di sini: elemen pemanas." */
+  coreLine?: string;
+};
+
+export type Built = { id: string; label?: string; say: string[]; layer: number; out?: V3; core: boolean; pieces: Piece[] };
+
+const Z: V3 = [0, 0, 1];
+const pieceOf = (s: PieceSpec): Piece => {
+  switch (s.t) {
+    case "box": return box(s.c, s.size, s.m, s.r ?? 0.004, s.rot ? eq(...s.rot) : undefined);
+    case "rod": return rod(s.a, s.b, s.r, s.m, s.r2 ?? s.r, s.seg ?? 24);
+    case "disc": {
+      const d = new Vector3(...s.axis).normalize().multiplyScalar(s.w / 2);
+      return rod([s.c[0] - d.x, s.c[1] - d.y, s.c[2] - d.z], [s.c[0] + d.x, s.c[1] + d.y, s.c[2] + d.z], s.r, s.m, s.r, s.seg ?? 48);
+    }
+    case "torus": {
+      const q = new Quaternion().setFromUnitVectors(new Vector3(...Z), new Vector3(...s.axis).normalize());
+      return piece(new TorusGeometry(s.R, s.tube, 18, 72, s.arc ?? Math.PI * 2), s.m, s.c, [q.x, q.y, q.z, q.w]);
+    }
+    case "ball": return ball(s.c, s.r, s.m, s.scale ?? [1, 1, 1]);
+    case "tube": return tube(s.pts, s.r, s.m, s.closed ?? false, 96);
+    case "slab": return slab(s.outline, s.z0, s.z1, s.m, s.bevel ?? 0.004, true, s.holes ?? []);
+    case "slabX": return slabX(s.outline, s.x0, s.x1, s.m, s.bevel ?? 0.004);
+    case "lathe": return latheAlong(s.a, s.dir, s.profile, s.m, s.seg ?? 56);
+    case "band": return bandZ(s.c, s.r, s.w, s.a0, s.a1, s.m, s.thick ?? 0.004);
+    case "spring": return spring(s.a, s.b, s.R, s.wire, s.turns, s.m);
+    case "fin": return finPlate(s.c, s.dir, s.w, s.h, s.bore, s.thick, s.m);
+  }
+};
+
+/** mirror a built piece across z = 0 (geometry flipped, winding restored) */
+const mirrorPiece = (p: Piece): Piece => {
+  const m = new Matrix4().compose(new Vector3(...p.p), new Quaternion(...p.q), new Vector3(1, 1, 1));
+  const g = p.g.clone().applyMatrix4(m).applyMatrix4(new Matrix4().makeScale(1, 1, -1));
+  const ng = g.index ? g.toNonIndexed() : g;
+  const pos = ng.getAttribute("position");
+  for (let i = 0; i < pos.count; i += 3) { // swap 2nd/3rd vertex of every triangle
+    const x = pos.getX(i + 1), y = pos.getY(i + 1), zz = pos.getZ(i + 1);
+    pos.setXYZ(i + 1, pos.getX(i + 2), pos.getY(i + 2), pos.getZ(i + 2));
+    pos.setXYZ(i + 2, x, y, zz);
+  }
+  ng.deleteAttribute("normal");
+  ng.computeVertexNormals();
+  return piece(ng as BufferGeometry, p.m);
+};
+
+export const buildParts = (spec: ObjectSpec): Built[] => {
+  const out: Built[] = [];
+  for (const ps of spec.parts) {
+    const pieces = ps.pieces.map(pieceOf);
+    const base = { say: ps.say ?? (ps.label ? [ps.label] : []), layer: ps.layer ?? 5, core: !!ps.core };
+    out.push({ id: ps.id, label: ps.label, ...base, out: ps.out, pieces });
+    if (ps.mirror === "z") out.push({ id: ps.id + "L", ...base, say: [], out: ps.out ? [ps.out[0], ps.out[1], -ps.out[2]] : undefined, pieces: pieces.map(mirrorPiece) });
+  }
+  return out;
+};
+
+export const partBox = (p: Built): Box3 => {
+  const bb = new Box3();
+  for (const pc of p.pieces) {
+    pc.g.computeBoundingBox();
+    bb.union(pc.g.boundingBox!.clone().applyMatrix4(new Matrix4().compose(new Vector3(...pc.p), new Quaternion(...pc.q), new Vector3(1, 1, 1))));
+  }
+  return bb;
+};
+
+export { qAlong };
+
+==== 113 project/src/index.ts
+import { registerRoot } from "remotion";
+import { RemotionRoot } from "./Root.tsx";
+
+registerRoot(RemotionRoot);
+
+==== 1673 project/src/Root.tsx
+import React from "react";
+import { Composition } from "remotion";
+import { DirectorFilm, directorMeta } from "./director/Film.tsx";
+import type { Plan } from "./director/runtime.ts";
+
+const G = { target: [0, 0.5, 0] as [number, number, number], dist: 3 };
+const EMPTY: Plan = {
+  id: "-", title: "-", kicker: "BONGKAR", dur: 1, T: { hook: 0.2, split: 0.4, push: 0.5, pull: 0.6, hold: 0.7, back: 0.8, outro: 0.9 },
+  keys: [[0.2, 0], [0.4, 1]], teEnd: 1, parts: [], screws: [], labelsA: [], labelsB: [], captions: [],
+  cam: { az: 0.78, fov: 30, grid: [G, G], focus: G, push: 0 }, count: 0, spec: { id: "-", title: "-", parts: [] },
+};
+
+// Director* = any stories/<id>/plan.json (scripts/make.ts writes it and passes it as props.plan).
+export const RemotionRoot: React.FC = () => (
+  <>
+    <Composition id="DirectorPreview" component={DirectorFilm} defaultProps={{ plan: EMPTY }} calculateMetadata={directorMeta(30)} durationInFrames={30} fps={30} width={540} height={960} />
+    <Composition id="DirectorFinal" component={DirectorFilm} defaultProps={{ plan: EMPTY }} calculateMetadata={directorMeta(60)} durationInFrames={60} fps={60} width={1080} height={1920} />
+    {/* landscape 16:9 — only when the buyer asks (make.ts --wide plans the layout for the wide frame) */}
+    <Composition id="DirectorPreviewWide" component={DirectorFilm} defaultProps={{ plan: EMPTY }} calculateMetadata={directorMeta(30)} durationInFrames={30} fps={30} width={960} height={540} />
+    <Composition id="DirectorFinalWide" component={DirectorFilm} defaultProps={{ plan: EMPTY }} calculateMetadata={directorMeta(60)} durationInFrames={60} fps={60} width={1920} height={1080} />
+  </>
+);
+
+==== 510 project/stories/kipas-angin/naskah.txt
+Kipas Angin — naskah VO (BONGKAR auto-director)
+Baca santai tapi tegas. Sebut nama part persis seperti di naskah (dipakai untuk sinkron).
+
+Kipas angin ini... isinya ada berapa part?
+Kita bongkar. Baut dulu. Kisi depan, penutup, baling, mur. Kisi belakang, tombol, leher, tiang. Tiang bawah.
+Terus bagian dalamnya... dinamo.
+Versi sederhananya aja: tiga belas part.
+Dan jantungnya di sini: dinamo yang muterin baling-baling.
+Sekarang pasang lagi... baut terakhir...
+Mau kita bongkar apa lagi? Tulis di komen.
+
+==== 18871 project/stories/kipas-angin/object.json
+{
+ "id": "kipas-angin",
+ "title": "Kipas Angin",
+ "name": "Kipas angin ini",
+ "colors": {
+  "paint": "#eef0f2",
+  "paintDark": "#2a6fb8"
+ },
+ "coreLine": "Dan jantungnya di sini: dinamo yang muterin baling-baling.",
+ "parts": [
+  {
+   "id": "kisiDepan",
+   "label": "Kisi depan",
+   "say": [
+    "kisi depan"
+   ],
+   "layer": 1,
+   "pieces": [
+    {
+     "t": "torus",
+     "c": [
+      0.07,
+      0.95,
+      0
+     ],
+     "R": 0.2,
+     "tube": 0.004,
+     "axis": [
+      1,
+      0,
+      0
+     ],
+     "m": "chrome"
+    },
+    {
+     "t": "torus",
+     "c": [
+      0.086,
+      0.95,
+      0
+     ],
+     "R": 0.15,
+     "tube": 0.0025,
+     "axis": [
+      1,
+      0,
+      0
+     ],
+     "m": "chrome"
+    },
+    {
+     "t": "torus",
+     "c": [
+      0.096,
+      0.95,
+      0
+     ],
+     "R": 0.1,
+     "tube": 0.0025,
+     "axis": [
+      1,
+      0,
+      0
+     ],
+     "m": "chrome"
+    },
+    {
+     "t": "disc",
+     "c": [
+      0.1,
+      0.95,
+      0
+     ],
+     "r": 0.036,
+     "w": 0.008,
+     "axis": [
+      1,
+      0,
+      0
+     ],
+     "m": "paintDark"
+    },
+    {
+     "t": "tube",
+     "pts": [
+      [
+       0.1,
+       0.985,
+       0.0
+      ],
+      [
+       0.095,
+       1.05,
+       0.0
+      ],
+      [
+       0.086,
+       1.1,
+       0.0
+      ],
+      [
+       0.07,
+       1.15,
+       0.0
+      ]
+     ],
+     "r": 0.0018,
+     "m": "chrome"
+    },
+    {
+     "t": "tube",
+     "pts": [
+      [
+       0.1,
+       0.98234,
+       0.01339
+      ],
+      [
+       0.095,
+       1.04239,
+       0.03827
+      ],
+      [
+       0.086,
+       1.08858,
+       0.0574
+      ],
+      [
+       0.07,
+       1.13478,
+       0.07654
+      ]
+     ],
+     "r": 0.0018,
+     "m": "chrome"
+    },
+    {
+     "t": "tube",
+     "pts": [
+      [
+       0.1,
+       0.97475,
+       0.02475
+      ],
+      [
+       0.095,
+       1.02071,
+       0.07071
+      ],
+      [
+       0.086,
+       1.05607,
+       0.10607
+      ],
+      [
+       0.07,
+       1.09142,
+       0.14142
+      ]
+     ],
+     "r": 0.0018,
+     "m": "chrome"
+    },
+    {
+     "t": "tube",
+     "pts": [
+      [
+       0.1,
+       0.96339,
+       0.03234
+      ],
+      [
+       0.095,
+       0.98827,
+       0.09239
+      ],
+      [
+       0.086,
+       1.0074,
+       0.13858
+      ],
+      [
+       0.07,
+       1.02654,
+       0.18478
+      ]
+     ],
+     "r": 0.0018,
+     "m": "chrome"
+    },
+    {
+     "t": "tube",
+     "pts": [
+      [
+       0.1,
+       0.95,
+       0.035
+      ],
+      [
+       0.095,
+       0.95,
+       0.1
+      ],
+      [
+       0.086,
+       0.95,
+       0.15
+      ],
+      [
+       0.07,
+       0.95,
+       0.2
+      ]
+     ],
+     "r": 0.0018,
+     "m": "chrome"
+    },
+    {
+     "t": "tube",
+     "pts": [
+      [
+       0.1,
+       0.93661,
+       0.03234
+      ],
+      [
+       0.095,
+       0.91173,
+       0.09239
+      ],
+      [
+       0.086,
+       0.8926,
+       0.13858
+      ],
+      [
+       0.07,
+       0.87346,
+       0.18478
+      ]
+     ],
+     "r": 0.0018,
+     "m": "chrome"
+    },
+    {
+     "t": "tube",
+     "pts": [
+      [
+       0.1,
+       0.92525,
+       0.02475
+      ],
+      [
+       0.095,
+       0.87929,
+       0.07071
+      ],
+      [
+       0.086,
+       0.84393,
+       0.10607
+      ],
+      [
+       0.07,
+       0.80858,
+       0.14142
+      ]
+     ],
+     "r": 0.0018,
+     "m": "chrome"
+    },
+    {
+     "t": "tube",
+     "pts": [
+      [
+       0.1,
+       0.91766,
+       0.01339
+      ],
+      [
+       0.095,
+       0.85761,
+       0.03827
+      ],
+      [
+       0.086,
+       0.81142,
+       0.0574
+      ],
+      [
+       0.07,
+       0.76522,
+       0.07654
+      ]
+     ],
+     "r": 0.0018,
+     "m": "chrome"
+    },
+    {
+     "t": "tube",
+     "pts": [
+      [
+       0.1,
+       0.915,
+       0.0
+      ],
+      [
+       0.095,
+       0.85,
+       0.0
+      ],
+      [
+       0.086,
+       0.8,
+       0.0
+      ],
+      [
+       0.07,
+       0.75,
+       0.0
+      ]
+     ],
+     "r": 0.0018,
+     "m": "chrome"
+    },
+    {
+     "t": "tube",
+     "pts": [
+      [
+       0.1,
+       0.91766,
+       -0.01339
+      ],
+      [
+       0.095,
+       0.85761,
+       -0.03827
+      ],
+      [
+       0.086,
+       0.81142,
+       -0.0574
+      ],
+      [
+       0.07,
+       0.76522,
+       -0.07654
+      ]
+     ],
+     "r": 0.0018,
+     "m": "chrome"
+    },
+    {
+     "t": "tube",
+     "pts": [
+      [
+       0.1,
+       0.92525,
+       -0.02475
+      ],
+      [
+       0.095,
+       0.87929,
+       -0.07071
+      ],
+      [
+       0.086,
+       0.84393,
+       -0.10607
+      ],
+      [
+       0.07,
+       0.80858,
+       -0.14142
+      ]
+     ],
+     "r": 0.0018,
+     "m": "chrome"
+    },
+    {
+     "t": "tube",
+     "pts": [
+      [
+       0.1,
+       0.93661,
+       -0.03234
+      ],
+      [
+       0.095,
+       0.91173,
+       -0.09239
+      ],
+      [
+       0.086,
+       0.8926,
+       -0.13858
+      ],
+      [
+       0.07,
+       0.87346,
+       -0.18478
+      ]
+     ],
+     "r": 0.0018,
+     "m": "chrome"
+    },
+    {
+     "t": "tube",
+     "pts": [
+      [
+       0.1,
+       0.95,
+       -0.035
+      ],
+      [
+       0.095,
+       0.95,
+       -0.1
+      ],
+      [
+       0.086,
+       0.95,
+       -0.15
+      ],
+      [
+       0.07,
+       0.95,
+       -0.2
+      ]
+     ],
+     "r": 0.0018,
+     "m": "chrome"
+    },
+    {
+     "t": "tube",
+     "pts": [
+      [
+       0.1,
+       0.96339,
+       -0.03234
+      ],
+      [
+       0.095,
+       0.98827,
+       -0.09239
+      ],
+      [
+       0.086,
+       1.0074,
+       -0.13858
+      ],
+      [
+       0.07,
+       1.02654,
+       -0.18478
+      ]
+     ],
+     "r": 0.0018,
+     "m": "chrome"
+    },
+    {
+     "t": "tube",
+     "pts": [
+      [
+       0.1,
+       0.97475,
+       -0.02475
+      ],
+      [
+       0.095,
+       1.02071,
+       -0.07071
+      ],
+      [
+       0.086,
+       1.05607,
+       -0.10607
+      ],
+      [
+       0.07,
+       1.09142,
+       -0.14142
+      ]
+     ],
+     "r": 0.0018,
+     "m": "chrome"
+    },
+    {
+     "t": "tube",
+     "pts": [
+      [
+       0.1,
+       0.98234,
+       -0.01339
+      ],
+      [
+       0.095,
+       1.04239,
+       -0.03827
+      ],
+      [
+       0.086,
+       1.08858,
+       -0.0574
+      ],
+      [
+       0.07,
+       1.13478,
+       -0.07654
+      ]
+     ],
+     "r": 0.0018,
+     "m": "chrome"
+    }
+   ],
+   "out": [
+    1,
+    0,
+    0
+   ]
+  },
+  {
+   "id": "penutupAs",
+   "label": "Penutup as",
+   "say": [
+    "penutup"
+   ],
+   "layer": 2,
+   "pieces": [
+    {
+     "t": "lathe",
+     "a": [
+      0.052,
+      0.95,
+      0
+     ],
+     "dir": [
+      1,
+      0,
+      0
+     ],
+     "profile": [
+      [
+       0,
+       0
+      ],
+      [
+       0.022,
+       0
+      ],
+      [
+       0.018,
+       0.016
+      ],
+      [
+       0,
+       0.024
+      ]
+     ],
+     "m": "satin"
+    }
+   ],
+   "out": [
+    1,
+    0,
+    0
+   ]
+  },
+  {
+   "id": "baling",
+   "label": "Baling-baling",
+   "say": [
+    "baling"
+   ],
+   "layer": 3,
+   "pieces": [
+    {
+     "t": "lathe",
+     "a": [
+      0.02,
+      0.95,
+      0
+     ],
+     "dir": [
+      1,
+      0,
+      0
+     ],
+     "profile": [
+      [
+       0.0068,
+       0
+      ],
+      [
+       0.03,
+       0
+      ],
+      [
+       0.03,
+       0.03
+      ],
+      [
+       0.0068,
+       0.03
+      ],
+      [
+       0.0068,
+       0
+      ]
+     ],
+     "m": "paintDark"
+    },
+    {
+     "t": "box",
+     "c": [
+      0.035,
+      1.05,
+      0.0
+     ],
+     "size": [
+      0.005,
+      0.13,
+      0.085
+     ],
+     "rot": [
+      0.0,
+      0.38,
+      0
+     ],
+     "m": "paintDark",
+     "r": 0.002
+    },
+    {
+     "t": "box",
+     "c": [
+      0.035,
+      0.9,
+      0.0866
+     ],
+     "size": [
+      0.005,
+      0.13,
+      0.085
+     ],
+     "rot": [
+      2.0943951023931953,
+      0.38,
+      0
+     ],
+     "m": "paintDark",
+     "r": 0.002
+    },
+    {
+     "t": "box",
+     "c": [
+      0.035,
+      0.9,
+      -0.0866
+     ],
+     "size": [
+      0.005,
+      0.13,
+      0.085
+     ],
+     "rot": [
+      4.1887902047863905,
+      0.38,
+      0
+     ],
+     "m": "paintDark",
+     "r": 0.002
+    }
+   ],
+   "out": [
+    1,
+    0,
+    0
+   ]
+  },
+  {
+   "id": "murKisi",
+   "label": "Mur kisi",
+   "say": [
+    "mur"
+   ],
+   "layer": 4,
+   "pieces": [
+    {
+     "t": "lathe",
+     "a": [
+      -0.02,
+      0.95,
+      0
+     ],
+     "dir": [
+      1,
+      0,
+      0
+     ],
+     "profile": [
+      [
+       0.0075,
+       0
+      ],
+      [
+       0.034,
+       0
+      ],
+      [
+       0.034,
+       0.013
+      ],
+      [
+       0.0075,
+       0.013
+      ],
+      [
+       0.0075,
+       0
+      ]
+     ],
+     "m": "satin"
+    }
+   ],
+   "out": [
+    1,
+    0,
+    0
+   ]
+  },
+  {
+   "id": "kisiBelakang",
+   "label": "Kisi belakang",
+   "say": [
+    "kisi belakang"
+   ],
+   "layer": 5,
+   "pieces": [
+    {
+     "t": "torus",
+     "c": [
+      0.0,
+      0.95,
+      0
+     ],
+     "R": 0.2,
+     "tube": 0.004,
+     "axis": [
+      1,
+      0,
+      0
+     ],
+     "m": "chrome"
+    },
+    {
+     "t": "torus",
+     "c": [
+      -0.004,
+      0.95,
+      0
+     ],
+     "R": 0.15,
+     "tube": 0.0025,
+     "axis": [
+      1,
+      0,
+      0
+     ],
+     "m": "chrome"
+    },
+    {
+     "t": "torus",
+     "c": [
+      -0.006,
+      0.95,
+      0
+     ],
+     "R": 0.1,
+     "tube": 0.0025,
+     "axis": [
+      1,
+      0,
+      0
+     ],
+     "m": "chrome"
+    },
+    {
+     "t": "torus",
+     "c": [
+      -0.006,
+      0.95,
+      0
+     ],
+     "R": 0.045,
+     "tube": 0.003,
+     "axis": [
+      1,
+      0,
+      0
+     ],
+     "m": "chrome"
+    },
+    {
+     "t": "tube",
+     "pts": [
+      [
+       -0.006,
+       0.99708,
+       0.00936
+      ],
+      [
+       -0.006,
+       1.04808,
+       0.01951
+      ],
+      [
+       -0.004,
+       1.09712,
+       0.02926
+      ],
+      [
+       0.0,
+       1.14616,
+       0.03902
+      ]
+     ],
+     "r": 0.0018,
+     "m": "chrome"
+    },
+    {
+     "t": "tube",
+     "pts": [
+      [
+       -0.006,
+       0.98991,
+       0.02667
+      ],
+      [
+       -0.006,
+       1.03315,
+       0.05556
+      ],
+      [
+       -0.004,
+       1.07472,
+       0.08334
+      ],
+      [
+       0.0,
+       1.11629,
+       0.11111
+      ]
+     ],
+     "r": 0.0018,
+     "m": "chrome"
+    },
+    {
+     "t": "tube",
+     "pts": [
+      [
+       -0.006,
+       0.97667,
+       0.03991
+      ],
+      [
+       -0.006,
+       1.00556,
+       0.08315
+      ],
+      [
+       -0.004,
+       1.03334,
+       0.12472
+      ],
+      [
+       0.0,
+       1.06111,
+       0.16629
+      ]
+     ],
+     "r": 0.0018,
+     "m": "chrome"
+    },
+    {
+     "t": "tube",
+     "pts": [
+      [
+       -0.006,
+       0.95936,
+       0.04708
+      ],
+      [
+       -0.006,
+       0.96951,
+       0.09808
+      ],
+      [
+       -0.004,
+       0.97926,
+       0.14712
+      ],
+      [
+       0.0,
+       0.98902,
+       0.19616
+      ]
+     ],
+     "r": 0.0018,
+     "m": "chrome"
+    },
+    {
+     "t": "tube",
+     "pts": [
+      [
+       -0.006,
+       0.94064,
+       0.04708
+      ],
+      [
+       -0.006,
+       0.93049,
+       0.09808
+      ],
+      [
+       -0.004,
+       0.92074,
+       0.14712
+      ],
+      [
+       0.0,
+       0.91098,
+       0.19616
+      ]
+     ],
+     "r": 0.0018,
+     "m": "chrome"
+    },
+    {
+     "t": "tube",
+     "pts": [
+      [
+       -0.006,
+       0.92333,
+       0.03991
+      ],
+      [
+       -0.006,
+       0.89444,
+       0.08315
+      ],
+      [
+       -0.004,
+       0.86666,
+       0.12472
+      ],
+      [
+       0.0,
+       0.83889,
+       0.16629
+      ]
+     ],
+     "r": 0.0018,
+     "m": "chrome"
+    },
+    {
+     "t": "tube",
+     "pts": [
+      [
+       -0.006,
+       0.91009,
+       0.02667
+      ],
+      [
+       -0.006,
+       0.86685,
+       0.05556
+      ],
+      [
+       -0.004,
+       0.82528,
+       0.08334
+      ],
+      [
+       0.0,
+       0.78371,
+       0.11111
+      ]
+     ],
+     "r": 0.0018,
+     "m": "chrome"
+    },
+    {
+     "t": "tube",
+     "pts": [
+      [
+       -0.006,
+       0.90292,
+       0.00936
+      ],
+      [
+       -0.006,
+       0.85192,
+       0.01951
+      ],
+      [
+       -0.004,
+       0.80288,
+       0.02926
+      ],
+      [
+       0.0,
+       0.75384,
+       0.03902
+      ]
+     ],
+     "r": 0.0018,
+     "m": "chrome"
+    },
+    {
+     "t": "tube",
+     "pts": [
+      [
+       -0.006,
+       0.90292,
+       -0.00936
+      ],
+      [
+       -0.006,
+       0.85192,
+       -0.01951
+      ],
+      [
+       -0.004,
+       0.80288,
+       -0.02926
+      ],
+      [
+       0.0,
+       0.75384,
+       -0.03902
+      ]
+     ],
+     "r": 0.0018,
+     "m": "chrome"
+    },
+    {
+     "t": "tube",
+     "pts": [
+      [
+       -0.006,
+       0.91009,
+       -0.02667
+      ],
+      [
+       -0.006,
+       0.86685,
+       -0.05556
+      ],
+      [
+       -0.004,
+       0.82528,
+       -0.08334
+      ],
+      [
+       0.0,
+       0.78371,
+       -0.11111
+      ]
+     ],
+     "r": 0.0018,
+     "m": "chrome"
+    },
+    {
+     "t": "tube",
+     "pts": [
+      [
+       -0.006,
+       0.92333,
+       -0.03991
+      ],
+      [
+       -0.006,
+       0.89444,
+       -0.08315
+      ],
+      [
+       -0.004,
+       0.86666,
+       -0.12472
+      ],
+      [
+       0.0,
+       0.83889,
+       -0.16629
+      ]
+     ],
+     "r": 0.0018,
+     "m": "chrome"
+    },
+    {
+     "t": "tube",
+     "pts": [
+      [
+       -0.006,
+       0.94064,
+       -0.04708
+      ],
+      [
+       -0.006,
+       0.93049,
+       -0.09808
+      ],
+      [
+       -0.004,
+       0.92074,
+       -0.14712
+      ],
+      [
+       0.0,
+       0.91098,
+       -0.19616
+      ]
+     ],
+     "r": 0.0018,
+     "m": "chrome"
+    },
+    {
+     "t": "tube",
+     "pts": [
+      [
+       -0.006,
+       0.95936,
+       -0.04708
+      ],
+      [
+       -0.006,
+       0.96951,
+       -0.09808
+      ],
+      [
+       -0.004,
+       0.97926,
+       -0.14712
+      ],
+      [
+       0.0,
+       0.98902,
+       -0.19616
+      ]
+     ],
+     "r": 0.0018,
+     "m": "chrome"
+    },
+    {
+     "t": "tube",
+     "pts": [
+      [
+       -0.006,
+       0.97667,
+       -0.03991
+      ],
+      [
+       -0.006,
+       1.00556,
+       -0.08315
+      ],
+      [
+       -0.004,
+       1.03334,
+       -0.12472
+      ],
+      [
+       0.0,
+       1.06111,
+       -0.16629
+      ]
+     ],
+     "r": 0.0018,
+     "m": "chrome"
+    },
+    {
+     "t": "tube",
+     "pts": [
+      [
+       -0.006,
+       0.98991,
+       -0.02667
+      ],
+      [
+       -0.006,
+       1.03315,
+       -0.05556
+      ],
+      [
+       -0.004,
+       1.07472,
+       -0.08334
+      ],
+      [
+       0.0,
+       1.11629,
+       -0.11111
+      ]
+     ],
+     "r": 0.0018,
+     "m": "chrome"
+    },
+    {
+     "t": "tube",
+     "pts": [
+      [
+       -0.006,
+       0.99708,
+       -0.00936
+      ],
+      [
+       -0.006,
+       1.04808,
+       -0.01951
+      ],
+      [
+       -0.004,
+       1.09712,
+       -0.02926
+      ],
+      [
+       0.0,
+       1.14616,
+       -0.03902
+      ]
+     ],
+     "r": 0.0018,
+     "m": "chrome"
+    }
+   ],
+   "out": [
+    1,
+    0,
+    0
+   ]
+  },
+  {
+   "id": "dinamo",
+   "label": "Dinamo",
+   "core": true,
+   "layer": 6,
+   "pieces": [
+    {
+     "t": "lathe",
+     "a": [
+      -0.22,
+      0.95,
+      0
+     ],
+     "dir": [
+      1,
+      0,
+      0
+     ],
+     "profile": [
+      [
+       0,
+       0
+      ],
+      [
+       0.06,
+       0
+      ],
+      [
+       0.084,
+       0.03
+      ],
+      [
+       0.088,
+       0.12
+      ],
+      [
+       0.07,
+       0.165
+      ],
+      [
+       0.036,
+       0.178
+      ],
+      [
+       0,
+       0.18
+      ]
+     ],
+     "m": "paint",
+     "seg": 64
+    },
+    {
+     "t": "rod",
+     "a": [
+      -0.042,
+      0.95,
+      0
+     ],
+     "b": [
+      -0.02,
+      0.95,
+      0
+     ],
+     "r": 0.02,
+     "m": "satin"
+    },
+    {
+     "t": "rod",
+     "a": [
+      -0.02,
+      0.95,
+      0
+     ],
+     "b": [
+      0.075,
+      0.95,
+      0
+     ],
+     "r": 0.006,
+     "m": "chrome"
+    },
+    {
+     "t": "box",
+     "c": [
+      -0.13,
+      1.038,
+      0
+     ],
+     "size": [
+      0.06,
+      0.012,
+      0.05
+     ],
+     "m": "satin",
+     "r": 0.004
+    }
+   ]
+  },
+  {
+   "id": "leher",
+   "label": "Leher",
+   "layer": 7,
+   "pieces": [
+    {
+     "t": "box",
+     "c": [
+      -0.11,
+      0.83,
+      0
+     ],
+     "size": [
+      0.06,
+      0.07,
+      0.06
+     ],
+     "m": "satin",
+     "r": 0.01
+    }
+   ]
+  },
+  {
+   "id": "tiangAtas",
+   "label": "Tiang atas",
+   "say": [
+    "tiang"
+   ],
+   "layer": 8,
+   "pieces": [
+    {
+     "t": "rod",
+     "a": [
+      -0.11,
+      0.44,
+      0
+     ],
+     "b": [
+      -0.11,
+      0.81,
+      0
+     ],
+     "r": 0.014,
+     "m": "chrome"
+    }
+   ]
+  },
+  {
+   "id": "tiang",
+   "label": "Tiang bawah",
+   "say": [
+    "tiang bawah"
+   ],
+   "layer": 9,
+   "pieces": [
+    {
+     "t": "lathe",
+     "a": [
+      -0.11,
+      0.044,
+      0
+     ],
+     "dir": [
+      0,
+      1,
+      0
+     ],
+     "profile": [
+      [
+       0.016,
+       0
+      ],
+      [
+       0.022,
+       0
+      ],
+      [
+       0.022,
+       0.46
+      ],
+      [
+       0.016,
+       0.46
+      ],
+      [
+       0.016,
+       0
+      ]
+     ],
+     "m": "paint"
+    }
+   ]
+  },
+  {
+   "id": "tombol",
+   "label": "Tombol",
+   "layer": 1,
+   "pieces": [
+    {
+     "t": "box",
+     "c": [
+      0.009999999999999995,
+      0.046,
+      0
+     ],
+     "size": [
+      0.06,
+      0.012,
+      0.05
+     ],
+     "m": "satin",
+     "r": 0.004
+    },
+    {
+     "t": "box",
+     "c": [
+      0.009999999999999995,
+      0.055,
+      -0.012
+     ],
+     "size": [
+      0.01,
+      0.008,
+      0.01
+     ],
+     "m": "paintDark",
+     "r": 0.002
+    },
+    {
+     "t": "box",
+     "c": [
+      0.009999999999999995,
+      0.055,
+      0.012
+     ],
+     "size": [
+      0.01,
+      0.008,
+      0.01
+     ],
+     "m": "paintDark",
+     "r": 0.002
+    }
+   ]
+  },
+  {
+   "id": "alas",
+   "label": "Alas",
+   "layer": 10,
+   "pieces": [
+    {
+     "t": "lathe",
+     "a": [
+      -0.11,
+      0,
+      0
+     ],
+     "dir": [
+      0,
+      1,
+      0
+     ],
+     "profile": [
+      [
+       0,
+       0
+      ],
+      [
+       0.2,
+       0
+      ],
+      [
+       0.2,
+       0.02
+      ],
+      [
+       0.17,
+       0.04
+      ],
+      [
+       0.024,
+       0.04
+      ],
+      [
+       0.024,
+       0.044
+      ],
+      [
+       0,
+       0.044
+      ]
+     ],
+     "m": "paintDark",
+     "seg": 64
+    }
+   ]
+  }
+ ],
+ "screws": [
+  {
+   "p": [
+    0.072,
+    0.95,
+    0.2
+   ],
+   "n": [
+    1,
+    0,
+    0
+   ],
+   "parent": "kisiDepan"
+  },
+  {
+   "p": [
+    0.072,
+    0.77679,
+    -0.1
+   ],
+   "n": [
+    1,
+    0,
+    0
+   ],
+   "parent": "kisiDepan"
+  },
+  {
+   "p": [
+    0.072,
+    1.12321,
+    -0.1
+   ],
+   "n": [
+    1,
+    0,
+    0
+   ],
+   "parent": "kisiDepan"
+  }
+ ]
+}
+==== 460 project/stories/kipas-angin/VO-elevenlabs-v3.txt
+[curious] Kipas angin ini... isinya ada berapa part?
+
+[confident] Kita bongkar. Baut dulu. Kisi depan, penutup, baling, mur. Kisi belakang, tombol, leher, tiang. Tiang bawah.
+
+[building excitement] Terus bagian dalamnya... dinamo.
+
+[pause] Versi sederhananya aja: tiga belas part.
+
+[impressed] Dan jantungnya di sini: dinamo yang muterin baling-baling.
+
+[relaxed] Sekarang pasang lagi... baut terakhir...
+
+[friendly] Mau kita bongkar apa lagi? Tulis di komen.
+
+==== 5720 project/stories/PANDUAN.md
+# BONGKAR auto-director — panduan
+
+Satu file `stories/<id>/object.json` berisi daftar part sebuah benda. Mesinnya otomatis menentukan:
+- urutan bongkar
+- arah lepas tiap part
+- posisi akhir part (gaya exploded view)
+- uji tembus
+- kamera, hitungan part, label, dan caption
+- naskah VO
+- sinkron ke VO
+- musik dan efek suara
+
+## Alur
+```
+node scripts/make.ts <id> --look      # benda utuh dari 4 sisi (out/<id>/look/_sheet.jpg): sudah mirip aslinya?
+node scripts/make.ts <id> --naskah    # naskah.txt + VO-elevenlabs-v3.txt (urutan sebut = urutan bongkar)
+node scripts/make.ts <id> --plan      # plan.json + laporan (urutan, QA tembus PASS/FAIL, label)
+node scripts/make.ts <id> --stills    # contact sheet 6 momen (out/<id>/stills/_sheet.jpg)
+node scripts/make.ts <id> --preview   # 540×960 30 fps tanpa suara
+# rekam VO dari VO-elevenlabs-v3.txt → simpan sebagai stories/<id>/vo.mp3
+node scripts/make.ts <id> --plan      # ulang: sekarang terkunci ke kata-kata VO (whisper.cpp)
+node scripts/make.ts <id> --final     # 1080×1920 60 fps + musik/SFX (+ VO, musik mengecil di bawah suara)
+```
+Tanpa `vo.mp3`, video dibuat dengan tempo otomatis (±23 detik). Dengan VO, `naskah.txt` harus berisi kata-kata yang
+benar-benar diucapkan (satu kalimat per baris). Kalau whisper.cpp terpasang, waktu tiap kata diambil dari rekaman;
+kalau tidak, naskah diletakkan di atas bagian rekaman yang berbunyi (awal kalimat tepat, kata di dalamnya dibagi rata).
+Landscape 16:9 hanya kalau diminta: tambahkan `--wide` (urutan bongkarnya sama, jadi naskah dan VO yang sama dipakai).
+
+## Benda (bagian atas object.json)
+```json
+{ "id": "rice-cooker", "title": "Rice Cooker", "name": "Rice cooker ini", "kicker": "BONGKAR",
+  "colors": { "paint": "#ece6dc", "paintDark": "#c8102e" },
+  "coreLine": "Dan jantungnya di sini: elemen pemanas sama termostat.",
+  "screws": [ { "p": [0.163, 0.148, 0], "n": [1, 0, 0], "parent": "panel" } ],
+  "parts": [ … ] }
+```
+- `title`: judul di layar. `name`: cara menyebut benda di kalimat pembuka naskah. `kicker`: teks merah kecil di atas
+  judul (default BONGKAR).
+- `colors`: warna cat (`paint`, `paintDark`), `stripe`, plastik hitam (`satin`), aluminium (`alu`), dalam hex.
+- `coreLine`: kalimat naskah saat kamera masuk ke bagian jantung.
+- `screws`: baut kecil yang berputar keluar sebelum part induknya lepas. `p` = posisi kepala baut, `n` = arah keluar,
+  `parent` = id part yang ditahan baut itu. Baut ikut dihitung di counter.
+
+## Dunia & ukuran
+- Satuannya meter. Sumbu y ke atas, dan benda berdiri di lantai (y = 0).
+- Kamera melihat dari sisi +x/+z. Bagian depan benda sebaiknya menghadap +x.
+- Semua koordinat ditulis dalam posisi **benda utuh** (posisi sebelum dibongkar).
+
+## Part
+```json
+{ "id": "tutup", "label": "Tutup", "say": ["tutup"], "layer": 2, "out": [0,1,0], "core": false, "mirror": "z", "pieces": [ … ] }
+```
+- `label`: teks chip di layar. Part tanpa label tetap ikut terbang dan dihitung.
+- `say`: kata yang diucapkan di VO untuk part ini (default = label). Dipakai untuk sinkron.
+- `layer`: urutan kasar, makin kecil makin duluan lepas. Mesin tetap mengecek apakah part itu memang bisa keluar.
+- `out`: arah lepas yang dipercaya, misalnya tutup as yang ditarik lurus dari porosnya. Di arah ini part boleh meluncur keluar sepanjang kedalamannya.
+- `core`: bagian "jantung" benda. Kamera zoom ke sini dan memberi label ronde kedua.
+- `mirror: "z"`: otomatis membuat kembaran di sisi −z dengan id `<id>L`.
+
+## Piece (semua koordinat dunia)
+| t | isi |
+|---|---|
+| `box` | `c` pusat, `size` [x,y,z], `r` radius sudut, `rot` euler [x,y,z] |
+| `rod` | silinder dari `a` ke `b`, jari-jari `r` (`r2` untuk ujung b) |
+| `disc` | `c`, `r`, tebal `w`, `axis` |
+| `torus` | cincin: `c`, `R`, `tube`, `axis` |
+| `ball` | `c`, `r`, `scale` |
+| `tube` | pipa lengkung melewati titik-titik `pts`, jari-jari `r`, `closed` |
+| `slab` | profil samping `outline` [[x,y]…] diekstrusi dari z0 ke z1, `holes` [[x,y,r]] |
+| `slabX` | profil depan [[z,y]…] diekstrusi dari x0 ke x1 |
+| `lathe` | profil putar [[radius, jarak]…] mulai di `a`, sepanjang `dir`. Untuk benda berongga, tulis profilnya sebagai loop tertutup. |
+| `band` | potongan silinder tipis (spakbor): `c`, `r`, lebar `w`, sudut `a0`–`a1` |
+| `spring` | per dari `a` ke `b`: `R`, `wire`, `turns` |
+| `fin` | sirip kotak dengan lubang: `c`, `dir`, `w`, `h`, `bore`, `thick` |
+
+**Material (`m`)**: `paint` dan `paintDark` (warnanya bisa diganti lewat `colors`), `satin` (plastik hitam), `black`, `chrome`, `alu`, `steel`, `rubber`, `lens`, `amber`, `redLens`, `seat`, `stripe`, `gold`, `copper`.
+
+## Aturan supaya tidak tembus
+- Part yang memang terpasang di dalam part lain (as dalam lubang, panci dalam badan) harus **berongga** di bagian yang dimasuki. Pakai `lathe` dengan loop tertutup, atau `holes`.
+- Part yang dipasang tertancap dangkal (kaki pegangan masuk ke tutup) tidak masalah. Mesin mengizinkan tarikan keluar yang pendek.
+- Benda yang saling mengunci akan dilaporkan sebagai `base (stays)` dan tidak ikut dibongkar. Kalau itu bukan part dasar, perbaiki modelnya (beri rongga atau lubang), atau beri `out`.
+- `QA tembus: FAIL` artinya ada part yang menembus part lain. Baca pasangan part di laporannya lalu perbaiki model. Jangan render sebelum hasilnya PASS.
+
+## Contoh
+- `stories/rice-cooker/object.json`: 13 part dan 3 baut. Semua part lepas ke atas sebagai tumpukan, jantungnya elemen pemanas dan termostat.
+- `stories/kipas-angin/object.json`: 11 part dan 3 baut. Kisi, penutup as, baling-baling, dan mur lepas lurus di sepanjang poros. Jari-jari kisi dibuat lewat skrip.
+- Motor bebek di `src/bongkar/` adalah film yang diarahkan manual sebagai patokan kualitas. Film itu tidak memakai object.json.
+
+==== 520 project/stories/rice-cooker/naskah.txt
+Rice Cooker — naskah VO (BONGKAR auto-director)
+Baca santai tapi tegas. Sebut nama part persis seperti di naskah (dipakai untuk sinkron).
+
+Rice cooker ini... isinya ada berapa part?
+Kita bongkar. Baut dulu. Pegangan, katup, tombol, soket. Tutup, panel, tutup dalam, panci. Badan, wadah.
+Terus bagian dalamnya... elemen, sampai termostat.
+Versi sederhananya aja: lima belas part.
+Dan jantungnya di sini: elemen pemanas sama termostat.
+Sekarang pasang lagi... baut terakhir...
+Mau kita bongkar apa lagi? Tulis di komen.
+
+==== 4716 project/stories/rice-cooker/object.json
+{
+  "id": "rice-cooker",
+  "title": "Rice Cooker",
+  "name": "Rice cooker ini",
+  "colors": { "paint": "#ece6dc", "paintDark": "#c8102e" },
+  "coreLine": "Dan jantungnya di sini: elemen pemanas sama termostat.",
+  "parts": [
+    { "id": "pegangan", "label": "Pegangan", "layer": 1, "pieces": [
+      { "t": "tube", "pts": [[-0.055, 0.302, 0], [-0.04, 0.322, 0], [0, 0.33, 0], [0.04, 0.322, 0], [0.055, 0.302, 0]], "r": 0.009, "m": "satin" } ] },
+    { "id": "katup", "label": "Katup uap", "say": ["katup"], "layer": 1, "pieces": [
+      { "t": "rod", "a": [-0.085, 0.296, 0.03], "b": [-0.085, 0.312, 0.03], "r": 0.016, "m": "satin" },
+      { "t": "rod", "a": [-0.085, 0.312, 0.03], "b": [-0.085, 0.316, 0.03], "r": 0.01, "m": "alu" } ] },
+    { "id": "tombol", "label": "Tombol", "layer": 1, "pieces": [
+      { "t": "box", "c": [0.169, 0.12, 0], "size": [0.012, 0.022, 0.034], "m": "paintDark", "r": 0.004 } ] },
+    { "id": "soket", "label": "Soket kabel", "say": ["soket"], "layer": 1, "pieces": [
+      { "t": "box", "c": [-0.159, 0.08, 0], "size": [0.012, 0.04, 0.045], "m": "satin", "r": 0.004 },
+      { "t": "rod", "a": [-0.1655, 0.08, -0.01], "b": [-0.1655, 0.08, 0.01], "r": 0.004, "m": "alu" } ] },
+    { "id": "tutup", "label": "Tutup", "layer": 2, "pieces": [
+      { "t": "lathe", "a": [0, 0.245, 0], "dir": [0, 1, 0], "profile": [[0, 0.064], [0.06, 0.06], [0.11, 0.046], [0.145, 0.022], [0.157, 0.006], [0.158, 0], [0, 0]], "m": "paint" },
+      { "t": "lathe", "a": [0, 0.2445, 0], "dir": [0, 1, 0], "profile": [[0.15, 0], [0.159, 0], [0.159, 0.006], [0.15, 0.006], [0.15, 0]], "m": "satin" } ] },
+    { "id": "panel", "label": "Panel depan", "say": ["panel"], "layer": 2, "pieces": [
+      { "t": "box", "c": [0.158, 0.12, 0], "size": [0.01, 0.075, 0.085], "m": "satin", "r": 0.005 },
+      { "t": "box", "c": [0.1635, 0.15, 0.025], "size": [0.002, 0.008, 0.008], "m": "amber", "r": 0.001 },
+      { "t": "box", "c": [0.1635, 0.15, -0.025], "size": [0.002, 0.008, 0.008], "m": "redLens", "r": 0.001 } ] },
+    { "id": "tutupDalam", "label": "Tutup dalam", "layer": 3, "pieces": [
+      { "t": "lathe", "a": [0, 0.233, 0], "dir": [0, 1, 0], "profile": [[0, 0], [0.13, 0], [0.13, 0.008], [0, 0.008]], "m": "alu" },
+      { "t": "rod", "a": [0, 0.241, 0], "b": [0, 0.246, 0], "r": 0.012, "m": "satin" } ] },
+    { "id": "panci", "label": "Panci", "layer": 4, "pieces": [
+      { "t": "lathe", "a": [0, 0, 0], "dir": [0, 1, 0], "profile": [[0, 0.07], [0.12, 0.07], [0.127, 0.078], [0.127, 0.221], [0.14, 0.224], [0.14, 0.229], [0.121, 0.229], [0.121, 0.077], [0, 0.077]], "m": "alu", "seg": 72 } ] },
+    { "id": "badan", "label": "Badan luar", "say": ["badan"], "layer": 5, "pieces": [
+      { "t": "lathe", "a": [0, 0, 0], "dir": [0, 1, 0], "profile": [[0.146, 0.03], [0.153, 0.03], [0.153, 0.236], [0.148, 0.243], [0.146, 0.243], [0.146, 0.03]], "m": "paint", "seg": 72 } ] },
+    { "id": "wadah", "label": "Wadah dalam", "say": ["wadah"], "layer": 6, "pieces": [
+      { "t": "lathe", "a": [0, 0, 0], "dir": [0, 1, 0], "profile": [[0.132, 0.05], [0.137, 0.05], [0.137, 0.224], [0.132, 0.224], [0.132, 0.05]], "m": "steel", "seg": 72 } ] },
+    { "id": "elemen", "label": "Elemen pemanas", "say": ["elemen"], "core": true, "layer": 7, "pieces": [
+      { "t": "lathe", "a": [0, 0, 0], "dir": [0, 1, 0], "profile": [[0.026, 0.055], [0.118, 0.055], [0.118, 0.069], [0.026, 0.069], [0.026, 0.055]], "m": "steel" },
+      { "t": "torus", "c": [0, 0.049, 0], "R": 0.08, "tube": 0.006, "axis": [0, 1, 0], "m": "copper" } ] },
+    { "id": "termostat", "label": "Termostat", "core": true, "layer": 8, "pieces": [
+      { "t": "rod", "a": [0, 0.04, 0], "b": [0, 0.068, 0], "r": 0.019, "m": "alu" },
+      { "t": "spring", "a": [0, 0.031, 0], "b": [0, 0.05, 0], "R": 0.012, "wire": 0.0025, "turns": 5, "m": "chrome" } ] },
+    { "id": "alas", "label": "Alas", "layer": 9, "pieces": [
+      { "t": "lathe", "a": [0, 0, 0], "dir": [0, 1, 0], "profile": [[0, 0.006], [0.15, 0.006], [0.153, 0.012], [0.153, 0.03], [0, 0.03]], "m": "satin", "seg": 72 },
+      { "t": "disc", "c": [0.1, 0.003, 0.1], "r": 0.016, "w": 0.006, "axis": [0, 1, 0], "m": "rubber" },
+      { "t": "disc", "c": [-0.1, 0.003, 0.1], "r": 0.016, "w": 0.006, "axis": [0, 1, 0], "m": "rubber" },
+      { "t": "disc", "c": [0.1, 0.003, -0.1], "r": 0.016, "w": 0.006, "axis": [0, 1, 0], "m": "rubber" },
+      { "t": "disc", "c": [-0.1, 0.003, -0.1], "r": 0.016, "w": 0.006, "axis": [0, 1, 0], "m": "rubber" } ] }
+  ],
+  "screws": [
+    { "p": [0.1632, 0.148, 0.0], "n": [1, 0, 0], "parent": "panel" },
+    { "p": [0.1632, 0.092, 0.0], "n": [1, 0, 0], "parent": "panel" },
+    { "p": [0, 0.2462, 0], "n": [0, 1, 0], "parent": "tutupDalam" }
+  ]
+}
+
+==== 470 project/stories/rice-cooker/VO-elevenlabs-v3.txt
+[curious] Rice cooker ini... isinya ada berapa part?
+
+[confident] Kita bongkar. Baut dulu. Pegangan, katup, tombol, soket. Tutup, panel, tutup dalam, panci. Badan, wadah.
+
+[building excitement] Terus bagian dalamnya... elemen, sampai termostat.
+
+[pause] Versi sederhananya aja: lima belas part.
+
+[impressed] Dan jantungnya di sini: elemen pemanas sama termostat.
+
+[relaxed] Sekarang pasang lagi... baut terakhir...
+
+[friendly] Mau kita bongkar apa lagi? Tulis di komen.
+
+==== 484 project/tsconfig.json
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "Preserve",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "noEmit": true,
+    "lib": ["ES2022", "DOM"],
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "noUnusedLocals": true,
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true
+  },
+  "include": ["src", "scripts/*.ts"],
+  "exclude": ["remotion.config.ts"]
+}

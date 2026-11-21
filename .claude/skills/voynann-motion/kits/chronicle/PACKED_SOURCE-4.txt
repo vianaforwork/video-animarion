@@ -1,0 +1,3158 @@
+VOYNANN Motion - packed source files of this folder. Do not edit by hand.
+The skill upload in the Claude app accepts at most 200 files, so the source files are packed here.
+`node <skill folder>/new-project.mjs <project folder> --kit=<style>` unpacks them into the project.
+Format: per file one line with four '=' signs, the byte length and the path, then exactly that many bytes.
+
+==== 5512 project/FORMAT-NASKAH.md
+# Format naskah — CHRONICLE (style #14, nama kerja)
+
+Dokumenter sejarah 3D: lokasi 3D hangat, tokoh siluet hitam (beberapa ber-outline warna), peta relief 3D dengan
+rute/cincin, tanggal besar, angka bergulir, kutipan sumber, caption per kata. Kirim naskah dengan format di bawah
+(+ VO .mp3 kalau sudah ada). Semua tag **opsional**: naskah polos juga jalan, visualnya aku tentukan sendiri.
+
+## Cara pakai (sutradara otomatis)
+1. Buat folder `stories/<nama>/`, isi `naskah.txt` (format di bawah). Opsional: `vo.mp3` (VO asli dari ElevenLabs dll).
+2. `node scripts/make.mjs <nama> --plan` → cek rencana adegan (set, mood, tokoh, peta, teks) + peringatan.
+3. `node scripts/make.mjs <nama> --preview` → video 540×960. Tanpa VO, tambah `--tts` untuk narasi sementara.
+4. `node scripts/make.mjs <nama> --final` → 1080×1920 60 fps. Ada `vo.mp3` → caption & potongan adegan ikut VO per kata (whisper).
+
+Yang ditentukan otomatis dari naskah: lokasi (10 set), waktu & cahaya, kostum dari peran (serdadu/perwira ikut zaman
+dari tahun di naskah), pose dari kata kerja, posisi tokoh, kamera per kalimat (wide → medium → close → low), peta
+(titik, rute, cincin, letusan), semua teks layar, kartu penutup + daftar sumber.
+
+## Aturan dasar
+1. **Satu baris = satu kalimat VO.** Itu yang dibaca narator dan jadi caption.
+2. **`*kata*` = kata kunci** → tebal & terang di caption. 1–2 per kalimat.
+3. **Baris `[TAG …]` = arahan visual**, tidak dibaca narator. Berlaku untuk kalimat-kalimat di bawahnya sampai tag berikutnya.
+4. **Fakta wajib bersumber.** Tulis `[SUMBER …]` di adegannya; semua sumber dikumpulkan jadi kartu penutup.
+5. Durasi ideal 45–150 detik. Patokan: ±2,5 kata per detik VO.
+
+## Tag yang tersedia
+| Tag | Isi | Contoh |
+|---|---|---|
+| `[PETA]` | wilayah, titik, gerakan | `[PETA] Sumbawa → Batavia, cincin suara dari Tambora` |
+| `[RUTE]` | perjalanan di peta (urut) | `[RUTE] Makassar → Banten → Jawa Timur, kapal` |
+| `[TEMPAT]` | lokasi + waktu + suasana | `[TEMPAT] benteng pelabuhan Batavia, senja` |
+| `TOKOH:` (di baris TEMPAT) | siapa, berapa, pakaian, aksi, warna | `TOKOH: 4 serdadu (shako, senapan), 1 perwira teropong = netral` |
+| `[TANGGAL]` | stempel tanggal besar | `[TANGGAL] SUMBAWA / APRIL 1815` |
+| `[NAMA]` | nama + peran (tokoh, kerajaan, tempat) | `[NAMA] Kerajaan Tambora — Sumbawa, 10 April 1815` |
+| `[ANGKA]` | angka bergulir + satuan + label | `[ANGKA] 4.300 → 2.850 m, Tinggi Tambora` |
+| `[SUMBER]` | kutipan/parafrase di atas layar | `[SUMBER] Dentuman dikira tembakan meriam — Memoir Raffles, 1830` |
+| `[PENUTUP]` | judul lanjutan, seri, kredit | `[PENUTUP] Bersambung: Tahun Tanpa Musim Panas` |
+
+## Warna outline tokoh (konsisten satu film)
+- **emas** = tokoh utama · **cyan** = sekutu · **merah** = musuh/bahaya · **ungu** = korban/duka · **gading** = netral
+- Tanpa warna = figuran (siluet hitam polos).
+
+## Kostum siluet yang sudah ada
+Tutup kepala: peci, destar (ikat kepala lancip), caping, shako (serdadu Eropa), bicorne (perwira), sorban, sanggul, rambut panjang.
+Pakaian: sarung, kain panjang, jubah, jas serdadu, celana. Barang: senapan, tombak, keris, obor, teropong, bendera, dayung,
+buntelan di punggung/kepala. Pose: berdiri, tolak pinggang, siaga senjata, menunjuk, meneropong, mengepal, jongkok/sujud,
+jalan, lari, menjunjung beban. Anak-anak = tokoh skala kecil.
+
+## Kata kunci lokasi → set
+makam/kuburan/nisan → **makam** · pendopo/istana/keraton/balairung/karesidenan → **balai** (interior, pintu terang) ·
+kamar/ruang/penjara/pengasingan → **kamar** (meja + lilin) · geladak/di atas kapal → **dek** · pelabuhan/dermaga → **pelabuhan** ·
+benteng → **benteng** (tembok + gerbang + bendera) · hutan/bukit/gua/sungai → **hutan** · desa/kampung/rumah → **desa** ·
+pantai/pesisir → **pantai** · medan/perang/kemah/lapangan/alun-alun → **medan**.
+Waktu: pagi (berkabut), siang, senja/sore, malam (bulan), terbakar/api, gunung meletus. Efek: kabut, lilin, terbakar.
+
+## Kata kerja tokoh → pose
+lari/kabur/mengungsi, jalan/datang, berdiri, tolak pinggang, menunjuk, meneropong, berdoa, sujud/menyembah, berlutut,
+duduk/bersila, menulis, berjaga, berbaris, mengangkat senjata/menyerang, berunding/berbicara, menatap, menjunjung beban.
+
+## Lokasi yang sudah ada (selain itu dibangun per film)
+Peta relief Nusantara (garis pantai asli Natural Earth, gunung api), benteng/pelabuhan + kapal layar, desa rumah panggung +
+kelapa, gunung meletus (abu, lava, petir), laut senja.
+
+## Contoh (demo "Dentuman dari Timur")
+```
+JUDUL: Dentuman dari Timur
+SUARA: pria, berat, tenang
+
+[PETA] dekat Tambora lalu mundur sampai Batavia terlihat, cincin suara dari Tambora
+[TANGGAL] SUMBAWA / APRIL 1815
+April 1815, *Tambora* meledak.
+Dentumannya terdengar sampai *Batavia*.
+
+[TEMPAT] benteng pelabuhan Batavia, senja, kapal berlabuh. TOKOH: 4 serdadu (shako, senapan), 1 perwira teropong = gading
+[SUMBER] Dentuman itu dikira tembakan meriam; pasukan sempat disiagakan — Memoir Sir T. S. Raffles, 1830
+Orang di sana mengira itu *tembakan meriam*.
+Pasukan pun disiagakan mencari *musuh*.
+
+[TEMPAT] desa rumah panggung, malam, gunung meletus di belakang. TOKOH: warga lari membawa buntelan (3 = ungu)
+[NAMA] Kerajaan Tambora — Sumbawa, malam 10 April 1815
+Padahal di Sumbawa, *Kerajaan Tambora*
+lenyap ditelan *abu dan api*.
+
+[PETA] dekat Tambora, puncak runtuh jadi kaldera
+[ANGKA] 4.300 → 2.850 m, Tinggi Tambora
+Gunungnya kehilangan lebih dari *1.400 meter*.
+Dan dunia baru mulai *merasakannya*.
+```
+
+==== 6911 project/NOTES.md
+# VOYNANN CHRONICLE — engine notes (developer reference)
+
+3D history documentary: warm low-poly 3D locations, people as flat black 3D silhouettes (some with a coloured
+contour), a real-coastline 3D relief map with sound rings / routes / pins, big date stamps, rolling counters, source
+citations and word-by-word captions. Original look inspired by the genre of silhouette history explainers (no copied
+art, channel branding, fonts or layout). Script format for buyers: FORMAT-NASKAH.md.
+
+Remotion 4.0.539 + React Three Fiber 9.8.2 + three 0.186.1; Node ≥ 22.18 (scripts import the TypeScript director).
+
+## Commands
+- `node scripts/make.mjs <id> --plan` → out/<id>/plan.json (scenes, sets, cast, maps, overlays, warnings)
+- `node scripts/make.mjs <id> --stills 3s,14s,24s` → out/<id>/stills/_sheet.jpg
+- `node scripts/make.mjs <id> --preview` (540×960 @ 30) / `--final` (1080×1920 @ 60 + `scripts/qa.mjs` → out/<id>/qa/)
+- voice: stories/<id>/vo.mp3|wav|m4a, else `--tts` (macOS Damayanti) or `--silent`; `--no-music` skips the score
+- `npm run smoke` (plan + 4 stills of stories/diponegoro → out/smoke/_sheet.jpg), `npm run look:cast` (Lookdev comp)
+
+## Kit — src/kits/chronicle/
+- `outline.ts` — SilhouetteOutlinePass: ID-mask render (figures = colour+id, everything else depth only via
+  colorWrite off, transparent FX hidden) → contour drawn outside each figure, only where that figure is nearer than
+  the pixel (works over background, over farther figures, hidden behind walls). Width ~3.4 px @1080, faint halo.
+- `Stage.tsx` — Look = key (shadow box per shot) + hemi + optional fill + FogExp2 + sky dome (gradient, sun, stars)
+  + bloom + grade (split tone, S-curve, vignette, grain). `mixLook` for flashes / light changes.
+- `looks.ts` — GOLDEN, DUSK, INFERNO, MAPROOM + contour colours INK (hero amber, ally cyan, foe crimson, grief violet, neutral ivory).
+- `Figure.tsx` — posable silhouette person (joint hierarchy of simple solids), hats/wear/items/loads, POSES
+  (stand, akimbo, shoulderArms, point, telescope, raiseFist, carryHead, kneel, lookUp) + `gait(phase, run)`.
+  Skirt = cloth tube that follows the legs (sarong, kain, robe, coat flare).
+- `relief.ts` / `Relief.tsx` — buildRelief(region): rasterise Natural Earth land (src/data/map-nusantara.json, 50 m +
+  10 m detail box) → blurred copies → height (plateau + masked ridged noise + volcano list) × vex → one grid mesh with
+  vertex colours + painted sea texture. `Strato` = volcano whose summit collapses into a caldera (skirt tucked under
+  terrain via heightAtWorld). `Ring` = expanding sound/shock ring (land hides it by depth).
+- `fx.tsx` — AshColumn (instanced lit-from-below puffs), Embers, Bolt (volcanic lightning), Birds.
+- `props.tsx` — Water (fresnel + glitter), Rampart, Cannon, Lantern, Flag, Ship, Stilthouse, Palm, Volcano (lava emissive), Ground.
+- `Overlay.tsx` — Captions (`pace()` until real VO timings), DateStamp, NameTag, Counter, Cite, MapPin, RouteLine.
+- `cam.ts` — camAt (C1 keys), handheld drift + impact shake, `project()` for overlay pins.
+
+## Map data
+src/data/map-nusantara.json = Natural Earth (public domain) ne_50m_land for lon 86–160 / lat −48–48 plus a ne_10m_land
+detail box (lon 112.6–119, lat −13 – −3.5), baked to Mercator "map px" (3200 px wide). Only land outlines are kept.
+
+## Auto-director (script → film)
+- `src/director/` pure TS (node + browser): `parse.ts` naskah → scenes/tags/lines; `gazetteer.ts` ~200 places + map volcanoes;
+  `plan.ts` timing (paced 2.55 w/s or VO word times), set/mood/fx rules, cast parsing (role → costume by era, verb → action,
+  "= warna" → contour), beats per line, overlays, one relief region for all maps; `types.ts`.
+- `src/film/`: `sets.tsx` 10 generic sets with anchors (lead/second/target/rows/guards/path/seat), `stage.ts` stager +
+  camera grammar, `PlaceScene.tsx`, `MapScene.tsx` (close / fit / rings / route-follow camera), `ChronicleFilm.tsx`
+  (+ end card, overlay layout), `fxextra.tsx` (Flames, Shafts, Candle).
+- `scripts/make.mjs`: VO → word timings with whisper.cpp when installed (WHISPER_CLI / WHISPER_MODEL, PATH, Homebrew),
+  then every line start that whisper put inside a pause is snapped to where the voice comes back (whisper starts run
+  0.3–0.6 s early); without whisper the script lines are laid onto the VO's speech runs (ffmpeg silencedetect, DP over
+  pauses with spoken-length estimates — numbers read as Indonesian words) and the words paced in speech time.
+- Comps `ChroniclePreview` / `ChronicleFinal` take `{ plan }` props (calculateMetadata sets duration); Studio default =
+  src/generated/plan.json (last planned story).
+- Example stories: stories/diponegoro (9 scenes, Java War) and stories/tambora (5 scenes, 1815 eruption), each with
+  naskah.txt and the ElevenLabs texts used for their voice-overs (VO-elevenlabs*.txt; recordings not included).
+
+## Sound — scripts/sound.mjs (run by make.mjs; `--no-music` skips)
+Original synth, no samples: additive string pads (chord per bar, per-scene cue from kind/set/mood), low drone, pelog-like
+metallophone motif (D Eb F A Bb, inharmonic bars), frame drums for fire/route/forest cues, gongs on dates + end, impacts on
+sound rings / counters, whooshes on cuts, ambiences (wind, sea, fire, forest birds, room tone, rumble). Music ducks ~9 dB
+under the voice envelope. Output public/stories/<id>/mix.wav at −14 LUFS / −1.5 dBTP + stems out/<id>/{music,sfx}_stem.wav.
+
+## Gotchas
+- Vertical 9:16 frame is narrow: at fov 48 only ~2.5 m of width at 5 m depth → stage people in depth, not in a row.
+- Black figures vanish against unlit walls → every set needs a lit background behind the people (sky, lit stone, fog glow) or contours.
+- Map stays north-up (Indonesian viewers read Java horizontally); show wide spans by pulling far up (D≈1600, fog ≈ 0.0002).
+- Lathe UVs: v = 0 at the first profile point → set `flipY = false` on painted canvases.
+- Volcano glow caps read as "UFO" discs: keep crater interior below the rim, no emissive cap.
+
+## 16:9 (`--wide`, only when the buyer asks)
+- `node scripts/make.mjs <id> --wide [--stills …|--preview|--final]` → comps ChroniclePreviewWide (960×540 @ 30) /
+  ChronicleFinalWide (1920×1080 @ 60), out/<id>/<id>_1920x1080_60fps.mp4, stills in out/<id>/stills-wide, QA in
+  out/<id>/qa-wide (qa.mjs reads the size from the file name; sheets 4×6 at 480 px).
+- Overlay.tsx: `Frame width height` picks a 1920×1080 layout canvas (CanvasCtx / useCanvas); every overlay default has a
+  landscape position (captions H−150, 6 words per chunk; date / counter / name near the top; name lower third H−330).
+- PlaceScene: landscape narrows the vertical fov by WIDE_FOV 0.84 (tan space) so shots show ~2× the portrait width, not 3×.
+- ChronicleFilm: on 16:9 map scenes a [SUMBER] citation sits above the captions (H−290) — it can meet high pins.
+
+==== 1379 project/package.json
+{
+  "name": "voynann-chronicle-project",
+  "version": "1.0.0",
+  "private": true,
+  "description": "VOYNANN Motion CHRONICLE project (Remotion + React Three Fiber): naskah + voice-over → 3D silhouette history documentary, 9:16.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "scripts": {
+    "dev": "remotion studio",
+    "typecheck": "tsc --noEmit",
+    "check-env": "node scripts/check-env.mjs",
+    "make": "node scripts/make.mjs",
+    "qa": "node scripts/qa.mjs",
+    "smoke": "node scripts/make.mjs diponegoro --plan && node scripts/stills.mjs out/smoke 3s,13s,19s,26s ChroniclePreview 1 out/diponegoro/plan.json",
+    "look:cast": "node scripts/stills.mjs out/look/cast 1s,2s Lookdev",
+    "stills": "node scripts/stills.mjs",
+    "qa:video": "node scripts/qa-video.mjs",
+    "qa:scene": "node scripts/qa-scene.mjs"
+  },
+  "dependencies": {
+    "@react-three/fiber": "9.8.2",
+    "@remotion/cli": "4.0.539",
+    "@remotion/google-fonts": "4.0.539",
+    "@remotion/three": "4.0.539",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "remotion": "4.0.539",
+    "three": "0.186.1",
+    "three-mesh-bvh": "0.9.16"
+  },
+  "devDependencies": {
+    "@remotion/bundler": "4.0.539",
+    "@remotion/renderer": "4.0.539",
+    "@types/react": "19.2.7",
+    "@types/three": "0.186.0",
+    "typescript": "5.9.3"
+  },
+  "overrides": {
+    "zod": "4.6.7"
+  }
+}
+
+==== 4484 project/public/fonts/OFL-anton.txt
+Copyright 2020 The Anton Project Authors (https://github.com/googlefonts/AntonFont.git)
+
+This Font Software is licensed under the SIL Open Font License, Version 1.1.
+This license is copied below, and is also available with a FAQ at:
+http://scripts.sil.org/OFL
+
+
+-----------------------------------------------------------
+SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007
+-----------------------------------------------------------
+
+PREAMBLE
+The goals of the Open Font License (OFL) are to stimulate worldwide
+development of collaborative font projects, to support the font creation
+efforts of academic and linguistic communities, and to provide a free and
+open framework in which fonts may be shared and improved in partnership
+with others.
+
+The OFL allows the licensed fonts to be used, studied, modified and
+redistributed freely as long as they are not sold by themselves. The
+fonts, including any derivative works, can be bundled, embedded, 
+redistributed and/or sold with any software provided that any reserved
+names are not used by derivative works. The fonts and derivatives,
+however, cannot be released under any other type of license. The
+requirement for fonts to remain under this license does not apply
+to any document created using the fonts or their derivatives.
+
+DEFINITIONS
+"Font Software" refers to the set of files released by the Copyright
+Holder(s) under this license and clearly marked as such. This may
+include source files, build scripts and documentation.
+
+"Reserved Font Name" refers to any names specified as such after the
+copyright statement(s).
+
+"Original Version" refers to the collection of Font Software components as
+distributed by the Copyright Holder(s).
+
+"Modified Version" refers to any derivative made by adding to, deleting,
+or substituting -- in part or in whole -- any of the components of the
+Original Version, by changing formats or by porting the Font Software to a
+new environment.
+
+"Author" refers to any designer, engineer, programmer, technical
+writer or other person who contributed to the Font Software.
+
+PERMISSION & CONDITIONS
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of the Font Software, to use, study, copy, merge, embed, modify,
+redistribute, and sell modified and unmodified copies of the Font
+Software, subject to the following conditions:
+
+1) Neither the Font Software nor any of its individual components,
+in Original or Modified Versions, may be sold by itself.
+
+2) Original or Modified Versions of the Font Software may be bundled,
+redistributed and/or sold with any software, provided that each copy
+contains the above copyright notice and this license. These can be
+included either as stand-alone text files, human-readable headers or
+in the appropriate machine-readable metadata fields within text or
+binary files as long as those fields can be easily viewed by the user.
+
+3) No Modified Version of the Font Software may use the Reserved Font
+Name(s) unless explicit written permission is granted by the corresponding
+Copyright Holder. This restriction only applies to the primary font name as
+presented to the users.
+
+4) The name(s) of the Copyright Holder(s) or the Author(s) of the Font
+Software shall not be used to promote, endorse or advertise any
+Modified Version, except to acknowledge the contribution(s) of the
+Copyright Holder(s) and the Author(s) or with their explicit written
+permission.
+
+5) The Font Software, modified or unmodified, in part or in whole,
+must be distributed entirely under this license, and must not be
+distributed under any other license. The requirement for fonts to
+remain under this license does not apply to any document created
+using the Font Software.
+
+TERMINATION
+This license becomes null and void if any of the above conditions are
+not met.
+
+DISCLAIMER
+THE FONT SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT
+OF COPYRIGHT, PATENT, TRADEMARK, OR OTHER RIGHT. IN NO EVENT SHALL THE
+COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+INCLUDING ANY GENERAL, SPECIAL, INDIRECT, INCIDENTAL, OR CONSEQUENTIAL
+DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
+OTHER DEALINGS IN THE FONT SOFTWARE.
+
+==== 4377 project/public/fonts/OFL-barlow-condensed.txt
+Copyright 2017 The Barlow Project Authors (https://github.com/jpt/barlow)
+
+This Font Software is licensed under the SIL Open Font License, Version 1.1.
+This license is copied below, and is also available with a FAQ at:
+http://scripts.sil.org/OFL
+
+
+-----------------------------------------------------------
+SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007
+-----------------------------------------------------------
+
+PREAMBLE
+The goals of the Open Font License (OFL) are to stimulate worldwide
+development of collaborative font projects, to support the font creation
+efforts of academic and linguistic communities, and to provide a free and
+open framework in which fonts may be shared and improved in partnership
+with others.
+
+The OFL allows the licensed fonts to be used, studied, modified and
+redistributed freely as long as they are not sold by themselves. The
+fonts, including any derivative works, can be bundled, embedded, 
+redistributed and/or sold with any software provided that any reserved
+names are not used by derivative works. The fonts and derivatives,
+however, cannot be released under any other type of license. The
+requirement for fonts to remain under this license does not apply
+to any document created using the fonts or their derivatives.
+
+DEFINITIONS
+"Font Software" refers to the set of files released by the Copyright
+Holder(s) under this license and clearly marked as such. This may
+include source files, build scripts and documentation.
+
+"Reserved Font Name" refers to any names specified as such after the
+copyright statement(s).
+
+"Original Version" refers to the collection of Font Software components as
+distributed by the Copyright Holder(s).
+
+"Modified Version" refers to any derivative made by adding to, deleting,
+or substituting -- in part or in whole -- any of the components of the
+Original Version, by changing formats or by porting the Font Software to a
+new environment.
+
+"Author" refers to any designer, engineer, programmer, technical
+writer or other person who contributed to the Font Software.
+
+PERMISSION & CONDITIONS
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of the Font Software, to use, study, copy, merge, embed, modify,
+redistribute, and sell modified and unmodified copies of the Font
+Software, subject to the following conditions:
+
+1) Neither the Font Software nor any of its individual components,
+in Original or Modified Versions, may be sold by itself.
+
+2) Original or Modified Versions of the Font Software may be bundled,
+redistributed and/or sold with any software, provided that each copy
+contains the above copyright notice and this license. These can be
+included either as stand-alone text files, human-readable headers or
+in the appropriate machine-readable metadata fields within text or
+binary files as long as those fields can be easily viewed by the user.
+
+3) No Modified Version of the Font Software may use the Reserved Font
+Name(s) unless explicit written permission is granted by the corresponding
+Copyright Holder. This restriction only applies to the primary font name as
+presented to the users.
+
+4) The name(s) of the Copyright Holder(s) or the Author(s) of the Font
+Software shall not be used to promote, endorse or advertise any
+Modified Version, except to acknowledge the contribution(s) of the
+Copyright Holder(s) and the Author(s) or with their explicit written
+permission.
+
+5) The Font Software, modified or unmodified, in part or in whole,
+must be distributed entirely under this license, and must not be
+distributed under any other license. The requirement for fonts to
+remain under this license does not apply to any document created
+using the Font Software.
+
+TERMINATION
+This license becomes null and void if any of the above conditions are
+not met.
+
+DISCLAIMER
+THE FONT SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT
+OF COPYRIGHT, PATENT, TRADEMARK, OR OTHER RIGHT. IN NO EVENT SHALL THE
+COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+INCLUDING ANY GENERAL, SPECIAL, INDIRECT, INCIDENTAL, OR CONSEQUENTIAL
+DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
+OTHER DEALINGS IN THE FONT SOFTWARE.
+
+==== 4405 project/public/fonts/OFL-instrument-serif.txt
+Copyright 2022 The Instrument Serif Project Authors (https://github.com/Instrument/instrument-serif)
+
+This Font Software is licensed under the SIL Open Font License, Version 1.1.
+This license is copied below, and is also available with a FAQ at:
+https://scripts.sil.org/OFL
+
+
+-----------------------------------------------------------
+SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007
+-----------------------------------------------------------
+
+PREAMBLE
+The goals of the Open Font License (OFL) are to stimulate worldwide
+development of collaborative font projects, to support the font creation
+efforts of academic and linguistic communities, and to provide a free and
+open framework in which fonts may be shared and improved in partnership
+with others.
+
+The OFL allows the licensed fonts to be used, studied, modified and
+redistributed freely as long as they are not sold by themselves. The
+fonts, including any derivative works, can be bundled, embedded, 
+redistributed and/or sold with any software provided that any reserved
+names are not used by derivative works. The fonts and derivatives,
+however, cannot be released under any other type of license. The
+requirement for fonts to remain under this license does not apply
+to any document created using the fonts or their derivatives.
+
+DEFINITIONS
+"Font Software" refers to the set of files released by the Copyright
+Holder(s) under this license and clearly marked as such. This may
+include source files, build scripts and documentation.
+
+"Reserved Font Name" refers to any names specified as such after the
+copyright statement(s).
+
+"Original Version" refers to the collection of Font Software components as
+distributed by the Copyright Holder(s).
+
+"Modified Version" refers to any derivative made by adding to, deleting,
+or substituting -- in part or in whole -- any of the components of the
+Original Version, by changing formats or by porting the Font Software to a
+new environment.
+
+"Author" refers to any designer, engineer, programmer, technical
+writer or other person who contributed to the Font Software.
+
+PERMISSION & CONDITIONS
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of the Font Software, to use, study, copy, merge, embed, modify,
+redistribute, and sell modified and unmodified copies of the Font
+Software, subject to the following conditions:
+
+1) Neither the Font Software nor any of its individual components,
+in Original or Modified Versions, may be sold by itself.
+
+2) Original or Modified Versions of the Font Software may be bundled,
+redistributed and/or sold with any software, provided that each copy
+contains the above copyright notice and this license. These can be
+included either as stand-alone text files, human-readable headers or
+in the appropriate machine-readable metadata fields within text or
+binary files as long as those fields can be easily viewed by the user.
+
+3) No Modified Version of the Font Software may use the Reserved Font
+Name(s) unless explicit written permission is granted by the corresponding
+Copyright Holder. This restriction only applies to the primary font name as
+presented to the users.
+
+4) The name(s) of the Copyright Holder(s) or the Author(s) of the Font
+Software shall not be used to promote, endorse or advertise any
+Modified Version, except to acknowledge the contribution(s) of the
+Copyright Holder(s) and the Author(s) or with their explicit written
+permission.
+
+5) The Font Software, modified or unmodified, in part or in whole,
+must be distributed entirely under this license, and must not be
+distributed under any other license. The requirement for fonts to
+remain under this license does not apply to any document created
+using the Font Software.
+
+TERMINATION
+This license becomes null and void if any of the above conditions are
+not met.
+
+DISCLAIMER
+THE FONT SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT
+OF COPYRIGHT, PATENT, TRADEMARK, OR OTHER RIGHT. IN NO EVENT SHALL THE
+COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+INCLUDING ANY GENERAL, SPECIAL, INDIRECT, INCIDENTAL, OR CONSEQUENTIAL
+DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
+OTHER DEALINGS IN THE FONT SOFTWARE.
+
+==== 4402 project/public/fonts/OFL-plus-jakarta-sans.txt
+Copyright 2020 The Plus Jakarta Sans Project Authors (https://github.com/tokotype/PlusJakartaSans)
+
+This Font Software is licensed under the SIL Open Font License, Version 1.1.
+This license is copied below, and is also available with a FAQ at:
+http://scripts.sil.org/OFL
+
+
+-----------------------------------------------------------
+SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007
+-----------------------------------------------------------
+
+PREAMBLE
+The goals of the Open Font License (OFL) are to stimulate worldwide
+development of collaborative font projects, to support the font creation
+efforts of academic and linguistic communities, and to provide a free and
+open framework in which fonts may be shared and improved in partnership
+with others.
+
+The OFL allows the licensed fonts to be used, studied, modified and
+redistributed freely as long as they are not sold by themselves. The
+fonts, including any derivative works, can be bundled, embedded, 
+redistributed and/or sold with any software provided that any reserved
+names are not used by derivative works. The fonts and derivatives,
+however, cannot be released under any other type of license. The
+requirement for fonts to remain under this license does not apply
+to any document created using the fonts or their derivatives.
+
+DEFINITIONS
+"Font Software" refers to the set of files released by the Copyright
+Holder(s) under this license and clearly marked as such. This may
+include source files, build scripts and documentation.
+
+"Reserved Font Name" refers to any names specified as such after the
+copyright statement(s).
+
+"Original Version" refers to the collection of Font Software components as
+distributed by the Copyright Holder(s).
+
+"Modified Version" refers to any derivative made by adding to, deleting,
+or substituting -- in part or in whole -- any of the components of the
+Original Version, by changing formats or by porting the Font Software to a
+new environment.
+
+"Author" refers to any designer, engineer, programmer, technical
+writer or other person who contributed to the Font Software.
+
+PERMISSION & CONDITIONS
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of the Font Software, to use, study, copy, merge, embed, modify,
+redistribute, and sell modified and unmodified copies of the Font
+Software, subject to the following conditions:
+
+1) Neither the Font Software nor any of its individual components,
+in Original or Modified Versions, may be sold by itself.
+
+2) Original or Modified Versions of the Font Software may be bundled,
+redistributed and/or sold with any software, provided that each copy
+contains the above copyright notice and this license. These can be
+included either as stand-alone text files, human-readable headers or
+in the appropriate machine-readable metadata fields within text or
+binary files as long as those fields can be easily viewed by the user.
+
+3) No Modified Version of the Font Software may use the Reserved Font
+Name(s) unless explicit written permission is granted by the corresponding
+Copyright Holder. This restriction only applies to the primary font name as
+presented to the users.
+
+4) The name(s) of the Copyright Holder(s) or the Author(s) of the Font
+Software shall not be used to promote, endorse or advertise any
+Modified Version, except to acknowledge the contribution(s) of the
+Copyright Holder(s) and the Author(s) or with their explicit written
+permission.
+
+5) The Font Software, modified or unmodified, in part or in whole,
+must be distributed entirely under this license, and must not be
+distributed under any other license. The requirement for fonts to
+remain under this license does not apply to any document created
+using the Font Software.
+
+TERMINATION
+This license becomes null and void if any of the above conditions are
+not met.
+
+DISCLAIMER
+THE FONT SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT
+OF COPYRIGHT, PATENT, TRADEMARK, OR OTHER RIGHT. IN NO EVENT SHALL THE
+COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+INCLUDING ANY GENERAL, SPECIAL, INDIRECT, INCIDENTAL, OR CONSEQUENTIAL
+DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
+OTHER DEALINGS IN THE FONT SOFTWARE.
+
+==== 971 project/README.md
+# CHRONICLE project
+
+Made from the VOYNANN Motion skill, style CHRONICLE: a 3D silhouette history documentary (portrait 9:16; landscape 16:9 with `--wide` when asked). Per video
+you write `stories/<id>/naskah.txt` (format: FORMAT-NASKAH.md) and put the voice-over at `stories/<id>/vo.mp3`;
+`node scripts/make.mjs <id> --final` does the rest (plan → original score + SFX → render → QA).
+
+- `src/director` — naskah → film plan (parser, gazetteer of places, planner: sets, moods, cast, camera beats, overlays)
+- `src/film` — the generic renderer: 10 sets, the stager + camera grammar, the relief-map scenes, overlays
+- `src/kits/chronicle` — silhouette figures + contour pass, stage/looks, relief map, FX, props, overlay components
+- `src/data/map-nusantara.json` — Natural Earth land outlines (public domain) · `scripts/` — make, sound, QA, stills
+
+Docs: the skill folder's `references/chronicle.md`, `references/chronicle/` and `kits/chronicle/KIT.md`.
+
+==== 664 project/remotion.config.ts
+// See all configuration options: https://remotion.dev/docs/config
+import fs from "node:fs";
+import { Config } from "@remotion/cli/config";
+
+Config.setVideoImageFormat("jpeg");
+Config.setJpegQuality(95);
+Config.setOverwriteOutput(true);
+// WebGL film: GPU-backed ANGLE path in headless Chrome, or software "swangle" when scripts/gl.mjs found
+// no usable GPU on this computer (remembered in .gl-mode). The GL env var overrides both.
+type GL = Parameters<typeof Config.setChromiumOpenGlRenderer>[0];
+const gl = (process.env.GL || (fs.existsSync(".gl-mode") ? fs.readFileSync(".gl-mode", "utf8").trim() : "") || "angle") as GL;
+Config.setChromiumOpenGlRenderer(gl);
+
+==== 3973 project/scripts/check-env.mjs
+// Environment check before any VOYNANN render. Prints a plain report and exits non-zero only
+// when something required is missing. Installs nothing.
+//   node scripts/check-env.mjs
+
+import { execFileSync, spawnSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+
+const rows = [];
+const add = (name, ok, detail, required = true) => rows.push({ name, ok, detail, required });
+
+const [maj, min] = process.versions.node.split(".").map(Number);
+// 22.18+ runs the .ts director directly (type stripping on by default)
+add("Node.js ≥ 22.18", maj > 22 || (maj === 22 && min >= 18), `found ${process.versions.node}`);
+
+const has = (cmd, args = ["-version"]) => {
+  const r = spawnSync(cmd, args, { encoding: "utf8" });
+  return r.status === 0 ? (r.stdout || r.stderr).split("\n")[0].trim() : null;
+};
+const npmV = has(process.platform === "win32" ? "npm.cmd" : "npm", ["-v"]);
+add("npm", !!npmV, npmV ?? "not found");
+const ff = has("ffmpeg");
+add("ffmpeg (audio analysis, contact sheets, final audio)", !!ff, ff ? ff.slice(0, 60) : "not found — rendering still works, VO analysis/delivery does not");
+const fp = has("ffprobe");
+add("ffprobe", !!fp, fp ? "ok" : "not found");
+
+// optional: real word timings (whisper.cpp) and offline narration (macOS `say`)
+const whisperCli = [process.env.WHISPER_CLI, spawnSync("sh", ["-c", "command -v whisper-cli"], { encoding: "utf8" }).stdout?.trim(), "/opt/homebrew/bin/whisper-cli", "/usr/local/bin/whisper-cli", `${os.homedir()}/whisper.cpp/build/bin/whisper-cli`].filter(Boolean).find((c) => fs.existsSync(c));
+const modelDirs = [`${os.homedir()}/.cache/whisper.cpp`, "models", "/opt/homebrew/share/whisper-cpp", `${os.homedir()}/whisper.cpp/models`];
+const whisperModel = (process.env.WHISPER_MODEL && fs.existsSync(process.env.WHISPER_MODEL) && process.env.WHISPER_MODEL) || modelDirs.flatMap((d) => (fs.existsSync(d) ? fs.readdirSync(d).filter((f) => f.endsWith(".bin")).map((f) => `${d}/${f}`) : []))[0];
+add("whisper.cpp (exact word timing from any VO)", !!(whisperCli && whisperModel), whisperCli && whisperModel ? `${whisperCli} + ${whisperModel.split("/").pop()}` : `${whisperCli ? "model" : "whisper-cli"} not found (set WHISPER_CLI / WHISPER_MODEL if it is installed elsewhere) — without it the naskah lines are laid onto the VO's pauses (line starts ≈ ±0.5 s)`, false);
+const say = process.platform === "darwin" && spawnSync("say", ["-v", "?"], { encoding: "utf8" }).stdout?.includes("id_ID");
+add("Offline Indonesian narration (macOS say, voice Damayanti)", !!say, say ? "available (used only with the user's approval)" : "not available — bring a recorded VO", false);
+
+let freeGb = null;
+try {
+  const st = fs.statfsSync(process.cwd());
+  freeGb = (st.bavail * st.bsize) / 1e9;
+} catch {}
+add("Free disk ≥ 5 GB", freeGb === null ? true : freeGb >= 5, freeGb === null ? "unknown" : `${freeGb.toFixed(1)} GB free`);
+add("RAM", true, `${(os.totalmem() / 1e9).toFixed(0)} GB total`, false);
+
+const plat = { darwin: "macOS (recommended)", win32: "Windows: run npm run smoke to confirm 3D rendering", linux: "Linux: run npm run smoke; without a GPU use GL=swangle (slow)" }[process.platform] ?? process.platform;
+add("Platform", true, plat, false);
+
+const deps = fs.existsSync("node_modules/remotion") && fs.existsSync("node_modules/three");
+add("Project packages installed (npm ci)", deps, deps ? "ok" : "run: npm ci", false);
+let browser = false;
+try {
+  browser = fs.readdirSync("node_modules/.remotion").some((d) => d.includes("chrome"));
+} catch {}
+add("Remotion headless browser downloaded", browser, browser ? "ok" : "downloads automatically on first render (~100–200 MB)", false);
+
+for (const r of rows) console.log(`${r.ok ? "✓" : r.required ? "✗" : "!"} ${r.name}: ${r.detail}`);
+const missing = rows.filter((r) => r.required && !r.ok);
+console.log(missing.length ? `\n${missing.length} required item(s) missing.` : "\nReady.");
+process.exit(missing.length ? 1 : 0);
+
+==== 1469 project/scripts/gl.mjs
+// WebGL renderer choice for headless Chrome, shared by every render script.
+// Order: GL env var > the project's .gl-mode file > "angle" (GPU). When the GPU path cannot create a WebGL
+// context (no GPU, some VMs/drivers), the scripts switch to "swangle" (software, much slower) automatically
+// and remember it in .gl-mode, so later renders and `npx remotion render` (remotion.config.ts) use it too.
+import fs from "node:fs";
+
+const FILE = ".gl-mode";
+
+// When the GPU path crashes, Remotion may reject an internal "Target closed" promise that nothing awaits.
+// That rejection is noise from the dead tab, not a render failure; real errors still reach the caller.
+export const tolerateClosedTargets = () =>
+  process.on("unhandledRejection", (e) => {
+    if (/Target closed/i.test(String(e?.message ?? e))) return;
+    console.error(e);
+    process.exit(1);
+  });
+
+export const glMode = () =>
+  process.env.GL || (fs.existsSync(FILE) ? fs.readFileSync(FILE, "utf8").trim() : "") || "angle";
+
+export const isWebGLError = (e) =>
+  /webgl|WebGLRenderer|GL context|BindToCurrentSequence|GL_VENDOR = Disabled/i.test(String(e?.stack ?? e?.message ?? e));
+
+export const switchToSoftware = () => {
+  fs.writeFileSync(FILE, "swangle\n");
+  console.log(
+    "\n! GPU 3D rendering is not available on this computer: switched to software rendering (GL=swangle, much slower)." +
+      "\n  Saved in .gl-mode; delete that file to try the GPU again.\n",
+  );
+  return "swangle";
+};
+
+==== 7177 project/scripts/qa.mjs
+#!/usr/bin/env node
+// CHRONICLE automated QA for a final film (run by `make.mjs <id> --final`, or alone):
+//   node scripts/qa.mjs <story-id> [file.mp4]
+// Checks the MP4 against its plan (out/<id>/plan.json) and writes out/<id>/qa/: report.json, 1 fps contact sheets
+// (sheet_01.jpg …) and REVIEW.md — the visual review the director fills in after looking at every sheet.
+// Exit code 1 when a check fails.
+
+import fs from "node:fs";
+import path from "node:path";
+import { execFileSync, spawnSync } from "node:child_process";
+
+const [id, fileArg] = process.argv.slice(2);
+if (!id) { console.error("usage: node scripts/qa.mjs <story-id> [file.mp4]"); process.exit(2); }
+const out = path.resolve("out", id);
+const plan = JSON.parse(fs.readFileSync(path.join(out, "plan.json"), "utf8"));
+const file = fileArg ?? path.join(out, `${id}_1080x1920_60fps.mp4`);
+if (!fs.existsSync(file)) { console.error(`no film at ${file} — run: node scripts/make.mjs ${id} --final`); process.exit(2); }
+const wide = /1920x1080|960x540/.test(path.basename(file));
+const [EW, EH] = wide ? [1920, 1080] : [1080, 1920];
+const qa = path.join(out, wide ? "qa-wide" : "qa");
+fs.rmSync(qa, { recursive: true, force: true });
+fs.mkdirSync(qa, { recursive: true });
+
+const checks = [];
+const check = (name, ok, detail) => checks.push({ name, ok: !!ok, detail });
+const probe = JSON.parse(execFileSync("ffprobe", ["-v", "error", "-show_streams", "-show_format", "-of", "json", file]).toString());
+const v = probe.streams.find((s) => s.codec_type === "video");
+const a = probe.streams.find((s) => s.codec_type === "audio");
+const dur = parseFloat(probe.format.duration);
+const [fn, fd] = (v?.r_frame_rate ?? "0/1").split("/").map(Number);
+const fps = fn / fd;
+
+check(`video ${EW}×${EH}`, v && v.width === EW && v.height === EH, v ? `${v.width}×${v.height} ${v.codec_name}` : "no video stream");
+check("60 fps", Math.abs(fps - 60) < 0.01, `${fps.toFixed(2)} fps`);
+check("duration matches the plan", Math.abs(dur - plan.duration) < 0.25, `${dur.toFixed(2)} s (plan ${plan.duration} s)`);
+check("audio stream", !!a, a ? `${a.codec_name} ${a.sample_rate} Hz ${a.channels} ch` : "no audio — was the mix made?");
+
+// loudness + true peak
+let lufs = NaN, tp = NaN;
+if (a) {
+  const r = spawnSync("ffmpeg", ["-v", "info", "-i", file, "-af", "ebur128=peak=true:framelog=quiet", "-f", "null", "-"], { encoding: "utf8" }).stderr ?? "";
+  const sum = r.slice(r.lastIndexOf("Summary:"));
+  lufs = parseFloat(/I:\s+(-?[\d.]+) LUFS/.exec(sum)?.[1] ?? "NaN");
+  tp = parseFloat(/Peak:\s+(-?[\d.]+) dBFS/.exec(sum)?.[1] ?? "NaN");
+}
+check("loudness −14 ±1.5 LUFS", Math.abs(lufs + 14) <= 1.5, `${lufs} LUFS`);
+check("true peak ≤ −1 dBTP", tp <= -1.0, `${tp} dBTP`);
+
+// per-frame brightness and frame-to-frame change (small scale, one pass each)
+const stat = (filter) => {
+  const f = path.join(qa, `_${Math.random().toString(36).slice(2)}.txt`);
+  execFileSync("ffmpeg", ["-v", "error", "-i", file, "-vf", `${filter},metadata=print:key=lavfi.signalstats.YAVG:file=${f}`, "-f", "null", "-"]);
+  const vals = [...fs.readFileSync(f, "utf8").matchAll(/YAVG=([\d.]+)/g)].map((m) => +m[1]);
+  fs.rmSync(f);
+  return vals;
+};
+const Y = stat("scale=216:-2,signalstats");
+const D = stat("scale=216:-2,tblend=all_mode=difference,signalstats");
+const endA = plan.scenes.find((s) => s.kind === "end")?.a ?? Infinity;
+const tOf = (i) => i / fps;
+const black = Y.map((y, i) => [i, y]).filter(([i, y]) => y < 10 && tOf(i) < endA - 0.1);
+const white = Y.map((y, i) => [i, y]).filter(([, y]) => y > 235);
+check("no black frames (before the end card)", black.length === 0, black.length ? `${black.length} frames, first at ${tOf(black[0][0]).toFixed(2)} s` : "0");
+check("no white frames", white.length === 0, white.length ? `${white.length} frames, first at ${tOf(white[0][0]).toFixed(2)} s` : "0");
+// cuts the plan intends: scene starts and camera beats; a spike anywhere else is a flicker / pop
+const cuts = new Set();
+for (const s of plan.scenes) { cuts.add(Math.round(s.a * fps)); for (const b of s.place?.beats ?? []) cuts.add(Math.round(b.a * fps)); }
+const near = (f) => [...cuts].some((c) => Math.abs(c - f) <= 3);
+const spikes = D.map((d, i) => [i + 1, d]).filter(([f, d]) => d > 10 && !near(f) && f < Y.length - 2);
+check("no flicker / pops outside planned cuts", spikes.length === 0, spikes.length ? spikes.slice(0, 6).map(([f, d]) => `${tOf(f).toFixed(2)} s (Δ${d.toFixed(0)})`).join(", ") : "0");
+
+// captions: every word timed, in order, inside the film
+const W = plan.words ?? [];
+const bad = W.filter((w, i) => !Number.isFinite(w.t) || w.t < 0 || w.t > plan.duration || (i && w.t < W[i - 1].t - 1e-6));
+check("every caption word timed in order", W.length > 0 && bad.length === 0, `${W.length} words, ${bad.length} bad`);
+check("plan has no warnings", (plan.warnings ?? []).length === 0, (plan.warnings ?? []).join(" | ") || "none");
+
+// contact sheets: 1 frame per second, 6 × 4 per page (cell n of page p = second (p−1)·24 + n−1; no text burn-in,
+// because many ffmpeg builds lack drawtext)
+const per = 24;
+const pages = Math.ceil(dur / per);
+for (let p = 0; p < pages; p++) {
+  execFileSync("ffmpeg", ["-v", "error", "-y", "-ss", String(p * per), "-t", String(per), "-i", file, "-vf",
+    wide ? "fps=1,scale=480:-2,tile=4x6:padding=4:color=black" : "fps=1,scale=240:-2,tile=6x4:padding=4:color=black", "-frames:v", "1",
+    path.join(qa, `sheet_${String(p + 1).padStart(2, "0")}.jpg`)]);
+}
+
+const report = { id, file, duration: dur, lufs, truePeak: tp, checks, passed: checks.filter((c) => c.ok).length, total: checks.length };
+fs.writeFileSync(path.join(qa, "report.json"), JSON.stringify(report, null, 2));
+
+// review template: one row per scene, filled by the director after looking
+const rows = plan.scenes.map((s, i) => {
+  const what = s.kind === "map" ? `peta ${s.map.mode}: ${s.map.points.map((p) => p.name).join(" → ")}` : s.kind === "end" ? "kartu penutup + sumber" : `${s.place.set}/${s.place.mood}: ${s.place.groups.map((g) => `${g.count}× ${g.name} (${g.action})`).join(", ")}`;
+  return `| ${i + 1} | ${s.a.toFixed(1)}–${s.b.toFixed(1)} | ${what} |  |  |`;
+});
+fs.writeFileSync(path.join(qa, "REVIEW.md"), `# REVIEW — ${plan.title || id}
+
+STATUS: PENDING
+
+Look at every contact sheet (sheet_*.jpg: one frame per second, 24 per page, read left→right, top→bottom; cell n of
+page p = second (p−1)·24 + n−1) and at the film around every scene cut before setting STATUS to PASS.
+Per scene check: the people read as black silhouettes against light (none lost in a dark wall), contours only on
+the named roles, nobody cut by the frame edge in the key shot, no figure through a wall / prop, map pins + labels
+legible and inside the frame, text never over a face, captions match the voice, nothing flickers.
+
+| # | waktu (s) | adegan | OK? | catatan |
+|---|---|---|---|---|
+${rows.join("\n")}
+
+Automated: ${report.passed}/${report.total} checks passed (report.json).
+`);
+
+for (const c of checks) console.log(`${c.ok ? "✓" : "✗"} ${c.name}: ${c.detail}`);
+console.log(`QA ${report.passed}/${report.total} → ${qa}`);
+process.exit(report.passed === report.total ? 0 : 1);
+
+==== 3754 project/scripts/stills.mjs
+// Visual QA: bundle once, render chosen frames of a composition, tile them into a contact sheet.
+//   node scripts/stills.mjs <outDir> <frame,frame,...> <compositionId> [scale]
+// Frames may be given in seconds with an "s" suffix (e.g. 4.5s), using the composition's fps.
+
+import path from "node:path";
+import fs from "node:fs";
+import { execFileSync } from "node:child_process";
+import { bundle } from "@remotion/bundler";
+import { openBrowser, renderStill, selectComposition } from "@remotion/renderer";
+import { glMode, isWebGLError, switchToSoftware, tolerateClosedTargets } from "./gl.mjs";
+
+tolerateClosedTargets();
+
+const [outDir, list, id, scaleArg = "1", propsFile] = process.argv.slice(2);
+const inputProps = propsFile ? JSON.parse(fs.readFileSync(propsFile, "utf8")) : {};
+if (!outDir || !list || !id) {
+  console.error("usage: node scripts/stills.mjs <outDir> <frame,frame,...|4.5s,...> <compositionId> [scale]");
+  process.exit(1);
+}
+fs.mkdirSync(outDir, { recursive: true });
+
+const serveUrl = await bundle({ entryPoint: path.resolve("src/index.ts") });
+// bundles are ~50 MB each; never leave them in the temp dir, even when a render throws
+const cleanup = () => fs.rmSync(serveUrl, { recursive: true, force: true });
+process.on("exit", cleanup);
+const composition = await selectComposition({ serveUrl, id, inputProps: propsFile ? { plan: inputProps } : {} });
+const frames = list.split(",").map((t) => (t.endsWith("s") ? Math.round(parseFloat(t) * composition.fps) : parseInt(t, 10)));
+const files = [];
+const renderAll = async (gl) => {
+  // one browser for all stills: WebGL contexts are expensive to create and tear down
+  const puppeteerInstance = await openBrowser("chrome", { chromiumOptions: { gl } });
+  try {
+    files.length = 0;
+    for (const frame of frames) {
+      const output = path.join(outDir, `f${String(frame).padStart(4, "0")}.png`);
+      await renderStill({ composition, serveUrl, output, frame, inputProps: propsFile ? { plan: inputProps } : {}, scale: Number(scaleArg), chromiumOptions: { gl }, timeoutInMilliseconds: 180000, puppeteerInstance });
+      files.push(output);
+      process.stdout.write(`${frame} `);
+    }
+  } finally {
+    // after a WebGL crash the tab may already be gone; closing must not hide the original error
+    await puppeteerInstance.close({ silent: true }).catch(() => {});
+  }
+};
+const gl = glMode();
+try {
+  await renderAll(gl);
+} catch (e) {
+  if (gl === "swangle" || !isWebGLError(e)) throw e;
+  await renderAll(switchToSoftware());
+}
+console.log();
+cleanup();
+
+// contact sheet (needs ffmpeg; skipped if missing)
+try {
+  const w = Math.round(composition.width * Number(scaleArg)), h = Math.round(composition.height * Number(scaleArg));
+  const cols = Math.min(4, files.length), rows = Math.ceil(files.length / cols), n = cols * rows;
+  if (n > 1) {
+    const inputs = files.flatMap((f) => ["-i", f]);
+    const pads = Array.from({ length: n - files.length }, () => ["-f", "lavfi", "-i", `color=c=black:s=${w}x${h}`]).flat();
+    const filter =
+      Array.from({ length: n }, (_, i) => `[${i}:v]scale=${w}:${h},setsar=1[v${i}]`).join(";") + ";" +
+      Array.from({ length: n }, (_, i) => `[v${i}]`).join("") +
+      `xstack=inputs=${n}:layout=` + Array.from({ length: n }, (_, i) => `${(i % cols) * w}_${Math.floor(i / cols) * h}`).join("|") +
+      `,scale='min(2160,iw)':-2`;
+    execFileSync("ffmpeg", ["-v", "error", "-y", ...inputs, ...pads, "-filter_complex", filter, "-frames:v", "1", path.join(outDir, "_sheet.jpg")]);
+    console.log(`sheet: ${path.join(outDir, "_sheet.jpg")}`);
+  }
+} catch {
+  console.log("(contact sheet skipped: ffmpeg not available)");
+}
+// a render that failed on the GPU path leaves its timeout timer behind; do not wait for it
+process.exit(0);
+
+==== 885 project/src/core/camera/director.ts
+// Camera director: a spherical rig (target, azimuth, elevation, distance, fov) sampled from
+// C1 keyframe tracks, so moves hand over without kinks and nothing depends on wall time.
+
+import { sample, type Key } from "../motion/track.ts";
+import type { Shot } from "../render/Post.tsx";
+
+const D = Math.PI / 180;
+
+/** Track channels: [targetX, targetY, targetZ, azimuthDeg, elevationDeg, distance, fovDeg]. */
+export type RigKeys = Key[];
+
+export const shotAt = (rig: RigKeys, frame: number, lens: { aperture: number; maxBlur: number; exposure: number }): Shot => {
+  const [tx, ty, tz, az, el, dist, fov] = sample(rig, frame);
+  const pos: [number, number, number] = [
+    tx + dist * Math.cos(el * D) * Math.sin(az * D),
+    ty + dist * Math.sin(el * D),
+    tz + dist * Math.cos(el * D) * Math.cos(az * D),
+  ];
+  return { pos, target: [tx, ty, tz], fov, focus: dist, ...lens };
+};
+
+==== 351 project/src/core/film/frame.ts
+// Frame size and the two render presets every VOYNANN 3D film ships with.
+
+export const WIDTH = 1080;
+export const HEIGHT = 1920;
+
+/** Preview for approval, and the final deliverable (both 9:16). */
+export const PRESETS = {
+  preview: { width: WIDTH / 2, height: HEIGHT / 2, fps: 30 },
+  final: { width: WIDTH, height: HEIGHT, fps: 60 },
+} as const;
+
+==== 583 project/src/core/film/Posed.tsx
+import React, { useLayoutEffect, useRef } from "react";
+import type { Group, Matrix4 } from "three";
+
+/** A group placed by a world matrix computed for this frame (pose objects from pure state, never by mutation over time). */
+export const Posed: React.FC<{ matrix: Matrix4; children: React.ReactNode }> = ({ matrix, children }) => {
+  const ref = useRef<Group>(null);
+  useLayoutEffect(() => {
+    ref.current!.matrix.copy(matrix);
+    ref.current!.matrixWorldNeedsUpdate = true;
+  });
+  return (
+    <group ref={ref} matrixAutoUpdate={false}>
+      {children}
+    </group>
+  );
+};
+
+==== 2445 project/src/core/film/Stage3D.tsx
+// The standard VOYNANN 3D frame: waits for the web font (canvases and overlays use it), mounts a
+// Remotion-synchronised ThreeCanvas with the settings every demo used (PCF shadows, dpr 1, MSAA in
+// the post chain instead of the canvas), then draws the 2D overlay and an optional fade on top.
+// Everything inside must be a pure function of the frame (see SKILL.md › Determinism).
+
+import React, { useEffect, useState } from "react";
+import { AbsoluteFill, continueRender, delayRender, useVideoConfig } from "remotion";
+import { ThreeCanvas } from "@remotion/three";
+import { QaProbe, qaNoOverlay } from "../qa/scene-qa.tsx";
+import { PCFShadowMap } from "three";
+import { fontReady } from "../type/fonts.ts";
+
+export const Stage3D: React.FC<{
+  /** The 3D scene (studio/sky, objects, CameraRig, Post). */
+  children: React.ReactNode;
+  /** 2D layer laid out at 1080 × 1920 and scaled to the render size. */
+  overlay?: (scale: number) => React.ReactNode;
+  /** Page colour behind the canvas (visible only before the first frame paints). */
+  background?: string;
+  /** 0…1 fade to `fadeColor` over everything. */
+  fade?: number;
+  fadeColor?: string;
+}> = ({ children, overlay, background = "#e9e6e0", fade = 0, fadeColor = "#ece9e3" }) => {
+  const { width, height } = useVideoConfig();
+  const [handle] = useState(() => delayRender("font"));
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    fontReady().then(() => {
+      setReady(true);
+      continueRender(handle);
+    });
+  }, [handle]);
+  return (
+    <AbsoluteFill style={{ backgroundColor: background }}>
+      {ready ? (
+        <>
+          <ThreeCanvas
+            width={width}
+            height={height}
+            shadows={{ type: PCFShadowMap }}
+            dpr={1}
+            gl={{ antialias: false, preserveDrawingBuffer: true, powerPreference: "high-performance" }}
+            camera={{ fov: 24, near: 1, far: 900, position: [0, 0, 60] }}
+          >
+            {children}
+            <QaProbe />
+          </ThreeCanvas>
+          {overlay && !qaNoOverlay() ? (
+            <div style={{ position: "absolute", inset: 0, width: 1080, height: 1920, transform: `scale(${width / 1080})`, transformOrigin: "0 0" }}>
+              {overlay(width / 1080)}
+            </div>
+          ) : null}
+        </>
+      ) : null}
+      {fade > 0 ? <AbsoluteFill style={{ backgroundColor: fadeColor, opacity: fade }} /> : null}
+    </AbsoluteFill>
+  );
+};
+
+==== 605 project/src/core/film/Voiceover.tsx
+// Voice-over placed `offset` seconds into the film (file under public/). Used for Studio preview
+// and non-muted renders; final delivery muxes the same file at the same offset with
+// scripts/render-final.mjs, so both paths agree.
+
+import React from "react";
+import { Html5Audio, Sequence, staticFile, useVideoConfig } from "remotion";
+
+export const Voiceover: React.FC<{ src: string; offset: number }> = ({ src, offset }) => {
+  const { fps } = useVideoConfig();
+  return (
+    <Sequence from={Math.round(offset * fps)} layout="none">
+      <Html5Audio src={staticFile(src)} />
+    </Sequence>
+  );
+};
+
+==== 675 project/src/core/geometry/lathe.ts
+// Turned parts (lenses, knobs, dials, bottles, columns): a profile of [radius, height] pairs
+// revolved around +y. Profiles are unit-sized — scale the mesh to the part's real size, so one
+// geometry can be reused and resized every frame without rebuilding.
+
+import { LatheGeometry, Vector2 } from "three";
+
+export const lathe = (profile: [number, number][], segments = 64) => new LatheGeometry(profile.map(([r, y]) => new Vector2(Math.max(r, 1e-4), y)), segments);
+
+/** A common one: barrel with a bevelled lip and a recessed face (lens, knob, dial). */
+export const BARREL: [number, number][] = [[0, 0], [1, 0], [1, 0.9], [0.92, 1], [0.7, 1], [0.66, 0.96], [0, 0.96]];
+
+==== 8208 project/src/core/geometry/slab.ts
+// Parametric rounded slab with a FIXED topology: every parameter change only moves
+// vertices, so a slab can morph continuously from a 1990s brick to a 2026 glass slab
+// (or a sensor orb) with no remeshing, popping or flicker.
+//
+// Surface = outline (front view, rounded rectangle with per-corner radius) × side profile
+// (front cap → front fillet → side wall with optional seam groove → back fillet → back cap).
+// The outline is offset inward by the profile inset; corners use the exact inward offset of
+// a rounded corner (radius rc − inset, mitred once the inset exceeds rc), so the same
+// generator makes sharp-cornered modules, rounded phones and — with rc = hw = hh and
+// fillets = d/2 — a sphere. Normals are analytic (sharp edges stay sharp).
+
+import { BufferAttribute, BufferGeometry, Sphere, Vector3 } from "three";
+
+export type SlabSpec = {
+  /** Half width (x), half height (y), full depth (z). */
+  hw: number;
+  hh: number;
+  d: number;
+  /** Outline corner radius, or per corner [TR, TL, BL, BR]. */
+  rc: number | readonly [number, number, number, number];
+  /** Front / back edge fillet radii. */
+  reF: number;
+  reB: number;
+  /** Groove around the side wall (z of its centre, depth, width). */
+  seamZ?: number;
+  seamDepth?: number;
+  seamWidth?: number;
+  /** Dome height of the front / back caps. */
+  bulgeF?: number;
+  bulgeB?: number;
+  /** Offset added to the shader-space position attribute `tfPos` (e.g. a module's place in its parent). */
+  origin?: readonly [number, number];
+  /** Planar UV: u = (x + origin.x) / uvSize.x + 0.5. */
+  uvSize?: readonly [number, number];
+};
+
+const N_CORNER = 10; // segments per corner arc
+const CAP_RHO = [0, 0.38, 0.68, 0.88]; // cap rings (edge ring comes from the fillet)
+const N_FILLET = 8;
+const GROOVE_U = [0.85, 0.5, 0.18, 0, -0.18, -0.5, -0.85];
+
+const P = 4 * (N_CORNER + 1);
+type Row = { kind: "capF" | "filletF" | "wall" | "filletB" | "capB"; a: number };
+const ROWS: Row[] = [
+  ...CAP_RHO.map((a) => ({ kind: "capF" as const, a })),
+  ...Array.from({ length: N_FILLET + 1 }, (_, k) => ({ kind: "filletF" as const, a: (k / N_FILLET) * (Math.PI / 2) })),
+  ...GROOVE_U.map((a) => ({ kind: "wall" as const, a })),
+  ...Array.from({ length: N_FILLET + 1 }, (_, k) => ({ kind: "filletB" as const, a: ((N_FILLET - k) / N_FILLET) * (Math.PI / 2) })),
+  ...[...CAP_RHO].reverse().map((a) => ({ kind: "capB" as const, a })),
+];
+const V = ROWS.length;
+/** Band index ranges per material group: front cap, side (fillets + wall), back cap. */
+const FRONT_END = CAP_RHO.length; // bands [0, FRONT_END)
+const BACK_START = V - 1 - CAP_RHO.length; // bands [BACK_START, V-1)
+
+const SIGN: [number, number][] = [
+  [1, 1],
+  [-1, 1],
+  [-1, -1],
+  [1, -1],
+];
+
+/** Outline point at inset i for sample c (0..P-1); writes [x, y, nx, ny]. */
+const outline = (hw: number, hh: number, rc: readonly number[], i: number, c: number, out: number[]) => {
+  const k = Math.floor(c / (N_CORNER + 1));
+  const j = c % (N_CORNER + 1);
+  const th = (k + j / N_CORNER) * (Math.PI / 2);
+  const m = Math.max(rc[k], i);
+  const r = Math.max(rc[k] - i, 0);
+  const [sx, sy] = SIGN[k];
+  const cx = sx * Math.max(hw - m, 0);
+  const cy = sy * Math.max(hh - m, 0);
+  out[0] = cx + r * Math.cos(th);
+  out[1] = cy + r * Math.sin(th);
+  out[2] = Math.cos(th);
+  out[3] = Math.sin(th);
+};
+
+export class Slab {
+  readonly geometry: BufferGeometry;
+  private pos: Float32Array;
+  private nor: Float32Array;
+  private uv: Float32Array;
+  private tf: Float32Array;
+
+  constructor() {
+    const n = P * V;
+    this.pos = new Float32Array(n * 3);
+    this.nor = new Float32Array(n * 3);
+    this.uv = new Float32Array(n * 2);
+    this.tf = new Float32Array(n * 3);
+    const idx: number[] = [];
+    for (let r = 0; r < V - 1; r++)
+      for (let c = 0; c < P; c++) {
+        const c1 = (c + 1) % P;
+        const a = r * P + c, b = (r + 1) * P + c, d = (r + 1) * P + c1, e = r * P + c1;
+        idx.push(a, b, d, a, d, e);
+      }
+    const g = new BufferGeometry();
+    g.setIndex(idx);
+    g.setAttribute("position", new BufferAttribute(this.pos, 3));
+    g.setAttribute("normal", new BufferAttribute(this.nor, 3));
+    g.setAttribute("uv", new BufferAttribute(this.uv, 2));
+    g.setAttribute("tfPos", new BufferAttribute(this.tf, 3));
+    const per = P * 6;
+    g.addGroup(0, FRONT_END * per, 0);
+    g.addGroup(FRONT_END * per, (BACK_START - FRONT_END) * per, 1);
+    g.addGroup(BACK_START * per, (V - 1 - BACK_START) * per, 2);
+    g.boundingSphere = new Sphere(new Vector3(), 1);
+    this.geometry = g;
+  }
+
+  update(s: SlabSpec) {
+    const rc = typeof s.rc === "number" ? [s.rc, s.rc, s.rc, s.rc] : [...s.rc];
+    const half = s.d / 2;
+    // fillets can never exceed the depth or the outline
+    let reF = Math.max(0, Math.min(s.reF, s.d, s.hw, s.hh));
+    let reB = Math.max(0, Math.min(s.reB, s.d, s.hw, s.hh));
+    if (reF + reB > s.d) {
+      const k = s.d / (reF + reB);
+      reF *= k;
+      reB *= k;
+    }
+    for (let k = 0; k < 4; k++) rc[k] = Math.max(0, Math.min(rc[k], s.hw, s.hh));
+    const zTop = half - reF, zBot = -half + reB;
+    const wallLen = zTop - zBot;
+    const w = Math.min(s.seamWidth ?? 0.1, wallLen * 0.9);
+    const seamZ = Math.min(zTop - w / 2, Math.max(zBot + w / 2, s.seamZ ?? (zTop + zBot) / 2));
+    const g = Math.min(s.seamDepth ?? 0, Math.min(s.hw, s.hh) * 0.5);
+    const bF = s.bulgeF ?? 0, bB = s.bulgeB ?? 0;
+    const [ox, oy] = s.origin ?? [0, 0];
+    const [us, vs] = s.uvSize ?? [2 * s.hw, 2 * s.hh];
+    const o = [0, 0, 0, 0];
+    const edge = [0, 0, 0, 0];
+
+    for (let r = 0; r < V; r++) {
+      const row = ROWS[r];
+      for (let c = 0; c < P; c++) {
+        let x: number, y: number, z: number, nx: number, ny: number, nz: number;
+        if (row.kind === "capF" || row.kind === "capB") {
+          const front = row.kind === "capF";
+          outline(s.hw, s.hh, rc, front ? reF : reB, c, edge);
+          const rho = row.a;
+          x = edge[0] * rho;
+          y = edge[1] * rho;
+          const R2 = Math.max(edge[0] * edge[0] + edge[1] * edge[1], 1e-9);
+          const b = front ? bF : bB;
+          z = front ? half + b * (1 - rho * rho) : -half - b * (1 - rho * rho);
+          // dome slope: n ∝ (2b·r/R² · radial, ±1)
+          const k = (2 * b) / R2;
+          nx = k * x;
+          ny = k * y;
+          nz = front ? 1 : -1;
+        } else {
+          let inset: number, nOut: number, nZ: number;
+          if (row.kind === "filletF") {
+            inset = reF * (1 - Math.sin(row.a));
+            z = zTop + reF * Math.cos(row.a);
+            nOut = Math.sin(row.a);
+            nZ = Math.cos(row.a);
+          } else if (row.kind === "filletB") {
+            inset = reB * (1 - Math.sin(row.a));
+            z = zBot - reB * Math.cos(row.a);
+            nOut = Math.sin(row.a);
+            nZ = -Math.cos(row.a);
+          } else {
+            const u = row.a;
+            z = seamZ + (w / 2) * u;
+            inset = (g * (1 + Math.cos(Math.PI * u))) / 2;
+            const slope = w > 1e-6 ? (-g * Math.PI * Math.sin(Math.PI * u)) / w : 0;
+            const l = Math.hypot(1, slope);
+            nOut = 1 / l;
+            nZ = slope / l;
+          }
+          outline(s.hw, s.hh, rc, inset, c, o);
+          x = o[0];
+          y = o[1];
+          nx = nOut * o[2];
+          ny = nOut * o[3];
+          nz = nZ;
+        }
+        const l = Math.hypot(nx, ny, nz) || 1;
+        const v = r * P + c;
+        this.pos[v * 3] = x;
+        this.pos[v * 3 + 1] = y;
+        this.pos[v * 3 + 2] = z;
+        this.nor[v * 3] = nx / l;
+        this.nor[v * 3 + 1] = ny / l;
+        this.nor[v * 3 + 2] = nz / l;
+        this.uv[v * 2] = (x + ox) / us + 0.5;
+        this.uv[v * 2 + 1] = (y + oy) / vs + 0.5;
+        this.tf[v * 3] = x + ox;
+        this.tf[v * 3 + 1] = y + oy;
+        this.tf[v * 3 + 2] = z;
+      }
+    }
+    const g0 = this.geometry;
+    g0.attributes.position.needsUpdate = true;
+    g0.attributes.normal.needsUpdate = true;
+    g0.attributes.uv.needsUpdate = true;
+    g0.attributes.tfPos.needsUpdate = true;
+    g0.boundingSphere!.radius = Math.hypot(s.hw, s.hh, half + Math.max(bF, bB)) + 0.01;
+  }
+
+  dispose() {
+    this.geometry.dispose();
+  }
+}
+
+==== 1730 project/src/core/materials/presets.ts
+// Starting points for physically plausible materials (MatState, see sweep.ts). Tune per brief —
+// these are recipes that read correctly under the bright studio, not a finished look.
+// Use them with `plainMaterial()` + `applyMat()` (any mesh) or `sweepMaterial()` (Slab meshes).
+
+import { mat, type MatState } from "./sweep.ts";
+
+export const MATERIALS = {
+  /** Injection-moulded plastic, slightly satin (1990s devices, appliances). */
+  mattePlastic: (color = "#2b2a28") => mat(color, { rough: 0.62, sheen: 0.35 }),
+  /** Glossy painted plastic or lacquer. */
+  glossPlastic: (color = "#f1efea") => mat(color, { rough: 0.32, cc: 0.6, ccRough: 0.12 }),
+  /** Brushed / anodised aluminium. */
+  aluminium: (color = "#c7c9cc") => mat(color, { rough: 0.33, metal: 1, aniso: 0.5 }),
+  /** Polished steel or chrome trim (use sparingly: needs the softbox reflections to read). */
+  polishedMetal: (color = "#d9dadc") => mat(color, { rough: 0.12, metal: 1 }),
+  /** Pearl ceramic / premium matte-gloss shell. */
+  ceramic: (color = "#efece6") => mat(color, { rough: 0.45, cc: 0.6, ccRough: 0.2 }),
+  /** Dark cover glass over a display. */
+  darkGlass: (color = "#0b0d10") => mat(color, { rough: 0.05, cc: 1, ccRough: 0.02 }),
+  /** Rubber, silicone, gaskets. */
+  rubber: (color = "#2a2b2d") => mat(color, { rough: 0.85 }),
+  /** Matte card / paper (PAPERWORLD-like; add edge thickness in geometry). */
+  paper: (color = "#f2ebdd") => mat(color, { rough: 0.95, sheen: 0.15 }),
+  /** Raw architectural concrete. */
+  concrete: (color = "#c9c5bd") => mat(color, { rough: 0.9 }),
+  /** Natural oiled wood. */
+  wood: (color = "#b88a5c") => mat(color, { rough: 0.6, sheen: 0.2 }),
+} satisfies Record<string, (c?: string) => MatState>;
+
+==== 971 project/src/core/materials/softboxOnly.ts
+// Studio lighting rule (from PRECISION): highlights come only from area lights (the HDR
+// light stage). Punctual lights keep their diffuse contribution and shadows, but their
+// specular lobes — the tell-tale CG pinpoint on clearcoat — are removed from the shader.
+
+import { ShaderChunk, type WebGLProgramParametersWithUniforms } from "three";
+
+const SRC = ShaderChunk.lights_physical_pars_fragment;
+const PATCHED = SRC.replace("clearcoatSpecularDirect += ccIrradiance", "clearcoatSpecularDirect += 0.0 * ccIrradiance").replace(
+  "reflectedLight.directSpecular += irradiance * specularBRDF",
+  "reflectedLight.directSpecular += 0.0 * irradiance * specularBRDF",
+);
+if (PATCHED === SRC) console.warn("softboxOnly: shader chunk changed; punctual specular not removed");
+
+export const patchSoftboxOnly = (shader: WebGLProgramParametersWithUniforms) => {
+  shader.fragmentShader = shader.fragmentShader.replace("#include <lights_physical_pars_fragment>", PATCHED);
+};
+
+==== 5657 project/src/core/materials/sweep.ts
+// Material transitions. A material's look is a plain number tree (MatState), so it can live
+// inside era definitions. Between eras the change does not fade globally: a front travels
+// along the object (top → bottom in object space, attribute `tfPos`) and each fragment flips
+// from state A to state B as it passes, with a thin light band riding the front — the
+// TIMEFORGE "time scan". Clearcoat, sheen and iridescence blend with the same progress.
+
+import { Color, MeshPhysicalMaterial, SRGBColorSpace, type Side, type Texture } from "three";
+import { patchSoftboxOnly } from "./softboxOnly.ts";
+
+export type Rgb = [number, number, number];
+export type MatState = {
+  color: Rgb;
+  rough: number;
+  metal: number;
+  cc: number;
+  ccRough: number;
+  sheen: number;
+  irid: number;
+  aniso: number;
+  emissive: Rgb;
+  emissiveI: number;
+};
+
+export const hex = (h: string): Rgb => [
+  parseInt(h.slice(1, 3), 16) / 255,
+  parseInt(h.slice(3, 5), 16) / 255,
+  parseInt(h.slice(5, 7), 16) / 255,
+];
+
+export const mat = (color: string, o: Partial<Omit<MatState, "color">> = {}): MatState => ({
+  color: hex(color),
+  rough: 0.5,
+  metal: 0,
+  cc: 0,
+  ccRough: 0.1,
+  sheen: 0,
+  irid: 0,
+  aniso: 0,
+  emissive: [0, 0, 0],
+  emissiveI: 0,
+  ...o,
+});
+
+/** Where the scan front is: 0 = not started (all A), 1 = done (all B). */
+export type Sweep = { progress: number; top: number; bottom: number; band: number };
+
+type TfUniforms = {
+  tfColor2: { value: Color };
+  tfRough2: { value: number };
+  tfMetal2: { value: number };
+  tfFront: { value: number };
+  tfSoft: { value: number };
+  tfBand: { value: number };
+  tfBandW: { value: number };
+  tfBandColor: { value: Color };
+};
+
+const BAND_COLOR = new Color("#bfeff2"); // light cyan, never neon
+
+type MatOpts = { map?: Texture; emissiveMap?: Texture; side?: Side; transparent?: boolean };
+const defined = (o: MatOpts) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined));
+
+export const sweepMaterial = (o: MatOpts = {}) => {
+  const m = new MeshPhysicalMaterial(defined(o));
+  const u: TfUniforms = {
+    tfColor2: { value: new Color() },
+    tfRough2: { value: 0.5 },
+    tfMetal2: { value: 0 },
+    tfFront: { value: 1e4 },
+    tfSoft: { value: 0.35 },
+    tfBand: { value: 0 },
+    tfBandW: { value: 0.09 },
+    tfBandColor: { value: BAND_COLOR.clone() },
+  };
+  m.userData.tf = u;
+  m.onBeforeCompile = (shader) => {
+    patchSoftboxOnly(shader);
+    Object.assign(shader.uniforms, u);
+    shader.vertexShader = shader.vertexShader
+      .replace("#include <common>", "#include <common>\nattribute vec3 tfPos;\nvarying vec3 vTf;")
+      .replace("#include <begin_vertex>", "#include <begin_vertex>\nvTf = tfPos;");
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        "#include <common>",
+        `#include <common>
+uniform vec3 tfColor2; uniform float tfRough2; uniform float tfMetal2; uniform float tfFront; uniform float tfSoft;
+uniform float tfBand; uniform float tfBandW; uniform vec3 tfBandColor;
+varying vec3 vTf;`,
+      )
+      .replace(
+        "#include <color_fragment>",
+        "#include <color_fragment>\nfloat tfk = smoothstep(tfFront - tfSoft, tfFront + tfSoft, vTf.y);\ndiffuseColor.rgb = mix(diffuseColor.rgb, tfColor2, tfk);",
+      )
+      .replace("#include <roughnessmap_fragment>", "#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, tfRough2, tfk);")
+      .replace("#include <metalnessmap_fragment>", "#include <metalnessmap_fragment>\nmetalnessFactor = mix(metalnessFactor, tfMetal2, tfk);")
+      .replace(
+        "#include <emissivemap_fragment>",
+        "#include <emissivemap_fragment>\nfloat tfd = (vTf.y - tfFront) / tfBandW;\ntotalEmissiveRadiance += tfBandColor * tfBand * exp(-tfd * tfd);",
+      );
+  };
+  m.customProgramCacheKey = () => "tf-sweep";
+  return m;
+};
+
+/** A plain physical material that follows the same look rules (no sweep). */
+export const plainMaterial = (o: MatOpts = {}) => {
+  const m = new MeshPhysicalMaterial(defined(o));
+  m.onBeforeCompile = (shader) => patchSoftboxOnly(shader);
+  m.customProgramCacheKey = () => "tf-plain";
+  return m;
+};
+
+const mix = (a: number, b: number, t: number) => a + (b - a) * t;
+
+/** Apply A→B with a scan front at `sw.progress`; plain materials just take the blend. */
+export const applyMat = (m: MeshPhysicalMaterial, A: MatState, B: MatState, sw: Sweep) => {
+  const t = Math.min(1, Math.max(0, sw.progress));
+  const u = m.userData.tf as TfUniforms | undefined;
+  const lerp3 = (a: Rgb, b: Rgb, k: number): Rgb => [mix(a[0], b[0], k), mix(a[1], b[1], k), mix(a[2], b[2], k)];
+  if (u) {
+    m.color.setRGB(...A.color, SRGBColorSpace);
+    m.roughness = A.rough;
+    m.metalness = A.metal;
+    u.tfColor2.value.setRGB(...B.color, SRGBColorSpace);
+    u.tfRough2.value = B.rough;
+    u.tfMetal2.value = B.metal;
+    const soft = u.tfSoft.value;
+    u.tfFront.value = mix(sw.top + soft, sw.bottom - soft, t);
+    // the band lives only while the front is on the object
+    u.tfBand.value = sw.band * Math.sin(Math.PI * t) ** 0.6;
+  } else {
+    m.color.setRGB(...lerp3(A.color, B.color, t), SRGBColorSpace);
+    m.roughness = mix(A.rough, B.rough, t);
+    m.metalness = mix(A.metal, B.metal, t);
+  }
+  m.clearcoat = mix(A.cc, B.cc, t);
+  m.clearcoatRoughness = mix(A.ccRough, B.ccRough, t);
+  m.sheen = mix(A.sheen, B.sheen, t);
+  m.sheenRoughness = 0.5;
+  m.sheenColor.setRGB(1, 1, 1);
+  m.iridescence = mix(A.irid, B.irid, t);
+  m.iridescenceIOR = 1.3;
+  m.anisotropy = mix(A.aniso, B.aniso, t);
+  m.emissive.setRGB(...lerp3(A.emissive, B.emissive, t), SRGBColorSpace);
+  m.emissiveIntensity = mix(A.emissiveI, B.emissiveI, t);
+};
+
+==== 5014 project/src/core/materials/textures.ts
+// Procedural, deterministic textures (no image assets): perforated grilles and boards.
+
+import { DataTexture, LinearFilter, LinearMipmapLinearFilter, RepeatWrapping, RGBAFormat, SRGBColorSpace, type ColorSpace } from "three";
+
+const toTexture = (data: Uint8Array, w: number, h: number, colorSpace: ColorSpace = SRGBColorSpace) => {
+  const t = new DataTexture(data, w, h, RGBAFormat);
+  t.colorSpace = colorSpace;
+  t.generateMipmaps = true;
+  t.minFilter = LinearMipmapLinearFilter;
+  t.magFilter = LinearFilter;
+  t.wrapS = t.wrapT = RepeatWrapping;
+  t.anisotropy = 8;
+  t.needsUpdate = true;
+  return t;
+};
+
+type Rgb = [number, number, number];
+const hex = (h: string): Rgb => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
+
+/**
+ * Hex-packed micro perforation. Alpha carries the outline mask (stadium / circle) for
+ * alpha-to-coverage, so edges stay anti-aliased under MSAA.
+ */
+export const perforation = ({
+  w = 1024, h = 1024, across = 18, hole = 0.36, base = "#3a3a3d", rim = "#55565a", deep = "#0d0d0f",
+  mask = "none" as "none" | "stadium" | "circle",
+}) => {
+  const data = new Uint8Array(w * h * 4);
+  const pitch = w / across;
+  const rowH = pitch * Math.sqrt(3) / 2;
+  const B = hex(base), R = hex(rim), D = hex(deep);
+  const r = pitch * hole;
+  for (let y = 0; y < h; y++)
+    for (let x = 0; x < w; x++) {
+      const row = Math.round(y / rowH);
+      const cy = row * rowH;
+      const off = row % 2 ? pitch / 2 : 0;
+      const cx = Math.round((x - off) / pitch) * pitch + off;
+      // nearest of the two candidate rows keeps the hex lattice exact
+      let d = Math.hypot(x - cx, y - cy);
+      const row2 = row + (y > cy ? 1 : -1);
+      const off2 = row2 % 2 ? pitch / 2 : 0;
+      const cx2 = Math.round((x - off2) / pitch) * pitch + off2;
+      d = Math.min(d, Math.hypot(x - cx2, y - row2 * rowH));
+      const inHole = Math.min(1, Math.max(0, (r - d) / 1.2));
+      const onRim = Math.min(1, Math.max(0, 1 - Math.abs(d - r - 1.2) / 1.6));
+      const c = B.map((b, i) => b + (R[i] - b) * onRim * 0.8 + (D[i] - b) * inHole);
+      let a = 255;
+      if (mask !== "none") {
+        const u = (x + 0.5) / w - 0.5, v = (y + 0.5) / h - 0.5;
+        let dist: number;
+        if (mask === "circle") dist = 0.5 - Math.hypot(u, v);
+        else {
+          // stadium in a w×h box (aspect-correct)
+          const aspect = w / h;
+          const hx = 0.5 * aspect - 0.5;
+          const px = Math.max(Math.abs(u * aspect) - hx, 0);
+          dist = 0.5 - Math.hypot(px, v);
+        }
+        a = Math.round(Math.min(1, Math.max(0, dist * h * 0.6 + 0.5)) * 255);
+      }
+      const k = (y * w + x) * 4;
+      data[k] = c[0];
+      data[k + 1] = c[1];
+      data[k + 2] = c[2];
+      data[k + 3] = a;
+    }
+  return toTexture(data, w, h);
+};
+
+/** Seeded PRNG (Park–Miller). */
+export const prng = (seed: number) => () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+
+/** Circuit board: graphite substrate, routed traces, vias and champagne pads. */
+export const circuitBoard = (size = 1024, seed = 11) => {
+  const rnd = prng(seed);
+  const S = size;
+  const data = new Uint8Array(S * S * 4);
+  const base = hex("#2c2d30"), trace = hex("#45474b"), pad = hex("#c8b48c"), via = hex("#8d8a84");
+  const set = (x: number, y: number, c: Rgb, a = 1) => {
+    if (x < 0 || y < 0 || x >= S || y >= S) return;
+    const k = (y * S + x) * 4;
+    for (let i = 0; i < 3; i++) data[k + i] = data[k + i] + (c[i] - data[k + i]) * a;
+  };
+  for (let i = 0; i < S * S; i++) {
+    const n = (rnd() - 0.5) * 6;
+    data[i * 4] = base[0] + n;
+    data[i * 4 + 1] = base[1] + n;
+    data[i * 4 + 2] = base[2] + n;
+    data[i * 4 + 3] = 255;
+  }
+  const disc = (cx: number, cy: number, r: number, c: Rgb, hollow = 0) => {
+    for (let y = Math.floor(cy - r - 1); y <= cy + r + 1; y++)
+      for (let x = Math.floor(cx - r - 1); x <= cx + r + 1; x++) {
+        const d = Math.hypot(x - cx, y - cy);
+        const a = Math.min(1, Math.max(0, r - d + 0.5)) * (hollow ? Math.min(1, Math.max(0, d - hollow + 0.5)) : 1);
+        if (a > 0) set(x, y, c, a);
+      }
+  };
+  const line = (x0: number, y0: number, x1: number, y1: number, wdt: number) => {
+    const L = Math.hypot(x1 - x0, y1 - y0);
+    for (let s = 0; s <= L; s += 0.5) {
+      const x = x0 + ((x1 - x0) * s) / L, y = y0 + ((y1 - y0) * s) / L;
+      disc(x, y, wdt / 2, trace);
+    }
+  };
+  // Manhattan + 45° routing from random pins
+  for (let i = 0; i < 70; i++) {
+    let x = rnd() * S, y = rnd() * S;
+    const steps = 2 + Math.floor(rnd() * 3);
+    const w = 3 + rnd() * 4;
+    for (let s = 0; s < steps; s++) {
+      const dir = Math.floor(rnd() * 8) * (Math.PI / 4);
+      const len = 40 + rnd() * 180;
+      const nx = x + Math.cos(dir) * len, ny = y + Math.sin(dir) * len;
+      line(x, y, nx, ny, w);
+      x = nx;
+      y = ny;
+    }
+    disc(x, y, w * 1.6, via, w * 0.7);
+  }
+  for (let i = 0; i < 40; i++) disc(rnd() * S, rnd() * S, 5 + rnd() * 5, pad);
+  return toTexture(data, S, S);
+};
+
+==== 2937 project/src/core/motion/easing.ts
+// PRECISION easing vocabulary. Every curve is a pure function of normalised time, so the
+// whole film stays deterministic: same frame in, same pose out.
+
+export const clamp = (x: number, lo = 0, hi = 1) => Math.min(hi, Math.max(lo, x));
+export const mix = (a: number, b: number, t: number) => a + (b - a) * t;
+export const remap = (x: number, a: number, b: number) => clamp((x - a) / (b - a));
+
+export const smoothstep = (t: number) => {
+  const x = clamp(t);
+  return x * x * (3 - 2 * x);
+};
+
+/** C2-continuous: zero velocity and acceleration at both ends. The house curve. */
+export const smootherstep = (t: number) => {
+  const x = clamp(t);
+  return x * x * x * (x * (x * 6 - 15) + 10);
+};
+
+/** CSS-style cubic bezier easing (x1,y1,x2,y2), solved by Newton + bisection. */
+export const bezier = (x1: number, y1: number, x2: number, y2: number) => {
+  const cx = 3 * x1, bx = 3 * (x2 - x1) - cx, ax = 1 - cx - bx;
+  const cy = 3 * y1, by = 3 * (y2 - y1) - cy, ay = 1 - cy - by;
+  const sx = (t: number) => ((ax * t + bx) * t + cx) * t;
+  const sy = (t: number) => ((ay * t + by) * t + cy) * t;
+  const dx = (t: number) => (3 * ax * t + 2 * bx) * t + cx;
+  return (x: number) => {
+    const X = clamp(x);
+    let t = X;
+    for (let i = 0; i < 8; i++) {
+      const e = sx(t) - X;
+      const d = dx(t);
+      if (Math.abs(e) < 1e-6) return sy(t);
+      if (Math.abs(d) < 1e-6) break;
+      t -= e / d;
+    }
+    let lo = 0, hi = 1;
+    t = X;
+    for (let i = 0; i < 30; i++) {
+      const v = sx(t);
+      if (Math.abs(v - X) < 1e-6) break;
+      if (v < X) lo = t;
+      else hi = t;
+      t = (lo + hi) / 2;
+    }
+    return sy(t);
+  };
+};
+
+// Named curves, tuned for product cinematography (long, confident tails; no bounce).
+export const ease = {
+  /** Default move: decisive start, very long settle. */
+  glide: bezier(0.45, 0, 0.12, 1),
+  /** Symmetric, weighty. Camera and large objects. */
+  inOut: bezier(0.65, 0, 0.35, 1),
+  /** Soft symmetric for subtle drifts. */
+  sine: (t: number) => 0.5 - 0.5 * Math.cos(Math.PI * clamp(t)),
+  /** Starts with energy (a magnet letting go), long deceleration. */
+  release: bezier(0.2, 0.7, 0.1, 1),
+  /** Gathers speed and arrives fast (magnetic pull into a dock). */
+  attract: bezier(0.55, 0, 0.95, 0.55),
+  /** Typographic reveal. */
+  type: bezier(0.2, 0, 0, 1),
+  out: bezier(0, 0, 0.2, 1),
+  in: bezier(0.6, 0, 1, 1),
+  smoother: smootherstep,
+};
+
+/** Eased progress of `frame` through [start, end]. */
+export const seg = (frame: number, start: number, end: number, curve: (t: number) => number = ease.inOut) =>
+  curve(remap(frame, start, end));
+
+/**
+ * Critically damped settle used after a mechanical stop: decays to zero with at most one
+ * tiny overshoot. `t` in frames since the stop, `amp` the initial offset.
+ */
+export const settle = (t: number, amp: number, freq = 0.11, damping = 0.16) =>
+  t <= 0 ? 0 : amp * Math.exp(-damping * t) * Math.cos(freq * t * Math.PI);
+
+==== 2286 project/src/core/motion/track.ts
+// Keyframe tracks with C1 continuity. Interior keys pass through with Catmull-Rom tangents
+// (so a camera never "kinks" when one move hands over to the next); `hold` keys and the
+// ends get zero tangents (a soft ease in/out). Tangents are clamped Fritsch–Carlson style
+// so a curve never overshoots its keys — no accidental bounces.
+
+/**
+ * `m` overrides the tangent (units per frame), e.g. to arrive at speed for a magnetic snap;
+ * `stop` makes the key an impact: it is reached at `m` and left at rest.
+ */
+export type Key = { f: number; v: number[]; hold?: boolean; m?: number[]; stop?: boolean };
+
+const hermite = (p0: number, p1: number, m0: number, m1: number, t: number, h: number) => {
+  const t2 = t * t, t3 = t2 * t;
+  return (2 * t3 - 3 * t2 + 1) * p0 + (t3 - 2 * t2 + t) * h * m0 + (-2 * t3 + 3 * t2) * p1 + (t3 - t2) * h * m1;
+};
+
+const tangent = (keys: Key[], i: number, c: number) => {
+  const k = keys[i];
+  if (k.m) return k.m[c];
+  if (k.hold || i === 0 || i === keys.length - 1) return 0;
+  const a = keys[i - 1], b = keys[i + 1];
+  const m = (b.v[c] - a.v[c]) / (b.f - a.f);
+  // Monotone clamp: no overshoot past either neighbour.
+  const d0 = (k.v[c] - a.v[c]) / (k.f - a.f);
+  const d1 = (b.v[c] - k.v[c]) / (b.f - k.f);
+  if (d0 * d1 <= 0) return 0;
+  const lim = 3 * Math.min(Math.abs(d0), Math.abs(d1));
+  return Math.sign(m) * Math.min(Math.abs(m), lim);
+};
+
+/** Sample a multi-channel track at `frame`. */
+export const sample = (keys: Key[], frame: number): number[] => {
+  if (frame <= keys[0].f) return keys[0].v.slice();
+  const last = keys[keys.length - 1];
+  if (frame >= last.f) return last.v.slice();
+  let i = 0;
+  while (i < keys.length - 2 && frame >= keys[i + 1].f) i++;
+  const a = keys[i], b = keys[i + 1];
+  const h = b.f - a.f;
+  const t = (frame - a.f) / h;
+  return a.v.map((_, c) =>
+    hermite(a.v[c], b.v[c], a.stop ? 0 : tangent(keys, i, c), tangent(keys, i + 1, c), t, h),
+  );
+};
+
+/** Convenience: build keys from [frame, ...values] tuples; append "hold" to pin a key. */
+export const keys = (...rows: (number | "hold")[][]): Key[] =>
+  rows.map((r) => {
+    const hold = r[r.length - 1] === "hold";
+    const nums = r.filter((x): x is number => typeof x === "number");
+    return { f: nums[0], v: nums.slice(1), hold };
+  });
+
+==== 7055 project/src/core/render/Post.tsx
+// Camera + finishing chain (from PRECISION; proven in PRECISION, TIMEFORGE and BUILDFORGE).
+// The rig applies the shot for this frame before R3F advances, then the composer renders: scene (MSAA) → ground-truth AO → depth of field → restrained
+// bloom → Khronos PBR Neutral tone mapping → grade (warmth, vignette, fine grain).
+
+import React, { useLayoutEffect, useMemo } from "react";
+import { useFrame, useThree } from "@react-three/fiber";
+import { type Camera, HalfFloatType, NeutralToneMapping, PerspectiveCamera, Vector2, WebGLRenderTarget } from "three";
+import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
+import { GTAOPass } from "three/examples/jsm/postprocessing/GTAOPass.js";
+import { BokehPass } from "three/examples/jsm/postprocessing/BokehPass.js";
+import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
+import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
+import { ShaderPass } from "three/examples/jsm/postprocessing/ShaderPass.js";
+import type { Pass } from "three/examples/jsm/postprocessing/Pass.js";
+
+/**
+ * Render layer for additive / volumetric effects (light shafts, glows, halos, beams). Put such
+ * meshes on this layer ONLY (`mesh.layers.set(FX_LAYER)`): the camera still renders them, but the
+ * depth-based passes (GTAO, depth of field) skip them. Large transparent volumes on the default
+ * layer corrupt those passes and can silently blank the whole frame.
+ */
+export const FX_LAYER = 1;
+
+/** Run a pass with the FX layer hidden from the camera (depth/normal passes must not see effects). */
+export const withoutFx = <P extends Pass>(pass: P, camera: Camera): P => {
+  const render = pass.render.bind(pass);
+  pass.render = (renderer, writeBuffer, readBuffer, deltaTime, maskActive) => {
+    camera.layers.disable(FX_LAYER);
+    try {
+      render(renderer, writeBuffer, readBuffer, deltaTime, maskActive);
+    } finally {
+      camera.layers.enable(FX_LAYER);
+    }
+  };
+  return pass;
+};
+
+export type Shot = {
+  pos: [number, number, number];
+  target: [number, number, number];
+  fov: number;
+  roll?: number;
+  /** Focus distance (world units) and lens aperture for the bokeh pass. */
+  focus: number;
+  aperture: number;
+  maxBlur: number;
+  exposure: number;
+};
+
+export const CameraRig: React.FC<{ shot: Shot; near?: number; far?: number }> = ({ shot, near = 1, far = 900 }) => {
+  const { camera, gl } = useThree();
+  useLayoutEffect(() => {
+    const cam = camera as PerspectiveCamera;
+    cam.position.set(...shot.pos);
+    cam.up.set(Math.sin(shot.roll ?? 0), Math.cos(shot.roll ?? 0), 0);
+    cam.lookAt(...shot.target);
+    cam.fov = shot.fov;
+    cam.near = near;
+    cam.far = far;
+    cam.updateProjectionMatrix();
+    cam.updateMatrixWorld();
+    cam.layers.enable(FX_LAYER);
+    gl.toneMapping = NeutralToneMapping;
+    gl.toneMappingExposure = shot.exposure;
+  }, [shot, camera, gl, near, far]);
+  return null;
+};
+
+/**
+ * Replaces non-finite pixels (NaN/Inf from a faulty custom shader) right after the scene render.
+ * Without it, bloom spreads a single NaN pixel across the whole frame and the frame renders blank
+ * with no error — found in testing with a custom light-shaft shader.
+ */
+const NanGuardShader = {
+  uniforms: { tDiffuse: { value: null } },
+  vertexShader: /* glsl */ `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+  fragmentShader: /* glsl */ `uniform sampler2D tDiffuse; varying vec2 vUv;
+    void main(){ vec4 c = texture2D(tDiffuse, vUv);
+      if (any(isnan(c)) || any(isinf(c))) c = vec4(0.0, 0.0, 0.0, 1.0);
+      gl_FragColor = clamp(c, 0.0, 64.0); }`,
+};
+
+const GradeShader = {
+  uniforms: {
+    tDiffuse: { value: null },
+    uTime: { value: 0 },
+    uVignette: { value: 0.14 },
+    uGrain: { value: 0.012 },
+    uRes: { value: new Vector2(1080, 1920) },
+  },
+  vertexShader: /* glsl */ `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+  fragmentShader: /* glsl */ `
+    uniform sampler2D tDiffuse; uniform float uTime; uniform float uVignette; uniform float uGrain; uniform vec2 uRes;
+    varying vec2 vUv;
+    float hash(vec2 p){ p = fract(p * vec2(443.897, 441.423)); p += dot(p, p.yx + 19.19); return fract((p.x + p.y) * p.x); }
+    void main(){
+      vec4 c = texture2D(tDiffuse, vUv);
+      float l = dot(c.rgb, vec3(0.2126, 0.7152, 0.0722));
+      // ivory highlights, a breath of cool in the shadows
+      c.rgb += smoothstep(0.6, 1.0, l) * vec3(0.002, 0.001, -0.003);
+      c.rgb += (1.0 - smoothstep(0.0, 0.5, l)) * vec3(-0.004, 0.0, 0.006);
+      // gentle S-curve: deeper form shadows without crushing the whites
+      c.rgb = mix(c.rgb, c.rgb * c.rgb * (3.0 - 2.0 * c.rgb), 0.24);
+      vec2 d = (vUv - 0.5) * vec2(1.0, 1.25);
+      c.rgb *= 1.0 - uVignette * smoothstep(0.35, 0.95, length(d));
+      float g = hash(vUv * uRes + uTime * 17.0) - 0.5;
+      c.rgb += g * uGrain;
+      gl_FragColor = c;
+    }`,
+};
+
+export const Post: React.FC<{ shot: Shot; frame: number; ao?: boolean; aoRadius?: number }> = ({ shot, frame, ao = true, aoRadius = 0.28 }) => {
+  const { gl, scene, camera, size } = useThree();
+  const chain = useMemo(() => {
+    const w = size.width, h = size.height;
+    const rt = new WebGLRenderTarget(w, h, { type: HalfFloatType, samples: 4 });
+    const composer = new EffectComposer(gl, rt);
+    composer.setPixelRatio(1);
+    composer.setSize(w, h);
+    composer.addPass(new RenderPass(scene, camera));
+    composer.addPass(new ShaderPass(NanGuardShader));
+    if (ao) {
+      const gtao = new GTAOPass(scene, camera, w, h);
+      gtao.blendIntensity = 1.0;
+      gtao.updateGtaoMaterial({ radius: aoRadius, distanceExponent: 1.8, thickness: 0.5, scale: 1.0, samples: 16, distanceFallOff: 1.0, screenSpaceRadius: false });
+      gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 5, rings: 2, samples: 16 });
+      composer.addPass(withoutFx(gtao, camera));
+    }
+    const dof = withoutFx(new BokehPass(scene, camera, { focus: 10, aperture: 0.002, maxblur: 0.008 }), camera);
+    composer.addPass(dof);
+    const bloom = new UnrealBloomPass(new Vector2(w, h), 0.14, 0.45, 2.2);
+    composer.addPass(bloom);
+    composer.addPass(new OutputPass());
+    const grade = new ShaderPass(GradeShader);
+    grade.uniforms.uRes.value.set(w, h);
+    composer.addPass(grade);
+    return { composer, dof, grade };
+  }, [gl, scene, camera, size.width, size.height, ao, aoRadius]);
+
+  useLayoutEffect(() => {
+    const u = chain.dof.uniforms as unknown as Record<string, { value: number }>;
+    u.focus.value = shot.focus;
+    u.aperture.value = shot.aperture;
+    u.maxblur.value = shot.maxBlur;
+    chain.dof.enabled = shot.maxBlur > 0 && shot.aperture > 0;
+    chain.grade.uniforms.uTime.value = frame % 997;
+  }, [frame, chain, shot]);
+
+  useFrame(() => {
+    chain.composer.render();
+  }, 1);
+  return null;
+};
+
+==== 1643 project/src/core/type/brand.ts
+// The buyer's shared VOYNANN brand kit (voynann-brand.json, see BRAND_KIT.md), copied to src/brand.json.
+// In VOYNANN Motion the brand lives in overlays (title, kicker, end card, labels); the 3D world keeps the
+// style's art direction unless the buyer explicitly asks for brand colours in the scene.
+import brandFile from "../../brand.json";
+
+export type BrandKit = {
+  brand?: string; handle?: string; cta?: string; logo?: string; font?: string;
+  colors?: { primary?: string; accent?: string; background?: string };
+};
+export const BRAND = brandFile as unknown as BrandKit;
+
+const isHex = (c?: string): c is string => !!c && /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(c.trim());
+const lum = (c: string) => {
+  let h = c.trim().slice(1);
+  if (h.length === 3) h = [...h].map((x) => x + x).join("");
+  const [r, g, b] = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16) / 255)
+    .map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+};
+/** WCAG contrast ratio of two hex colours (1–21). */
+export const contrast = (a: string, b: string) => {
+  const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p);
+  return (x + 0.05) / (y + 0.05);
+};
+/** The brand accent when it stays readable on `background` (≥ 3:1), otherwise the style's own `fallback`. */
+export const brandAccent = (background: string, fallback: string) => {
+  const a = BRAND.colors?.accent;
+  return isHex(a) && isHex(background) && contrast(a, background) >= 3 ? a : fallback;
+};
+/** Brand name for overlays, or the fallback text. */
+export const brandName = (fallback = "") => BRAND.brand?.trim() || fallback;
+
+==== 1366 project/src/core/type/fonts.ts
+import { continueRender, delayRender, staticFile } from "remotion";
+
+// Default typeface: Manrope (SIL Open Font License, see public/fonts/OFL-manrope.txt).
+// Bundled locally in public/fonts so rendering never depends on Google Fonts being reachable
+// and every OS renders the same glyph metrics.
+const FAMILY = "Manrope";
+const WEIGHTS = ["200", "300", "400", "500", "600"] as const;
+
+let ready: Promise<void> | null = null;
+const load = (): Promise<void> => {
+  if (ready) return ready;
+  if (typeof document === "undefined") return (ready = Promise.resolve());
+  const handle = delayRender("Loading bundled Manrope font");
+  ready = Promise.all(
+    WEIGHTS.map(async (w) => {
+      const face = new FontFace(FAMILY, `url(${staticFile(`fonts/manrope-latin-${w}-normal.woff2`)}) format("woff2")`, {
+        weight: w,
+        style: "normal",
+      });
+      await face.load();
+      (document.fonts as unknown as { add(f: FontFace): void }).add(face);
+    }),
+  ).then(
+    () => continueRender(handle),
+    (err) => {
+      continueRender(handle);
+      throw err;
+    },
+  );
+  return ready;
+};
+load();
+
+export const MANROPE = FAMILY;
+export const manropeReady = load;
+
+/** The font every overlay and canvas texture uses. */
+export const FONT = MANROPE;
+export const fontReady = manropeReady;
+
+export const INK = "#1f2426";
+export const INK_SOFT = "#6a7174";
+
+==== 691 project/src/core/type/project.ts
+import { PerspectiveCamera, Vector3 } from "three";
+import type { Shot } from "../render/Post.tsx";
+
+/** Project a world point to pixel coordinates with exactly the film camera for this frame. */
+export const projector = (shot: Shot, width: number, height: number) => {
+  const cam = new PerspectiveCamera(shot.fov, width / height, 0.05, 1200);
+  cam.position.set(...shot.pos);
+  cam.up.set(Math.sin(shot.roll ?? 0), Math.cos(shot.roll ?? 0), 0);
+  cam.lookAt(...shot.target);
+  cam.updateProjectionMatrix();
+  cam.updateMatrixWorld();
+  return (p: Vector3): [number, number] => {
+    const v = p.clone().project(cam);
+    return [((v.x + 1) / 2) * width, ((1 - v.y) / 2) * height];
+  };
+};
+
+==== 4149 project/src/director/parse.ts
+// Naskah (script) parser — see FORMAT-NASKAH.md. Text in, a list of scenes out:
+//   header   JUDUL: / SERI: / SUARA:
+//   scene    [PETA] … | [RUTE] … | [TEMPAT] … TOKOH: … | [PENUTUP] …   (starts a new scene)
+//   overlay  [TANGGAL] … | [NAMA] … | [ANGKA] … | [SUMBER] …         (attached to the next narration line)
+//   line     anything else = one narration sentence; *kata* = keyword
+// Untagged narration is allowed: each paragraph becomes an "auto" scene that the planner resolves.
+
+export type RawTag = { kind: "TANGGAL" | "NAMA" | "ANGKA" | "SUMBER"; text: string; line: number };
+export type RawLine = { text: string; words: { w: string; key: boolean }[] };
+export type RawScene = { kind: "PETA" | "RUTE" | "TEMPAT" | "PENUTUP" | "AUTO"; spec: string; tokoh: string; tags: RawTag[]; lines: RawLine[] };
+export type RawStory = { title: string; series?: string; voice?: string; scenes: RawScene[] };
+
+const SCENE_TAGS = ["PETA", "RUTE", "TEMPAT", "PENUTUP"] as const;
+const OVERLAY_TAGS = ["TANGGAL", "NAMA", "ANGKA", "SUMBER"] as const;
+
+export const splitWords = (text: string) => {
+  const out: { w: string; key: boolean }[] = [];
+  // keep *multi word keys* together as keys
+  const re = /\*([^*]+)\*([,.!?;:]*)|(\S+)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text))) {
+    if (m[1] !== undefined) {
+      const parts = m[1].trim().split(/\s+/);
+      parts.forEach((p, i) => out.push({ w: p + (i === parts.length - 1 ? m![2] : ""), key: true }));
+    } else out.push({ w: m[3], key: false });
+  }
+  return out;
+};
+
+export const parseNaskah = (src: string): RawStory => {
+  const story: RawStory = { title: "", scenes: [] };
+  let cur: RawScene | null = null;
+  let pendingBlank = false;
+  const ensure = () => {
+    if (!cur) {
+      cur = { kind: "AUTO", spec: "", tokoh: "", tags: [], lines: [] };
+      story.scenes.push(cur);
+    }
+    return cur;
+  };
+  for (const rawLine of src.replace(/\r/g, "").split("\n")) {
+    const line = rawLine.trim();
+    if (!line) { pendingBlank = true; continue; }
+    if (line.startsWith("#") || line.startsWith("//")) continue;
+    const head = /^(JUDUL|SERI|SUARA|DURASI)\s*:\s*(.*)$/i.exec(line);
+    if (head && story.scenes.length === 0 && !cur) {
+      const k = head[1].toUpperCase();
+      if (k === "JUDUL") story.title = head[2];
+      else if (k === "SERI") story.series = head[2];
+      else if (k === "SUARA") story.voice = head[2];
+      continue;
+    }
+    const tag = /^\[([A-Za-z]+)\]\s*(.*)$/.exec(line);
+    if (tag) {
+      const k = tag[1].toUpperCase();
+      const rest = tag[2].trim();
+      if ((SCENE_TAGS as readonly string[]).includes(k)) {
+        let spec = rest, tokoh = "";
+        const ti = rest.search(/TOKOH\s*:/i);
+        if (ti >= 0) { spec = rest.slice(0, ti).trim().replace(/[.,;]\s*$/, ""); tokoh = rest.slice(ti).replace(/^TOKOH\s*:\s*/i, "").trim(); }
+        cur = { kind: k as RawScene["kind"], spec, tokoh, tags: [], lines: [] };
+        story.scenes.push(cur);
+        pendingBlank = false;
+        continue;
+      }
+      if ((OVERLAY_TAGS as readonly string[]).includes(k)) {
+        const sc = ensure();
+        sc.tags.push({ kind: k as RawTag["kind"], text: rest, line: sc.lines.length });
+        continue;
+      }
+      // unknown tag: keep as a scene hint
+      const sc = ensure();
+      sc.spec = (sc.spec + " " + rest).trim();
+      continue;
+    }
+    if (/^TOKOH\s*:/i.test(line)) {
+      ensure().tokoh = line.replace(/^TOKOH\s*:\s*/i, "");
+      continue;
+    }
+    // narration; a blank line inside an AUTO scene starts the next AUTO scene
+    if (pendingBlank && cur && (cur as RawScene).kind === "AUTO" && (cur as RawScene).lines.length > 0) {
+      cur = { kind: "AUTO", spec: "", tokoh: "", tags: [], lines: [] };
+      story.scenes.push(cur);
+    }
+    pendingBlank = false;
+    // one line may hold several sentences: split them so captions & beats stay short
+    const sentences = line.split(/(?<=[.!?]["”']?)\s+(?=[A-Z*"“])/);
+    for (const s of sentences) {
+      const t = s.trim();
+      if (t) ensure().lines.push({ text: t, words: splitWords(t) });
+    }
+  }
+  return story;
+};
+
+==== 2671 project/src/director/types.ts
+// Shared plan types (pure TS: imported by node scripts and by the Remotion bundle).
+
+export type Word = { w: string; t: number; key?: boolean };
+
+export type CostumeSpec = {
+  body?: "m" | "f";
+  hat?: "none" | "peci" | "destar" | "caping" | "shako" | "bicorne" | "tricorne" | "turban" | "bun" | "hair" | "blangkon";
+  wear?: "pants" | "sarong" | "kain" | "robe" | "coat";
+  itemR?: "musket" | "spear" | "telescope" | "torch" | "keris" | "flag" | "paddle" | "none";
+  itemL?: "musket" | "spear" | "telescope" | "torch" | "keris" | "flag" | "paddle" | "none";
+  load?: "back" | "head" | "none";
+  keris?: boolean;
+  scale?: number;
+  headScale?: number;
+};
+
+export type Action =
+  | "stand" | "akimbo" | "point" | "telescope" | "pray" | "kneel" | "bow" | "sit" | "write" | "run" | "walk"
+  | "guard" | "raise" | "talk" | "look" | "march" | "carry";
+
+export type Group = {
+  count: number;
+  name: string; // display / role word
+  costume: CostumeSpec;
+  action: Action;
+  color: string | null;
+  lead: boolean;
+};
+
+export type SetId = "makam" | "balai" | "kamar" | "hutan" | "desa" | "benteng" | "pelabuhan" | "dek" | "medan" | "pantai";
+export type MoodId = "senja" | "biru" | "malam" | "pagi" | "siang" | "api" | "dalam-siang" | "dalam-malam";
+
+export type Shot = "wide" | "medium" | "close" | "group" | "low";
+export type Beat = { a: number; b: number; shot: Shot };
+
+export type MapPoint = { name: string; lon: number; lat: number; volcano?: boolean };
+
+export type Overlay =
+  | { kind: "date"; a: number; b: number; top: string; big: string }
+  | { kind: "name"; a: number; b: number; name: string; role?: string }
+  | { kind: "count"; a: number; b: number; from: number; to: number; roll: [number, number]; unit: string; label?: string }
+  | { kind: "cite"; a: number; b: number; text: string; src: string }
+  | { kind: "end"; a: number; b: number; title: string; sources: string[] };
+
+export type PlanScene = {
+  a: number;
+  b: number;
+  kind: "map" | "place" | "end";
+  map?: { points: MapPoint[]; route: boolean; rings: boolean; erupt: boolean; mode: "close" | "fit" | "route"; region?: Region };
+  place?: { set: SetId; mood: MoodId; fire: boolean; rain: boolean; fog: boolean; candle: boolean; volcano: boolean; groups: Group[]; beats: Beat[]; seed: number };
+  overlays: Overlay[];
+};
+
+export type Region = { lon0: number; lon1: number; lat0: number; lat1: number; cell: number; key: string };
+
+export type Plan = {
+  id: string;
+  title: string;
+  series?: string;
+  duration: number;
+  year: number | null;
+  region: Region | null;
+  scenes: PlanScene[];
+  words: Word[];
+  audio?: string; // public/ path of the voice-over / mix
+  warnings: string[];
+};
+
+==== 6757 project/src/film/ChronicleFilm.tsx
+// The generic CHRONICLE film: renders any Plan produced by the director from a script (naskah).
+import React, { useEffect, useState } from "react";
+import { AbsoluteFill, Audio, Sequence, continueRender, delayRender, staticFile, useCurrentFrame, useVideoConfig, type CalculateMetadataFunction } from "remotion";
+import { chronicleFontsReady, F_CITE, F_LABEL, F_STAMP } from "../kits/chronicle/fonts.ts";
+import { Captions, Cite, Counter, DateStamp, DIM, Frame, IVORY, CRIMSON, NameTag, useCanvas } from "../kits/chronicle/Overlay.tsx";
+import { lin } from "../kits/chronicle/cam.ts";
+import { MapScene } from "./MapScene.tsx";
+import { PlaceScene } from "./PlaceScene.tsx";
+import type { Overlay, Plan, PlanScene } from "../director/types.ts";
+import { qaNoOverlay } from "../core/qa/scene-qa.tsx";
+
+export type ChronicleProps = { plan: Plan };
+
+const Local: React.FC<{ scene: PlanScene; plan: Plan }> = ({ scene, plan }) => {
+  const f = useCurrentFrame();
+  const { fps } = useVideoConfig();
+  const s = f / fps;
+  if (scene.kind === "map" && plan.region) return <MapScene scene={scene} region={scene.map?.region ?? plan.region} s={s} frame={f} />;
+  if (scene.kind === "place") return <PlaceScene scene={scene} s={s} frame={f} />;
+  // end card: the last map's place, far and dim, under the title — no pins, no route lines
+  const lastMap = [...plan.scenes].reverse().find((x) => x.kind === "map" && x.map?.points.length);
+  if (lastMap?.map) {
+    const p0 = lastMap.map.points[lastMap.map.points.length - 1];
+    const quiet: PlanScene = { ...scene, kind: "map", map: { points: [{ ...p0, name: "", volcano: false }], route: false, rings: false, erupt: false, mode: "close", region: lastMap.map.region } };
+    return (
+      <>
+        <MapScene scene={quiet} region={lastMap.map.region ?? plan.region!} s={s} frame={f} />
+        <AbsoluteFill style={{ background: "rgba(5,12,16,0.58)" }} />
+      </>
+    );
+  }
+  return <AbsoluteFill style={{ background: "#0b0f12" }} />;
+};
+
+const EndText: React.FC<{ s: number; o: Extract<Overlay, { kind: "end" }>; series?: string }> = ({ s, o, series }) => {
+  const C = useCanvas();
+  const v = lin(s, o.a, o.a + 0.6);
+  if (v <= 0) return null;
+  const [main, sub] = o.title.split(/\s+[—–-]\s+/);
+  return (
+    <div style={{ position: "absolute", left: C.land ? 300 : 80, right: C.land ? 300 : 80, top: C.land ? 200 : 560, textAlign: "center", opacity: v }}>
+      {series && <div style={{ fontFamily: F_LABEL, fontWeight: 800, fontSize: 38, letterSpacing: 8, color: DIM, textTransform: "uppercase" }}>{series}</div>}
+      <div style={{ fontFamily: F_STAMP, fontSize: 132, lineHeight: 1.0, color: IVORY, textTransform: "uppercase", marginTop: 10 }}>{main}</div>
+      {sub && <div style={{ fontFamily: F_LABEL, fontWeight: 600, fontSize: 44, letterSpacing: 6, color: IVORY, textTransform: "uppercase", marginTop: 10 }}>{sub}</div>}
+      <div style={{ margin: "26px auto", width: 200, height: 6, background: CRIMSON }} />
+      {o.sources.length > 0 && (
+        <div style={{ marginTop: 40, opacity: lin(s, o.a + 0.5, o.a + 1.2) }}>
+          <div style={{ fontFamily: F_LABEL, fontWeight: 800, fontSize: 30, letterSpacing: 6, color: DIM }}>SUMBER</div>
+          {o.sources.map((x, i) => <div key={i} style={{ fontFamily: F_CITE, fontStyle: "italic", fontSize: 34, color: IVORY, marginTop: 10 }}>{x}</div>)}
+        </div>
+      )}
+    </div>
+  );
+};
+
+/** Overlays laid out so they never stack: dates and counters on top, names in the lower third, citations top or mid. */
+const Overlays: React.FC<{ s: number; list: Overlay[]; series?: string; maps?: [number, number][] }> = ({ s, list, series, maps = [] }) => {
+  const C = useCanvas();
+  // 16:9 maps: pins sit high in the wide frame, so a citation goes above the captions instead of the top
+  const lowCite = (o: Overlay) => C.land && o.kind === "cite" && maps.some(([a, b]) => o.a >= a - 0.05 && o.a < b);
+  const dateOn = list.some((o) => (o.kind === "date" || o.kind === "count") && s >= o.a && s <= o.b);
+  return (
+    <>
+      {list.map((o, i) => {
+        switch (o.kind) {
+          case "date": return <DateStamp key={i} s={s} a={o.a} b={o.b} top={o.top} big={o.big} />;
+          case "name": {
+            const topBusy = list.some((x) => (x.kind === "date" || x.kind === "count" || (x.kind === "cite" && !lowCite(x))) && x.a < o.b && x.b > o.a);
+            return <NameTag key={i} s={s} a={o.a} b={o.b} name={o.name} role={o.role} y={C.land ? (topBusy ? C.H - 330 : 90) : topBusy ? 1170 : 250} />;
+          }
+          case "count": return <Counter key={i} s={s} a={o.a} b={o.b} from={o.from} to={o.to} roll={o.roll} unit={o.unit} label={o.label} />;
+          case "cite": return <Cite key={i} s={s} a={o.a} b={o.b} text={o.text || o.src} src={o.text ? o.src : ""} y={lowCite(o) ? C.H - 290 : C.land ? (dateOn ? 330 : 64) : dateOn ? 560 : 170} />;
+          case "end": return <EndText key={i} s={s} o={o} series={series} />;
+          default: return null;
+        }
+      })}
+    </>
+  );
+};
+
+export const ChronicleFilm: React.FC<ChronicleProps> = ({ plan }) => {
+  const frame = useCurrentFrame();
+  const { fps, width, height, durationInFrames } = useVideoConfig();
+  const s = frame / fps;
+  const [h] = useState(() => delayRender("chronicle fonts"));
+  const [ok, setOk] = useState(false);
+  useEffect(() => { chronicleFontsReady().then(() => { setOk(true); continueRender(h); }); }, [h]);
+  if (!ok) return <AbsoluteFill style={{ background: "#000" }} />;
+  const overlays = plan.scenes.flatMap((sc) => sc.overlays);
+  const endA = plan.scenes.find((x) => x.kind === "end")?.a ?? Infinity;
+  return (
+    <AbsoluteFill style={{ background: "#000" }}>
+      {plan.audio && <Audio src={staticFile(plan.audio)} />}
+      {plan.scenes.map((sc, i) => (
+        // the last scene holds to the very last frame (no black tail)
+        <Sequence key={i} from={Math.round(sc.a * fps)} durationInFrames={Math.max(1, (i === plan.scenes.length - 1 ? durationInFrames : Math.round(sc.b * fps)) - Math.round(sc.a * fps))}>
+          <Local scene={sc} plan={plan} />
+        </Sequence>
+      ))}
+      {/* the QA pass scans the 3D alone */}
+      {qaNoOverlay() ? null : <Frame width={width} height={height}>
+        <Overlays s={s} list={overlays} series={plan.series} maps={plan.scenes.filter((x) => x.kind === "map").map((x) => [x.a, x.b] as [number, number])} />
+        {s < endA && <Captions s={s} words={plan.words} end={endA} />}
+      </Frame>}
+    </AbsoluteFill>
+  );
+};
+
+export const chronicleMetadata: CalculateMetadataFunction<ChronicleProps> = ({ props, compositionId }) => {
+  const fps = compositionId.includes("Final") ? 60 : 30;
+  return { durationInFrames: Math.max(1, Math.ceil(props.plan.duration * fps)), fps };
+};
+
+==== 7901 project/src/film/fxextra.tsx
+// Extra effects for the generic sets: fire (flame billboards + flickering light), light shafts, candle, rain.
+import React, { useLayoutEffect, useMemo } from "react";
+import { AdditiveBlending, CanvasTexture, Color, DoubleSide, InstancedBufferAttribute, InstancedBufferGeometry, MeshBasicMaterial, PlaneGeometry, ShaderMaterial } from "three";
+import { noise1 } from "../kits/chronicle/cam.ts";
+
+type V3 = [number, number, number];
+
+const FlameShader = {
+  vertexShader: /* glsl */ `
+    attribute vec3 aPos; attribute float aSize; attribute float aSeed;
+    varying vec2 vUv; varying float vSeed;
+    void main(){
+      vUv = uv; vSeed = aSeed;
+      vec4 mv = modelViewMatrix * vec4(aPos, 1.0);
+      mv.xy += position.xy * vec2(aSize * 0.55, aSize);
+      gl_Position = projectionMatrix * mv;
+    }`,
+  fragmentShader: /* glsl */ `
+    uniform float uTime; uniform float uGain; varying vec2 vUv; varying float vSeed;
+    float h(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+    float n(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f);
+      return mix(mix(h(i), h(i+vec2(1,0)), f.x), mix(h(i+vec2(0,1)), h(i+vec2(1,1)), f.x), f.y); }
+    float fbm(vec2 p){ float s = 0.0, a = 0.5; for (int i = 0; i < 4; i++){ s += a * n(p); p = p * 2.1 + 3.7; a *= 0.5; } return s; }
+    void main(){
+      vec2 q = vUv - vec2(0.5, 0.0);
+      float y = vUv.y;
+      float t = uTime * 2.6 + vSeed * 13.0;
+      float wob = (fbm(vec2(q.x * 3.0 + vSeed, y * 2.5 - t)) - 0.5) * 0.35 * y;
+      float w = 0.42 * (1.0 - y) * (0.6 + 0.4 * fbm(vec2(vSeed, y * 3.0 - t * 0.7)));
+      float d = abs(q.x + wob) / max(w, 0.001);
+      float body = smoothstep(1.0, 0.25, d) * smoothstep(0.0, 0.08, y);
+      float cut = fbm(vec2(q.x * 5.0 + vSeed * 3.0, y * 4.0 - t * 1.3));
+      body *= smoothstep(0.15, 0.55, cut + (1.0 - y) * 0.55);
+      if (body < 0.01) discard;
+      vec3 hot = vec3(1.0, 0.85, 0.5), mid = vec3(1.0, 0.45, 0.1), cool = vec3(0.7, 0.12, 0.03);
+      vec3 c = mix(hot, mid, smoothstep(0.0, 0.45, y + d * 0.3));
+      c = mix(c, cool, smoothstep(0.45, 0.9, y));
+      gl_FragColor = vec4(c * uGain * body, body);
+    }`,
+};
+
+/** A cluster of flames (each entry: base position + height). */
+export const Flames: React.FC<{ t: number; at: { p: V3; h: number }[]; gain?: number; light?: boolean; seed?: number }> = ({ t, at, gain = 2.4, light = true, seed = 1 }) => {
+  const N = at.length * 3;
+  const { geo, mat } = useMemo(() => {
+    const g = new InstancedBufferGeometry();
+    const pl = new PlaneGeometry(1, 1);
+    pl.translate(0, 0.5, 0);
+    g.index = pl.index;
+    g.setAttribute("position", pl.getAttribute("position"));
+    g.setAttribute("uv", pl.getAttribute("uv"));
+    g.setAttribute("aPos", new InstancedBufferAttribute(new Float32Array(N * 3), 3));
+    g.setAttribute("aSize", new InstancedBufferAttribute(new Float32Array(N), 1));
+    g.setAttribute("aSeed", new InstancedBufferAttribute(new Float32Array(N), 1));
+    g.instanceCount = N;
+    const m = new ShaderMaterial({ ...FlameShader, uniforms: { uTime: { value: 0 }, uGain: { value: 2 } }, transparent: true, depthWrite: false, blending: AdditiveBlending, side: DoubleSide, toneMapped: false });
+    return { geo: g, mat: m };
+  }, [N]);
+  useLayoutEffect(() => () => { geo.dispose(); mat.dispose(); }, [geo, mat]);
+  const P = geo.getAttribute("aPos") as InstancedBufferAttribute;
+  const S = geo.getAttribute("aSize") as InstancedBufferAttribute;
+  const D = geo.getAttribute("aSeed") as InstancedBufferAttribute;
+  at.forEach((f, i) => {
+    for (let k = 0; k < 3; k++) {
+      const j = i * 3 + k;
+      const sd = i * 7.31 + k * 1.7 + seed;
+      P.setXYZ(j, f.p[0] + (k - 1) * f.h * 0.18 + noise1(t * 0.5 + sd, 2) * 0.05 * f.h, f.p[1], f.p[2] + (k - 1) * 0.07 * f.h);
+      S.setX(j, f.h * (k === 1 ? 1 : 0.7) * (0.9 + 0.15 * noise1(t * 3 + sd, 5)));
+      D.setX(j, (sd * 0.123) % 1);
+    }
+  });
+  P.needsUpdate = S.needsUpdate = D.needsUpdate = true;
+  mat.uniforms.uTime.value = t;
+  mat.uniforms.uGain.value = gain;
+  const c = at.reduce((acc, f) => [acc[0] + f.p[0] / at.length, acc[1] + (f.p[1] + f.h * 0.5) / at.length, acc[2] + f.p[2] / at.length], [0, 0, 0]);
+  const flick = 1 + 0.25 * noise1(t * 8, seed) + 0.1 * noise1(t * 21, seed + 3);
+  const size = Math.max(...at.map((f) => f.h));
+  return (
+    <>
+      <mesh geometry={geo} material={mat} frustumCulled={false} renderOrder={7} userData={{ noMask: true }} />
+      {light && <pointLight position={[c[0], c[1] + size * 0.4, c[2] + size * 0.6]} color="#ff7a2a" intensity={14 * size * size * flick} distance={size * 14} decay={1.5} />}
+    </>
+  );
+};
+
+let shaftTex: CanvasTexture | null = null;
+const shaft = () => {
+  if (shaftTex) return shaftTex;
+  const c = document.createElement("canvas");
+  c.width = 64;
+  c.height = 256;
+  const g = c.getContext("2d")!;
+  const grd = g.createLinearGradient(0, 0, 0, 256);
+  grd.addColorStop(0, "rgba(255,255,255,0.9)");
+  grd.addColorStop(1, "rgba(255,255,255,0)");
+  g.fillStyle = grd;
+  g.fillRect(0, 0, 64, 256);
+  const side = g.createLinearGradient(0, 0, 64, 0);
+  side.addColorStop(0, "rgba(0,0,0,1)");
+  side.addColorStop(0.3, "rgba(0,0,0,0)");
+  side.addColorStop(0.7, "rgba(0,0,0,0)");
+  side.addColorStop(1, "rgba(0,0,0,1)");
+  g.globalCompositeOperation = "destination-out";
+  g.fillStyle = side;
+  g.fillRect(0, 0, 64, 256);
+  shaftTex = new CanvasTexture(c);
+  return shaftTex;
+};
+
+/** Soft additive light shafts (fake volumetric beams) hanging from `from`, leaning toward +z (the camera) by `tilt`. */
+export const Shafts: React.FC<{ from: V3; yaw?: number; tilt: number; len: number; width: number; count?: number; color?: string; opacity?: number; t: number }> = ({
+  from, yaw = 0, tilt, len, width, count = 4, color = "#ffd9a0", opacity = 0.16, t,
+}) => {
+  const mat = useMemo(() => new MeshBasicMaterial({ map: shaft(), color: new Color(color), transparent: true, opacity, depthWrite: false, blending: AdditiveBlending, side: DoubleSide, toneMapped: false, fog: false }), [color, opacity]);
+  useLayoutEffect(() => () => mat.dispose(), [mat]);
+  mat.opacity = opacity * (0.85 + 0.15 * noise1(t * 0.4, 7));
+  return (
+    <group position={from} rotation={[0, yaw, 0]} userData={{ noMask: true }}>
+      <group rotation={[-tilt, 0, 0]}>
+        {Array.from({ length: count }, (_, i) => {
+          const x = (i / Math.max(1, count - 1) - 0.5) * width;
+          return (
+            <mesh key={i} material={mat} position={[x, -len / 2, 0]} rotation={[0, (i % 2 ? 1 : -1) * 0.22, 0]} userData={{ noMask: true }}>
+              <planeGeometry args={[(width / count) * 1.5, len]} />
+            </mesh>
+          );
+        })}
+      </group>
+    </group>
+  );
+};
+
+const candleFlame = new MeshBasicMaterial({ color: new Color("#ffb45a").multiplyScalar(5), toneMapped: false, fog: false });
+const candleCore = new MeshBasicMaterial({ color: new Color("#fff0c8").multiplyScalar(7), toneMapped: false, fog: false });
+const wax = new MeshBasicMaterial({ color: "#d8c8a8" });
+export const Candle: React.FC<{ pos: V3; t: number; seed?: number; power?: number }> = ({ pos, t, seed = 1, power = 1 }) => {
+  const f = 1 + 0.15 * noise1(t * 9, seed) + 0.06 * noise1(t * 23, seed + 2);
+  return (
+    <group position={pos}>
+      <mesh material={wax} position={[0, 0.07, 0]}>
+        <cylinderGeometry args={[0.025, 0.028, 0.14, 12]} />
+      </mesh>
+      <mesh material={candleFlame} position={[0, 0.17 + 0.01 * f, 0]} scale={[0.016, 0.04 * f, 0.016]} userData={{ noMask: true }}>
+        <sphereGeometry args={[1, 10, 8]} />
+      </mesh>
+      <mesh material={candleCore} position={[0, 0.16, 0]} scale={[0.007, 0.018, 0.007]} userData={{ noMask: true }}>
+        <sphereGeometry args={[1, 8, 6]} />
+      </mesh>
+      <pointLight position={[0, 0.25, 0]} color="#ffae5c" intensity={2.6 * f * power} distance={7} decay={1.5} castShadow={false} />
+    </group>
+  );
+};
+
+==== 4405 project/src/film/PlaceScene.tsx
+import React, { useMemo } from "react";
+import { useVideoConfig } from "remotion";
+import { ShotCanvas } from "../kits/chronicle/ShotCanvas.tsx";
+import { DAY, DUSK, GOLDEN, INFERNO, MORNING, NIGHT, ROOM_DAY, ROOM_NIGHT } from "../kits/chronicle/looks.ts";
+import type { Look } from "../kits/chronicle/Stage.tsx";
+import { Figure } from "../kits/chronicle/Figure.tsx";
+import { camAt, handheld } from "../kits/chronicle/cam.ts";
+import { SETS, type V3 } from "./sets.tsx";
+import { shotKeys, stageCast } from "./stage.ts";
+import type { MoodId, PlanScene } from "../director/types.ts";
+import { Solid } from "../core/qa/scene-qa.tsx";
+
+const WIDE_FOV = 0.84;
+
+const LOOKS: Record<MoodId, Look> = {
+  senja: GOLDEN, biru: DUSK, malam: NIGHT, pagi: MORNING, siang: DAY, api: INFERNO, "dalam-siang": ROOM_DAY, "dalam-malam": ROOM_NIGHT,
+};
+
+/** Look for the set: outdoor looks get the set's own fog scale; fire overrides the night. */
+const lookFor = (sc: NonNullable<PlanScene["place"]>): Look => {
+  let L = LOOKS[sc.mood];
+  if (sc.fire && sc.mood !== "dalam-malam" && sc.mood !== "dalam-siang") L = { ...INFERNO, fog: { color: "#4a2219", density: 0.012 }, key: { ...INFERNO.key, pos: [10, 22, -60] } };
+  if (sc.volcano) L = { ...INFERNO, fog: { color: "#5a281c", density: 0.00042 }, key: { ...INFERNO.key, pos: [40, 60, -120], intensity: 2.8 } };
+  if (sc.fog) L = { ...L, fog: { ...L.fog, density: L.fog.density * 1.6 } };
+  if (sc.set === "pelabuhan" || sc.set === "dek" || sc.set === "pantai") L = { ...L, fog: { ...L.fog, density: Math.min(L.fog.density, 0.004) } };
+  return L;
+};
+
+export const PlaceScene: React.FC<{ scene: PlanScene; s: number; frame: number }> = ({ scene, s, frame }) => {
+  const P = scene.place!;
+  const set = SETS[P.set];
+  const dur = scene.b - scene.a;
+  const dark = P.mood === "malam" || P.mood === "dalam-malam" || P.mood === "dalam-siang" || P.fire;
+  const actors = useMemo(() => stageCast(P.groups, set.anchors, dur, P.seed, dark), [P, set, dur, dark]);
+  const look = lookFor(P);
+  // shadows follow the stage
+  const lk: Look = {
+    ...look,
+    key: { ...look.key, pos: set.anchors.light && !P.fire ? set.anchors.light : look.key.pos, shadow: look.key.shadow ? { ...look.key.shadow, at: [set.anchors.lead[0], 0, set.anchors.lead[2] - 2] } : undefined },
+    hemi: set.anchors.light ? { ...look.hemi, intensity: look.hemi.intensity * 1.25 } : look.hemi,
+  };
+
+  // which beat are we in (local time)
+  const beats = P.beats.map((b) => ({ ...b, a: b.a - scene.a, b: b.b - scene.a }));
+  const bi = Math.max(0, beats.findIndex((b) => s >= b.a && s < b.b));
+  const beat = beats[bi] ?? beats[beats.length - 1];
+  const leadA = actors.find((a) => a.lead) ?? actors[0];
+  const focusAt = (t: number): V3 => (leadA ? leadA.at(t).pos : set.anchors.lead);
+  const groupAt = (t: number): V3 => {
+    if (!actors.length) return set.anchors.lead;
+    // a moving lead: frame the pack, not the bystanders
+    const pool = leadA?.moving ? actors.filter((a) => a.moving) : actors;
+    const vis = pool.slice(0, 12).map((a) => a.at(t).pos);
+    return [vis.reduce((x, p) => x + p[0], 0) / vis.length, 0, vis.reduce((x, p) => x + p[2], 0) / vis.length];
+  };
+  const side = bi % 2 ? -1 : 1;
+  const keys = shotKeys(beat.shot, beat.a, beat.b, focusAt, groupAt, set.anchors, !!leadA?.seated, side, !!leadA?.moving);
+  const shot0 = handheld(camAt(keys, s), s, { drift: 0.0035, seed: P.seed });
+  // 16:9: the camera grammar is tuned for a narrow 9:16 frame; narrow the vertical fov so a landscape frame shows
+  // about twice the portrait width, not three times (sets stay dressed to their edges, people stay readable)
+  const { width, height } = useVideoConfig();
+  const shot = width > height ? { ...shot0, fov: (2 * Math.atan(Math.tan((shot0.fov * Math.PI) / 360) * WIDE_FOV) * 180) / Math.PI } : shot0;
+
+  const Comp = set.Comp;
+  return (
+    <ShotCanvas shot={shot} look={lk} frame={frame}>
+      <Comp t={s} fire={P.fire} rain={P.rain} fog={P.fog} candle={P.candle} volcano={P.volcano} seed={P.seed} mood={P.mood} />
+      {actors.map((a) => {
+        const st = a.at(s);
+        // <Solid>: each figure for the scene QA (scripts/qa-scene.mjs)
+        return <Solid key={a.id} id={`fig${a.id}`}><Figure id={a.id} pos={st.pos} rotY={st.rotY} pose={st.pose} look={a.costume as never} outline={a.color} gain={a.gain} t={s + a.id} /></Solid>;
+      })}
+    </ShotCanvas>
+  );
+};
+
+==== 3579 project/src/kits/chronicle/cam.ts
+// Camera moves for CHRONICLE shots: keyed in seconds, C1-smooth through the keys (Catmull-Rom tangents,
+// zero speed at the first and last key), plus a deterministic handheld drift and impact shake.
+// The same function drives the 3D camera and the 2D overlay projection (map labels, pins, lines).
+
+import { PerspectiveCamera, Vector3 } from "three";
+import { sample, type Key } from "../../core/motion/track.ts";
+
+export type V3 = [number, number, number];
+export type Shot = { pos: V3; target: V3; fov: number; roll?: number };
+export type CamKey = { t: number; pos: V3; target: V3; fov?: number; roll?: number; hold?: boolean };
+
+export const clamp01 = (x: number) => (x < 0 ? 0 : x > 1 ? 1 : x);
+export const lin = (s: number, a: number, b: number) => clamp01((s - a) / (b - a));
+export const sm = (t: number) => {
+  const x = clamp01(t);
+  return x * x * (3 - 2 * x);
+};
+export const smoother = (t: number) => {
+  const x = clamp01(t);
+  return x * x * x * (x * (x * 6 - 15) + 10);
+};
+export const mix = (a: number, b: number, t: number) => a + (b - a) * t;
+export const mix3 = (a: V3, b: V3, t: number): V3 => [mix(a[0], b[0], t), mix(a[1], b[1], t), mix(a[2], b[2], t)];
+
+/** Smooth hash noise in 1D (deterministic). */
+const h1 = (n: number) => {
+  const x = Math.sin(n * 127.1 + 311.7) * 43758.5453;
+  return x - Math.floor(x);
+};
+export const noise1 = (x: number, seed = 0) => {
+  const i = Math.floor(x), f = x - i;
+  const u = f * f * (3 - 2 * f);
+  return mix(h1(i + seed * 57.3), h1(i + 1 + seed * 57.3), u) * 2 - 1;
+};
+
+/** Sample a list of camera keys at time s (seconds, local to the shot). */
+export const camAt = (keys: CamKey[], s: number): Shot => {
+  const k: Key[] = keys.map((c) => ({ f: c.t, v: [...c.pos, ...c.target, c.fov ?? 32, c.roll ?? 0], hold: c.hold }));
+  const v = sample(k, s);
+  return { pos: [v[0], v[1], v[2]], target: [v[3], v[4], v[5]], fov: v[6], roll: v[7] };
+};
+
+/**
+ * Handheld drift (always on, tiny) + impact shake (decaying bursts at `hits` seconds).
+ * Amplitudes are in world units at the target distance, so they scale with the framing.
+ */
+export const handheld = (shot: Shot, s: number, o: { drift?: number; hits?: number[]; hit?: number; seed?: number } = {}): Shot => {
+  const seed = o.seed ?? 1;
+  const d = new Vector3(...shot.pos).distanceTo(new Vector3(...shot.target));
+  let ax = noise1(s * 0.35, seed) * (o.drift ?? 0.004) * d;
+  let ay = noise1(s * 0.31, seed + 3) * (o.drift ?? 0.004) * d * 0.7;
+  let roll = shot.roll ?? 0;
+  for (const t of o.hits ?? []) {
+    const a = s - t;
+    if (a < 0 || a > 1.6) continue;
+    const env = Math.exp(-a * 3.2) * (o.hit ?? 0.012) * d;
+    ax += noise1(a * 22, seed + t) * env;
+    ay += noise1(a * 25, seed + t + 9) * env;
+    roll += noise1(a * 18, seed + t + 4) * env * 0.02 / Math.max(d, 1e-3);
+  }
+  const target: V3 = [shot.target[0] + ax, shot.target[1] + ay, shot.target[2]];
+  return { ...shot, target, roll };
+};
+
+const tmpCam = new PerspectiveCamera();
+/** Project a world point to overlay space (0..1, y down). `vis` is false behind the camera. */
+export const project = (shot: Shot, aspect: number, p: V3, near = 0.1, far = 5000) => {
+  tmpCam.fov = shot.fov;
+  tmpCam.aspect = aspect;
+  tmpCam.near = near;
+  tmpCam.far = far;
+  tmpCam.position.set(...shot.pos);
+  tmpCam.up.set(Math.sin(shot.roll ?? 0), Math.cos(shot.roll ?? 0), 0);
+  tmpCam.lookAt(...shot.target);
+  tmpCam.updateProjectionMatrix();
+  tmpCam.updateMatrixWorld();
+  const v = new Vector3(...p).project(tmpCam);
+  return { x: (v.x + 1) / 2, y: (1 - v.y) / 2, vis: v.z < 1 && v.z > -1 };
+};
+
+==== 1660 project/src/kits/chronicle/fonts.ts
+import { continueRender, delayRender, staticFile } from "remotion";
+
+// CHRONICLE type (all SIL OFL, bundled in public/fonts):
+//   Anton                — big date stamps and counters
+//   Barlow Condensed     — names, map labels, kickers
+//   Plus Jakarta Sans    — word-by-word captions
+//   Instrument Serif It. — source citations and roles
+export const F_STAMP = "Anton";
+export const F_LABEL = "Barlow Condensed";
+export const F_CAPTION = "Plus Jakarta Sans";
+export const F_CITE = "Instrument Serif";
+
+let ready: Promise<void> | null = null;
+export const chronicleFontsReady = (): Promise<void> => {
+  if (ready) return ready;
+  if (typeof document === "undefined") return (ready = Promise.resolve());
+  const handle = delayRender("chronicle fonts");
+  const ttf = (fam: string, file: string, weight: string, style = "normal") =>
+    new FontFace(fam, `url(${staticFile(`fonts/${file}`)}) format("truetype")`, { weight, style });
+  const faces = [
+    ttf(F_STAMP, "Anton-Regular.ttf", "400"),
+    ttf(F_LABEL, "BarlowCondensed-SemiBold.ttf", "600"),
+    ttf(F_LABEL, "BarlowCondensed-ExtraBold.ttf", "800"),
+    ttf(F_CAPTION, "PlusJakartaSans_500Medium.ttf", "500"),
+    ttf(F_CAPTION, "PlusJakartaSans_700Bold.ttf", "700"),
+    ttf(F_CAPTION, "PlusJakartaSans_800ExtraBold.ttf", "800"),
+    ttf(F_CITE, "InstrumentSerif-Italic.ttf", "400", "italic"),
+  ];
+  ready = Promise.all(
+    faces.map(async (f) => {
+      await f.load();
+      (document.fonts as unknown as { add(f: FontFace): void }).add(f);
+    }),
+  ).then(
+    () => continueRender(handle),
+    (e) => {
+      continueRender(handle);
+      throw e;
+    },
+  );
+  return ready;
+};
+
+==== 8076 project/src/kits/chronicle/outline.ts
+// SilhouetteOutlinePass — the CHRONICLE signature: people are flat black cut-outs standing in a lit 3D world, and
+// selected figures carry a thin coloured contour (amber hero, cyan ally, crimson danger, violet tragedy …).
+//
+// How: one extra render of the scene into an ID mask. Every mesh tagged `userData.sil = {id, color}` draws its
+// outline colour (rgb) and id (alpha); every other visible mesh only writes depth (colorWrite off for that render,
+// so custom vertex shaders, alpha test and instancing still occlude correctly); transparent FX are hidden.
+// A full-screen pass then draws, on each pixel, the colour of the NEAREST-IN-DEPTH figure whose silhouette lies
+// within `radius` px but which does not cover the pixel itself (or covers it with a farther figure). Result: a
+// contour hugging the outside of each figure, over the background and over the figures behind it, hidden where a
+// wall or another figure is in front. Optional faint halo for the "lit edge" feel.
+
+import {
+  Camera, Color, DepthTexture, Material, Mesh, MeshBasicMaterial, NoBlending, Object3D, PerspectiveCamera, Scene,
+  ShaderMaterial, UnsignedByteType, Vector2, WebGLRenderer, WebGLRenderTarget,
+} from "three";
+import { FullScreenQuad, Pass } from "three/examples/jsm/postprocessing/Pass.js";
+
+export type SilTag = { id: number; color: string | null; gain?: number };
+
+const OutlineShader = {
+  uniforms: {
+    tDiffuse: { value: null },
+    tMask: { value: null },
+    tDepth: { value: null },
+    uTexel: { value: new Vector2(1 / 1080, 1 / 1920) },
+    uR: { value: 3.4 },
+    uHalo: { value: 0.3 },
+    uGain: { value: 1.6 },
+    uNear: { value: 0.1 },
+    uFar: { value: 1000 },
+  },
+  vertexShader: /* glsl */ `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: /* glsl */ `
+    uniform sampler2D tDiffuse; uniform sampler2D tMask; uniform sampler2D tDepth;
+    uniform vec2 uTexel; uniform float uR; uniform float uHalo; uniform float uGain; uniform float uNear; uniform float uFar;
+    varying vec2 vUv;
+    float lin(float d){ float z = d * 2.0 - 1.0; return 2.0 * uNear * uFar / (uFar + uNear - z * (uFar - uNear)); }
+    void main(){
+      vec4 c = texture2D(tDiffuse, vUv);
+      vec4 m0 = texture2D(tMask, vUv);
+      float d0 = lin(texture2D(tDepth, vUv).x);
+      float hr = uR * 2.4;
+      float best = 1e4; vec3 col = vec3(0.0); float bestD = 1e9;
+      for (int y = -8; y <= 8; y++) {
+        for (int x = -8; x <= 8; x++) {
+          vec2 o = vec2(float(x), float(y));
+          float r = length(o);
+          if (r > hr + 0.5) continue;
+          vec2 uv = vUv + o * uTexel;
+          vec4 m = texture2D(tMask, uv);
+          if (m.a < 0.002) continue;                       // no figure there
+          if (abs(m.a - m0.a) < 0.002) continue;           // same figure as this pixel
+          if (m.r + m.g + m.b < 0.004) continue;           // figure without a contour
+          float d = lin(texture2D(tDepth, uv).x);
+          if (d > d0 * 0.997 - 0.01) continue;             // that figure must be in front of this pixel
+          // nearest figure in depth wins where two contours meet
+          if (r < best - 0.75 || (r < best + 0.75 && d < bestD)) { best = min(r, best); col = m.rgb; bestD = d; }
+        }
+      }
+      float line = 1.0 - smoothstep(uR - 0.6, uR + 0.6, best);
+      float halo = uHalo * (1.0 - smoothstep(uR * 0.5, hr, best)) * 0.45;
+      float a = max(line, halo);
+      vec3 lit = col * uGain;
+      c.rgb = mix(c.rgb, lit, clamp(a, 0.0, 1.0));
+      gl_FragColor = c;
+    }`,
+};
+
+export class SilhouetteOutlinePass extends Pass {
+  scene: Scene;
+  camera: Camera;
+  mask: WebGLRenderTarget;
+  quad: FullScreenQuad;
+  mat: ShaderMaterial;
+  private maskMats = new Map<string, MeshBasicMaterial>();
+
+  constructor(scene: Scene, camera: Camera, w: number, h: number) {
+    super();
+    this.scene = scene;
+    this.camera = camera;
+    this.mask = new WebGLRenderTarget(w, h, { type: UnsignedByteType, depthTexture: new DepthTexture(w, h) });
+    this.mat = new ShaderMaterial({ ...OutlineShader, uniforms: structuredCloneUniforms(OutlineShader.uniforms) });
+    this.quad = new FullScreenQuad(this.mat);
+    this.setRadius(w);
+  }
+
+  /** Contour width scales with the frame: ~3.4 px at 1080 wide. */
+  setRadius(w: number, k = 1) {
+    this.mat.uniforms.uR.value = Math.max(1.1, 3.4 * (w / 1080) * k);
+    (this.mat.uniforms.uTexel.value as Vector2).set(1 / this.mask.width, 1 / this.mask.height);
+  }
+
+  private maskMat(tag: SilTag) {
+    const key = `${tag.id}|${tag.color}|${tag.gain ?? 1}`;
+    let m = this.maskMats.get(key);
+    if (!m) {
+      const c = tag.color ? new Color(tag.color).multiplyScalar(tag.gain ?? 1) : new Color(0, 0, 0);
+      // alpha = id/255 must reach the target untouched: transparent (so OPAQUE does not force a = 1) + NoBlending
+      m = new MeshBasicMaterial({ color: c, opacity: ((tag.id % 254) + 1) / 255, transparent: true, blending: NoBlending, fog: false, toneMapped: false, depthWrite: true });
+      m.polygonOffset = true;
+      m.polygonOffsetFactor = -1;
+      m.polygonOffsetUnits = -1;
+      this.maskMats.set(key, m);
+    }
+    return m;
+  }
+
+  render(renderer: WebGLRenderer, writeBuffer: WebGLRenderTarget, readBuffer: WebGLRenderTarget) {
+    const scene = this.scene;
+    const swapped: [Mesh, Material | Material[]][] = [];
+    const muted: Material[] = [];
+    const hidden: Object3D[] = [];
+    scene.traverseVisible((o) => {
+      const any = o as Mesh;
+      if (!any.material) return;
+      const tag = o.userData.sil as SilTag | undefined;
+      if (tag) {
+        swapped.push([any, any.material]);
+        any.material = this.maskMat(tag);
+        return;
+      }
+      const mats = Array.isArray(any.material) ? any.material : [any.material];
+      if (o.userData.noMask || mats.some((m) => m.transparent && !m.depthWrite) || (o as unknown as { isPoints?: boolean }).isPoints || (o as unknown as { isLine?: boolean }).isLine) {
+        hidden.push(o);
+        return;
+      }
+      for (const m of mats) if (m.colorWrite) { m.colorWrite = false; muted.push(m); }
+    });
+    for (const o of hidden) o.visible = false;
+    const bg = scene.background;
+    const fog = scene.fog;
+    scene.background = null;
+    const oldClear = new Color();
+    renderer.getClearColor(oldClear);
+    const oldAlpha = renderer.getClearAlpha();
+    const shadowAuto = renderer.shadowMap.autoUpdate;
+    const shadowNeeds = renderer.shadowMap.needsUpdate;
+    renderer.shadowMap.autoUpdate = false;
+    renderer.shadowMap.needsUpdate = false;
+    renderer.setClearColor(0x000000, 0);
+    renderer.setRenderTarget(this.mask);
+    renderer.clear(true, true, true);
+    renderer.render(scene, this.camera);
+    // restore
+    renderer.shadowMap.autoUpdate = shadowAuto;
+    renderer.shadowMap.needsUpdate = shadowNeeds;
+    renderer.setClearColor(oldClear, oldAlpha);
+    scene.background = bg;
+    scene.fog = fog;
+    for (const [m, mat] of swapped) m.material = mat;
+    for (const m of muted) m.colorWrite = true;
+    for (const o of hidden) o.visible = true;
+
+    const cam = this.camera as PerspectiveCamera;
+    const u = this.mat.uniforms;
+    u.tDiffuse.value = readBuffer.texture;
+    u.tMask.value = this.mask.texture;
+    u.tDepth.value = this.mask.depthTexture;
+    u.uNear.value = cam.near;
+    u.uFar.value = cam.far;
+    renderer.setRenderTarget(this.renderToScreen ? null : writeBuffer);
+    this.quad.render(renderer);
+  }
+
+  setSize(w: number, h: number) {
+    this.mask.setSize(w, h);
+    this.setRadius(w);
+  }
+
+  dispose() {
+    this.mask.dispose();
+    this.mat.dispose();
+    this.quad.dispose();
+    for (const m of this.maskMats.values()) m.dispose();
+  }
+}
+
+function structuredCloneUniforms(u: Record<string, { value: unknown }>) {
+  const out: Record<string, { value: unknown }> = {};
+  for (const k of Object.keys(u)) {
+    const v = u[k].value as { clone?: () => unknown } | null;
+    out[k] = { value: v && typeof v === "object" && v.clone ? v.clone() : v };
+  }
+  return out;
+}
+
+==== 5392 project/src/kits/chronicle/Relief.tsx
+import React, { useLayoutEffect, useMemo } from "react";
+import { AdditiveBlending, BufferAttribute, BufferGeometry, Color, DoubleSide, MeshBasicMaterial, MeshStandardMaterial } from "three";
+import { buildRelief, fbm, kmPerPx, reliefColor, type Region, type Relief } from "./relief.ts";
+
+const terrainMat = new MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0, flatShading: false });
+
+export const useRelief = (region: Region): Relief => useMemo(() => buildRelief(region), [region]);
+
+/** The terrain grid + the painted sea plane (extended far past the region in the deep-sea colour). */
+export const ReliefMap: React.FC<{ relief: Relief }> = ({ relief }) => {
+  const seaMat = useMemo(() => new MeshStandardMaterial({ map: relief.sea, roughness: 0.82, metalness: 0.0 }), [relief]);
+  return (
+    <>
+      <mesh geometry={relief.geo} material={terrainMat} receiveShadow castShadow />
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]} material={seaMat} receiveShadow>
+        <planeGeometry args={[relief.size[0], relief.size[1]]} />
+      </mesh>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.0, 0]}>
+        <planeGeometry args={[relief.size[0] * 6, relief.size[1] * 6]} />
+        <meshStandardMaterial color="#183c48" roughness={0.82} />
+      </mesh>
+    </>
+  );
+};
+
+/**
+ * A stratovolcano that can lose its summit: `collapse` 0 → 1 lowers the peak from km0 to km1 and opens a caldera.
+ * Polar mesh on top of the terrain (give the terrain's own cone `skip: true`).
+ */
+export const Strato: React.FC<{ relief: Relief; lon: number; lat: number; km0: number; km1: number; radiusKm: number; calderaKm: number; collapse: number }> = ({
+  relief, lon, lat, km0, km1, radiusKm, calderaKm, collapse,
+}) => {
+  const RINGS = 90, SEG = 160;
+  const geo = useMemo(() => {
+    const g = new BufferGeometry();
+    g.setAttribute("position", new BufferAttribute(new Float32Array((RINGS + 1) * SEG * 3), 3));
+    g.setAttribute("color", new BufferAttribute(new Float32Array((RINGS + 1) * SEG * 3), 3));
+    const idx: number[] = [];
+    for (let r = 0; r < RINGS; r++) for (let s = 0; s < SEG; s++) {
+      const a = r * SEG + s, b = r * SEG + ((s + 1) % SEG), c = a + SEG, d = b + SEG;
+      idx.push(a, b, c, b, d, c);
+    }
+    g.setIndex(idx);
+    return g;
+  }, []);
+  useLayoutEffect(() => () => geo.dispose(), [geo]);
+  const [wx, wz] = relief.toWorld(lon, lat);
+  const kpp = kmPerPx(lat);
+  const R = radiusKm / kpp;
+  const base = relief.heightAt(lon, lat - 0.25) * 0.6;
+  const c = Math.min(1, Math.max(0, collapse));
+  const top = km0 + (km1 - km0) * c;
+  const cal = (calderaKm / 2) * c;
+  const pos = geo.attributes.position as BufferAttribute;
+  const colA = geo.attributes.color as BufferAttribute;
+  const kmAt = (rk: number, a: number) => {
+    const u = rk / radiusKm;
+    const gull = 1 - 0.1 * Math.pow(Math.abs(Math.sin(a * 13 + fbm(u * 4, a * 2, 2) * 4)), 3) * Math.min(1, u * 3);
+    let k = km0 * Math.exp(-Math.pow(u, 1.05) * 2.6) * gull;
+    k = Math.min(k, top + (km0 - top) * 0.0);
+    // caldera: steep-walled bowl, flat floor 1 km below the new rim
+    if (cal > 0 && rk < cal * 1.25) {
+      const w = Math.min(1, Math.max(0, (cal * 1.25 - rk) / (cal * 0.35)));
+      k -= w * (0.95 + 0.15 * fbm(a * 3, rk, 2)) * c;
+    }
+    return k;
+  };
+  for (let r = 0; r <= RINGS; r++) {
+    const rk = Math.pow(r / RINGS, 1.6) * radiusKm;
+    for (let s = 0; s < SEG; s++) {
+      const a = (s / SEG) * Math.PI * 2;
+      const km = kmAt(rk, a);
+      const i = r * SEG + s;
+      const vx = wx + (Math.cos(a) * rk) / kpp, vz = wz + (Math.sin(a) * rk) / kpp;
+      // tuck the skirt under the real terrain (and under the sea off the coast)
+      const ground = relief.heightAtWorld(vx, vz);
+      const edge = Math.pow(r / RINGS, 3);
+      const yCone = base + km * relief.yPerKm;
+      const y = Math.max(yCone * (1 - edge) + (ground - 0.6) * edge, Math.min(ground - 0.05, yCone));
+      pos.setXYZ(i, vx, y, vz);
+      const dk = kmAt(rk + 0.5, a) - km;
+      const [cr, cg, cb] = reliefColor(km + base / relief.yPerKm, Math.abs(dk) * 1.4, fbm(Math.cos(a) * rk * 0.3, Math.sin(a) * rk * 0.3, 3));
+      const burn = cal > 0 && rk < cal * 1.3 ? 0.55 : 1;
+      colA.setXYZ(i, cr * burn, cg * burn, cb * burn);
+    }
+  }
+  pos.needsUpdate = true;
+  colA.needsUpdate = true;
+  geo.computeVertexNormals();
+  geo.computeBoundingSphere();
+  void R;
+  return <mesh geometry={geo} material={terrainMat} castShadow receiveShadow />;
+};
+
+/** Expanding shock/sound ring on the sea surface (hidden behind land by depth). */
+export const Ring: React.FC<{ at: [number, number]; r: number; opacity: number; color?: string; y?: number; width?: number }> = ({ at, r, opacity, color = "#f6e7c8", y = 0.25, width = 1 }) => {
+  // per-instance opacity needs its own material
+  const mat = useMemo(() => new MeshBasicMaterial({ color: new Color(color), transparent: true, depthWrite: false, side: DoubleSide, blending: AdditiveBlending, toneMapped: false, fog: false }), [color]);
+  useLayoutEffect(() => () => mat.dispose(), [mat]);
+  mat.opacity = opacity;
+  if (opacity <= 0.001 || r <= 0) return null;
+  const w = Math.min(0.5, (width * 1.4) / r);
+  return (
+    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[at[0], y, at[1]]} scale={[r, r, 1]} material={mat}>
+      <ringGeometry args={[1 - w, 1, 180, 1]} />
+    </mesh>
+  );
+};
+
+==== 1019 project/src/kits/chronicle/ShotCanvas.tsx
+import React from "react";
+import { useVideoConfig } from "remotion";
+import { ThreeCanvas } from "@remotion/three";
+import { QaProbe } from "../../core/qa/scene-qa.tsx";
+import { PCFShadowMap } from "three";
+import { Stage, type Look } from "./Stage.tsx";
+import type { Shot } from "./cam.ts";
+
+/** One CHRONICLE shot: a Remotion-synchronised canvas with the CHRONICLE Stage around the set. */
+export const ShotCanvas: React.FC<{ shot: Shot; look: Look; frame: number; children: React.ReactNode }> = ({ shot, look, frame, children }) => {
+  const { width, height } = useVideoConfig();
+  return (
+    <ThreeCanvas
+      width={width}
+      height={height}
+      shadows={{ type: PCFShadowMap }}
+      dpr={1}
+      gl={{ antialias: false, preserveDrawingBuffer: true, powerPreference: "high-performance" }}
+      camera={{ fov: shot.fov, position: shot.pos, near: 0.1, far: 4000 }}
+    >
+      <Stage shot={shot} look={look} frame={frame}>
+        {children}
+      </Stage>
+      <QaProbe />
+    </ThreeCanvas>
+  );
+};
+
+==== 2910 project/src/scenes/lookdev/Lookdev.tsx
+import React, { useEffect, useState } from "react";
+import { AbsoluteFill, continueRender, delayRender, useCurrentFrame, useVideoConfig } from "remotion";
+import { ShotCanvas } from "../../kits/chronicle/ShotCanvas.tsx";
+import { GOLDEN, INK } from "../../kits/chronicle/looks.ts";
+import { Figure, POSES, gait, type Costume, type Pose } from "../../kits/chronicle/Figure.tsx";
+import { chronicleFontsReady } from "../../kits/chronicle/fonts.ts";
+
+const CAST: { look: Costume; pose: (t: number) => Pose; outline: string | null; x: number; z: number; ry?: number }[] = [
+  { look: { hat: "shako", wear: "coat", itemR: "musket" }, pose: () => POSES.shoulderArms(), outline: null, x: -2.6, z: 0, ry: 0.4 },
+  { look: { hat: "bicorne", wear: "coat" }, pose: () => POSES.telescope(), outline: INK.foe, x: -1.5, z: -0.5, ry: 0.9 },
+  { look: { hat: "destar", wear: "sarong", keris: true }, pose: () => POSES.akimbo(), outline: INK.hero, x: -0.3, z: 0.4, ry: 0.15 },
+  { look: { hat: "peci", wear: "sarong" }, pose: (t) => gait(t * 6, 0), outline: INK.ally, x: 0.8, z: -0.3, ry: 1.4 },
+  { look: { body: "f", hat: "bun", wear: "kain", load: "head" }, pose: () => POSES.carryHead(), outline: null, x: 1.8, z: 0.2, ry: -0.5 },
+  { look: { hat: "caping", wear: "sarong", load: "back" }, pose: (t) => gait(t * 9, 1), outline: INK.foe, x: 2.9, z: -0.2, ry: -1.3 },
+  { look: { hat: "turban", wear: "robe", itemR: "torch" }, pose: () => POSES.point("R", 0.1), outline: INK.grief, x: 0.2, z: -2.2, ry: 0.0 },
+  { look: { hat: "peci", wear: "sarong" }, pose: () => POSES.kneel(0.7), outline: null, x: -1.2, z: 1.6, ry: 0.3 },
+];
+
+export const Lookdev: React.FC = () => {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+  const t = frame / fps;
+  const [h] = useState(() => delayRender("fonts"));
+  const [ok, setOk] = useState(false);
+  useEffect(() => { chronicleFontsReady().then(() => { setOk(true); continueRender(h); }); }, [h]);
+  const shot = { pos: [0.4 + Math.sin(t * 0.3) * 0.3, 1.3, 7.5] as [number, number, number], target: [0, 1.0, 0] as [number, number, number], fov: 38 };
+  return (
+    <AbsoluteFill style={{ background: "#000" }}>
+      {ok && (
+        <ShotCanvas shot={shot} look={GOLDEN} frame={frame}>
+          <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+            <planeGeometry args={[400, 400]} />
+            <meshStandardMaterial color="#4a3426" roughness={1} />
+          </mesh>
+          <mesh position={[4, 0.6, -6]} castShadow receiveShadow>
+            <boxGeometry args={[3, 1.2, 1.5]} />
+            <meshStandardMaterial color="#6b5040" roughness={0.9} />
+          </mesh>
+          {CAST.map((c, i) => (
+            <group key={i}>
+              <Figure id={i + 1} pos={[c.x, 0, c.z]} rotY={c.ry} look={c.look} pose={c.pose(t)} outline={c.outline} t={t} />
+            </group>
+          ))}
+        </ShotCanvas>
+      )}
+    </AbsoluteFill>
+  );
+};
+
+==== 1898 project/stories/diponegoro/naskah.txt
+JUDUL: Ditangkap Saat Lebaran
+SERI: Perang Jawa
+SUARA: pria, tenang
+
+[TEMPAT] makam di bawah pohon kamboja, sore. TOKOH: 1 peziarah (peci, sarung) berdoa
+Di Makassar, ada makam seorang pangeran dari Jawa.
+Bagaimana *Diponegoro* bisa dimakamkan sejauh ini?
+
+[PETA] Yogyakarta
+[TANGGAL] YOGYAKARTA / JULI 1825
+Juli 1825, pasukan Belanda menyerbu *Tegalrejo*.
+
+[TEMPAT] desa terbakar, malam. TOKOH: 1 Diponegoro (sorban, jubah) lari = emas, 4 pengikut (destar, tombak) lari, 3 serdadu (senapan) = merah
+[NAMA] Pangeran Diponegoro — putra sulung Sultan Hamengkubuwono III
+Rumahnya dibakar, tapi *Diponegoro* lolos.
+Perang Jawa pun pecah.
+
+[TEMPAT] hutan di perbukitan, kabut, pagi. TOKOH: 1 Diponegoro (sorban, jubah) menunjuk = emas, 12 laskar (destar, tombak) berbaris
+[ANGKA] 200.000 jiwa, korban Perang Jawa
+Lima tahun ia bergerilya dari hutan ke hutan.
+Sekitar *200.000* orang Jawa tewas.
+
+[TEMPAT] pendopo karesidenan, siang. TOKOH: 1 Diponegoro (sorban, jubah) duduk = emas, 1 De Kock (perwira) berdiri = merah, 4 serdadu (senapan) berjaga
+[TANGGAL] MAGELANG / 28 MARET 1830
+[NAMA] Jenderal De Kock — panglima Belanda
+Maret 1830, ia diundang berunding di *Magelang*.
+Saat itu bulan Syawal, suasana Lebaran.
+Perundingan gagal. *Diponegoro* ditangkap di tempat.
+
+[RUTE] Magelang → Batavia → Manado → Makassar, kapal
+Ia dibuang ke *Manado*, lalu ke *Makassar*.
+
+[TEMPAT] kamar benteng, malam, lilin. TOKOH: 1 Diponegoro (sorban, jubah) menulis = ungu
+[SUMBER] Di pengasingan ia menulis Babad Diponegoro — Peter Carey, The Power of Prophecy, 2007
+Di pengasingan, ia menulis kisah hidupnya sendiri.
+
+[PETA] Makassar
+[NAMA] Benteng Rotterdam — Makassar
+Diponegoro wafat di Makassar, *8 Januari 1855*.
+Itulah sebabnya ia dimakamkan jauh dari tanah Jawa.
+
+[PENUTUP] Perang Jawa — selesai
+[SUMBER] Peter Carey (2007), The Power of Prophecy; Ricklefs (2008), A History of Modern Indonesia
+
+==== 1034 project/stories/diponegoro/VO-elevenlabs-v3-ekspresi.txt
+[calm] [mysterious] Di Makassar... ada makam seorang pangeran dari Jawa.
+[curious] Bagaimana Diponegoro... bisa dimakamkan sejauh ini?
+
+[long pause]
+
+[serious] Juli, seribu delapan ratus dua puluh lima. Pasukan Belanda... menyerbu Tegalrejo.
+
+[tense] Rumahnya dibakar. [short pause] Tapi Diponegoro... lolos.
+[dramatic] Perang Jawa pun pecah.
+
+[pause]
+
+[determined] Lima tahun ia bergerilya, dari hutan... ke hutan.
+[sad] [quietly] Sekitar dua ratus ribu orang Jawa... tewas.
+
+[long pause]
+
+[calm] Maret, seribu delapan ratus tiga puluh. Ia diundang berunding di Magelang.
+[softly] Saat itu bulan Syawal... suasana Lebaran.
+[serious] Perundingan gagal. [short pause] [dramatic] Diponegoro... ditangkap di tempat.
+
+[pause]
+
+[somber] Ia dibuang ke Manado... lalu ke Makassar.
+
+[whispers] Di pengasingan, ia menulis kisah hidupnya sendiri.
+
+[long pause]
+
+[somber] [slowly] Diponegoro wafat di Makassar... delapan Januari, seribu delapan ratus lima puluh lima.
+[sighs] [reflective] Itulah sebabnya... ia dimakamkan jauh, dari tanah Jawa.
+
+==== 730 project/stories/diponegoro/VO-elevenlabs.txt
+Di Makassar, ada makam seorang pangeran dari Jawa.
+Bagaimana Diponegoro bisa dimakamkan sejauh ini?
+
+Juli seribu delapan ratus dua puluh lima, pasukan Belanda menyerbu Tegalrejo.
+
+Rumahnya dibakar, tapi Diponegoro lolos.
+Perang Jawa pun pecah.
+
+Lima tahun ia bergerilya, dari hutan ke hutan.
+Sekitar dua ratus ribu orang Jawa tewas.
+
+Maret seribu delapan ratus tiga puluh, ia diundang berunding di Magelang.
+Saat itu bulan Syawal, suasana Lebaran.
+Perundingan gagal. Diponegoro ditangkap di tempat.
+
+Ia dibuang ke Manado, lalu ke Makassar.
+
+Di pengasingan, ia menulis kisah hidupnya sendiri.
+
+Diponegoro wafat di Makassar, delapan Januari seribu delapan ratus lima puluh lima.
+Itulah sebabnya, ia dimakamkan jauh dari tanah Jawa.
+
+==== 1110 project/stories/tambora/naskah.txt
+JUDUL: Dentuman dari Timur
+SERI: Letusan Besar Nusantara
+SUARA: pria, berat, tenang
+
+[PETA] Tambora sampai Batavia, cincin dentuman dari Tambora
+[TANGGAL] SUMBAWA / APRIL 1815
+April 1815, *Tambora* meledak.
+Dentumannya terdengar sampai *Batavia*.
+
+[TEMPAT] benteng Batavia, senja. TOKOH: 1 perwira meneropong = gading, 4 serdadu (senapan) berjaga
+[SUMBER] Dentuman itu dikira tembakan meriam; pasukan sempat disiagakan — Memoir Sir T. S. Raffles, 1830
+Orang di sana mengira itu *tembakan meriam*.
+Pasukan pun disiagakan mencari *musuh*.
+
+[TEMPAT] desa rumah panggung, malam, gunung meletus. TOKOH: 1 kepala kampung (destar) lari = ungu, 6 warga (buntelan) lari, 2 perempuan lari = ungu
+[NAMA] Kerajaan Tambora — Sumbawa, malam 10 April 1815
+Padahal di Sumbawa, *Kerajaan Tambora*
+lenyap ditelan *abu dan api*.
+
+[PETA] Tambora meletus
+[ANGKA] 4.300 → 2.850 m, Tinggi Tambora
+Gunungnya kehilangan lebih dari *1.400 meter*.
+Dan dunia baru mulai *merasakannya*.
+
+[PENUTUP] Bersambung — Tahun Tanpa Musim Panas
+[SUMBER] Memoir of Sir T. S. Raffles (1830); Oppenheimer (2003), Progress in Physical Geography
+
+==== 496 project/stories/tambora/VO-elevenlabs-v3-ekspresi.txt
+[serious] April, seribu delapan ratus lima belas. [short pause] [dramatic] Tambora... MELEDAK.
+[awed] Dentumannya terdengar... sampai Batavia.
+
+[pause]
+
+[curious] Orang di sana mengira itu... tembakan meriam.
+[tense] Pasukan pun disiagakan, mencari musuh.
+
+[long pause]
+
+[somber] Padahal di Sumbawa... Kerajaan Tambora
+[sad] [quietly] lenyap ditelan abu... dan api.
+
+[pause]
+
+[serious] Gunungnya kehilangan lebih dari... seribu empat ratus meter.
+[whispers] Dan dunia... baru mulai merasakannya.
+
+==== 338 project/stories/tambora/VO-elevenlabs.txt
+April seribu delapan ratus lima belas, Tambora meledak.
+Dentumannya terdengar sampai Batavia.
+
+Orang di sana mengira itu tembakan meriam.
+Pasukan pun disiagakan, mencari musuh.
+
+Padahal di Sumbawa, Kerajaan Tambora
+lenyap ditelan abu dan api.
+
+Gunungnya kehilangan lebih dari seribu empat ratus meter.
+Dan dunia, baru mulai merasakannya.
+
+==== 484 project/tsconfig.json
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "Preserve",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "noEmit": true,
+    "lib": ["ES2022", "DOM"],
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "noUnusedLocals": true,
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true
+  },
+  "include": ["src", "scripts/*.ts"],
+  "exclude": ["remotion.config.ts"]
+}

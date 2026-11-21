@@ -1,0 +1,2870 @@
+VOYNANN Motion - packed source files of this folder. Do not edit by hand.
+The skill upload in the Claude app accepts at most 200 files, so the source files are packed here.
+`node <skill folder>/new-project.mjs <project folder> --kit=<style>` unpacks them into the project.
+Format: per file one line with four '=' signs, the byte length and the path, then exactly that many bytes.
+
+==== 12221 project/scripts/book-make.mjs
+#!/usr/bin/env node
+// STORYBOOK auto-director: naskah → (voice) → plan → sound → stills / preview / final.
+//
+//   node scripts/book-make.mjs <story-id> [--plan | --stills 3s,9s | --preview | --final] [--wide] [--tts]
+//
+//   stories/<id>/naskah.txt     the book script (FORMAT-NASKAH-BUKU.md)
+//   stories/<id>/vo.mp3|wav|m4a the narration (optional) → line times by whisper.cpp, or by the VO's pauses without it
+//   --tts                       no VO yet: a temporary macOS voice (Damayanti) reads the lines
+//   --wide                      16:9 instead of 9:16: the same book and plan, filmed as a two-page spread
+//
+// Outputs out/<id>/plan.json, public/stories/<id>/mix.wav and out/<id>/<id>_preview_540x960.mp4 or
+// out/<id>/<id>_1080x1920_60fps.mp4 (+ QA with --final); with --wide <id>_preview_960x540.mp4 or
+// <id>_1920x1080_60fps.mp4, stills in out/<id>/stills-wide, QA in out/<id>/qa-wide.
+
+import fs from "node:fs";
+import path from "node:path";
+import os from "node:os";
+import { execFileSync, spawnSync } from "node:child_process";
+import { deliveryScan, sceneGate } from "./qa-gate.mjs";
+import { bookLines, planBook } from "../src/director/book.ts";
+
+const args = process.argv.slice(2);
+const id = args.find((a, i) => !a.startsWith("--") && !(args[i - 1] ?? "").startsWith("--stills"));
+if (!id) { console.error("usage: node scripts/book-make.mjs <story-id> [--plan|--stills 3s,9s|--preview|--final] [--wide] [--tts]"); process.exit(2); }
+const flag = (f) => args.includes(f);
+const opt = (f) => { const i = args.indexOf(f); return i >= 0 ? args[i + 1] : undefined; };
+const dir = path.resolve("stories", id);
+const naskah = path.join(dir, "naskah.txt");
+if (!fs.existsSync(naskah)) { console.error(`Tidak ada ${naskah}. Tulis naskahnya dulu (lihat FORMAT-NASKAH-BUKU.md).`); process.exit(2); }
+const src = fs.readFileSync(naskah, "utf8");
+const out = path.resolve("out", id);
+const pub = path.resolve("public", "stories", id);
+fs.mkdirSync(out, { recursive: true });
+fs.mkdirSync(pub, { recursive: true });
+const sh = (cmd, a) => execFileSync(cmd, a, { stdio: ["ignore", "pipe", "pipe"], maxBuffer: 1 << 28 }).toString();
+const lines = bookLines(src);
+const norm = (w) => w.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]/g, "");
+
+// ---------------------------------------------------------------- whisper.cpp (optional)
+const findWhisper = () => {
+  const onPath = spawnSync("sh", ["-c", "command -v whisper-cli"], { encoding: "utf8" }).stdout?.trim();
+  const bin = [process.env.WHISPER_CLI, onPath, "/opt/homebrew/bin/whisper-cli", "/usr/local/bin/whisper-cli", path.join(os.homedir(), "whisper.cpp/build/bin/whisper-cli")].filter(Boolean).find((c) => fs.existsSync(c));
+  const dirs = [path.join(os.homedir(), ".cache/whisper.cpp"), "models", "/opt/homebrew/share/whisper-cpp", path.join(os.homedir(), "whisper.cpp/models")];
+  // prefer a large-v3(-turbo) model when several are installed (Indonesian works well with it)
+  const all = dirs.flatMap((d) => (fs.existsSync(d) ? fs.readdirSync(d).filter((f) => f.endsWith(".bin")).map((f) => path.join(d, f)) : []));
+  const model = (process.env.WHISPER_MODEL && fs.existsSync(process.env.WHISPER_MODEL) && process.env.WHISPER_MODEL) || all.find((f) => /large-v3/.test(f)) || all[0];
+  return bin && model ? { bin, model } : null;
+};
+
+/** Line times from whisper words (in order, tolerant to split names and spelled numbers). */
+const alignWhisper = (wav, W) => {
+  sh(W.bin, ["-m", W.model, "-f", wav, "-l", "id", "-ml", "1", "-sow", "-ojf", "-of", path.join(out, "vo_words")]);
+  const j = JSON.parse(fs.readFileSync(path.join(out, "vo_words.json"), "utf8"));
+  const heard = j.transcription.map((x) => ({ w: norm(x.text), a: x.offsets.from / 1000, b: x.offsets.to / 1000 })).filter((x) => x.w);
+  let h = 0;
+  return lines.map((ln) => {
+    const ws = ln.split(/\s+/).map(norm).filter(Boolean);
+    const got = [];
+    for (const n of ws) {
+      for (let k = h; k < Math.min(heard.length, h + 12); k++) {
+        const two = k + 1 < heard.length ? heard[k].w + heard[k + 1].w : "";
+        if (heard[k].w === n || (n.length > 3 && heard[k].w.startsWith(n.slice(0, 4)))) { got.push(heard[k]); h = k + 1; break; }
+        if (two && (two === n || (n.length > 5 && two.startsWith(n.slice(0, 6))))) { got.push({ a: heard[k].a, b: heard[k + 1].b }); h = k + 2; break; }
+      }
+    }
+    if (!got.length) return null;
+    return { a: got[0].a, b: got[got.length - 1].b };
+  });
+};
+
+/** Without whisper: cut the VO at its pauses, choosing the pauses nearest to each line's expected start. */
+const alignPauses = (wav) => {
+  const log = spawnSync("ffmpeg", ["-i", wav, "-af", "silencedetect=noise=-34dB:d=0.22", "-f", "null", "-"], { encoding: "utf8" }).stderr;
+  const sil = [];
+  let s0 = null;
+  for (const m of log.matchAll(/silence_(start|end): ([\d.]+)/g)) {
+    if (m[1] === "start") s0 = parseFloat(m[2]);
+    else if (s0 !== null) { sil.push([s0, parseFloat(m[2])]); s0 = null; }
+  }
+  const dur = parseFloat(sh("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", wav]));
+  const start = sil.length && sil[0][0] < 0.05 ? sil[0][1] : 0;
+  const end = sil.length && sil[sil.length - 1][1] > dur - 0.05 ? sil[sil.length - 1][0] : dur;
+  const chars = lines.map((l) => l.replace(/\s+/g, "").length);
+  const tot = chars.reduce((a, b) => a + b, 0);
+  const cuts = [];
+  let acc = 0;
+  const free = sil.filter(([a, b]) => a > start + 0.3 && b < end - 0.3);
+  for (let i = 0; i < lines.length - 1; i++) {
+    acc += chars[i];
+    const want = start + ((end - start) * acc) / tot;
+    let best = null;
+    for (const p of free) if (!cuts.includes(p) && (!best || Math.abs((p[0] + p[1]) / 2 - want) < Math.abs((best[0] + best[1]) / 2 - want))) best = p;
+    cuts.push(best ?? [want, want]);
+  }
+  cuts.sort((x, y) => x[0] - y[0]);
+  return lines.map((_, i) => ({ a: i === 0 ? start : cuts[i - 1][1], b: i === lines.length - 1 ? end : cuts[i][0] }));
+};
+
+/** whisper.cpp stamps run a little early: move each line's start to the speech onset and its end to where the
+ *  speech run really stops, so no syllable is cut when pages are moved apart. */
+const snapToSpeech = (t, wav) => {
+  const log = spawnSync("ffmpeg", ["-i", wav, "-af", "silencedetect=noise=-34dB:d=0.18", "-f", "null", "-"], { encoding: "utf8" }).stderr;
+  const sil = [];
+  let s0 = null;
+  for (const m of log.matchAll(/silence_(start|end): ([\d.]+)/g)) {
+    if (m[1] === "start") s0 = parseFloat(m[2]);
+    else if (s0 !== null) { sil.push([s0, parseFloat(m[2])]); s0 = null; }
+  }
+  return t.map((x, i) => {
+    let a = x.a, b = x.b;
+    const inA = sil.find(([p, q]) => a >= p - 0.02 && a < q);
+    if (inA && inA[1] - a < 0.8) a = inA[1];
+    const next = sil.find(([p]) => p >= b - 0.05);
+    if (next && next[0] - b < 0.8) b = next[0];
+    if (i + 1 < t.length) b = Math.min(b, t[i + 1].a - 0.02);
+    return { a, b: Math.max(b, a + 0.3) };
+  });
+};
+
+// ---------------------------------------------------------------- voice
+let voFile = null;
+let times;
+const found = ["vo.wav", "vo.mp3", "vo.m4a"].map((f) => path.join(dir, f)).find((f) => fs.existsSync(f));
+if (found) voFile = found;
+else if (flag("--tts")) {
+  if (process.platform !== "darwin") { console.error("Suara sementara (--tts) memakai suara macOS. Di komputer ini kirim VO sendiri: stories/<id>/vo.mp3"); process.exit(2); }
+  // one clip per line, joined with calm pauses into one temporary VO
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "book-tts-"));
+  const parts = [];
+  lines.forEach((t, i) => { const f = path.join(tmp, `l${i}.aiff`); sh("say", ["-v", "Damayanti", "-r", "165", "-o", f, t]); parts.push(f); });
+  const list = path.join(tmp, "list.txt");
+  const gap = path.join(tmp, "gap.wav");
+  sh("ffmpeg", ["-y", "-v", "error", "-f", "lavfi", "-i", "anullsrc=r=48000:cl=mono", "-t", "0.5", gap]);
+  fs.writeFileSync(list, parts.flatMap((p) => [`file '${p}'`, `file '${gap}'`]).join("\n"));
+  voFile = path.join(pub, "vo_tts.wav");
+  sh("ffmpeg", ["-y", "-v", "error", "-f", "concat", "-safe", "0", "-i", list, "-ar", "48000", "-ac", "1", voFile]);
+  // exact line times from the clip lengths
+  let t = 0;
+  times = parts.map((p) => { const d = parseFloat(sh("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", p])); const r = { a: t, b: t + d }; t += d + 0.5; return r; });
+  fs.rmSync(tmp, { recursive: true, force: true });
+}
+if (voFile && !times) {
+  const wav = path.join(out, "vo16k.wav");
+  sh("ffmpeg", ["-y", "-v", "error", "-i", voFile, "-ar", "16000", "-ac", "1", wav]);
+  const W = findWhisper();
+  if (W) {
+    const t = alignWhisper(wav, W);
+    if (t.every(Boolean)) times = snapToSpeech(t, wav);
+    else { console.log("whisper tidak menemukan semua kalimat — memakai jeda VO"); times = alignPauses(wav); }
+  } else { console.log("whisper.cpp tidak ada — kalimat dicocokkan ke jeda VO"); times = alignPauses(wav); }
+}
+if (!voFile && !flag("--plan") && !flag("--stills")) console.log("Belum ada VO: tempo dibaca otomatis tanpa suara narator (tambahkan --tts untuk suara sementara).");
+
+// ---------------------------------------------------------------- plan + sound
+const plan = planBook(src, { id, vo: times, audio: `stories/${id}/mix.wav` });
+fs.writeFileSync(path.join(out, "plan.json"), JSON.stringify(plan, null, 1));
+fs.mkdirSync("src/generated", { recursive: true });
+fs.writeFileSync("src/generated/book.json", JSON.stringify(plan));
+console.log(`buku: "${plan.title}" ${plan.duration}s · ${plan.pages.length} halaman · tokoh: ${plan.cast.map((c) => c.name).join(", ") || "-"}`);
+for (const p of plan.pages) console.log(`  ${String(p.idx + 1).padStart(2)} ${p.a.toFixed(1).padStart(5)}–${p.b.toFixed(1).padEnd(5)} ${p.side} ${p.place}/${p.time} ${p.props.join(",")} · ${p.actors.map((a) => `${a.who}:${a.act}`).join(" ")}`);
+for (const w of plan.warnings) console.log("  ! " + w);
+// props for the renderer / stills (written even with --plan, so `npm run smoke` can render stills)
+fs.writeFileSync(path.join(out, "props.json"), JSON.stringify({ plan }));
+if (flag("--plan")) process.exit(0);
+execFileSync("node", ["scripts/book-sound.mjs", path.join(out, "plan.json"), path.join(pub, "mix.wav"), ...(voFile ? ["--vo", voFile] : [])], { stdio: "inherit" });
+
+// ---------------------------------------------------------------- render
+const props = path.join(out, "props.json");
+const gl = fs.existsSync(".gl-mode") ? fs.readFileSync(".gl-mode", "utf8").trim() : "angle";
+const wide = flag("--wide"); // 16:9 (1920 × 1080) instead of 9:16
+if (opt("--stills")) {
+  execFileSync("node", ["scripts/stills.mjs", path.join(out, wide ? "stills-wide" : "stills"), opt("--stills"), wide ? "BookPreviewWide" : "BookPreview", "1", props], { stdio: "inherit" });
+  process.exit(0);
+}
+const final = flag("--final");
+// QA gate (scripts/qa-gate.mjs): one continuous camera over the book — no cuts at all, so any camera jump fails
+const gateDir = path.join(out, wide ? "qa-gate-wide" : "qa-gate");
+const gate = { comp: "BookPreview" + (wide ? "Wide" : ""), cuts: [], out: gateDir, props };
+if (final && !flag("--no-qa")) sceneGate({ ...gate, force: flag("--force-qa") });
+const file = path.join(out, wide ? (final ? `${id}_1920x1080_60fps.mp4` : `${id}_preview_960x540.mp4`) : final ? `${id}_1080x1920_60fps.mp4` : `${id}_preview_540x960.mp4`);
+execFileSync("npx", ["remotion", "render", (final ? "BookFinal" : "BookPreview") + (wide ? "Wide" : ""), file, `--props=${props}`, "--codec=h264", `--crf=${final ? 21 : 18}`, `--concurrency=${final ? 3 : 2}`, `--gl=${gl}`, "--log=error"], { stdio: "inherit" });
+console.log("→", file);
+if (!final && !flag("--no-qa")) sceneGate({ ...gate, force: true }); // a report: fix every FAIL before the preview is shown
+if (final && fs.existsSync("scripts/book-qa.mjs")) execFileSync("node", ["scripts/book-qa.mjs", id, ...(wide ? [file] : [])], { stdio: "inherit" });
+if (final && !flag("--no-qa") && deliveryScan({ file, cuts: [], out: path.join(gateDir, "delivered") }) === "FAIL") {
+  console.error(`✗ the delivered film has a hard glitch (see ${path.join(gateDir, "delivered")}) — fix it before delivery`);
+  process.exitCode = 1;
+}
+
+==== 13408 project/scripts/book-sound.mjs
+#!/usr/bin/env node
+// STORYBOOK sound for a planned book: narration (the buyer's VO re-spaced per page, or TTS line clips) + original
+// synthesised sound (no samples): music-box lullaby ducked under the voice, cover, page turns, footsteps, sparkles,
+// wind, rain, lamp click. Instruments are the approved prototype's (scripts/make-audio.mjs).
+//   node scripts/book-sound.mjs <plan.json> <out.wav> [--vo <file>] [--lines <dir with l0.aiff…>]
+import fs from "node:fs";
+import { execFileSync } from "node:child_process";
+
+const args = process.argv.slice(2);
+const [planFile, outFile] = args.filter((a, i) => !a.startsWith("--") && !(args[i - 1] ?? "").startsWith("--"));
+const opt = (k) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : undefined; };
+const plan = JSON.parse(fs.readFileSync(planFile, "utf8"));
+const SR = 48000;
+const LEN = plan.duration + 0.3;
+const N = Math.round(LEN * SR);
+const L = new Float32Array(N), R = new Float32Array(N);
+let seed = 20261110;
+const rnd = () => {
+  seed |= 0;
+  seed = (seed + 0x6d2b79f5) | 0;
+  let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+};
+const noise = () => rnd() * 2 - 1;
+const db = (d) => Math.pow(10, d / 20);
+const buf = (sec) => new Float32Array(Math.max(1, Math.round(sec * SR)));
+
+/** Band-pass biquad (RBJ) with an optionally sweeping centre (f0 may be a function of progress 0…1). */
+const bandpass = (x, f0, q = 1) => {
+  const y = new Float32Array(x.length);
+  let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+  for (let i = 0; i < x.length; i++) {
+    const f = typeof f0 === "function" ? f0(i / x.length) : f0;
+    const w = (2 * Math.PI * f) / SR, al = Math.sin(w) / (2 * q), a0 = 1 + al;
+    const b0 = al / a0, b2 = -al / a0, a1 = (-2 * Math.cos(w)) / a0, a2 = (1 - al) / a0;
+    const v = b0 * x[i] + b2 * x2 - a1 * y1 - a2 * y2;
+    x2 = x1; x1 = x[i]; y2 = y1; y1 = v; y[i] = v;
+  }
+  return y;
+};
+const lowpass = (x, fc) => {
+  const y = new Float32Array(x.length);
+  const a = 1 - Math.exp((-2 * Math.PI * fc) / SR);
+  let v = 0;
+  for (let i = 0; i < x.length; i++) y[i] = v += a * (x[i] - v);
+  return y;
+};
+const env = (x, fn) => x.map((v, i) => v * fn(i / SR, i / x.length));
+const peakNorm = (x, peak = 1) => {
+  let m = 0;
+  for (const v of x) m = Math.max(m, Math.abs(v));
+  return x.map((v) => (v / (m || 1)) * peak);
+};
+/** Place a mono sound at film time t (s), gain dB, pan −1…1. */
+const place = (x, t, gainDb = 0, pan = 0) => {
+  const g = db(gainDb), gl = g * Math.cos(((pan + 1) * Math.PI) / 4) * Math.SQRT2, gr = g * Math.sin(((pan + 1) * Math.PI) / 4) * Math.SQRT2;
+  const at = Math.round(t * SR);
+  for (let i = 0; i < x.length; i++) {
+    const j = at + i;
+    if (j < 0 || j >= N) continue;
+    L[j] += x[i] * gl;
+    R[j] += x[i] * gr;
+  }
+};
+
+// ── Instruments ──────────────────────────────────────────────────────────────
+
+const hz = (midi) => 440 * Math.pow(2, (midi - 69) / 12);
+/** Music-box tine: fundamental + octave + a bright inharmonic partial that dies fast. */
+const tine = (midi, dur = 1.8, bright = 1) => {
+  const f = hz(midi);
+  return buf(dur).map((_, i) => {
+    const t = i / SR;
+    const a = Math.min(1, t / 0.002);
+    return a * (Math.sin(2 * Math.PI * f * t) * Math.exp(-t / 0.9) +
+      0.28 * Math.sin(2 * Math.PI * f * 2.001 * t) * Math.exp(-t / 0.45) +
+      0.12 * bright * Math.sin(2 * Math.PI * f * 5.43 * t) * Math.exp(-t / 0.07));
+  });
+};
+/** Soft bell for sparkles (star sounds): two inharmonic partials. */
+const bell = (midi, dur = 1.4) => {
+  const f = hz(midi);
+  return buf(dur).map((_, i) => {
+    const t = i / SR;
+    return Math.min(1, t / 0.003) * (Math.sin(2 * Math.PI * f * t) * Math.exp(-t / 0.5) + 0.35 * Math.sin(2 * Math.PI * f * 2.76 * t) * Math.exp(-t / 0.22) + 0.15 * Math.sin(2 * Math.PI * f * 5.4 * t) * Math.exp(-t / 0.08));
+  });
+};
+/** Warm pad: detuned soft saw-ish (few harmonics) with slow attack. */
+const pad = (midis, dur) =>
+  buf(dur).map((_, i) => {
+    const t = i / SR;
+    const a = Math.min(1, t / 1.2) * Math.min(1, (dur - t) / 1.4);
+    let v = 0;
+    for (const m of midis) {
+      const f = hz(m);
+      for (const d of [-0.12, 0.11]) {
+        const ff = f * Math.pow(2, d / 12);
+        v += Math.sin(2 * Math.PI * ff * t) + 0.25 * Math.sin(4 * Math.PI * ff * t) + 0.08 * Math.sin(6 * Math.PI * ff * t);
+      }
+    }
+    return (v * a) / (midis.length * 2);
+  });
+
+// ── Paper and room sounds ────────────────────────────────────────────────────
+
+/** A page turning: corner crinkle → air swish that peaks as the page stands → soft landing flap. */
+const pageTurn = (dur) => {
+  const n = buf(dur + 0.4).map(noise);
+  const swish = env(bandpass(n, (p) => 900 + 2600 * Math.sin(Math.PI * Math.min(1, p * 1.15)), 0.7), (t) => {
+    const p = t / dur;
+    return p > 1 ? Math.exp(-(t - dur) / 0.05) * 0.4 : Math.pow(Math.sin(Math.PI * p), 1.6) * 0.8 + 0.2 * Math.exp(-t / 0.15);
+  });
+  const land = buf(dur + 0.4);
+  const la = Math.round(SR * (dur - 0.06));
+  for (let i = 0; la + i < land.length; i++) {
+    const t = i / SR;
+    land[la + i] = (noise() * 0.6 * Math.exp(-t / 0.035) + Math.sin(2 * Math.PI * 110 * t) * Math.exp(-t / 0.06) * 0.5);
+  }
+  return peakNorm(swish.map((v, i) => v + land[i] * 0.55), 1);
+};
+const pageTurnFull = (dur) => {
+  const base = pageTurn(dur);
+  const cr = buf(dur + 0.4);
+  for (let k = 0; k < 16; k++) {
+    const at = Math.round(SR * (0.02 + 0.35 * rnd()));
+    const amp = 0.4 + 0.6 * rnd();
+    for (let i = 0; i < 260 && at + i < cr.length; i++) cr[at + i] += noise() * Math.exp(-i / 35) * amp;
+  }
+  const crb = peakNorm(bandpass(cr, 4200, 1.2), 0.35);
+  return peakNorm(base.map((v, i) => v + crb[i]), 1);
+};
+/** Hardcover landing on the table + cloth creak while it opens. */
+const coverOpen = (dur) => {
+  const creak = env(bandpass(buf(dur).map(noise), (p) => 380 + 260 * p, 6), (t) => Math.sin(Math.PI * Math.min(1, t / dur)) * 0.35);
+  const thump = buf(dur + 0.5);
+  const at = Math.round(SR * dur);
+  for (let i = 0; at + i < thump.length; i++) {
+    const t = i / SR;
+    thump[at + i] = Math.sin(2 * Math.PI * (85 - t * 60) * t) * Math.exp(-t / 0.09) + noise() * 0.25 * Math.exp(-t / 0.025);
+  }
+  const out = buf(dur + 0.5);
+  for (let i = 0; i < out.length; i++) out[i] = (creak[i] ?? 0) + thump[i];
+  return peakNorm(out, 1);
+};
+const footstep = () => peakNorm(env(bandpass(buf(0.16).map(noise), 2200, 0.8), (t) => Math.min(1, t / 0.01) * Math.exp(-t / 0.05)), 1);
+const wind = (dur) => peakNorm(env(lowpass(bandpass(buf(dur).map(noise), (p) => 500 + 500 * Math.sin(p * 9), 0.6), 2400), (t) => Math.sin(Math.PI * Math.min(1, t / dur)) * (0.7 + 0.3 * Math.sin(t * 2.3))), 1);
+const click = () => peakNorm(env(bandpass(buf(0.08).map(noise), 2600, 2), (t) => Math.exp(-t / 0.006)).map((v, i) => v + Math.sin(2 * Math.PI * 900 * (i / SR)) * Math.exp(-(i / SR) / 0.01) * 0.4), 1);
+const poff = () => peakNorm(env(lowpass(buf(0.35).map(noise), 900), (t) => Math.min(1, t / 0.01) * Math.exp(-t / 0.08)), 1);
+
+// ── Score: an original music-box lullaby in F, 3/4, 66 bpm ─────────────────
+
+const BEAT = 60 / 66;
+// melody (midi, beats) — two phrases of 8 bars
+const MEL = [
+  [69, 1], [72, 1], [77, 1], [76, 1], [72, 1], [69, 1], [70, 1], [74, 1], [79, 1], [77, 2], [76, 1],
+  [69, 1], [72, 1], [77, 1], [79, 1], [77, 1], [74, 1], [72, 1], [69, 1], [67, 1], [65, 3],
+  [72, 1], [74, 1], [76, 1], [77, 1], [76, 1], [74, 1], [72, 2], [69, 1], [70, 1], [72, 1], [74, 1],
+  [72, 1], [70, 1], [69, 1], [67, 1], [69, 1], [70, 1], [72, 2], [76, 1], [77, 3],
+];
+const BASS = [53, 48, 46, 48, 53, 46, 48, 53, 48, 50, 46, 53, 50, 46, 48, 53];
+const CHORD = [[65, 69, 72], [64, 67, 72], [62, 65, 70], [64, 67, 72], [65, 69, 72], [62, 65, 70], [64, 67, 70], [65, 69, 72], [64, 67, 72], [62, 65, 69], [62, 65, 70], [65, 69, 72], [62, 65, 69], [62, 65, 70], [64, 67, 70], [65, 69, 72]];
+
+// ── Narration windows (music ducks under the voice) ─────────────────────────
+const lines = [...plan.coverLines, ...plan.pages.flatMap((p) => p.lines)];
+const voiced = (t) => lines.some((l) => t > l.a - 0.25 && t < l.b + 0.35);
+
+// ── Score: the music-box lullaby, looped over the whole book ────────────────
+{
+  const total = MEL.reduce((a, [, b]) => a + b, 0);
+  const musicEnd = plan.dim[1] + 0.6;
+  const gainAt = (t) => {
+    let g = Math.min(1, t / 1.5);
+    g *= 1 - 0.85 * Math.max(0, Math.min(1, (t - plan.dim[0]) / (musicEnd - plan.dim[0])));
+    return Math.max(0.001, g * (voiced(t) ? 0.55 : 1));
+  };
+  let t0 = 0.25;
+  while (t0 < musicEnd) {
+    let b = 0;
+    for (const [m, d] of MEL) {
+      const t = t0 + b * BEAT;
+      b += d;
+      if (t > musicEnd) break;
+      place(tine(m + 12, 2.2), t, -21 + 20 * Math.log10(gainAt(t)), 0.15);
+    }
+    for (let bar = 0; bar < 16; bar++) {
+      const t = t0 + bar * 3 * BEAT;
+      if (t > musicEnd) break;
+      const g = 20 * Math.log10(gainAt(t));
+      place(tine(BASS[bar], 2.6, 0.3), t, -25 + g, -0.25);
+      place(pad(CHORD[bar], 3 * BEAT + 0.6), t, -33 + g, -0.1);
+    }
+    t0 += total * BEAT;
+  }
+}
+
+// ── Book and story sounds ───────────────────────────────────────────────────
+place(peakNorm(lowpass(buf(LEN).map(noise), 300), 1), 0, -46, 0);
+place(coverOpen(plan.open[1] - plan.open[0] - 0.15), plan.open[0] + 0.05, -14, -0.2);
+for (const p of plan.pages) {
+  if (p.turn) place(pageTurnFull(p.turn.b - p.turn.a), p.turn.a - 0.05, -11, -0.15);
+  if (p.pan) place(pageTurn(0.5), p.pan.a + 0.1, -30, 0.1);
+  const d = p.b - p.a;
+  const props = p.props ?? [];
+  if (props.includes("hujan")) place(peakNorm(env(lowpass(buf(d + 0.6).map(noise), 4200), (t) => Math.min(1, t / 0.4) * Math.min(1, (d + 0.6 - t) / 0.4)), 1), p.a - 0.2, -27, 0);
+  for (const a of p.actors) {
+    if (a.act === "walk" || a.act === "run" || a.act === "hug") {
+      const step = a.act === "run" ? 0.22 : 0.34, until = a.act === "hug" ? p.a + d * 0.35 : p.b - 0.2;
+      for (let t = p.a + 0.15; t < until; t += step) place(footstep(), t, -29 + (rnd() - 0.5) * 3, (rnd() - 0.5) * 0.4);
+    }
+    if (a.act === "fall") {
+      const t0 = p.a + 0.2, len = Math.max(1.2, d * 0.4);
+      [96, 93, 91, 88, 86, 84, 81, 79, 76].forEach((m, i) => place(bell(m, 1.0), t0 + (i / 9) * len, -24 - i * 0.6, 0.35 - i * 0.04));
+      place(poff(), t0 + len, -20, 0.2);
+      place(bell(91, 1.6), t0 + len + 0.05, -24, 0.25);
+    }
+    if (a.act === "fly" || a.act === "kite") place(wind(d), p.a, -26, 0.3);
+    if (a.act === "jump" || a.act === "happy") [84, 88, 91].forEach((m, i) => place(bell(m, 1.2), p.a + 0.3 + i * 0.12, -28, 0.1));
+    if (a.act === "hug") { place(bell(77, 2.0), p.a + d * 0.4, -25, 0); place(bell(81, 2.0), p.a + d * 0.4 + 0.04, -27, 0); }
+    if (a.act === "peek") place(peakNorm(env(bandpass(buf(0.5).map(noise), (q) => 600 + 400 * q, 8), (t) => Math.sin(Math.PI * Math.min(1, t / 0.5))), 1), p.a + 0.4, -26, -0.3);
+  }
+}
+place(click(), plan.dim[0] - 0.05, -18, -0.4);
+
+// ── Narration ────────────────────────────────────────────────────────────────
+const readMono = (file) => {
+  const raw = execFileSync("ffmpeg", ["-v", "error", "-i", file, "-f", "f32le", "-ac", "1", "-ar", String(SR), "-"], { maxBuffer: 1 << 30 });
+  return new Float32Array(raw.buffer, raw.byteOffset, raw.byteLength / 4);
+};
+const vo = opt("--vo"), dir = opt("--lines");
+if (vo) {
+  // the buyer's VO, every line kept whole; whole pages are moved apart so page turns fall into pauses
+  const x = readMono(vo);
+  let pk = 0; for (const v of x) pk = Math.max(pk, Math.abs(v));
+  const F = Math.round(0.012 * SR);
+  for (const sgm of plan.segments) {
+    const a = Math.max(0, Math.round((sgm.src - 0.06) * SR)), n = Math.round((sgm.len + 0.16) * SR), at = Math.round((sgm.dst - 0.06) * SR);
+    for (let i = 0; i < n && a + i < x.length; i++) {
+      const j = at + i;
+      if (j < 0 || j >= N) continue;
+      const fade = Math.min(1, i / F, (n - i) / F);
+      const v = (x[a + i] / (pk || 1)) * 0.7 * fade;
+      L[j] += v; R[j] += v;
+    }
+  }
+} else if (dir) {
+  lines.forEach((ln, i) => {
+    const f = ["aiff", "wav"].map((e) => `${dir}/l${i}.${e}`).find((p) => fs.existsSync(p));
+    if (f) place(peakNorm(readMono(f), 0.7), ln.a, 0, 0);
+  });
+}
+
+// ── Write: loudness −14 LUFS, true peak −1.5 dB ───────────────────────────
+const inter = new Float32Array(N * 2);
+for (let i = 0; i < N; i++) { inter[i * 2] = L[i]; inter[i * 2 + 1] = R[i]; }
+const raw = outFile + ".f32";
+fs.writeFileSync(raw, Buffer.from(inter.buffer));
+execFileSync("ffmpeg", ["-v", "error", "-y", "-f", "f32le", "-ar", String(SR), "-ac", "2", "-i", raw, "-af", "loudnorm=I=-14:TP=-1.5:LRA=11", "-ar", String(SR), "-c:a", "pcm_s16le", outFile]);
+fs.rmSync(raw);
+console.log(`mix → ${outFile} (${LEN.toFixed(1)} s)`);
+
+==== 3 project/src/brand.json
+{}
+
+==== 5014 project/src/core/materials/textures.ts
+// Procedural, deterministic textures (no image assets): perforated grilles and boards.
+
+import { DataTexture, LinearFilter, LinearMipmapLinearFilter, RepeatWrapping, RGBAFormat, SRGBColorSpace, type ColorSpace } from "three";
+
+const toTexture = (data: Uint8Array, w: number, h: number, colorSpace: ColorSpace = SRGBColorSpace) => {
+  const t = new DataTexture(data, w, h, RGBAFormat);
+  t.colorSpace = colorSpace;
+  t.generateMipmaps = true;
+  t.minFilter = LinearMipmapLinearFilter;
+  t.magFilter = LinearFilter;
+  t.wrapS = t.wrapT = RepeatWrapping;
+  t.anisotropy = 8;
+  t.needsUpdate = true;
+  return t;
+};
+
+type Rgb = [number, number, number];
+const hex = (h: string): Rgb => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
+
+/**
+ * Hex-packed micro perforation. Alpha carries the outline mask (stadium / circle) for
+ * alpha-to-coverage, so edges stay anti-aliased under MSAA.
+ */
+export const perforation = ({
+  w = 1024, h = 1024, across = 18, hole = 0.36, base = "#3a3a3d", rim = "#55565a", deep = "#0d0d0f",
+  mask = "none" as "none" | "stadium" | "circle",
+}) => {
+  const data = new Uint8Array(w * h * 4);
+  const pitch = w / across;
+  const rowH = pitch * Math.sqrt(3) / 2;
+  const B = hex(base), R = hex(rim), D = hex(deep);
+  const r = pitch * hole;
+  for (let y = 0; y < h; y++)
+    for (let x = 0; x < w; x++) {
+      const row = Math.round(y / rowH);
+      const cy = row * rowH;
+      const off = row % 2 ? pitch / 2 : 0;
+      const cx = Math.round((x - off) / pitch) * pitch + off;
+      // nearest of the two candidate rows keeps the hex lattice exact
+      let d = Math.hypot(x - cx, y - cy);
+      const row2 = row + (y > cy ? 1 : -1);
+      const off2 = row2 % 2 ? pitch / 2 : 0;
+      const cx2 = Math.round((x - off2) / pitch) * pitch + off2;
+      d = Math.min(d, Math.hypot(x - cx2, y - row2 * rowH));
+      const inHole = Math.min(1, Math.max(0, (r - d) / 1.2));
+      const onRim = Math.min(1, Math.max(0, 1 - Math.abs(d - r - 1.2) / 1.6));
+      const c = B.map((b, i) => b + (R[i] - b) * onRim * 0.8 + (D[i] - b) * inHole);
+      let a = 255;
+      if (mask !== "none") {
+        const u = (x + 0.5) / w - 0.5, v = (y + 0.5) / h - 0.5;
+        let dist: number;
+        if (mask === "circle") dist = 0.5 - Math.hypot(u, v);
+        else {
+          // stadium in a w×h box (aspect-correct)
+          const aspect = w / h;
+          const hx = 0.5 * aspect - 0.5;
+          const px = Math.max(Math.abs(u * aspect) - hx, 0);
+          dist = 0.5 - Math.hypot(px, v);
+        }
+        a = Math.round(Math.min(1, Math.max(0, dist * h * 0.6 + 0.5)) * 255);
+      }
+      const k = (y * w + x) * 4;
+      data[k] = c[0];
+      data[k + 1] = c[1];
+      data[k + 2] = c[2];
+      data[k + 3] = a;
+    }
+  return toTexture(data, w, h);
+};
+
+/** Seeded PRNG (Park–Miller). */
+export const prng = (seed: number) => () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+
+/** Circuit board: graphite substrate, routed traces, vias and champagne pads. */
+export const circuitBoard = (size = 1024, seed = 11) => {
+  const rnd = prng(seed);
+  const S = size;
+  const data = new Uint8Array(S * S * 4);
+  const base = hex("#2c2d30"), trace = hex("#45474b"), pad = hex("#c8b48c"), via = hex("#8d8a84");
+  const set = (x: number, y: number, c: Rgb, a = 1) => {
+    if (x < 0 || y < 0 || x >= S || y >= S) return;
+    const k = (y * S + x) * 4;
+    for (let i = 0; i < 3; i++) data[k + i] = data[k + i] + (c[i] - data[k + i]) * a;
+  };
+  for (let i = 0; i < S * S; i++) {
+    const n = (rnd() - 0.5) * 6;
+    data[i * 4] = base[0] + n;
+    data[i * 4 + 1] = base[1] + n;
+    data[i * 4 + 2] = base[2] + n;
+    data[i * 4 + 3] = 255;
+  }
+  const disc = (cx: number, cy: number, r: number, c: Rgb, hollow = 0) => {
+    for (let y = Math.floor(cy - r - 1); y <= cy + r + 1; y++)
+      for (let x = Math.floor(cx - r - 1); x <= cx + r + 1; x++) {
+        const d = Math.hypot(x - cx, y - cy);
+        const a = Math.min(1, Math.max(0, r - d + 0.5)) * (hollow ? Math.min(1, Math.max(0, d - hollow + 0.5)) : 1);
+        if (a > 0) set(x, y, c, a);
+      }
+  };
+  const line = (x0: number, y0: number, x1: number, y1: number, wdt: number) => {
+    const L = Math.hypot(x1 - x0, y1 - y0);
+    for (let s = 0; s <= L; s += 0.5) {
+      const x = x0 + ((x1 - x0) * s) / L, y = y0 + ((y1 - y0) * s) / L;
+      disc(x, y, wdt / 2, trace);
+    }
+  };
+  // Manhattan + 45° routing from random pins
+  for (let i = 0; i < 70; i++) {
+    let x = rnd() * S, y = rnd() * S;
+    const steps = 2 + Math.floor(rnd() * 3);
+    const w = 3 + rnd() * 4;
+    for (let s = 0; s < steps; s++) {
+      const dir = Math.floor(rnd() * 8) * (Math.PI / 4);
+      const len = 40 + rnd() * 180;
+      const nx = x + Math.cos(dir) * len, ny = y + Math.sin(dir) * len;
+      line(x, y, nx, ny, w);
+      x = nx;
+      y = ny;
+    }
+    disc(x, y, w * 1.6, via, w * 0.7);
+  }
+  for (let i = 0; i < 40; i++) disc(rnd() * S, rnd() * S, 5 + rnd() * 5, pad);
+  return toTexture(data, S, S);
+};
+
+==== 15719 project/src/director/book.ts
+// STORYBOOK director — naskah (Indonesian picture-book script) → BookPlan. Pure TS: runs in node and in the bundle.
+//
+//   JUDUL: Bintang Kecil yang Jatuh            OLEH: …            PERSEMBAHAN: untuk …            SUARA: …
+//   TOKOH: Nara = anak perempuan, rambut bob hitam, gaun biru berbintik putih
+//   TOKOH: Bintang = bintang kecil
+//   [SAMPUL] malam, bukit, bulan. Nara melambai.          (optional; lines under it are read over the cover)
+//   [HALAMAN] malam, kebun, rumah, pohon. Bintang jatuh. Nara mengintip dari jendela.
+//   Suatu malam, sebuah bintang kecil jatuh ke kebun Nara.      ← printed on the page and read by the narrator
+//   [PENUTUP] Tamat                                       (optional; printed under the last page's text)
+
+export type Time = "pagi" | "siang" | "senja" | "malam" | "mendung";
+export type Place = "kebun" | "taman" | "desa" | "hutan" | "pantai" | "laut" | "gunung" | "sawah" | "kamar" | "sekolah" | "kota" | "sungai" | "langit";
+export type Act = "stand" | "walk" | "run" | "jump" | "wave" | "cry" | "happy" | "sleep" | "sit" | "point" | "hug" | "peek" | "fall" | "fly" | "swim" | "kite" | "look" | "hold" | "sad" | "surprised";
+export type Critter = "kucing" | "kelinci" | "anjing" | "burung" | "ikan" | "kupu" | "bintang" | "bebek";
+
+export type PersonLook = {
+  build: "child" | "adult" | "elder";
+  hair: "bob" | "puffs" | "short" | "long" | "bun" | "bald" | "hijab" | "peci";
+  outfit: "dress" | "shirt-shorts" | "shirt-pants" | "long-skirt" | "robe";
+  skin: string; hairColor: string; top: string; bottom: string; shoes: string; accent: string;
+  dots?: string; stripes?: string; beard?: boolean; glasses?: boolean; line: string;
+};
+export type CastDef = { name: string; kind: "person" | Critter; look?: PersonLook; color?: string };
+export type Actor = { who: string; act: Act; target?: string };
+export type PageSpec = { time: Time; place: Place; props: string[]; actors: Actor[] };
+export type PagePlan = PageSpec & {
+  idx: number; side: "R" | "L"; leaf: number; a: number; b: number; lines: { text: string; a: number; b: number }[];
+  turn?: { leaf: number; a: number; b: number }; pan?: { a: number; b: number }; seed: number;
+};
+export type BookPlan = {
+  id: string; title: string; by?: string; dedication?: string; closing?: string;
+  cast: CastDef[]; cover: PageSpec; coverLines: { text: string; a: number; b: number }[];
+  open: [number, number]; pages: PagePlan[]; dim: [number, number]; duration: number;
+  audio?: string; segments: { src: number; dst: number; len: number }[]; warnings: string[];
+};
+
+// ------------------------------------------------------------------ vocab
+const COLORS: Record<string, string> = {
+  merah: "#d4533e", "merah muda": "#e79a92", pink: "#e79a92", jingga: "#e8873a", oranye: "#e8873a", oren: "#e8873a",
+  kuning: "#f2c75c", hijau: "#5f9a5e", "hijau muda": "#8fc77e", toska: "#3fa59a", biru: "#5b8fcf", "biru muda": "#8fb7d9",
+  "biru tua": "#2f4f8a", ungu: "#8b6bb8", coklat: "#8a5a3c", cokelat: "#8a5a3c", krem: "#efe1c2", putih: "#f6efe0",
+  hitam: "#2a2420", abu: "#9a9a9a", "abu-abu": "#9a9a9a", emas: "#d9b25a", perak: "#c8ccd2",
+};
+const colorIn = (t: string, after: RegExp): string | undefined => {
+  const m = after.exec(t);
+  if (!m) return undefined;
+  const rest = t.slice(m.index + m[0].length, m.index + m[0].length + 30).split(/[,.;]/)[0];
+  const keys = Object.keys(COLORS).sort((a, b) => b.length - a.length);
+  for (const k of keys) if (new RegExp(`^\\s*(\\S+\\s+)?${k}\\b`).test(rest)) return COLORS[k];
+  return undefined;
+};
+const CRITTERS: [RegExp, Critter][] = [
+  [/kucing|meong/, "kucing"], [/kelinci/, "kelinci"], [/anjing|guguk/, "anjing"], [/burung|pipit|merpati/, "burung"],
+  [/ikan/, "ikan"], [/kupu/, "kupu"], [/bintang/, "bintang"], [/bebek|itik/, "bebek"],
+];
+
+export const parseLook = (desc: string): CastDef["kind"] | PersonLook => {
+  const t = desc.toLowerCase();
+  const cr = CRITTERS.find(([re]) => re.test(t));
+  if (cr && !/anak|ibu|ayah|nenek|kakek|perempuan|laki|orang/.test(t)) return cr[1];
+  const elder = /nenek|kakek|tua|lansia/.test(t);
+  const adult = elder || /ibu|ayah|bapak|perempuan dewasa|laki-laki dewasa|guru|paman|bibi|tante|om\b|dewasa|pak\b|bu\b|petani|nelayan/.test(t);
+  const female = /perempuan|ibu|nenek|bibi|tante|kakak perempuan|gadis|putri|bu\b/.test(t);
+  const build = elder ? "elder" : adult ? "adult" : "child";
+  let hair: PersonLook["hair"] = female ? (adult ? "bun" : "bob") : "short";
+  if (/hijab|kerudung|jilbab/.test(t)) hair = "hijab";
+  else if (/peci|kopiah|songkok/.test(t)) hair = "peci";
+  else if (/kuncir dua|kepang dua|cepol dua/.test(t)) hair = "puffs";
+  else if (/sanggul|konde|cepol/.test(t)) hair = "bun";
+  else if (/rambut panjang|panjang terurai/.test(t)) hair = "long";
+  else if (/rambut pendek|cepak/.test(t)) hair = "short";
+  else if (/botak|gundul/.test(t)) hair = "bald";
+  else if (/\bbob\b|poni/.test(t)) hair = "bob";
+  let outfit: PersonLook["outfit"] = female ? (adult ? "long-skirt" : "dress") : adult ? "shirt-pants" : "shirt-shorts";
+  if (/gaun|dress/.test(t)) outfit = "dress";
+  else if (/rok panjang|kebaya|kain/.test(t)) outfit = "long-skirt";
+  else if (/jubah|gamis|baju koko panjang/.test(t)) outfit = "robe";
+  else if (/celana panjang|baju koko/.test(t)) outfit = "shirt-pants";
+  else if (/celana pendek|kaos/.test(t)) outfit = "shirt-shorts";
+  const top = colorIn(t, /(gaun|baju|kaos|kemeja|jubah|gamis|kebaya|dress)/) ?? (female ? "#8fb7d9" : "#d4533e");
+  const bottom = colorIn(t, /(celana|rok|kain|sarung)/) ?? (female ? "#5b8fcf" : "#2f4f8a");
+  const hairColor = colorIn(t, /rambut(\s+\w+)?/) ?? (elder ? "#d8d4cc" : "#3a2621");
+  const accent = (hair === "hijab" ? colorIn(t, /(hijab|kerudung|jilbab)/) : undefined) ?? (female ? "#e0574a" : "#f6efe0");
+  return {
+    build, hair, outfit, top, bottom, hairColor, accent,
+    skin: /kulit (gelap|sawo|coklat)/.test(t) ? "#c98d62" : /kulit (terang|putih)/.test(t) ? "#f3d2b4" : "#e9b892",
+    shoes: "#7a3a2c", line: "#4a3029",
+    dots: /berbintik|polkadot|bintik/.test(t) ? "#f6efe0" : undefined,
+    stripes: /bergaris|belang/.test(t) ? "#f6efe0" : undefined,
+    beard: /jenggot|janggut|berewok/.test(t), glasses: /kacamata/.test(t),
+  };
+};
+
+const TIMES: [RegExp, Time][] = [[/malam|tengah malam|gelap/, "malam"], [/senja|sore|petang|matahari terbenam/, "senja"], [/mendung|hujan|gerimis/, "mendung"], [/siang|terik/, "siang"], [/pagi|fajar|subuh/, "pagi"]];
+const PLACES: [RegExp, Place][] = [
+  [/kamar|tempat tidur|dalam rumah|ruang/, "kamar"], [/sekolah|kelas/, "sekolah"], [/kota|jalan raya/, "kota"], [/pantai|pasir/, "pantai"],
+  [/laut|samudra|perahu di laut/, "laut"], [/gunung|bukit tinggi/, "gunung"], [/sawah|ladang/, "sawah"], [/sungai|kali/, "sungai"],
+  [/hutan|rimba/, "hutan"], [/desa|kampung/, "desa"], [/taman/, "taman"], [/langit|awan|terbang tinggi/, "langit"], [/kebun|halaman|pekarangan|rumah/, "kebun"],
+];
+const PROPS = ["rumah", "pohon", "bunga", "semak", "awan", "bulan", "matahari", "bintang", "pelangi", "hujan", "perahu", "layang", "balon", "lentera", "lampion", "kado", "hadiah", "buku", "payung", "tempat tidur", "lampu", "kupu", "burung", "kelapa", "cemara", "kilau"];
+const ACTS: [RegExp, Act][] = [
+  [/mengintip/, "peek"], [/jatuh|terjatuh/, "fall"], [/terbang|melayang/, "fly"], [/berenang/, "swim"], [/layang/, "kite"],
+  [/memeluk|berpelukan/, "hug"], [/menangis|sedih sekali/, "cry"], [/sedih|murung/, "sad"], [/terkejut|kaget/, "surprised"],
+  [/tertawa|gembira|senang|bahagia|tersenyum/, "happy"], [/tidur|terlelap/, "sleep"], [/duduk|jongkok|berlutut/, "sit"],
+  [/menunjuk/, "point"], [/melambai/, "wave"], [/melompat|meloncat/, "jump"], [/berlari|lari/, "run"], [/berjalan|jalan|pulang|pergi|datang/, "walk"],
+  [/menatap|melihat|memandang|mendongak/, "look"], [/memegang|membawa|menggenggam/, "hold"], [/berdiri/, "stand"],
+];
+
+export const parseSpec = (spec: string, cast: CastDef[]): PageSpec => {
+  const t = spec.toLowerCase();
+  const time = TIMES.find(([re]) => re.test(t))?.[1] ?? "siang";
+  const place = PLACES.find(([re]) => re.test(t))?.[1] ?? "kebun";
+  const props = PROPS.filter((p) => t.includes(p));
+  const actors: Actor[] = [];
+  const clauses = spec.split(/[.;]|,\s*(?=[A-Z])/).map((c) => c.trim()).filter(Boolean);
+  for (const c of cast) {
+    const n = c.name.toLowerCase();
+    const re = new RegExp(`\\b${n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`);
+    if (!re.test(t)) continue;
+    const clause = clauses.find((cl) => re.test(cl.toLowerCase())) ?? spec;
+    const cl = clause.toLowerCase();
+    // the verb that follows the name in its clause wins over verbs before it ("Nara memeluk Bintang")
+    const after = cl.slice(cl.search(re));
+    let act: Act = "stand";
+    for (const [r, a] of ACTS) if (r.test(after)) { act = a; break; }
+    let target: string | undefined;
+    if (act === "hug") target = cast.find((o) => o !== c && new RegExp(`\\b${o.name.toLowerCase()}\\b`).test(after))?.name;
+    actors.push({ who: c.name, act, target });
+  }
+  // the hugged one is drawn hugging back
+  for (const a of actors) if (a.act === "hug" && a.target) { const b = actors.find((x) => x.who === a.target); if (b && b.act === "stand") b.act = "hug", b.target = a.who; }
+  return { time, place, props, actors };
+};
+
+// ------------------------------------------------------------------ parse
+type RawPage = { spec: string; lines: string[] };
+export const parseBook = (src: string) => {
+  const out = { title: "", by: undefined as string | undefined, dedication: undefined as string | undefined, closing: undefined as string | undefined, cast: [] as CastDef[], cover: { spec: "", lines: [] as string[] }, pages: [] as RawPage[], warnings: [] as string[] };
+  let cur: RawPage | null = null;
+  let inCover = false;
+  for (const raw of src.replace(/\r/g, "").split("\n")) {
+    const line = raw.trim();
+    if (!line || line.startsWith("#") || line.startsWith("//")) continue;
+    const head = /^(JUDUL|OLEH|PENULIS|PERSEMBAHAN|SUARA|TOKOH)\s*:\s*(.*)$/i.exec(line);
+    if (head) {
+      const k = head[1].toUpperCase(), v = head[2].trim();
+      if (k === "JUDUL") out.title = v;
+      else if (k === "OLEH" || k === "PENULIS") out.by = v;
+      else if (k === "PERSEMBAHAN") out.dedication = v;
+      else if (k === "TOKOH") {
+        const m = /^([^=:]+?)\s*[=:]\s*(.+)$/.exec(v);
+        if (!m) { out.warnings.push(`TOKOH tanpa "=": "${v}"`); continue; }
+        const look = parseLook(m[2]);
+        const firstColor = Object.keys(COLORS).sort((a, b) => b.length - a.length).find((k) => new RegExp(`\\b${k}\\b`).test(m[2].toLowerCase()));
+        out.cast.push(typeof look === "string" ? { name: m[1].trim(), kind: look, color: firstColor ? COLORS[firstColor] : undefined } : { name: m[1].trim(), kind: "person", look });
+      }
+      continue;
+    }
+    const tag = /^\[(SAMPUL|HALAMAN|PENUTUP)\]\s*(.*)$/i.exec(line);
+    if (tag) {
+      const k = tag[1].toUpperCase();
+      if (k === "SAMPUL") { inCover = true; cur = null; out.cover.spec = tag[2]; }
+      else if (k === "HALAMAN") { inCover = false; cur = { spec: tag[2], lines: [] }; out.pages.push(cur); }
+      else { inCover = false; cur = null; out.closing = tag[2] || "Tamat"; }
+      continue;
+    }
+    const sentences = line.split(/(?<=[.!?…]["”']?)\s+(?=[A-Z"“*])/).map((x) => x.trim()).filter(Boolean);
+    if (inCover) out.cover.lines.push(...sentences);
+    else if (cur) cur.lines.push(...sentences);
+    else { cur = { spec: "", lines: [...sentences] }; out.pages.push(cur); }
+  }
+  if (!out.pages.length) out.warnings.push("Naskah belum punya [HALAMAN].");
+  if (out.pages.length > 12) out.warnings.push(`${out.pages.length} halaman — lebih dari 12 membuat video panjang; pertimbangkan menggabung halaman.`);
+  return out;
+};
+
+// ------------------------------------------------------------------ timing
+export type LineTime = { a: number; b: number };
+const WPS = 2.3; // a calm read-aloud pace
+const TURN = 1.8;
+
+/**
+ * Plans the film. `vo` (optional) = the voice-over's own line times, in reading order (cover lines first): the film
+ * keeps every line's audio and only moves whole pages apart so each page turn falls into a pause (segments map
+ * source audio → film time). Without a VO the lines are paced at a read-aloud speed.
+ */
+export const planBook = (src: string, opts: { id: string; vo?: LineTime[]; audio?: string } = { id: "book" }): BookPlan => {
+  const raw = parseBook(src);
+  const warnings = [...raw.warnings];
+  const allLines = [...raw.cover.lines, ...raw.pages.flatMap((p) => p.lines)];
+  const dur = (s: string) => Math.max(1.2, s.split(/\s+/).length / WPS + 0.2);
+  const vo = opts.vo && opts.vo.length === allLines.length ? opts.vo : undefined;
+  if (opts.vo && !vo) warnings.push(`VO punya ${opts.vo.length} kalimat, naskah ${allLines.length} — VO diabaikan, tempo dibaca otomatis.`);
+  const segments: BookPlan["segments"] = [];
+  let li = 0;
+  let t = 0.6;
+  // cover: its lines are read over the closed book; then the cover opens
+  const coverLines = raw.cover.lines.map((text) => {
+    const d = vo ? vo[li].b - vo[li].a : dur(text);
+    const r = { text, a: t, b: t + d };
+    if (vo) segments.push({ src: vo[li].a, dst: t, len: d });
+    li++;
+    t = r.b + 0.35;
+    return r;
+  });
+  if (!coverLines.length) t = 1.4;
+  const open: [number, number] = [t + 0.2, t + 2.0];
+  t = open[1] + 0.6;
+  const pages: PagePlan[] = raw.pages.map((rp, i) => {
+    const spec = parseSpec(rp.spec, raw.cast);
+    // every story page is a right-hand page (picture + its text); the left page facing it is printed paper.
+    // Each new page = one page turn (the 3D cut-outs only ever face up on a front).
+    const side: "R" | "L" = "R";
+    const leaf = i;
+    let turn: PagePlan["turn"];
+    const pan: PagePlan["pan"] = undefined;
+    if (i > 0) { turn = { leaf: i - 1, a: t, b: t + TURN }; t += TURN + 0.25; }
+    const a = t;
+    // a page's lines keep their natural spacing from the VO (pauses inside a page are the narrator's)
+    const lines = rp.lines.map((text, k) => {
+      let d: number, gap: number;
+      if (vo) {
+        d = vo[li].b - vo[li].a;
+        gap = k + 1 < rp.lines.length ? Math.min(1.2, Math.max(0.15, vo[li + 1].a - vo[li].b)) : 0;
+        segments.push({ src: vo[li].a, dst: t, len: d });
+      } else { d = dur(text); gap = 0.45; }
+      li++;
+      const r = { text, a: t, b: t + d };
+      t = r.b + gap;
+      return r;
+    });
+    const minPage = 3.2;
+    if (t - a < minPage) t = a + minPage;
+    t += 0.7; // a beat to look at the picture before moving on
+    return { ...spec, idx: i, side, leaf, a, b: t, lines, turn, pan, seed: i * 7 + 3 };
+  });
+  if (!raw.cast.length) warnings.push("Belum ada TOKOH: halaman hanya berisi latar.");
+  for (const p of pages) for (const ac of p.actors) if (!raw.cast.some((c) => c.name === ac.who)) warnings.push(`Tokoh "${ac.who}" belum dideklarasikan.`);
+  const dim: [number, number] = [t + 0.4, t + 2.2];
+  const duration = Math.ceil((dim[1] + 0.8) * 10) / 10;
+  const coverSpec = raw.cover.spec ? parseSpec(raw.cover.spec, raw.cast) : { ...(pages[0] ?? parseSpec("", raw.cast)), actors: raw.cast.slice(0, 2).map((c) => ({ who: c.name, act: "wave" as Act })) };
+  return {
+    id: opts.id, title: raw.title || "Tanpa Judul", by: raw.by, dedication: raw.dedication, closing: raw.closing,
+    cast: raw.cast, cover: coverSpec, coverLines, open, pages, dim, duration, audio: opts.audio, segments, warnings,
+  };
+};
+
+/** Every narrated sentence in reading order (for TTS / VO alignment). */
+export const bookLines = (src: string) => {
+  const raw = parseBook(src);
+  return [...raw.cover.lines, ...raw.pages.flatMap((p) => p.lines)].map((s) => s.replace(/\*/g, ""));
+};
+
+==== 18510 project/src/film/BookFilm.tsx
+// The generic STORYBOOK film: renders any BookPlan (from a naskah) as a real picture book on a table under a
+// reading lamp — cover, opening, title page, pages with printed text, page turns, lamp dimmed at the end.
+// 9:16 looks at the right-hand page (picture, its text under it). 16:9 (the …Wide compositions) reads the open book as
+// a two-page spread: the text is printed large on the left page, the picture sits in the middle of the right page.
+
+import React, { useEffect, useMemo, useState } from "react";
+import { AbsoluteFill, Audio, continueRender, delayRender, staticFile, useCurrentFrame, useVideoConfig, type CalculateMetadataFunction } from "remotion";
+import { ThreeCanvas } from "@remotion/three";
+import { QaProbe } from "../core/qa/scene-qa.tsx";
+import { PCFShadowMap } from "three";
+import { Stage, LAMP_BEDTIME, mixLamp, type Lamp, type Shot, type V3 } from "../kits/storybook/Stage.tsx";
+import { Book, Table, type LeafSpec } from "../kits/storybook/Book.tsx";
+import { ResolutionContext, Sheet } from "../kits/storybook/Sheet.tsx";
+import { printText, storyFontsReady, STORY_HAND } from "../kits/storybook/fonts.ts";
+import { blob, dot, ellipse, hill, rect, type G, type Poly } from "../kits/storybook/paint.ts";
+import { Moon, PANEL, SKY, Stars, Sun } from "../kits/storybook/library.tsx";
+import { Person } from "../kits/storybook/Person.tsx";
+import { Critter } from "../kits/storybook/Critter.tsx";
+import { sample, type Key } from "../core/motion/track.ts";
+void ([] as PagePlan[]);
+import { PageScene, pageBand, pageFrame, smallCast } from "./PageArt.tsx";
+import type { BookPlan, PagePlan } from "../director/book.ts";
+
+export type BookProps = { plan: BookPlan };
+const PAGE_Y = 0.7;
+const DEG = Math.PI / 180;
+const P = (p: Poly | Poly[]) => () => p;
+const over = (u: number, v: number, dist: number, elev = 70, side = 0): { pos: V3; target: V3 } => {
+  const t: V3 = [u + 10, PAGE_Y, -v];
+  return { target: t, pos: [t[0] + dist * Math.cos(elev * DEG) * Math.sin(side * DEG), t[1] + dist * Math.sin(elev * DEG), t[2] + dist * Math.cos(elev * DEG) * Math.cos(side * DEG)] };
+};
+// 16:9: a longer lens than 9:16 (a page standing up in a turn grows less towards the camera), framed by the height
+// (cm) the frame shows at the target; the picture moves down to the middle of its page (its text is on the left page).
+const WIDE_FOV = 20;
+const WIDE_DV = -3.4;
+const overW = (u: number, v: number, h: number, elev = 70, side = 0) => over(u, v, h / (2 * Math.tan((WIDE_FOV / 2) * DEG)), elev, side);
+const lin = (s: number, a: number, b: number) => Math.min(1, Math.max(0, (s - a) / (b - a)));
+const sm = (t: number) => (t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t));
+const NIGHT_LIGHT: Lamp = { ...LAMP_BEDTIME, intensity: 0.55, hemi: 0.22, fillI: 0.06, color: "#ffc98f", vignette: 0.45, exposure: 0.9 };
+const clean = (s: string) => s.replace(/\*/g, "");
+
+// ------------------------------------------------------------------ camera plan
+const cameraKeys = (plan: BookPlan): Key[] => {
+  const K: { t: number; c: { pos: V3; target: V3 }; fov?: number }[] = [];
+  const add = (t: number, c: { pos: V3; target: V3 }) => { if (!K.length || t > K[K.length - 1].t + 0.05) K.push({ t, c }); };
+  add(0, over(0.3, -0.6, 86, 64, -10));
+  add(Math.max(0.5, plan.open[0] - 0.2), over(0.3, 0.0, 78, 66, -6));
+  add(plan.open[1] + 0.2, over(-3.0, 0.0, 94, 62, 16));
+  for (const p of plan.pages) {
+    if (p.turn) { add(p.turn.a + 0.25, over(-5.0, 0.5, 98, 68)); add(p.turn.b - 0.15, over(-4.0, 0.5, 96, 68)); }
+    const d = p.b - p.a;
+    // full page (picture + printed text) → close on the picture, the text line kept out of frame → full page
+    const fr = pageFrame(p, plan.cast);
+    const cu = fr.u;
+    add(p.a + 0.1, over(0, 0.5, 76, 70));
+    // three or more on the page: no close-up (it would crop people or the text line), only a slow push
+    const wide = p.actors.filter((x) => !["fly", "fall", "peek"].includes(x.act)).length >= 3;
+    if (d > 4.2 && !wide) {
+      // animals stand ~3 cm tall: come nearer and lower (the printed line still stays out of frame: at 30 cm the
+      // frame reaches ≈ 8 cm below the target, the text starts at −5.5)
+      // the frame is 0.30·D wide: wide enough for the cast's spread, and its bottom edge (V − 0.268·D) stays above the
+      // printed text (−5.4)
+      const small = smallCast(p, plan.cast);
+      const D = small ? Math.max(26, Math.min(34, (fr.spread + 5) / 0.3)) : 34;
+      const V = small ? -5.4 + D * 0.268 : 3.7;
+      add(p.a + d * 0.3, over(cu + (p.idx % 2 ? 0.8 : -0.8), V, D, 72));
+      add(p.a + d * 0.72, over(cu + (p.idx % 2 ? -0.5 : 0.5), V + 0.2, D + 1, 72));
+    } else if (d > 4.2) add(p.a + d * 0.6, over(0, 0.5, 70, 71));
+    add(p.b - 0.1, over(0, 0.5, 76, 70));
+  }
+  add(plan.dim[0], over(0, 0.5, 80, 70));
+  add(plan.duration, over(-3.0, 0.5, 108, 66));
+  return K.map((k) => ({ f: k.t, v: [...k.c.pos, ...k.c.target] }));
+};
+
+/** 16:9 camera: the closed book, then the whole spread; turns pull back, a page with a small cast gets a close-up. */
+const cameraKeysWide = (plan: BookPlan): Key[] => {
+  const K: { t: number; c: { pos: V3; target: V3 } }[] = [];
+  const add = (t: number, c: { pos: V3; target: V3 }) => { if (!K.length || t > K[K.length - 1].t + 0.05) K.push({ t, c }); };
+  const spread = (h = 29.6, elev = 70) => overW(-10, -0.5, h, elev);
+  add(0, overW(-2.4, -0.6, 35, 57, -9));
+  add(Math.max(0.5, plan.open[0] - 0.2), overW(-3.4, -0.3, 32.5, 60, -5));
+  // the cover stands up while it opens: back far enough to keep its top edge in the frame
+  add((plan.open[0] + plan.open[1]) / 2, overW(-8.0, 3.0, 46, 64, 2));
+  add(plan.open[1] + 0.2, overW(-10, 0.4, 35, 68, 2));
+  for (const p of plan.pages) {
+    if (p.turn) { add(p.turn.a + 0.3, overW(-10, 3.6, 40, 68)); add(p.turn.b - 0.2, overW(-10, 1.8, 37.5, 69)); }
+    const d = p.b - p.a;
+    add(p.a + 0.1, spread());
+    // close-up: a frame inside the picture (never over the gutter: the left page's lines would be cut), as wide as
+    // the cast needs, only when the action's band fits its height
+    const fr = pageFrame(p, plan.cast);
+    const band = pageBand(p, plan.cast);
+    const E = 67, k = 16 / 9 * Math.sin(E * DEG);
+    // (someone flying or swimming crosses the whole picture: a wide frame)
+    const W = band ? Math.max(p.actors.some((x) => x.act === "fly" || x.act === "swim") ? 15 : 11.5, fr.spread + 8.5, (band.hi - band.lo + 1.2) * k) : 99;
+    if (d > 4.3 && band && W <= 16.2) {
+      const hv = W / k / 2; // half the frame's height on the page
+      // (the far edge of the frame is ≈ 8 % wider than W: the margin keeps it on the painted panel)
+      const u = (du: number) => Math.max(PANEL.u0 + 0.8 + W / 2, Math.min(PANEL.u1 - 0.8 - W / 2, fr.u + du));
+      const v = Math.max(PANEL.v0 + 0.3 + hv, Math.min(PANEL.v1 - 0.3 - hv, (band.lo + band.hi) / 2 + 0.2)) + WIDE_DV;
+      add(p.a + d * 0.28, spread(28.8)); // the text page stays in view for the first lines
+      add(p.a + d * 0.5, overW(u(p.idx % 2 ? 0.5 : -0.5), v, (W * 9) / 16, E));
+      add(p.a + d * 0.76, overW(u(p.idx % 2 ? -0.3 : 0.3), v + 0.1, (W * 9) / 16 + 0.3, E));
+    } else if (d > 4.3) add(p.a + d * 0.6, overW(-9.4, -0.5, 27.6, 71));
+    add(p.b - 0.1, spread());
+  }
+  add(plan.dim[0], spread(30.5));
+  add(plan.duration, overW(-10, 0.0, 38, 67));
+  return K.map((k) => ({ f: k.t, v: [...k.c.pos, ...k.c.target] }));
+};
+
+// ------------------------------------------------------------------ printing
+const printPage = (p: PagePlan, last: boolean, closing?: string) => (g: G) => {
+  let y = -6.3;
+  for (const ln of p.lines) y = printText(g, clean(ln.text), 0, y, { size: 1.0, width: 17.0 }) - 1.45;
+  if (last && closing) printText(g, closing, 0, Math.min(y - 0.3, -10.6), { size: 1.05, width: 15, italic: true, color: "#6b4f3d" });
+  printText(g, String(p.idx + 1), p.side === "R" ? 8.4 : -8.4, -12.1, { size: 0.6, width: 2, color: "#8b7562" });
+};
+/** The left page facing a picture: a small printed flourish (ink on paper, no cut-outs). */
+const printOrnament = (i: number, y = 1.5) => (g: G) => {
+  g.save();
+  g.strokeStyle = "#a08468";
+  g.lineWidth = 0.06;
+  g.globalAlpha = 0.75;
+  g.beginPath();
+  g.moveTo(-3.2, y);
+  g.bezierCurveTo(-2.0, y + 0.9, -0.9, y - 0.9, 0, y);
+  g.bezierCurveTo(0.9, y + 0.9, 2.0, y - 0.9, 3.2, y);
+  g.stroke();
+  // a tiny star or dot in the middle, alternating
+  g.fillStyle = "#c79a4a";
+  g.beginPath();
+  if (i % 2) for (let k = 0; k < 10; k++) { const a = (k / 10) * Math.PI * 2 - Math.PI / 2, r = k % 2 ? 0.16 : 0.38; g.lineTo(Math.cos(a) * r, y + 0.9 + Math.sin(a) * r); }
+  else g.arc(0, y + 0.9, 0.2, 0, Math.PI * 2);
+  g.fill();
+  g.restore();
+};
+const printTitle = (plan: BookPlan) => (g: G) => {
+  printText(g, plan.title, 0, 1.4, { size: 1.35, width: 16, font: STORY_HAND, weight: 700, color: "#2f4f62" });
+  let y = -0.6;
+  if (plan.by) y = printText(g, `oleh ${plan.by}`, 0, y, { size: 0.8, width: 15, italic: true, color: "#6b4f3d" }) - 1.6;
+  if (plan.dedication) printText(g, plan.dedication, 0, y - 0.6, { size: 0.9, width: 14, italic: true, color: "#6b4f3d" });
+};
+
+// 16:9 printing — the left page of every spread carries the page's text (the picture page keeps only its number).
+/** Sentences set large and centred in the box top…bottom (cm): the biggest size that fits; returns the block's top. */
+const printBlock = (g: G, texts: string[], top: number, bottom: number, closing?: string, dry = false) => {
+  const width = 15.6, lead = 1.36;
+  const run = (size: number, y0: number, draw: boolean) => {
+    let y = y0;
+    texts.forEach((t, i) => { y = printText(g, clean(t), 0, i ? y - size * 1.95 : y, { size, width, leading: lead, dry: !draw }); });
+    if (closing) y = printText(g, closing, 0, y - size * 2.3, { size: size * 1.05, width, italic: true, color: "#6b4f3d", dry: !draw });
+    return y;
+  };
+  let size = 1.4;
+  while (size > 0.86 && -run(size, 0, false) + size > top - bottom) size -= 0.05;
+  const h = -run(size, 0, false) + size;
+  // (a text too long for its box even at the smallest size starts at the top and runs on downwards)
+  const y0 = Math.min(top, (top + bottom) / 2 + h / 2) - size * 0.74;
+  if (!dry) run(size, y0, true);
+  return y0 + size * 0.74;
+};
+const printNumber = (p: PagePlan) => (g: G) => { printText(g, String(p.idx + 1), 8.4, -12.1, { size: 0.6, width: 2, color: "#8b7562" }); };
+const printTextPage = (p: PagePlan, last: boolean, closing?: string) => (g: G) => {
+  const top = printBlock(g, p.lines.map((l) => l.text), 7.4, -8.6, last ? closing : undefined);
+  printOrnament(p.idx, top + 1.5)(g);
+};
+/** The first spread's left page: the title as a heading, then the first page's text under a flourish. */
+const printTitleWide = (plan: BookPlan) => (g: G) => {
+  let y = printText(g, plan.title, 0, 7.0, { size: 1.5, width: 16.8, font: STORY_HAND, weight: 700, color: "#2f4f62" });
+  if (plan.by) y = printText(g, `oleh ${plan.by}`, 0, y - 1.55, { size: 0.85, width: 15, italic: true, color: "#6b4f3d" });
+  if (plan.dedication) y = printText(g, plan.dedication, 0, y - 1.5, { size: 0.9, width: 14, italic: true, color: "#6b4f3d" });
+  const p = plan.pages[0];
+  if (!p) return;
+  const texts = p.lines.map((l) => l.text), closing = plan.pages.length === 1 ? plan.closing : undefined;
+  // a long title + dedication + first page: no flourish, the text starts right under the heading
+  const tight = printBlock(g, texts, y - 3.0, -11.0, closing, true) > y - 3.01;
+  if (!tight) printOrnament(1, y - 2.2)(g);
+  printBlock(g, texts, tight ? y - 1.7 : y - 3.0, tight ? -11.6 : -11.0, closing);
+};
+
+// ------------------------------------------------------------------ cover + title art
+const CoverArt: React.FC<{ plan: BookPlan; s: number }> = ({ plan, s }) => {
+  const time = plan.cover.time;
+  const S = SKY[time];
+  const night = time === "malam";
+  const lead = plan.cast.find((c) => plan.cover.actors.some((a) => a.who === c.name)) ?? plan.cast[0];
+  const second = plan.cast.find((c) => c !== lead && plan.cover.actors.some((a) => a.who === c.name));
+  return (
+    <group>
+      <Sheet id="cover-label" shape={P(rect(-8.4, -11.6, 8.9, 11.9, 0.5))} z={0.02}
+        paint={{ color: S.c, style: "wash", edge: 0.8, tone: S.tone, line: "#3a2f2a", marks: night ? (g, r) => { for (let i = 0; i < 60; i++) dot(g, -8 + r() * 16.5, -3 + r() * 14.5, 0.03 + r() * 0.05, "#f6e7b8", undefined, 0.35 + r() * 0.5); } : undefined }} />
+      <Sheet id="cover-title" shape={P(blob([[-7.2, 10.8], [0.2, 11.3], [7.6, 10.8], [7.9, 8.1], [7.4, 6.0], [0.2, 5.6], [-7.0, 6.0], [-7.5, 8.1]], 8))} z={0.08}
+        paint={{ color: "#f1e6cf", style: "gouache", edge: 0.3, line: "#7c5a45", marks: (g) => { printText(g, plan.title, 0.2, 9.2, { size: plan.title.length > 22 ? 1.5 : 1.85, width: 14.4, font: STORY_HAND, weight: 700, color: "#2f4f62" }); } }} />
+      {night ? <Moon id="cover-moon" u={-5.4} v={3.4} r={1.2} /> : <Sun id="cover-sun" u={-5.4} v={3.6} r={1.1} t={s} time={time} />}
+      {night && <Stars id="cover-stars" t={s} n={4} seed={9} />}
+      <Sheet id="cover-hills" shape={P(hill([[-8.4, -5.0], [-4, -3.6], [-0.5, -4.8], [3.5, -3.3], [8.9, -4.6]], -11.6))} paint={{ color: S.mid, style: "wash", line: "#23463c" }} z={0.1} />
+      <Sheet id="cover-hills2" shape={P(hill([[-8.4, -7.4], [-3, -6.3], [1.5, -7.5], [8.9, -6.6]], -11.6))}
+        paint={{ color: S.grass, style: "crayon", line: "#23463c", marks: (g) => printText(g, plan.by ? `oleh ${plan.by}` : "sebuah dongeng bergambar", 0.25, -10.2, { size: 0.68, width: 15, italic: true, color: "#f3ead9" }) }} z={0.14} />
+      {lead && (lead.kind === "person"
+        ? <Person id="cover-lead" look={lead.look!} pose={{ armF: 2.5, elbowF: 0.35, armB: -0.25, look: [0.8, 0.9], head: -0.1, mouth: "open", blink: s % 3.1 > 2.95 ? 1 : 0 }} x={-2.6} y={-6.4} scale={0.62} z={0.2} s={s} />
+        : <Critter id="cover-lead" kind={lead.kind as never} color={lead.color} pose={{ hop: Math.max(0, Math.sin(s * 3)) * 0.4 }} t={s} x={-2.6} y={-6.4} z={0.2} scale={0.75} />)}
+      {second && (second.kind === "person"
+        ? <Person id="cover-second" look={second.look!} pose={{ armF: 1.2, look: [-0.6, 0.6], mouth: "smile" }} x={3.4} y={-6.1} scale={0.58} z={0.22} flip s={s} />
+        : second.kind === "bintang" || second.kind === "burung" || second.kind === "kupu"
+          ? <group position={[2.3, 1.2, 0]} rotation={[0, 0, 0.1 * Math.sin(s * 2)]}><Critter id="cover-second" kind={second.kind as never} color={second.color} t={s} x={0} y={0} z={0.2} scale={1.2} /></group>
+          : <Critter id="cover-second" kind={second.kind as never} color={second.color} pose={{ hop: Math.max(0, Math.sin(s * 3 + 1)) * 0.3 }} t={s} x={2.6} y={-6.3} z={0.22} scale={0.85} flip />)}
+    </group>
+  );
+};
+const TitleArt: React.FC<{ plan: BookPlan; s: number; land?: boolean }> = ({ plan, s, land }) => (
+  <group position={[0, land ? 5.6 : 0, 0]} scale={land ? [0.75, 0.75, 1] : 1}>
+    {plan.cover.time === "malam"
+      ? <group position={[0, 5.4, 0.06]} rotation={[0, 0, 0.08 * Math.sin(s * 1.5)]}><Sheet id="title-moon" shape={P(ellipse(0, 0, 1.4, 1.4))} paint={{ color: "#f1e2b4", style: "wash", tone: "#cdb37a", line: "#8c7650", holes: [ellipse(0.8, 0.45, 1.3, 1.3)] }} z={0} /></group>
+      : <Sun id="title-sun" u={0} v={5.4} r={1.1} t={s} time={plan.cover.time} />}
+  </group>
+);
+
+// ------------------------------------------------------------------ film
+export const BookFilm: React.FC<BookProps> = ({ plan }) => {
+  const frame = useCurrentFrame();
+  const { fps, width, height } = useVideoConfig();
+  const s = frame / fps;
+  const [handle] = useState(() => delayRender("story fonts"));
+  const [ready, setReady] = useState(false);
+  useEffect(() => { storyFontsReady().then(() => { setReady(true); continueRender(handle); }); }, [handle]);
+  const land = width > height;
+  const keys = useMemo(() => (land ? cameraKeysWide(plan) : cameraKeys(plan)), [plan, land]);
+  const v = sample(keys, s);
+  const shot: Shot = { pos: [v[0], v[1], v[2]], target: [v[3], v[4], v[5]], fov: land ? WIDE_FOV : 30 };
+  const open = sm(lin(s, plan.open[0], plan.open[1]));
+  const nLeaves = plan.pages.length;
+  const turns = Array.from({ length: nLeaves }, (_, i) => {
+    const p = plan.pages.find((x) => x.turn?.leaf === i);
+    return p?.turn ? lin(s, p.turn.a, p.turn.b) : 0;
+  });
+  const ppc = Math.round(90 * (Math.min(width, height) / 1080));
+  const lastIdx = plan.pages.length - 1;
+  const leaves: LeafSpec[] = plan.pages.map((fr) => {
+    const front = <PageScene id={`pg${fr.idx}`} spec={fr} cast={plan.cast} s={s} a={fr.a} d={fr.b - fr.a} seed={fr.seed} />;
+    if (!land) return { front, printFront: printPage(fr, fr.idx === lastIdx, plan.closing), printBack: printOrnament(fr.idx) };
+    // 16:9: the back of a leaf is the left page of the next spread and carries the next page's text
+    const next = plan.pages[fr.idx + 1];
+    return { front: <group position={[0, WIDE_DV, 0]}>{front}</group>, printFront: printNumber(fr), printBack: next ? printTextPage(next, next.idx === lastIdx, plan.closing) : printOrnament(fr.idx) };
+  });
+  const night = plan.pages[lastIdx]?.time === "malam";
+  const lamp = mixLamp(LAMP_BEDTIME, night ? NIGHT_LIGHT : { ...LAMP_BEDTIME, intensity: 1.6, hemi: 0.6, vignette: 0.38 }, sm(lin(s, plan.dim[0], plan.dim[1])));
+  return (
+    <AbsoluteFill style={{ backgroundColor: LAMP_BEDTIME.bg }}>
+      {plan.audio && <Audio src={staticFile(plan.audio)} />}
+      {ready ? (
+        <ThreeCanvas width={width} height={height} shadows={{ type: PCFShadowMap }} dpr={1}
+          gl={{ antialias: false, preserveDrawingBuffer: true, powerPreference: "high-performance" }} camera={{ fov: 30, position: [10, 70, 26] }}>
+          <ResolutionContext.Provider value={ppc}>
+            <Stage shot={shot} lamp={lamp} frame={frame}>
+              <Table />
+              <Book open={open} turns={turns} cloth={night ? "#2e5a5f" : "#7a3b34"} cover={<CoverArt plan={plan} s={s} />} title={<TitleArt plan={plan} s={s} land={land} />} printTitle={land ? printTitleWide(plan) : printTitle(plan)} leaves={leaves} />
+            </Stage>
+          </ResolutionContext.Provider>
+          <QaProbe />
+        </ThreeCanvas>
+      ) : null}
+      {void height}
+    </AbsoluteFill>
+  );
+};
+
+export const bookMetadata: CalculateMetadataFunction<BookProps> = ({ props, compositionId }) => {
+  const fps = compositionId.includes("Final") ? 60 : 30;
+  return { durationInFrames: Math.max(1, Math.ceil(props.plan.duration * fps)), fps };
+};
+
+==== 20211 project/src/film/PageArt.tsx
+// One script-directed page: background for the place and time, props from the spec, and the cast acting.
+// Everything is page space (cm) and a function of the film time `s`; the page's own clock is τ = s − page.a.
+
+import React from "react";
+import { Person } from "../kits/storybook/Person.tsx";
+import { Critter } from "../kits/storybook/Critter.tsx";
+import type { KidPose } from "../kits/storybook/Puppet.tsx";
+import {
+  Balloon, Bed, BookProp, Bush, City, Cloud, Fields, Flowers, Gift, GROUND, Hills, House, houseWindow, Kite, Lamp, Lantern, Moon, Mountains,
+  PalmTree, PANEL, PineTree, Rain, Rainbow, River, Room, RoundTree, Sand, School, Sea, Sky, Sparkle, Stars, Sun, Umbrella, Village, Zzz, Ground,
+} from "../kits/storybook/library.tsx";
+import type { Actor, CastDef, PageSpec } from "../director/book.ts";
+
+const sm = (x: number) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
+const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+const FEET = GROUND - 0.3;
+
+const SLOTS: Record<number, number[]> = { 1: [0.6], 2: [-3.0, 3.4], 3: [-5.0, 0.2, 5.0], 4: [-6.2, -2.2, 1.8, 5.8], 5: [-6.6, -3.3, 0, 3.3, 6.6] };
+const ground = (a: Actor) => !["fly", "fall", "swim", "peek"].includes(a.act);
+
+/** Where a person's front hand is (page space), for kites, balloons and held things. */
+const handOf = (x: number, y: number, scale: number, flip: boolean, armF: number, adult: boolean) => {
+  const legK = adult ? 1.45 : 1;
+  const shoulderY = 3.0 * legK + (adult ? 3.3 : 2.65);
+  const L = 2.6 * (adult ? 1.25 : 1);
+  const hx = 0.95 + Math.sin(armF) * L, hy = shoulderY - Math.cos(armF) * L;
+  return [x + (flip ? -hx : hx) * scale, y + hy * scale] as [number, number];
+};
+
+/** True when every actor on the page is an animal / star (a small cast: the close-up comes nearer and lower). */
+export const smallCast = (spec: PageSpec, cast: CastDef[]) => spec.actors.length > 0 && spec.actors.every((a) => cast.find((c) => c.name === a.who)?.kind !== "person");
+
+/** Where the eye goes on a page (u, cm): the close-up centres here. */
+export const pageFocus = (spec: PageSpec, cast: CastDef[]) => pageFrame(spec, cast).u;
+
+/** The close-up's centre u and the width (cm) the cast spans on the page. */
+export const pageFrame = (spec: PageSpec, cast: CastDef[]) => {
+  const g = spec.actors.filter(ground);
+  const slotK = smallCast(spec, cast) ? 0.55 : 1;
+  const slots = (SLOTS[Math.min(5, Math.max(1, g.length))] ?? SLOTS[1]).map((u) => u * slotK);
+  const us: number[] = [];
+  spec.actors.forEach((ac) => {
+    if (!cast.some((c) => c.name === ac.who)) return;
+    if (ac.act === "peek") us.push(houseWindow(-3.6).u + 0.4);
+    else if (ac.act === "fall") us.push(slots[0] + 2.6);
+    else if (ac.act === "fly" || ac.act === "swim") us.push(0);
+    else us.push(slots[g.indexOf(ac)] ?? 0);
+  });
+  if (!us.length) return { u: 0, spread: 0 };
+  return { u: Math.max(-3.8, Math.min(3.8, (Math.min(...us) + Math.max(...us)) / 2)), spread: Math.max(...us) - Math.min(...us) };
+};
+
+/**
+ * The band of the picture (v, cm) that holds the action, feet to the highest head, kite or flier. A 16:9 close-up is
+ * much lower than a 9:16 one: it is only taken when this band fits its frame.
+ */
+export const pageBand = (spec: PageSpec, cast: CastDef[]) => {
+  let lo = Infinity, hi = -Infinity;
+  const add = (a: number, b: number) => { lo = Math.min(lo, a); hi = Math.max(hi, b); };
+  const has = (p: string) => spec.props.includes(p);
+  spec.actors.forEach((ac, i) => {
+    const def = cast.find((c) => c.name === ac.who);
+    if (!def) return;
+    const person = def.kind === "person";
+    const tall = person ? (def.look!.build !== "child" ? 7.4 : 5.4) : 3.2;
+    if (ac.act === "peek") add(houseWindow(-3.6).v - 2.0, houseWindow(-3.6).v + 2.0);
+    else if (ac.act === "fly") add(4.8, 8.4);
+    else if (ac.act === "swim") add(-4.2, 1.6);
+    else if (ac.act === "fall") add(FEET - 0.3, FEET + 4.6);
+    else if (ac.act === "sleep") add(FEET - 0.9, spec.place === "kamar" ? 3.6 : FEET + 4.4);
+    else add(FEET - 0.3, FEET + tall + (ac.act === "jump" ? 1.5 : ac.act === "happy" ? 0.6 : 0));
+    if (!person || ac.act === "sleep") return;
+    if (ac.act === "kite" || (has("layang") && i === 0)) add(FEET, 10.6);
+    if (ac.act === "hold" && has("balon")) add(FEET, FEET + tall + 3.6);
+    if (has("payung") && i === 0) add(FEET, FEET + tall + 1.6);
+  });
+  return hi > lo ? { lo, hi } : null;
+};
+
+export const PageScene: React.FC<{ id: string; spec: PageSpec & { lines?: { text: string }[] }; cast: CastDef[]; s: number; a: number; d: number; seed: number }> = ({ id, spec, cast, s, a, d, seed }) => {
+  const words = (spec.lines ?? []).map((l) => l.text).join(" ").toLowerCase();
+  const umbrellaColor = /payung\S*\s+(merah|biru|hijau|ungu|kuning)|payung (merah|biru|hijau|ungu|kuning)|(kuning|merah|biru|hijau|ungu)nya/.test(words) ? { merah: "#d4533e", biru: "#5b8fcf", hijau: "#5f9a5e", ungu: "#8b6bb8", kuning: "#f2c75c" }[(/(merah|biru|hijau|ungu|kuning)/.exec(words.slice(words.indexOf("payung")))?.[1] ?? "merah") as "merah"] : "#d4533e";
+  const τ = s - a;
+  const k = Math.max(0, Math.min(1, τ / Math.max(0.1, d)));
+  const { time, place, props } = spec;
+  const has = (p: string) => props.includes(p);
+  const night = time === "malam";
+  const indoor = place === "kamar";
+  const someonePeeks = spec.actors.some((x) => x.act === "peek");
+  const sleeping = spec.actors.some((x) => x.act === "sleep");
+  const houseU = -3.6;
+
+  // ---------------- background
+  const bg: React.ReactNode[] = [];
+  if (indoor) {
+    bg.push(<Room key="room" id={`${id}-room`} time={time} />);
+    if (sleeping || has("tempat tidur")) bg.push(<Bed key="bed" id={`${id}-bed`} u={-2.4} time={time} />);
+    if (has("lampu") || night) bg.push(<Lamp key="lamp" id={`${id}-lamp`} u={5.9} on={night} />);
+  } else {
+    bg.push(<Sky key="sky" id={`${id}-sky`} time={time} />);
+    if (night || has("bulan")) bg.push(<Moon key="moon" id={`${id}-moon`} u={5.6} v={9.6} r={1.25} />);
+    else if (time !== "mendung") bg.push(<Sun key="sun" id={`${id}-sun`} u={-5.8} v={9.4} r={1.15} t={s} time={time} />);
+    if (night || has("bintang")) bg.push(<Stars key="stars" id={`${id}-stars`} t={s} n={night ? 6 : 3} seed={seed} />);
+    if (!night || has("awan")) {
+      bg.push(<Cloud key="c1" id={`${id}-c1`} u={2.2} v={10.6} w={3.8} time={time} t={s} />);
+      bg.push(<Cloud key="c2" id={`${id}-c2`} u={-1.8} v={8.2} w={2.8} time={time} t={s + 3} z={0.085} />);
+    }
+    if (has("pelangi")) bg.push(<Rainbow key="rb" id={`${id}-rb`} />);
+    switch (place) {
+      case "pantai":
+        bg.push(<Sea key="sea" id={`${id}-sea`} time={time} t={s} top={1.4} />, <Sand key="sand" id={`${id}-sand`} />);
+        bg.push(<PalmTree key="palm" id={`${id}-palm`} u={-7.4} h={7} time={time} t={s} z={0.18} />);
+        if (has("perahu") || true) bg.push(<group key="boat" position={[0, 0, 0]}><BoatAt id={`${id}-boat`} u={4.6} v={1.4} t={s} /></group>);
+        break;
+      case "laut":
+        bg.push(<Sea key="sea" id={`${id}-sea`} time={time} t={s} top={4.2} />);
+        bg.push(<BoatAt key="boat" id={`${id}-boat`} u={0.4} v={3.9} t={s} big />);
+        break;
+      case "gunung":
+        bg.push(<Mountains key="mt" id={`${id}-mt`} time={time} />, <Ground key="g" id={`${id}-g`} time={time} />);
+        bg.push(<PineTree key="p1" id={`${id}-p1`} u={-6.5} h={4.5} time={time} />, <PineTree key="p2" id={`${id}-p2`} u={6.8} h={5.2} time={time} />);
+        break;
+      case "sawah":
+        bg.push(<Mountains key="mt" id={`${id}-mt`} time={time} />, <Fields key="f" id={`${id}-f`} time={time} />, <Ground key="g" id={`${id}-g`} time={time} top={GROUND + 0.2} />);
+        break;
+      case "hutan":
+        bg.push(<Hills key="h" id={`${id}-h`} time={time} seed={seed} />);
+        [-7.5, -4.6, 4.2, 7.4].forEach((u, i) => bg.push(<PineTree key={`pt${i}`} id={`${id}-pt${i}`} u={u} h={5.6 + (i % 2) * 1.4} time={time} z={0.14 + i * 0.004} />));
+        bg.push(<Ground key="g" id={`${id}-g`} time={time} />);
+        bg.push(<RoundTree key="rt1" id={`${id}-rt1`} u={-6.2} h={4.8} time={time} z={0.2} />, <RoundTree key="rt2" id={`${id}-rt2`} u={6.6} h={4.2} time={time} z={0.2} />);
+        break;
+      case "desa":
+        bg.push(<Hills key="h" id={`${id}-h`} time={time} seed={seed} />, <Village key="v" id={`${id}-v`} time={time} />, <Ground key="g" id={`${id}-g`} time={time} />);
+        bg.push(<RoundTree key="rt" id={`${id}-rt`} u={0.4} h={3.6} time={time} z={0.18} />);
+        break;
+      case "sekolah":
+        bg.push(<School key="sc" id={`${id}-sc`} u={-1.2} time={time} />, <Ground key="g" id={`${id}-g`} time={time} />);
+        break;
+      case "kota":
+        bg.push(<City key="city" id={`${id}-city`} time={time} />, <Ground key="g" id={`${id}-g`} time={time} color={night ? "#4a4a52" : "#8a8a90"} />);
+        break;
+      case "sungai":
+        bg.push(<Hills key="h" id={`${id}-h`} time={time} seed={seed} />, <Ground key="g" id={`${id}-g`} time={time} top={GROUND + 1.4} />, <River key="r" id={`${id}-r`} time={time} t={s} />);
+        bg.push(<RoundTree key="rt" id={`${id}-rt`} u={-6.4} h={4.4} time={time} />);
+        break;
+      case "langit":
+        bg.push(<Cloud key="c3" id={`${id}-c3`} u={-5} v={2.0} w={5} time={time} t={s + 1} z={0.1} />, <Cloud key="c4" id={`${id}-c4`} u={5.5} v={-1.0} w={6} time={time} t={s + 2} z={0.12} />);
+        break;
+      default: // kebun, taman
+        bg.push(<Hills key="h" id={`${id}-h`} time={time} seed={seed} />);
+        if (place === "kebun" || has("rumah") || someonePeeks) bg.push(<House key="house" id={`${id}-house`} u={houseU} time={time} z={someonePeeks ? 0.36 : 0.3} roomZ={someonePeeks ? 0.19 : undefined} />);
+        bg.push(<RoundTree key="rt" id={`${id}-rt`} u={place === "taman" ? -5.2 : 4.4} h={4.4} time={time} z={0.18} fruit={has("buah") ? "#e2574c" : undefined} />);
+        bg.push(<Ground key="g" id={`${id}-g`} time={time} />);
+        if (place === "taman" || has("bunga")) bg.push(<Flowers key="fl" id={`${id}-fl`} u0={-8.4} u1={-3.5} t={s} />);
+        break;
+    }
+    if (has("pohon") && !["hutan", "kebun", "taman", "desa", "sungai"].includes(place)) bg.push(<RoundTree key="rt-x" id={`${id}-rtx`} u={-6.6} h={4} time={time} z={0.19} />);
+    if (has("kelapa") && place !== "pantai") bg.push(<PalmTree key="palm-x" id={`${id}-palmx`} u={7.2} time={time} t={s} />);
+    if (has("cemara") && place !== "hutan") bg.push(<PineTree key="pine-x" id={`${id}-pinex`} u={-7.2} time={time} />);
+  }
+
+  // ---------------- cast
+  const onGround = spec.actors.filter(ground);
+  // an all-animal page stands closer together so the close-up can come near
+  const slotK = smallCast(spec, cast) ? 0.55 : 1;
+  const slots = (SLOTS[Math.min(5, Math.max(1, onGround.length))] ?? SLOTS[1]).map((u) => u * slotK);
+  const nodes: React.ReactNode[] = [];
+  const extras: React.ReactNode[] = [];
+  spec.actors.forEach((ac, i) => {
+    const def = cast.find((c) => c.name === ac.who);
+    if (!def) return;
+    const gi = onGround.indexOf(ac);
+    const slot = gi >= 0 ? slots[gi] : 0;
+    let x = slot, y = FEET;
+    let flip = slot > 0.8;
+    const isPerson = def.kind === "person";
+    const adult = isPerson && def.look!.build !== "child";
+    let scale = isPerson ? (adult ? 0.6 : 0.55) : def.kind === "bintang" ? 0.62 : def.kind === "kucing" || def.kind === "anjing" ? 0.85 : 1.0;
+    let rot = 0;
+    let z = 0.42 + i * 0.035;
+    const pose: KidPose = { blink: (s + i * 1.3) % 3.4 > 3.25 ? 1 : 0, head: 0.04 * Math.sin(s * 0.9 + i), look: [flip ? -0.5 : 0.5, 0.1] };
+    const cp: { walk?: number; stride?: number; hop?: number; flap?: number; mood?: "happy" | "sad" | "surprised"; blink?: boolean; tears?: number } = { blink: pose.blink === 1, mood: "happy" };
+    let tears = 0;
+    const partner = ac.target ? onGround.findIndex((o) => o.who === ac.target) : -1;
+    switch (ac.act) {
+      case "walk": case "run": {
+        const dir = flip ? -1 : 1;
+        const span = ac.act === "run" ? 7 : 4.2;
+        x = slot - (dir * span) / 2 + dir * span * sm(k);
+        const moving = k > 0.02 && k < 0.98;
+        pose.walk = τ * (ac.act === "run" ? 2.6 : 1.6); pose.stride = moving ? 1 : 0; pose.lean = ac.act === "run" ? 0.15 * dir : 0; pose.mouth = "smile";
+        cp.walk = pose.walk; cp.stride = pose.stride;
+        break;
+      }
+      case "jump": case "happy": {
+        const h = Math.max(0, Math.sin(τ * (ac.act === "jump" ? 5 : 4))) * (ac.act === "jump" ? 1.4 : 0.5);
+        pose.hop = h; pose.armF = 2.2; pose.armB = -2.0; pose.elbowF = 0.3; pose.mouth = "open"; cp.hop = h;
+        break;
+      }
+      case "wave": pose.armF = 2.45 + 0.3 * Math.sin(τ * 6); pose.elbowF = 0.4 + 0.2 * Math.sin(τ * 6); pose.mouth = "open"; cp.hop = Math.max(0, Math.sin(τ * 4)) * 0.2; break;
+      case "cry": pose.mouth = "sad"; pose.head = -0.15; pose.look = [0, -0.6]; pose.armF = 1.9; pose.elbowF = 1.4; tears = 1; cp.mood = "sad"; cp.tears = 1; break;
+      case "sad": pose.mouth = "sad"; pose.head = -0.2; pose.look = [0, -0.7]; cp.mood = "sad"; break;
+      case "surprised": pose.mouth = "open"; pose.armF = 1.3; pose.armB = -1.2; pose.hop = τ < 0.4 ? Math.sin(τ * 8) * 0.4 : 0; cp.mood = "surprised"; break;
+      case "sit": pose.crouch = 1; pose.armF = 0.6; pose.elbowF = 0.6; cp.stride = 0; break;
+      case "point": pose.armF = 1.65; pose.elbowF = 0.05; pose.mouth = "open"; pose.look = [flip ? -0.9 : 0.9, 0.5]; break;
+      case "look": pose.head = -0.12; pose.look = [flip ? -0.6 : 0.6, 0.95]; pose.mouth = "open"; break;
+      case "hold": pose.armF = 1.0; pose.elbowF = 0.9; break;
+      case "hug": {
+        const towards = partner >= 0 ? slots[partner] : slot;
+        const meet = (slot + towards) / 2 + (slot < towards ? -0.9 : 0.9);
+        x = lerp(slot, meet, sm(k / 0.35));
+        const in_ = sm((k - 0.3) / 0.15);
+        pose.walk = τ * 1.6; pose.stride = k < 0.35 ? 1 : 0; pose.armF = 1.45 * in_; pose.armB = 1.3 * in_; pose.elbowF = -0.7 * in_; pose.mouth = "smile";
+        cp.walk = pose.walk; cp.stride = pose.stride;
+        flip = slot > towards;
+        break;
+      }
+      case "sleep": {
+        pose.blink = 1; pose.mouth = "flat"; cp.blink = true;
+        // a person lies on the bed, head on the pillow (rot +90°: the head points to −u); an animal curls at its foot
+        const sleepers = spec.actors.filter((x) => x.act === "sleep");
+        const people = sleepers.filter((x) => cast.find((c) => c.name === x.who)?.kind === "person");
+        if (indoor && isPerson) {
+          const k2 = people.indexOf(ac);
+          x = 0.9 + k2 * 0.9; y = -0.15 + k2 * 0.15; rot = Math.PI / 2; z = 0.46 - k2 * 0.02; flip = false;
+        } else if (indoor) { x = 2.6 - sleepers.indexOf(ac) * 0.4; y = -0.75; rot = 0; z = 0.5; flip = true; scale *= 0.85; } // tucked under the blanket
+        else { y = isPerson ? FEET + 0.5 : FEET - 0.25; rot = isPerson ? Math.PI / 2 : 0; x = slot + (isPerson ? 2.6 : 0); }
+        if (i === spec.actors.indexOf(sleepers[0])) extras.push(<Zzz key={`z${i}`} id={`${id}-zzz${i}`} u={indoor ? -4.2 : isPerson ? x - 4.6 : x + 0.6} v={indoor ? 1.8 : isPerson ? FEET + 1.6 : FEET + 2.6 * scale + 0.4} t={s} />);
+        break;
+      }
+      case "peek": {
+        const w = houseWindow(houseU);
+        const up = sm((τ - 0.4) / 0.9);
+        // head and shoulders rise into the window frame (head centre ≈ 8 cm above the feet at scale 1)
+        // small enough that the feet stay hidden behind the wall while the head rises into the frame
+        x = w.u + 0.1; y = w.v + 0.2 - 8.0 * 0.32 - 0.35 + 0.35 * up; scale = 0.32; z = 0.22; flip = false;
+        pose.look = [0.9, 0.7]; pose.head = 0.12 * up; pose.mouth = up > 0.8 ? "open" : "smile"; pose.armF = 0.6; pose.armB = -0.6;
+        break;
+      }
+      case "fall": {
+        const f = sm((τ - 0.2) / Math.max(1.2, d * 0.4));
+        const land = slots[0] + 2.6;
+        x = lerp(-6.5, land, f); y = lerp(11.0, FEET, f) + Math.sin(f * Math.PI) * 1.5;
+        rot = (1 - f) * 6; scale = def.kind === "bintang" ? 0.42 : scale; cp.mood = f >= 1 ? "surprised" : "happy";
+        if (f >= 1) extras.push(<Sparkle key={`sp${i}`} id={`${id}-sp${i}`} u={land + 1} v={FEET + 2} t={s} />);
+        z = 0.5;
+        break;
+      }
+      case "fly": {
+        x = lerp(-7.5, 7.0, k); y = 6.5 + Math.sin(τ * 1.5) * 0.9; cp.flap = 1; z = 0.5; flip = false;
+        if (isPerson) { pose.armF = 2.6; pose.armB = -2.6; rot = -0.4; }
+        break;
+      }
+      case "swim": {
+        const waterY = place === "sungai" ? -2.9 : place === "laut" ? -0.6 : place === "pantai" ? 0.25 : -0.8;
+        x = lerp(-6.5, 6.5, k) - spec.actors.filter((a2) => a2.act === "swim").indexOf(ac) * 2.4; y = waterY + Math.sin(τ * 2) * 0.15; flip = false; z = 0.19 + i * 0.01;
+        if (def.kind === "bebek") cp.hop = 0;
+        break;
+      }
+      case "kite": {
+        pose.armF = 2.55; pose.elbowF = 0.2; pose.look = [0.7, 0.95]; pose.head = -0.15; pose.mouth = "open";
+        break;
+      }
+      default: break;
+    }
+    if (isPerson) {
+      nodes.push(<Person key={i} id={`${id}-p${i}`} look={def.look!} pose={pose} x={x} y={y} z={z} scale={scale} flip={flip} rot={rot} tears={tears} s={s} />);
+      const hand = handOf(x, y, scale, flip, pose.armF ?? 0.1, adult);
+      if (ac.act === "kite" || (ac.act !== "sleep" && has("layang") && i === 0)) extras.push(<Kite key={`k${i}`} id={`${id}-kite${i}`} u={x + (flip ? -4.5 : 4.5)} v={8.6} hand={[hand[0], hand[1], z + 0.05]} t={s} />);
+      if (ac.act === "hold" && has("balon")) extras.push(<Balloon key={`b${i}`} id={`${id}-bal${i}`} u={hand[0]} v={hand[1] + 3.1} t={s} z={z + 0.06} />);
+      if (ac.act === "hold" && (has("lentera") || has("lampion"))) extras.push(<Lantern key={`l${i}`} id={`${id}-lan${i}`} u={hand[0]} v={hand[1] - 0.9} t={s} z={z + 0.06} />);
+      if (has("payung") && i === 0 && ac.act !== "sleep") extras.push(<Umbrella key={`u${i}`} id={`${id}-umb${i}`} hand={hand} z={z + 0.06} color={umbrellaColor} />);
+    } else {
+      nodes.push(
+        <group key={i} position={[x, y, 0]} rotation={[0, 0, rot]}>
+          <Critter id={`${id}-a${i}`} kind={def.kind as never} color={def.color} pose={cp} t={s + i} x={0} y={0} z={z} scale={scale} flip={flip} />
+        </group>,
+      );
+    }
+  });
+
+  // ---------------- free props
+  const fg: React.ReactNode[] = [];
+  if (!indoor && !["laut", "langit", "pantai", "kota"].includes(place)) {
+    fg.push(<Bush key="bl" id={`${id}-bushL`} u={-7.6} w={3.0} time={time} flowers={has("bunga") ? "#e46a8a" : undefined} />);
+    fg.push(<Bush key="br" id={`${id}-bushR`} u={7.9} w={2.8} time={time} />);
+  }
+  if (has("kado") || has("hadiah")) fg.push(<Gift key="gift" id={`${id}-gift`} u={2.0} z={0.48} />);
+  if (has("buku") && !indoor) fg.push(<BookProp key="book" id={`${id}-book`} u={-1.2} />);
+  if (has("buku") && indoor) fg.push(<BookProp key="book" id={`${id}-book`} u={5.9} v={0.62} z={0.24} />);
+  if (has("hujan")) fg.push(<Rain key="rain" id={`${id}-rain`} t={s} />);
+  if (has("kupu") && !spec.actors.some((x) => cast.find((c) => c.name === x.who)?.kind === "kupu")) fg.push(<group key="bf"><Critter id={`${id}-bf`} kind="kupu" t={s} x={lerp(-6, 5, k)} y={4 + Math.sin(s * 2) * 0.8} z={0.55} scale={0.45} /></group>);
+  if (has("burung") && !spec.actors.some((x) => cast.find((c) => c.name === x.who)?.kind === "burung")) fg.push(<group key="bd"><Critter id={`${id}-bd`} kind="burung" t={s} x={lerp(-8, 8, k)} y={8.5 + Math.sin(s * 1.5) * 0.5} z={0.12} scale={0.35} /></group>);
+  if (has("kilau")) fg.push(<Sparkle key="kl" id={`${id}-kl`} u={3} v={2} t={s} />);
+
+  return (
+    <group>
+      {bg}
+      {nodes}
+      {extras}
+      {fg}
+    </group>
+  );
+};
+
+const BoatAt: React.FC<{ id: string; u: number; v: number; t: number; big?: boolean }> = ({ id, u, v, t, big }) => {
+  // the library boat, scaled for a far (pantai) or near (laut) view
+  const s = big ? 1.5 : 0.8;
+  return (
+    <group position={[u, v, 0]} scale={[s, s, 1]}>
+      <BoatInner id={id} t={t} />
+    </group>
+  );
+};
+import { Boat } from "../kits/storybook/library.tsx";
+const BoatInner: React.FC<{ id: string; t: number }> = ({ id, t }) => <Boat id={id} u={0} v={0} t={t} z={0.13} />;
+void PANEL;
+
+==== 113 project/src/index.ts
+import { registerRoot } from "remotion";
+import { RemotionRoot } from "./Root.tsx";
+
+registerRoot(RemotionRoot);
+
+==== 15747 project/src/kits/storybook/Book.tsx
+// <Book> — a real hardcover picture book lying open on a table, with leaves that turn.
+//
+// World layout (cm, y up): the spine runs along z at x = 0. The right page spans x ∈ [0, W], z ∈ [−H/2, H/2];
+// the viewer sits at +z (the bottom of the page). Page content is authored in PAGE coordinates:
+// u ∈ [−W/2, W/2] left→right, v ∈ [−H/2, H/2] bottom→top, lift above the paper in cm.
+//
+// • The front cover + the first half of the block form one rigid group that opens about the spine.
+// • Each leaf is a thin page bent analytically while it turns (bend.ts); its front content (the right page)
+//   and back content (the left page of the next spread) bend with it.
+// • Content lifts settle in as a page is revealed and flatten before another page lands on it, so lifted
+//   cut-outs never poke through paper.
+
+import React, { useContext, useMemo } from "react";
+import { BackSide, DoubleSide, FrontSide, Matrix4, PlaneGeometry, Vector4, type Material } from "three";
+import { BendContext, bendDepth, makeBend, NO_CEIL, type BendUniforms } from "./bend.ts";
+import { canvasTexture, rng, type G } from "./paint.ts";
+import { grainFor, paperMaterial, ResolutionContext } from "./Sheet.tsx";
+
+export const PAGE = { W: 20, H: 26 } as const;
+const BOARD = 0.25; // cover board thickness
+const BLOCK = 0.4; // half the page block
+const OVER = 0.5; // board overhang
+const DT = 0.012; // one leaf
+const LEAF_SEG_X = 72;
+const LEAF_SEG_Z = 14;
+
+const clamp01 = (x: number) => Math.min(1, Math.max(0, x));
+export const ramp = (x: number, a: number, b: number) => clamp01((x - a) / (b - a));
+const smooth = (t: number) => t * t * (3 - 2 * t);
+const mix = (a: number, b: number, t: number) => a + (b - a) * t;
+
+/** Page-space group (u, v, lift) on top of a surface whose frame has x from the spine, y up. */
+export const FrontSpace: React.FC<{ children: React.ReactNode; lift?: number }> = ({ children, lift = 1 }) => (
+  <group position={[PAGE.W / 2, 0, 0]} rotation={[-Math.PI / 2, 0, 0]} scale={[1, 1, Math.max(1e-4, lift)]}>
+    {children}
+  </group>
+);
+/** Page-space group for the back of a leaf (it becomes the left page once turned). */
+const BackSpace: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <group position={[PAGE.W / 2, 0, 0]} rotation={[0, 0, Math.PI]}>
+    <group rotation={[-Math.PI / 2, 0, 0]}>{children}</group>
+  </group>
+);
+
+// ── Paper and cloth textures ───────────────────────────────────────────────────
+
+const PAPER_COLOR = "#f3ead9";
+
+type PagePrint = (g: G, r: () => number) => void;
+
+/** A page surface: warm paper, a soft gutter shade at the spine side, optional print (page numbers, text). */
+const pageCanvas = (ppc: number, spineAt: "left" | "right", print?: PagePrint, seed = 1) => {
+  const k = Math.min(ppc, 2048 / PAGE.H);
+  const c = document.createElement("canvas");
+  c.width = Math.round(PAGE.W * k);
+  c.height = Math.round(PAGE.H * k);
+  const g = c.getContext("2d")!;
+  g.setTransform(k, 0, 0, -k, (PAGE.W / 2) * k, (PAGE.H / 2) * k);
+  g.fillStyle = PAPER_COLOR;
+  g.fillRect(-PAGE.W / 2, -PAGE.H / 2, PAGE.W, PAGE.H);
+  const r = rng(seed);
+  // faint pulp mottling
+  for (let i = 0; i < 90; i++) {
+    g.fillStyle = `rgba(${r() < 0.5 ? "120,90,50" : "255,255,255"},${0.012 + r() * 0.015})`;
+    g.beginPath();
+    g.ellipse(-PAGE.W / 2 + r() * PAGE.W, -PAGE.H / 2 + r() * PAGE.H, 0.5 + r() * 3, 0.5 + r() * 3, r() * 3, 0, Math.PI * 2);
+    g.fill();
+  }
+  // gutter: the page curves down into the binding
+  const sx = spineAt === "left" ? -PAGE.W / 2 : PAGE.W / 2;
+  const dir = spineAt === "left" ? 1 : -1;
+  const grad = g.createLinearGradient(sx, 0, sx + dir * 2.2, 0);
+  grad.addColorStop(0, "rgba(90,60,30,0.22)");
+  grad.addColorStop(0.35, "rgba(90,60,30,0.07)");
+  grad.addColorStop(1, "rgba(90,60,30,0)");
+  g.fillStyle = grad;
+  g.fillRect(-PAGE.W / 2, -PAGE.H / 2, PAGE.W, PAGE.H);
+  print?.(g, r);
+  const t = canvasTexture(c);
+  return t;
+};
+
+const clothCanvas = (color: string, w: number, h: number, ppc: number) => {
+  const k = Math.min(ppc * 0.6, 1400 / Math.max(w, h));
+  const c = document.createElement("canvas");
+  c.width = Math.round(w * k);
+  c.height = Math.round(h * k);
+  const g = c.getContext("2d")!;
+  g.fillStyle = color;
+  g.fillRect(0, 0, c.width, c.height);
+  const r = rng(4242);
+  // woven book cloth: fine warp/weft threads
+  const step = Math.max(1.5, k * 0.05);
+  for (let x = 0; x < c.width; x += step) {
+    g.fillStyle = `rgba(255,255,255,${0.025 + r() * 0.03})`;
+    g.fillRect(x, 0, step * 0.45, c.height);
+  }
+  for (let y = 0; y < c.height; y += step) {
+    g.fillStyle = `rgba(0,0,0,${0.03 + r() * 0.03})`;
+    g.fillRect(0, y, c.width, step * 0.4);
+  }
+  // wear at the edges
+  g.strokeStyle = "rgba(255,240,220,0.12)";
+  g.lineWidth = k * 0.25;
+  g.strokeRect(0, 0, c.width, c.height);
+  return canvasTexture(c);
+};
+
+const woodCanvas = (ppc: number) => {
+  const W = 1024, H = 1024;
+  const c = document.createElement("canvas");
+  c.width = W;
+  c.height = H;
+  const g = c.getContext("2d")!;
+  const r = rng(9001);
+  const planks = 5;
+  for (let p = 0; p < planks; p++) {
+    const y0 = (p * H) / planks;
+    const base = [118 + r() * 18, 78 + r() * 12, 48 + r() * 8];
+    g.fillStyle = `rgb(${base[0]},${base[1]},${base[2]})`;
+    g.fillRect(0, y0, W, H / planks);
+    // grain lines
+    for (let i = 0; i < 70; i++) {
+      const yy = y0 + r() * (H / planks);
+      const amp = 2 + r() * 6, f = 0.004 + r() * 0.01, ph = r() * 6;
+      g.strokeStyle = `rgba(${r() < 0.5 ? "60,35,18" : "170,120,80"},${0.06 + r() * 0.12})`;
+      g.lineWidth = 0.6 + r() * 2.2;
+      g.beginPath();
+      for (let x = 0; x <= W; x += 16) {
+        const y = yy + Math.sin(x * f + ph) * amp + Math.sin(x * f * 3.1 + ph * 2) * amp * 0.3;
+        if (x === 0) g.moveTo(x, y);
+        else g.lineTo(x, y);
+      }
+      g.stroke();
+    }
+    g.fillStyle = "rgba(30,15,6,0.55)";
+    g.fillRect(0, y0, W, 2);
+  }
+  const t = canvasTexture(c);
+  t.wrapS = t.wrapT = 1000; // RepeatWrapping
+  return t;
+};
+
+// ── Table ──────────────────────────────────────────────────────────────────────
+
+export const Table: React.FC = () => {
+  const ppc = useContext(ResolutionContext);
+  const mat = useMemo(() => {
+    const t = woodCanvas(ppc);
+    t.repeat.set(3, 3);
+    return paperMaterial({ map: t, bump: grainFor(300, 300, 6), bumpScale: 0.3, roughness: 0.7 });
+  }, [ppc]);
+  return (
+    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.01, 0]} receiveShadow material={mat}>
+      <planeGeometry args={[320, 320]} />
+    </mesh>
+  );
+};
+
+// ── Book ───────────────────────────────────────────────────────────────────────
+
+export type LeafSpec = {
+  /** Right page: page-space content glued on the front of the leaf. */
+  front?: React.ReactNode;
+  /** Left page of the next spread: page-space content on the back of the leaf. */
+  back?: React.ReactNode;
+  /** Printing on the paper itself (page number, text) for front/back. */
+  printFront?: PagePrint;
+  printBack?: PagePrint;
+};
+
+export type BookProps = {
+  /** 0 closed … 1 cover fully open. */
+  open: number;
+  /** Turn progress per leaf, 0 (right) … 1 (landed on the left). */
+  turns: number[];
+  leaves: LeafSpec[];
+  /** Cover art (page space, on the front board). */
+  cover?: React.ReactNode;
+  /** The first spread's left page (page space): title page / dedication. */
+  title?: React.ReactNode;
+  printTitle?: PagePrint;
+  cloth?: string;
+};
+
+const Box: React.FC<{ x0: number; x1: number; y0: number; y1: number; z0: number; z1: number; mat: Material | Material[] }> = ({ x0, x1, y0, y1, z0, z1, mat }) => (
+  <mesh position={[(x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2]} material={mat} castShadow receiveShadow>
+    <boxGeometry args={[x1 - x0, y1 - y0, z1 - z0]} />
+  </mesh>
+);
+
+/** Fore-edge of a page block: many thin paper lines. */
+const edgeCanvas = () => {
+  const c = document.createElement("canvas");
+  c.width = 64;
+  c.height = 512;
+  const g = c.getContext("2d")!;
+  g.fillStyle = "#e9dfcb";
+  g.fillRect(0, 0, 64, 512);
+  const r = rng(55);
+  for (let y = 0; y < 512; y += 3 + r() * 2) {
+    g.fillStyle = `rgba(110,85,55,${0.12 + r() * 0.15})`;
+    g.fillRect(0, y, 64, 1);
+  }
+  return canvasTexture(c);
+};
+
+type LeafState = { theta: number; k0: number; kz: number; y: number };
+const NONE = NO_CEIL;
+const ceil = (st: LeafState) => new Vector4(st.theta, st.k0, st.kz, st.y);
+
+/** Turn kinematics: lift the corner (edge leads), swing over, the edge trails, land on the left stack. */
+const leafState = (p: number, yR: number, yL: number): LeafState => {
+  const e = smooth(smooth(clamp01(p)));
+  const sw = Math.sin(2 * Math.PI * clamp01(p));
+  return { theta: Math.PI * e, k0: (0.95 * sw) / PAGE.W, kz: (0.55 * sw) / (PAGE.W * (PAGE.H / 2)), y: mix(yR, yL, e) };
+};
+
+/** Write a leaf state + its clearance surfaces into a bend's uniforms. */
+const applyState = (U: BendUniforms, st: LeafState, ceilR: Vector4, ceilL: Vector4, floorR: number, floorL: number) => {
+  U.uTheta.value = st.theta;
+  U.uK0.value = st.k0;
+  U.uKz.value = st.kz;
+  U.uLift.value = 1;
+  U.uPage.value = new Matrix4().makeTranslation(0, st.y, 0);
+  U.uPageInv.value = new Matrix4().makeTranslation(0, -st.y, 0);
+  U.uCeilR.value.copy(ceilR);
+  U.uCeilL.value.copy(ceilL);
+  U.uFloor.value.set(floorR, floorL);
+};
+
+const Leaf: React.FC<{ i: number; spec: LeafSpec; st: LeafState; ceilR: Vector4; ceilL: Vector4; floorR: number; floorL: number }> = ({ i, spec, st, ceilR, ceilL, floorR, floorL }) => {
+  const ppc = useContext(ResolutionContext);
+  const U = useMemo(() => makeBend(), []);
+  const geo = useMemo(() => {
+    const g = new PlaneGeometry(PAGE.W, PAGE.H, LEAF_SEG_X, LEAF_SEG_Z);
+    g.rotateX(-Math.PI / 2);
+    g.translate(PAGE.W / 2, 0, 0);
+    return g;
+  }, []);
+  const mats = useMemo(() => {
+    const ft = pageCanvas(ppc, "left", spec.printFront, 100 + i);
+    const bt = pageCanvas(ppc, "right", spec.printBack, 200 + i);
+    bt.repeat.x = -1;
+    bt.offset.x = 1;
+    const front = paperMaterial({ map: ft, bump: grainFor(PAGE.W, PAGE.H), bumpScale: 0.35, bend: U });
+    front.side = FrontSide;
+    front.shadowSide = DoubleSide;
+    const back = paperMaterial({ map: bt, bump: grainFor(PAGE.W, PAGE.H), bumpScale: 0.35, bend: U });
+    back.side = BackSide;
+    const depth = bendDepth(U, null);
+    return { front, back, depth };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ppc, U]);
+  applyState(U, st, ceilR, ceilL, floorR, floorL);
+
+  // Content is always mounted: clearance (bend.ts) settles it under covering paper, so nothing ever pops.
+  return (
+    <group position={[0, st.y, 0]}>
+      <mesh geometry={geo} material={mats.front} castShadow receiveShadow customDepthMaterial={mats.depth} />
+      <mesh geometry={geo} material={mats.back} receiveShadow />
+      <BendContext.Provider value={U}>
+        <FrontSpace>{spec.front}</FrontSpace>
+        <BackSpace>{spec.back}</BackSpace>
+      </BendContext.Provider>
+    </group>
+  );
+};
+
+/** The title page's cut-outs ride the cover as a rigid "leaf" (k = 0) so they get the same clearance. */
+const TitleContent: React.FC<{ st: LeafState; ceilL: Vector4; floorR: number; children: React.ReactNode }> = ({ st, ceilL, floorR, children }) => {
+  const U = useMemo(() => makeBend(), []);
+  applyState(U, st, NONE, ceilL, floorR, 0);
+  return (
+    <group position={[0, st.y, 0]}>
+      <BendContext.Provider value={U}>
+        <BackSpace>{children}</BackSpace>
+      </BendContext.Provider>
+    </group>
+  );
+};
+
+export const Book: React.FC<BookProps> = ({ open, turns, leaves, cover, title, printTitle, cloth = "#2f5d62" }) => {
+  const ppc = useContext(ResolutionContext);
+  const n = leaves.length;
+  const W = PAGE.W, H = PAGE.H;
+  const hingeY = 0.65 + n * DT + 0.004;
+
+  const mats = useMemo(() => {
+    const clothTex = clothCanvas(cloth, W + OVER, H + 2 * OVER, ppc);
+    const clothM = paperMaterial({ map: clothTex, roughness: 0.82, bump: grainFor(W, H, 2), bumpScale: 0.25 });
+    const edgeTex = edgeCanvas();
+    const edgeM = paperMaterial({ map: edgeTex, roughness: 0.95 });
+    const titlePaper = paperMaterial({ map: pageCanvas(ppc, "right", printTitle, 7), bump: grainFor(W, H), bumpScale: 0.35 });
+    const titleGeo = new PlaneGeometry(W, H);
+    const plain = paperMaterial({ color: PAPER_COLOR, roughness: 0.95 });
+    // box face order: +x, −x, +y, −y, +z, −z
+    const block = [edgeM, plain, plain, plain, edgeM, edgeM];
+    return { clothM, block, titlePaper, titleGeo };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ppc, cloth]);
+
+  // cover opens about the spine line at hinge height: a rigid leaf (k = 0) at frame height hingeY
+  const phi = Math.PI * smooth(clamp01(open));
+  const coverSt: LeafState = { theta: phi, k0: 0, kz: 0, y: hingeY };
+  const yR = (i: number) => 0.65 + (n - i) * DT; // leaf i on the right stack
+  const yL = (i: number) => hingeY + (i + 1) * DT; // leaf i landed on the left stack
+  const st = leaves.map((_, i) => leafState(turns[i] ?? 0, yR(i), yL(i)));
+
+  return (
+    <group>
+      {/* back board + right half block */}
+      <Box x0={0} x1={W + OVER} y0={0} y1={BOARD} z0={-H / 2 - OVER} z1={H / 2 + OVER} mat={mats.clothM} />
+      <Box x0={0.05} x1={W} y0={BOARD} y1={0.65} z0={-H / 2} z1={H / 2} mat={mats.block} />
+      {/* cloth hinge under the gutter */}
+      <Box x0={-0.7} x1={0.7} y0={0} y1={0.18} z0={-H / 2 - OVER} z1={H / 2 + OVER} mat={mats.clothM} />
+
+      {/* cover + left half block, hinged at the spine */}
+      <group position={[0, hingeY, 0]} rotation={[0, 0, phi]}>
+        <group position={[0, -hingeY, 0]}>
+          <Box x0={0.05} x1={W} y0={hingeY} y1={hingeY + BLOCK} z0={-H / 2} z1={H / 2} mat={mats.block} />
+          <Box x0={0} x1={W + OVER} y0={hingeY + BLOCK} y1={hingeY + BLOCK + BOARD} z0={-H / 2 - OVER} z1={H / 2 + OVER} mat={mats.clothM} />
+          {/* cover art on the outside of the front board (hidden by the board itself once it faces down) */}
+          <group position={[0, hingeY + BLOCK + BOARD + 0.002, 0]}>
+            <FrontSpace>{cover}</FrontSpace>
+          </group>
+          {/* title page paper: the underside of the half block (faces up once open) */}
+          <group position={[0, hingeY - 0.002, 0]}>
+            <BackSpaceStatic lift={1}>
+              <mesh geometry={mats.titleGeo} material={mats.titlePaper} receiveShadow />
+            </BackSpaceStatic>
+          </group>
+        </group>
+      </group>
+      <TitleContent st={coverSt} ceilL={n ? ceil(st[0]) : NONE} floorR={yR(0)}>
+        {title}
+      </TitleContent>
+
+      {leaves.map((spec, i) => (
+        <Leaf
+          key={i}
+          i={i}
+          spec={spec}
+          st={st[i]}
+          ceilR={i === 0 ? ceil(coverSt) : ceil(st[i - 1])}
+          ceilL={i < n - 1 ? ceil(st[i + 1]) : NONE}
+          floorR={i < n - 1 ? yR(i + 1) : 0.65}
+          floorL={i === 0 ? hingeY + 0.002 : yL(i - 1)}
+        />
+      ))}
+    </group>
+  );
+};
+
+/** Back-of-surface page space without bend (the title page under the opening half block). */
+const BackSpaceStatic: React.FC<{ children: React.ReactNode; lift: number }> = ({ children, lift }) => (
+  <group position={[W2, 0, 0]} rotation={[0, 0, Math.PI]}>
+    <group rotation={[-Math.PI / 2, 0, 0]} scale={[1, 1, Math.max(1e-4, lift)]}>
+      {children}
+    </group>
+  </group>
+);
+const W2 = PAGE.W / 2;
+
+==== 28149 project/src/kits/storybook/library.tsx
+// STORYBOOK page library: painted cut-paper backgrounds and props for script-directed pages.
+// Page space (cm): illustration panel u −8.9…9.2, v −4.4…12.2; ground line around v −2.5; text block below v −5.
+// Layer z (lift above the page): sky 0.02 · far 0.08–0.12 · mid 0.15–0.3 · cast 0.4–0.5 · foreground 0.62–0.72.
+
+import React from "react";
+import { blob, dot, ellipse, hill, pencil, rect, scribble, shade, spline, star, type Paint, type Poly } from "./paint.ts";
+import { Sheet } from "./Sheet.tsx";
+import { Thread } from "./Thread.tsx";
+
+export const PANEL = { u0: -8.9, u1: 9.2, v0: -4.4, v1: 12.2 };
+export const GROUND = -2.4;
+const P = (p: Poly | Poly[]) => () => p;
+const W = PANEL.u1 - PANEL.u0;
+const ink = "#3b2b26";
+
+export type Time = "pagi" | "siang" | "senja" | "malam" | "mendung";
+export const SKY: Record<Time, { c: string; tone: string; far: string; mid: string; grass: string; bush: string; leaf: string; trunk: string; wall: string; roof: string; window: string }> = {
+  pagi: { c: "#a9d3e8", tone: "#7fb6d6", far: "#7fae9a", mid: "#5f9a6e", grass: "#6fae5f", bush: "#4d8a50", leaf: "#7cc070", trunk: "#7a5236", wall: "#e3b07a", roof: "#b9583f", window: "#f3e6c0" },
+  siang: { c: "#8fc8e8", tone: "#5fa7d4", far: "#6aa38a", mid: "#4f9062", grass: "#68a957", bush: "#3f7f45", leaf: "#78bd68", trunk: "#734c32", wall: "#e8b27b", roof: "#b44e38", window: "#f6ecc9" },
+  senja: { c: "#eba26e", tone: "#c9694e", far: "#a0604f", mid: "#7a5446", grass: "#6f7a45", bush: "#4f5c39", leaf: "#7f8a4c", trunk: "#5e3a2a", wall: "#d98a5f", roof: "#8e3b35", window: "#f6cf74" },
+  malam: { c: "#27355f", tone: "#1c2647", far: "#2a4a5e", mid: "#2f6355", grass: "#3b6d4b", bush: "#2f5d45", leaf: "#4a8257", trunk: "#6b4632", wall: "#c8714f", roof: "#6e3435", window: "#f3cd6b" },
+  mendung: { c: "#a4adb6", tone: "#86909b", far: "#77917f", mid: "#5d7f66", grass: "#68905c", bush: "#4a7350", leaf: "#6f9d68", trunk: "#6a4a36", wall: "#c99d78", roof: "#8f4f40", window: "#e9dfc0" },
+};
+
+// ------------------------------------------------------------------ sky and celestial
+export const Sky: React.FC<{ id: string; time: Time }> = ({ id, time }) => {
+  const S = SKY[time];
+  return (
+    <Sheet id={id} shape={P(rect(PANEL.u0, PANEL.v0, PANEL.u1, PANEL.v1, 0.12))} z={0.02}
+      paint={{ color: S.c, style: "wash", edge: 0.8, tone: S.tone, marks: time === "malam" ? (g, r) => { for (let i = 0; i < 70; i++) dot(g, PANEL.u0 + r() * W, PANEL.v0 + 4 + r() * 12.5, 0.03 + r() * 0.05, "#f6e7b8", undefined, 0.35 + r() * 0.5); } : undefined }} />
+  );
+};
+export const Sun: React.FC<{ id: string; u: number; v: number; r?: number; t: number; time: Time }> = ({ id, u, v, r = 1.5, t, time }) => {
+  const c = time === "senja" ? "#f6b45a" : "#f7d25e";
+  return (
+    <group position={[u, v, 0.05]} rotation={[0, 0, t * 0.15]}>
+      <Sheet id={`${id}-rays`} shape={P(star(0, 0, r * 1.6, r * 1.1, 12, 0))} paint={{ color: shade(c, 0.1), style: "crayon", line: shade(c, -0.35) }} z={0} />
+      <Sheet id={`${id}-disc`} shape={P(ellipse(0, 0, r, r, 48))} paint={{ color: c, style: "wash", tone: shade(c, -0.15), line: shade(c, -0.4) }} z={0.01} />
+    </group>
+  );
+};
+export const Moon: React.FC<{ id: string; u: number; v: number; r?: number }> = ({ id, u, v, r = 1.4 }) => (
+  <Sheet id={id} shape={P(ellipse(u, v, r, r, 64))} paint={{ color: "#f1e2b4", style: "wash", edge: 0.6, tone: "#cdb37a", line: "#8c7650", holes: [ellipse(u + r * 0.55, v + r * 0.32, r * 0.92, r * 0.92, 64)] }} z={0.07} />
+);
+export const Stars: React.FC<{ id: string; t: number; n?: number; seed?: number }> = ({ id, t, n = 5, seed = 1 }) => (
+  <>
+    {Array.from({ length: n }, (_, i) => {
+      const h = (k: number) => { const x = Math.sin((i + 1) * 91.7 * k + seed * 13.1) * 43758.5453; return x - Math.floor(x); };
+      const u = PANEL.u0 + 1 + h(1) * (W - 2), v = 7.5 + h(2) * 4;
+      const R = 0.3 + h(3) * 0.35, k = 1 + 0.08 * Math.sin(t * 2.6 + i);
+      return (
+        <group key={i} position={[u, v, 0.06]} scale={[k, k, 1]}>
+          <Sheet id={`${id}-${i}`} shape={P(star(0, 0, R, R * 0.45, 5, h(4)))} paint={{ color: "#f2c75c", style: "crayon", line: "#9a6f1f", edge: 0.4 }} z={0} />
+        </group>
+      );
+    })}
+  </>
+);
+export const Cloud: React.FC<{ id: string; u: number; v: number; w: number; time: Time; t: number; z?: number }> = ({ id, u, v, w, time, t, z = 0.09 }) => {
+  const c = time === "malam" ? "#58698f" : time === "senja" ? "#f2c3a0" : time === "mendung" ? "#d4d9de" : "#f7f3ea";
+  const dx = Math.sin(t * 0.25 + u) * 0.4;
+  return (
+    <Sheet id={id} x={dx} shape={P(blob([[u - w / 2, v], [u - w * 0.3, v + w * 0.2], [u - w * 0.05, v + w * 0.32], [u + w * 0.22, v + w * 0.24], [u + w / 2, v + 0.05], [u, v - w * 0.06]], 10))}
+      paint={{ color: c, style: "wash", line: shade(c, -0.3), edge: 0.5 }} z={z} />
+  );
+};
+export const Rainbow: React.FC<{ id: string }> = ({ id }) => (
+  <>
+    {["#e2574c", "#f0a04b", "#f3d35a", "#7cc070", "#5aa0c8", "#8b6bb8"].map((c, i) => {
+      const R = 8.5 - i * 0.55;
+      const arc: Poly = [];
+      for (let k = 0; k <= 40; k++) { const a = Math.PI * (k / 40); arc.push([Math.cos(a) * R, 1 + Math.sin(a) * R * 0.85]); }
+      for (let k = 40; k >= 0; k--) { const a = Math.PI * (k / 40); arc.push([Math.cos(a) * (R - 0.55), 1 + Math.sin(a) * (R - 0.55) * 0.85]); }
+      return <Sheet key={i} id={`${id}-${i}`} shape={P(arc)} paint={{ color: c, style: "wash", edge: 0.3 }} z={0.06 + i * 0.001} />;
+    })}
+  </>
+);
+export const Rain: React.FC<{ id: string; t: number }> = ({ id, t }) => (
+  <>
+    {Array.from({ length: 22 }, (_, i) => {
+      const h = (k: number) => { const x = Math.sin((i + 1) * 57.3 * k) * 43758.5453; return x - Math.floor(x); };
+      const u = PANEL.u0 + h(1) * W;
+      const v = PANEL.v1 - (((t * 6 + h(2) * 16) % 16));
+      return (
+        <group key={i} position={[u, v, 0.74]}>
+          <Sheet id={`${id}-${i}`} shape={P(blob([[0, 0], [0.12, -0.5], [-0.12, -0.5]], 6))} paint={{ color: "#9cc8e6", style: "flat", clean: true, line: "#5d8db0" }} z={0} cast={false} />
+        </group>
+      );
+    })}
+  </>
+);
+
+// ------------------------------------------------------------------ land
+export const Hills: React.FC<{ id: string; time: Time; seed?: number }> = ({ id, time, seed = 0 }) => {
+  const S = SKY[time];
+  const o = (k: number) => Math.sin(seed * 3.7 + k) * 0.6;
+  return (
+    <>
+      <Sheet id={`${id}-far`} shape={P(hill([[PANEL.u0, 2.9 + o(1)], [-5.5, 3.8 + o(2)], [-1.5, 2.6 + o(3)], [3, 4.1 + o(4)], [PANEL.u1, 2.7 + o(5)]], PANEL.v0))} paint={{ color: S.far, style: "wash", edge: 0.7, line: shade(S.far, -0.35) }} z={0.1} />
+      <Sheet id={`${id}-mid`} shape={P(hill([[PANEL.u0, 0.9 + o(6)], [-3.5, 1.7 + o(7)], [2.5, 0.6 + o(8)], [PANEL.u1, 1.9 + o(9)]], PANEL.v0))} paint={{ color: S.mid, style: "wash", edge: 0.7, line: shade(S.mid, -0.35) }} z={0.13} />
+    </>
+  );
+};
+export const Mountains: React.FC<{ id: string; time: Time }> = ({ id, time }) => {
+  const S = SKY[time];
+  return (
+    <>
+      <Sheet id={`${id}-m1`} shape={P([[-9.5, 1], [-4.5, 8.5], [-2.8, 7.6], [0.5, 1]])} paint={{ color: shade(S.far, -0.05), style: "wash", line: shade(S.far, -0.4), marks: (g) => { g.fillStyle = "#f4efe4"; g.beginPath(); g.moveTo(-5.6, 7.1); g.lineTo(-4.5, 8.5); g.lineTo(-3.3, 7.2); g.lineTo(-4.4, 7.5); g.closePath(); g.fill(); } }} z={0.09} />
+      <Sheet id={`${id}-m2`} shape={P([[-2.0, 1], [3.6, 10.0], [5.0, 9.0], [9.8, 1]])} paint={{ color: S.far, style: "wash", line: shade(S.far, -0.4), marks: (g) => { g.fillStyle = "#f4efe4"; g.beginPath(); g.moveTo(2.4, 8.1); g.lineTo(3.6, 10.0); g.lineTo(4.8, 8.4); g.lineTo(3.7, 8.7); g.closePath(); g.fill(); } }} z={0.095} />
+    </>
+  );
+};
+export const Ground: React.FC<{ id: string; time: Time; color?: string; top?: number }> = ({ id, time, color, top = GROUND + 0.6 }) => {
+  const S = SKY[time];
+  const c = color ?? S.grass;
+  return (
+    <Sheet id={id} shape={P(hill([[PANEL.u0, top], [-4, top + 0.5], [1, top - 0.2], [5, top + 0.4], [PANEL.u1, top]], PANEL.v0))}
+      paint={{ color: c, style: "crayon", line: shade(c, -0.35), marks: (g, r) => scribble(g, rect(PANEL.u0, PANEL.v0, PANEL.u1, top, 0), shade(c, 0.12), r, 40, 0.3) }} z={0.16} />
+  );
+};
+export const Sea: React.FC<{ id: string; time: Time; t: number; top?: number }> = ({ id, time, t, top = 1.6 }) => {
+  const c = time === "malam" ? "#2c4f7a" : time === "senja" ? "#4f7aa0" : "#4c9cc8";
+  const waves: Poly = [[PANEL.u0, PANEL.v0]];
+  for (let k = 0; k <= 36; k++) { const u = PANEL.u0 + (W * k) / 36; waves.push([u, top + 0.18 * Math.sin(u * 2.2)]); }
+  waves.push([PANEL.u1, PANEL.v0]);
+  void t;
+  return <Sheet id={id} shape={P(waves)} paint={{ color: c, style: "wash", tone: shade(c, -0.25), line: shade(c, -0.4), marks: (g, r) => { for (let i = 0; i < 14; i++) pencil(g, [[PANEL.u0 + r() * W, top - 1 - r() * 3], [PANEL.u0 + r() * W + 0.8, top - 1 - r() * 3]], "#e8f2f6", 0.05, 0.5); } }} z={0.11} />;
+};
+export const Sand: React.FC<{ id: string }> = ({ id }) => (
+  <Sheet id={id} shape={P(hill([[PANEL.u0, -0.8], [-3, -0.4], [3, -1.0], [PANEL.u1, -0.6]], PANEL.v0))} paint={{ color: "#e8cf9a", style: "crayon", line: "#a8875a", marks: (g, r) => { for (let i = 0; i < 40; i++) dot(g, PANEL.u0 + r() * W, PANEL.v0 + r() * 3.2, 0.04, "#c6a76d", undefined, 0.6); } }} z={0.16} />
+);
+export const Fields: React.FC<{ id: string; time: Time }> = ({ id, time }) => {
+  const S = SKY[time];
+  return (
+    <>
+      {[0, 1, 2].map((i) => (
+        <Sheet key={i} id={`${id}-${i}`} shape={P(hill([[PANEL.u0, 1.4 - i * 1.1], [0, 1.9 - i * 1.1], [PANEL.u1, 1.2 - i * 1.1]], PANEL.v0))}
+          paint={{ color: shade(S.grass, 0.05 - i * 0.06), style: "crayon", line: shade(S.grass, -0.35), marks: (g) => { for (let k = 0; k < 30; k++) pencil(g, [[PANEL.u0 + k * 0.62, 1.2 - i * 1.1], [PANEL.u0 + k * 0.62 + 0.1, 1.6 - i * 1.1]], shade(S.grass, -0.25), 0.04, 0.7); } }} z={0.12 + i * 0.012} />
+      ))}
+    </>
+  );
+};
+export const River: React.FC<{ id: string; time: Time; t: number }> = ({ id, time, t }) => {
+  const c = time === "malam" ? "#2c4f7a" : "#5aa8d0";
+  const sh = spline([[PANEL.u0, -1.6], [-3, -0.6], [2, -1.8], [PANEL.u1, -0.9], [PANEL.u1, -2.6], [2, -3.4], [-3, -2.0], [PANEL.u0, -2.9]], 8);
+  return <Sheet id={id} shape={P(sh)} paint={{ color: c, style: "wash", line: shade(c, -0.4), marks: (g) => { for (let i = 0; i < 8; i++) pencil(g, [[-7 + i * 2 + Math.sin(t + i), -1.8], [-6.4 + i * 2 + Math.sin(t + i), -1.75]], "#e8f2f6", 0.05, 0.6); } }} z={0.17} />;
+};
+
+// ------------------------------------------------------------------ plants
+export const RoundTree: React.FC<{ id: string; u: number; v?: number; h?: number; time: Time; z?: number; fruit?: string }> = ({ id, u, v = GROUND + 0.4, h = 4.2, time, z = 0.2, fruit }) => {
+  const S = SKY[time];
+  const cr = h * 0.62;
+  return (
+    <>
+      <Sheet id={`${id}-trunk`} shape={P(rect(u - 0.28, v, u + 0.28, v + h * 0.75, 0.1))} paint={{ color: S.trunk, style: "crayon", line: shade(S.trunk, -0.4) }} z={z} />
+      <Sheet id={`${id}-crown`} shape={P(blob([[u - cr, v + h * 0.75], [u - cr * 0.9, v + h * 1.15], [u - cr * 0.2, v + h * 1.45], [u + cr * 0.7, v + h * 1.3], [u + cr, v + h * 0.85], [u, v + h * 0.55]], 10))}
+        paint={{ color: S.bush, style: "wash", line: shade(S.bush, -0.4), marks: (g, r) => { scribble(g, ellipse(u, v + h, cr * 0.8, h * 0.35, 16), S.leaf, r, 30, 0.4); if (fruit) for (let i = 0; i < 6; i++) dot(g, u + (r() - 0.5) * cr * 1.4, v + h * (0.8 + r() * 0.5), 0.22, fruit); } }} z={z + 0.01} />
+    </>
+  );
+};
+export const PineTree: React.FC<{ id: string; u: number; v?: number; h?: number; time: Time; z?: number }> = ({ id, u, v = GROUND + 0.4, h = 5, time, z = 0.2 }) => {
+  const S = SKY[time];
+  return (
+    <>
+      <Sheet id={`${id}-trunk`} shape={P(rect(u - 0.22, v, u + 0.22, v + h * 0.3, 0.08))} paint={{ color: S.trunk, style: "crayon", line: shade(S.trunk, -0.4) }} z={z} />
+      <Sheet id={`${id}-crown`} shape={P([[u - h * 0.38, v + h * 0.25], [u, v + h * 1.1], [u + h * 0.38, v + h * 0.25]])} paint={{ color: shade(S.bush, -0.08), style: "wash", line: shade(S.bush, -0.45) }} z={z + 0.01} />
+    </>
+  );
+};
+export const PalmTree: React.FC<{ id: string; u: number; v?: number; h?: number; time: Time; t: number; z?: number }> = ({ id, u, v = GROUND + 0.4, h = 6.5, time, t, z = 0.2 }) => {
+  const S = SKY[time];
+  const top: [number, number] = [u + 0.9, v + h];
+  const sway = Math.sin(t * 0.8 + u) * 0.08;
+  return (
+    <>
+      <Sheet id={`${id}-trunk`} shape={P(spline([[u - 0.25, v], [u + 0.4, v + h * 0.5], [top[0] - 0.15, top[1]], [top[0] + 0.15, top[1]], [u + 0.75, v + h * 0.5], [u + 0.25, v]], 6))} paint={{ color: S.trunk, style: "crayon", line: shade(S.trunk, -0.4) }} z={z} />
+      {[-2.4, -1.2, 0, 1.2, 2.4].map((a, i) => (
+        <group key={i} position={[top[0], top[1], z + 0.012 + i * 0.001]} rotation={[0, 0, a * 0.55 + sway]}>
+          <Sheet id={`${id}-f${i}`} shape={P(blob([[0, 0], [0.8, 0.5], [2.2, 0.4], [3.0, -0.4], [1.6, -0.1], [0.4, -0.3]], 6))} paint={{ color: S.bush, style: "wash", line: shade(S.bush, -0.4) }} z={0} />
+        </group>
+      ))}
+    </>
+  );
+};
+export const Bush: React.FC<{ id: string; u: number; w?: number; time: Time; z?: number; flowers?: string }> = ({ id, u, w = 3.4, time, z = 0.66, flowers }) => {
+  const S = SKY[time];
+  return (
+    <Sheet id={id} shape={P(blob([[u - w / 2, PANEL.v0], [u - w / 2, GROUND + 0.6], [u - w * 0.2, GROUND + 1.6], [u + w * 0.15, GROUND + 1.3], [u + w * 0.45, GROUND + 1.8], [u + w / 2, GROUND + 0.4], [u + w / 2, PANEL.v0]], 10))}
+      paint={{ color: S.bush, style: "wash", line: shade(S.bush, -0.4), marks: (g, r) => { scribble(g, ellipse(u, GROUND + 0.6, w * 0.4, 0.8, 16), S.leaf, r, 30, 0.4); if (flowers) for (let i = 0; i < 7; i++) dot(g, u + (r() - 0.5) * w * 0.8, GROUND + 0.3 + r() * 1.2, 0.18, flowers); } }} z={z} />
+  );
+};
+export const Flowers: React.FC<{ id: string; u0: number; u1: number; colors?: string[]; t: number; z?: number }> = ({ id, u0, u1, colors = ["#e46a8a", "#f3d35a", "#ffffff", "#8b6bb8"], t, z = 0.6 }) => (
+  <>
+    {Array.from({ length: Math.max(2, Math.round((u1 - u0) / 1.3)) }, (_, i) => {
+      const u = u0 + (i + 0.5) * 1.3, c = colors[i % colors.length];
+      const sw = Math.sin(t * 1.6 + i) * 0.06;
+      return (
+        <group key={i} position={[u, GROUND - 0.6, z]} rotation={[0, 0, sw]}>
+          <Sheet id={`${id}-s${i}`} shape={P(rect(-0.06, 0, 0.06, 1.3, 0.03))} paint={{ color: "#4d8a50", style: "flat", clean: true }} z={0} cast={false} />
+          <Sheet id={`${id}-h${i}`} shape={P(star(0, 1.4, 0.45, 0.28, 6, i))} paint={{ color: c, style: "crayon", line: shade(c, -0.4), marks: (g) => dot(g, 0, 1.4, 0.13, "#f6c84a") }} z={0.005} />
+        </group>
+      );
+    })}
+  </>
+);
+
+// ------------------------------------------------------------------ buildings
+export const House: React.FC<{ id: string; u: number; v?: number; w?: number; h?: number; time: Time; z?: number; lit?: boolean; roomZ?: number }> = ({ id, u, v = GROUND + 0.5, w = 6.4, h = 4.4, time, z = 0.3, lit, roomZ }) => {
+  const S = SKY[time];
+  const wl = lit ?? (time === "malam" || time === "senja");
+  const winU = u - w * 0.18, winV = v + h * 0.6;
+  const housePaint: Paint = {
+    color: S.wall, style: "gouache", line: shade(S.wall, -0.45),
+    marks: (g, r) => { for (let i = 0; i < 14; i++) pencil(g, [[u - w / 2, v + 0.35 * i], [u + w / 2, v + 0.35 * i + (r() - 0.5) * 0.04]], shade(S.wall, -0.12), 0.03, 0.4); },
+    holes: [rect(winU - 1.1, winV - 1.0, winU + 1.1, winV + 1.0, 0.1)],
+  };
+  return (
+    <>
+      <Sheet id={`${id}-room`} shape={P(rect(winU - 1.3, winV - 1.2, winU + 1.3, winV + 1.2))} paint={{ color: wl ? S.window : shade(S.wall, -0.35), style: "wash", edge: 0.6 }} z={roomZ ?? z - 0.02} />
+      <Sheet id={`${id}-wall`} shape={P(rect(u - w / 2, v, u + w / 2, v + h, 0.1))} paint={housePaint} z={z} />
+      <Sheet id={`${id}-door`} shape={P(rect(u + w * 0.12, v, u + w * 0.12 + 1.3, v + 2.4, 0.5))} paint={{ color: shade(S.roof, -0.1), style: "gouache", line: shade(S.roof, -0.45), marks: (g) => dot(g, u + w * 0.12 + 1.05, v + 1.2, 0.08, "#f3d35a") }} z={z + 0.01} />
+      <Sheet id={`${id}-roof`} shape={P([[u - w / 2 - 0.7, v + h - 0.2], [u + w / 2 + 0.7, v + h - 0.2], [u + 0.4, v + h + 3.0], [u - 0.4, v + h + 3.0]])} paint={{ color: S.roof, style: "gouache", line: shade(S.roof, -0.45) }} z={z + 0.02} />
+    </>
+  );
+};
+/** Window position of a House (for "mengintip dari jendela"). */
+export const houseWindow = (u: number, v = GROUND + 0.5, w = 6.4, h = 4.4) => ({ u: u - w * 0.18, v: v + h * 0.6 });
+
+export const Village: React.FC<{ id: string; time: Time }> = ({ id, time }) => (
+  <>
+    <House id={`${id}-h1`} u={-6.2} v={0.7} w={3.6} h={2.6} time={time} z={0.17} />
+    <House id={`${id}-h2`} u={6.4} v={0.9} w={3.8} h={2.8} time={time} z={0.17} />
+  </>
+);
+export const School: React.FC<{ id: string; u: number; time: Time }> = ({ id, u, time }) => {
+  const S = SKY[time];
+  return (
+    <>
+      <Sheet id={`${id}-b`} shape={P(rect(u - 5, GROUND + 0.5, u + 5, GROUND + 5.5, 0.1))} paint={{ color: "#e9dcc2", style: "gouache", line: "#8a7458", marks: (g) => { for (let i = 0; i < 4; i++) { g.fillStyle = S.window; g.fillRect(u - 4.2 + i * 2.3, GROUND + 3, 1.4, 1.2); } } }} z={0.22} />
+      <Sheet id={`${id}-r`} shape={P([[u - 5.6, GROUND + 5.3], [u + 5.6, GROUND + 5.3], [u + 4.4, GROUND + 7.0], [u - 4.4, GROUND + 7.0]])} paint={{ color: S.roof, style: "gouache", line: shade(S.roof, -0.45) }} z={0.23} />
+      <Sheet id={`${id}-pole`} shape={P(rect(u + 6.3, GROUND + 0.4, u + 6.45, GROUND + 7.5, 0.04))} paint={{ color: "#8a7458", style: "flat", clean: true }} z={0.24} />
+      <Sheet id={`${id}-flag`} shape={P([rect(u + 6.45, GROUND + 6.7, u + 8.2, GROUND + 7.4, 0), rect(u + 6.45, GROUND + 6.0, u + 8.2, GROUND + 6.7, 0)])} paint={{ color: "#e2574c", style: "flat", clean: true, marks: (g) => { g.fillStyle = "#f6f1e6"; g.fillRect(u + 6.45, GROUND + 6.0, 1.75, 0.7); } }} z={0.25} />
+    </>
+  );
+};
+export const City: React.FC<{ id: string; time: Time }> = ({ id, time }) => {
+  const S = SKY[time];
+  return (
+    <>
+      {[[-8, 4.5, 2.6], [-5.2, 6.8, 2.4], [-2.4, 3.6, 2.6], [0.4, 7.8, 2.2], [3.0, 5.2, 2.6], [6.0, 6.4, 2.8]].map(([u, h, w], i) => (
+        <Sheet key={i} id={`${id}-${i}`} shape={P(rect(u, GROUND + 0.6, u + w, GROUND + 0.6 + h, 0.06))}
+          paint={{ color: shade(S.far, 0.1 - (i % 3) * 0.05), style: "gouache", line: shade(S.far, -0.4), marks: (g, r) => { for (let yy = GROUND + 1.2; yy < GROUND + h; yy += 0.9) for (let xx = u + 0.35; xx < u + w - 0.4; xx += 0.75) if (r() > 0.35) { g.fillStyle = time === "malam" ? "#f3cd6b" : "#e9eef2"; g.fillRect(xx, yy, 0.38, 0.5); } } }} z={0.1 + i * 0.002} />
+      ))}
+    </>
+  );
+};
+
+// ------------------------------------------------------------------ interior
+export const Room: React.FC<{ id: string; time: Time; wall?: string }> = ({ id, time, wall = "#e9c9a3" }) => {
+  const night = time === "malam";
+  const wc = night ? shade(wall, -0.35) : wall;
+  return (
+    <>
+      <Sheet id={`${id}-wall`} shape={P(rect(PANEL.u0, PANEL.v0, PANEL.u1, PANEL.v1, 0.12))} paint={{ color: wc, style: "wash", edge: 0.5, marks: (g, r) => { for (let i = 0; i < 9; i++) pencil(g, [[PANEL.u0 + i * 2.1, PANEL.v1], [PANEL.u0 + i * 2.1 + (r() - 0.5) * 0.1, -1]], shade(wc, -0.1), 0.05, 0.5); } }} z={0.02} />
+      <Sheet id={`${id}-win`} shape={P(rect(1.2, 4.5, 6.8, 10.2, 0.15))} paint={{ color: SKY[time].c, style: "wash", tone: SKY[time].tone, line: "#6b4a33", marks: night ? (g, r) => { for (let i = 0; i < 14; i++) dot(g, 1.4 + r() * 5.2, 5 + r() * 5, 0.05, "#f6e7b8"); dot(g, 5.4, 9.0, 0.6, "#f1e2b4"); } : undefined }} z={0.05} />
+      <Sheet id={`${id}-frame`} shape={P([rect(0.95, 4.25, 7.05, 4.55, 0.05), rect(0.95, 10.15, 7.05, 10.45, 0.05), rect(3.85, 4.4, 4.15, 10.3, 0.03), rect(0.95, 4.3, 1.25, 10.4, 0.03), rect(6.75, 4.3, 7.05, 10.4, 0.03)])} paint={{ color: "#8a5a3c", style: "gouache", line: "#4a2e20" }} z={0.07} />
+      <Sheet id={`${id}-curtL`} shape={P(blob([[0.4, 10.6], [1.9, 10.6], [1.2, 7.0], [1.5, 4.0], [0.4, 4.0]], 8))} paint={{ color: "#d4533e", style: "wash", line: "#7a2c22" }} z={0.09} />
+      <Sheet id={`${id}-curtR`} shape={P(blob([[7.6, 10.6], [6.1, 10.6], [6.8, 7.0], [6.5, 4.0], [7.6, 4.0]], 8))} paint={{ color: "#d4533e", style: "wash", line: "#7a2c22" }} z={0.09} />
+      <Sheet id={`${id}-floor`} shape={P(rect(PANEL.u0, PANEL.v0, PANEL.u1, -1.0, 0.1))} paint={{ color: night ? "#7a5236" : "#b5835a", style: "crayon", line: "#5a3a26", marks: (g) => { for (let i = 0; i < 6; i++) pencil(g, [[PANEL.u0, -1.5 - i * 0.55], [PANEL.u1, -1.5 - i * 0.55]], "#8a5a3c", 0.04, 0.5); } }} z={0.12} />
+      <Sheet id={`${id}-rug`} shape={P(ellipse(-1.5, -3.0, 5.2, 1.0, 40))} paint={{ color: "#5aa0c8", style: "crayon", line: "#2f5f80", marks: (g) => pencil(g, ellipse(-1.5, -3.0, 4.4, 0.7, 40), "#f3d35a", 0.06, 0.8) }} z={0.14} />
+    </>
+  );
+};
+export const Bed: React.FC<{ id: string; u: number; time: Time }> = ({ id, u, time }) => (
+  <>
+    <Sheet id={`${id}-head`} shape={P(rect(u - 4.0, -1.2, u - 3.4, 3.2, 0.2))} paint={{ color: "#8a5a3c", style: "gouache", line: "#4a2e20" }} z={0.2} />
+    <Sheet id={`${id}-frame`} shape={P(rect(u - 4.0, -2.6, u + 3.6, 0.2, 0.2))} paint={{ color: "#a06a45", style: "gouache", line: "#4a2e20" }} z={0.22} />
+    <Sheet id={`${id}-pillow`} shape={P(ellipse(u - 2.6, 0.6, 0.9, 0.5, 24))} paint={{ color: "#f6efe0", style: "wash", line: "#8a7458" }} z={0.44} />
+    <Sheet id={`${id}-blanket`} shape={P(blob([[u - 2.0, 0.1], [u + 3.7, 0.4], [u + 3.7, -1.2], [u - 2.0, -1.2]], 8))} paint={{ color: time === "malam" ? "#6c7fb6" : "#8fb7d9", style: "wash", line: "#3a4a78", marks: (g) => { for (let i = 0; i < 12; i++) dot(g, u - 1.5 + i * 0.45, -0.5 + (i % 2) * 0.4, 0.12, "#f6efe0"); } }} z={0.56} />
+  </>
+);
+export const Lamp: React.FC<{ id: string; u: number; on: boolean }> = ({ id, u, on }) => (
+  <>
+    <Sheet id={`${id}-table`} shape={P(rect(u - 1.0, -2.0, u + 1.0, 0.6, 0.1))} paint={{ color: "#8a5a3c", style: "gouache", line: "#4a2e20" }} z={0.2} />
+    <Sheet id={`${id}-stem`} shape={P(rect(u - 0.12, 0.6, u + 0.12, 2.0, 0.05))} paint={{ color: "#d9b25a", style: "flat", line: "#6b4a20" }} z={0.21} />
+    <Sheet id={`${id}-shade`} shape={P([[u - 1.0, 2.0], [u + 1.0, 2.0], [u + 0.6, 3.2], [u - 0.6, 3.2]])} paint={{ color: on ? "#f6d38a" : "#c9a26a", style: "wash", line: "#6b4a20" }} z={0.22} />
+  </>
+);
+
+// ------------------------------------------------------------------ props
+export const Boat: React.FC<{ id: string; u: number; v: number; t: number; z?: number }> = ({ id, u, v, t, z = 0.13 }) => {
+  const rock = Math.sin(t * 1.4) * 0.06;
+  return (
+    <group position={[u, v + Math.sin(t * 1.4) * 0.12, z]} rotation={[0, 0, rock]}>
+      <Sheet id={`${id}-hull`} shape={P(blob([[-2.2, 0.6], [2.4, 0.6], [1.6, -0.4], [-1.6, -0.4]], 6))} paint={{ color: "#b0603e", style: "gouache", line: "#4a2e20" }} z={0} />
+      <Sheet id={`${id}-mast`} shape={P(rect(-0.08, 0.6, 0.08, 3.6, 0.03))} paint={{ color: "#6b4632", style: "flat" }} z={0.003} />
+      <Sheet id={`${id}-sail`} shape={P([[0.15, 3.5], [0.15, 0.9], [2.0, 0.9]])} paint={{ color: "#f6efe0", style: "wash", line: "#8a7458" }} z={0.005} />
+    </group>
+  );
+};
+export const Kite: React.FC<{ id: string; u: number; v: number; hand: [number, number, number]; t: number; color?: string }> = ({ id, u, v, hand, t, color = "#d4533e" }) => {
+  const ku = u + Math.sin(t * 1.1) * 0.6, kv = v + Math.sin(t * 1.7) * 0.4;
+  return (
+    <>
+      <group position={[ku, kv, 0.5]} rotation={[0, 0, Math.sin(t * 1.3) * 0.15]}>
+        <Sheet id={`${id}-k`} shape={P([[0, 1.4], [1.0, 0], [0, -1.6], [-1.0, 0]])} paint={{ color, style: "gouache", line: shade(color, -0.45), marks: (g) => { pencil(g, [[0, 1.4], [0, -1.6]], "#f0d9b3", 0.05, 0.8); pencil(g, [[-1, 0], [1, 0]], "#f0d9b3", 0.05, 0.8); } }} z={0} />
+        <Sheet id={`${id}-tail`} shape={P(spline([[0, -1.6], [0.4, -2.4], [-0.3, -3.2], [0.3, -4.0], [0.4, -3.9], [-0.15, -3.2], [0.5, -2.4], [0.1, -1.6]], 4))} paint={{ color: "#f0d9b3", style: "flat", clean: true }} z={0.002} />
+      </group>
+      <Thread pts={Array.from({ length: 12 }, (_, i) => { const k = i / 11; return [hand[0] + (ku - hand[0]) * k, hand[1] + (kv - 1.4 - hand[1]) * k - Math.sin(Math.PI * k) * 0.8] as [number, number]; })} z={hand[2]} />
+    </>
+  );
+};
+export const Balloon: React.FC<{ id: string; u: number; v: number; color?: string; t: number; z?: number }> = ({ id, u, v, color = "#e2574c", t, z = 0.52 }) => (
+  <group position={[u + Math.sin(t * 1.2) * 0.2, v + Math.sin(t * 1.6) * 0.15, z]}>
+    <Sheet id={`${id}-b`} shape={P(ellipse(0, 0, 0.9, 1.1, 32))} paint={{ color, style: "wash", line: shade(color, -0.45), marks: (g) => dot(g, -0.3, 0.4, 0.2, "#ffffff", 0.3, 0.6) }} z={0} />
+    <Sheet id={`${id}-s`} shape={P(spline([[0, -1.1], [0.15, -2.0], [-0.1, -3.0], [0.0, -3.0], [0.25, -2.0], [0.08, -1.1]], 4))} paint={{ color: "#5a4334", style: "flat", clean: true }} z={0.002} cast={false} />
+  </group>
+);
+export const Lantern: React.FC<{ id: string; u: number; v: number; t: number; z?: number }> = ({ id, u, v, t, z = 0.5 }) => (
+  <group position={[u, v + Math.sin(t * 1.4) * 0.05, z]}>
+    <Sheet id={`${id}-l`} shape={P(blob([[-0.6, -0.8], [0.6, -0.8], [0.8, 0.2], [0.4, 0.9], [-0.4, 0.9], [-0.8, 0.2]], 8))} paint={{ color: "#f6c06a", style: "wash", tone: "#d98a3a", line: "#6b3a20", marks: (g) => dot(g, 0, 0, 0.35, "#fff2c0", 0.45, 0.8) }} z={0} />
+  </group>
+);
+export const Gift: React.FC<{ id: string; u: number; v?: number; color?: string; z?: number }> = ({ id, u, v = GROUND, color = "#8b6bb8", z = 0.5 }) => (
+  <Sheet id={id} shape={P(rect(u - 0.9, v, u + 0.9, v + 1.5, 0.08))} paint={{ color, style: "gouache", line: shade(color, -0.45), marks: (g) => { g.fillStyle = "#f3d35a"; g.fillRect(u - 0.15, v, 0.3, 1.5); g.fillRect(u - 0.9, v + 0.6, 1.8, 0.3); } }} z={z} />
+);
+export const BookProp: React.FC<{ id: string; u: number; v?: number; z?: number }> = ({ id, u, v = GROUND + 0.1, z = 0.5 }) => (
+  <Sheet id={id} shape={P(blob([[u - 1.1, v], [u, v - 0.15], [u + 1.1, v], [u + 1.1, v + 0.9], [u, v + 0.75], [u - 1.1, v + 0.9]], 4))} paint={{ color: "#f6efe0", style: "wash", line: "#5a4334", marks: (g) => { pencil(g, [[u, v - 0.1], [u, v + 0.75]], "#5a4334", 0.03, 0.8); } }} z={z} />
+);
+export const Umbrella: React.FC<{ id: string; hand: [number, number]; color?: string; z?: number }> = ({ id, hand, color = "#e2574c", z = 0.52 }) => (
+  <>
+    <Sheet id={`${id}-c`} shape={P(blob([[hand[0] - 2.4, hand[1] + 2.6], [hand[0], hand[1] + 4.0], [hand[0] + 2.4, hand[1] + 2.6], [hand[0] + 1.2, hand[1] + 2.8], [hand[0], hand[1] + 2.6], [hand[0] - 1.2, hand[1] + 2.8]], 8))} paint={{ color, style: "gouache", line: shade(color, -0.45) }} z={z} />
+    <Sheet id={`${id}-h`} shape={P(rect(hand[0] - 0.05, hand[1], hand[0] + 0.05, hand[1] + 3.0, 0.02))} paint={{ color: "#5a4334", style: "flat", clean: true }} z={z - 0.002} cast={false} />
+  </>
+);
+export const Zzz: React.FC<{ id: string; u: number; v: number; t: number }> = ({ id, u, v, t }) => (
+  <>
+    {[0, 1, 2].map((i) => {
+      const k = ((t * 0.5 + i / 3) % 1);
+      return (
+        <group key={i} position={[u + k * 1.5, v + k * 2.2, 0.62]} scale={[0.6 + k * 0.6, 0.6 + k * 0.6, 1]}>
+          <Sheet id={`${id}-${i}`} shape={P([[-0.4, 0.4], [0.4, 0.4], [-0.25, -0.3], [0.4, -0.3], [0.4, -0.45], [-0.4, -0.45], [0.25, 0.25], [-0.4, 0.25]])} paint={{ color: "#f6efe0", style: "flat", clean: true, line: "#5a4334" }} z={0} cast={false} />
+        </group>
+      );
+    })}
+  </>
+);
+export const Sparkle: React.FC<{ id: string; u: number; v: number; t: number }> = ({ id, u, v, t }) => (
+  <group position={[u, v, 0.64]} rotation={[0, 0, t * 0.6]} scale={[1 + 0.15 * Math.sin(t * 4), 1 + 0.15 * Math.sin(t * 4), 1]}>
+    <Sheet id={id} shape={P([star(0, 0, 0.55, 0.11, 4, 0), star(0.9, 0.5, 0.32, 0.07, 4, 0.3)])} paint={{ color: "#fbe7a1", style: "flat", clean: true }} z={0} cast={false} />
+  </group>
+);
+void rect; void dot;
+export { ink };
+
+==== 19914 project/src/kits/storybook/paint.ts
+// Painted paper — the picture-book surface every cut-out is made of.
+//
+// A picture-book illustration in this style is paper that was painted (watercolour wash, crayon, gouache),
+// cut out with scissors and glued down in layers. Here each piece is a polygon in centimetres (y up),
+// jittered like a scissor cut, painted procedurally into a canvas and used as an alpha-cut texture.
+// Everything is seeded, so every frame and every render is identical.
+
+import { CanvasTexture, LinearMipmapLinearFilter, SRGBColorSpace } from "three";
+
+export type Pt = [number, number];
+export type Poly = Pt[];
+
+// ── Random ─────────────────────────────────────────────────────────────────────
+
+export const rng = (seed: number) => () => {
+  seed |= 0;
+  seed = (seed + 0x6d2b79f5) | 0;
+  let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+  t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+};
+export const hashStr = (s: string) => {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619);
+  return h >>> 0;
+};
+
+// ── Shapes (centimetres, y up, closed) ─────────────────────────────────────────
+
+export const ellipse = (cx: number, cy: number, rx: number, ry = rx, n = 64): Poly =>
+  Array.from({ length: n }, (_, i) => {
+    const a = (i / n) * Math.PI * 2;
+    return [cx + Math.cos(a) * rx, cy + Math.sin(a) * ry];
+  });
+
+export const rect = (x0: number, y0: number, x1: number, y1: number, r = 0): Poly => {
+  if (r <= 0) return [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
+  const out: Poly = [];
+  const corner = (cx: number, cy: number, a0: number) => {
+    for (let i = 0; i <= 6; i++) {
+      const a = a0 + (i / 6) * (Math.PI / 2);
+      out.push([cx + Math.cos(a) * r, cy + Math.sin(a) * r]);
+    }
+  };
+  corner(x1 - r, y0 + r, -Math.PI / 2);
+  corner(x1 - r, y1 - r, 0);
+  corner(x0 + r, y1 - r, Math.PI / 2);
+  corner(x0 + r, y0 + r, Math.PI);
+  return out;
+};
+
+export const star = (cx: number, cy: number, R: number, r: number, n = 5, rot = 0): Poly =>
+  Array.from({ length: n * 2 }, (_, i) => {
+    const a = rot + Math.PI / 2 + (i / (n * 2)) * Math.PI * 2;
+    const q = i % 2 ? r : R;
+    return [cx + Math.cos(a) * q, cy + Math.sin(a) * q];
+  });
+
+/** Closed Catmull-Rom through the points (soft blobs: bushes, clouds, hair, hills). */
+export const blob = (pts: Poly, per = 10): Poly => {
+  const out: Poly = [];
+  const n = pts.length;
+  for (let i = 0; i < n; i++) {
+    const p0 = pts[(i - 1 + n) % n], p1 = pts[i], p2 = pts[(i + 1) % n], p3 = pts[(i + 2) % n];
+    for (let j = 0; j < per; j++) {
+      const t = j / per, t2 = t * t, t3 = t2 * t;
+      const f = (a: number, b: number, c: number, d: number) =>
+        0.5 * (2 * b + (-a + c) * t + (2 * a - 5 * b + 4 * c - d) * t2 + (-a + 3 * b - 3 * c + d) * t3);
+      out.push([f(p0[0], p1[0], p2[0], p3[0]), f(p0[1], p1[1], p2[1], p3[1])]);
+    }
+  }
+  return out;
+};
+
+/** Open Catmull-Rom (for hill tops, paths, strings). */
+export const spline = (pts: Poly, per = 10): Poly => {
+  const out: Poly = [];
+  const n = pts.length;
+  for (let i = 0; i < n - 1; i++) {
+    const p0 = pts[Math.max(0, i - 1)], p1 = pts[i], p2 = pts[i + 1], p3 = pts[Math.min(n - 1, i + 2)];
+    for (let j = 0; j < per; j++) {
+      const t = j / per, t2 = t * t, t3 = t2 * t;
+      const f = (a: number, b: number, c: number, d: number) =>
+        0.5 * (2 * b + (-a + c) * t + (2 * a - 5 * b + 4 * c - d) * t2 + (-a + 3 * b - 3 * c + d) * t3);
+      out.push([f(p0[0], p1[0], p2[0], p3[0]), f(p0[1], p1[1], p2[1], p3[1])]);
+    }
+  }
+  out.push(pts[n - 1]);
+  return out;
+};
+
+/** A hill: a soft top line through `tops` closed down to `base`. */
+export const hill = (tops: Poly, base: number): Poly => {
+  const top = spline(tops, 12);
+  return [...top, [top[top.length - 1][0], base], [top[0][0], base]];
+};
+
+/** A tear drop pointing up. */
+export const drop = (cx: number, cy: number, r: number): Poly => {
+  const out: Poly = [];
+  for (let i = 0; i <= 40; i++) {
+    const a = -Math.PI / 2 + (i / 40) * Math.PI * 2;
+    const k = Math.sin(a) > 0 ? 1 + Math.sin(a) * 0.9 : 1;
+    out.push([cx + Math.cos(a) * r * (1 - Math.max(0, Math.sin(a)) * 0.55), cy + Math.sin(a) * r * k]);
+  }
+  return out;
+};
+
+export const move = (p: Poly, dx: number, dy: number): Poly => p.map(([x, y]) => [x + dx, y + dy]);
+export const scalePoly = (p: Poly, sx: number, sy = sx, cx = 0, cy = 0): Poly => p.map(([x, y]) => [cx + (x - cx) * sx, cy + (y - cy) * sy]);
+export const rotatePoly = (p: Poly, a: number, cx = 0, cy = 0): Poly =>
+  p.map(([x, y]) => [cx + (x - cx) * Math.cos(a) - (y - cy) * Math.sin(a), cy + (x - cx) * Math.sin(a) + (y - cy) * Math.cos(a)]);
+
+/** Resample a closed polygon every `step` cm. */
+const resample = (p: Poly, step: number): Poly => {
+  const out: Poly = [];
+  for (let i = 0; i < p.length; i++) {
+    const a = p[i], b = p[(i + 1) % p.length];
+    const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    const n = Math.max(1, Math.ceil(L / step));
+    for (let j = 0; j < n; j++) out.push([a[0] + ((b[0] - a[0]) * j) / n, a[1] + ((b[1] - a[1]) * j) / n]);
+  }
+  return out;
+};
+
+/** Scissor cut: the outline wanders a little (long gentle drift + small facets), never a perfect vector edge. */
+export const scissor = (p: Poly, seed: number, amount = 0.035): Poly => {
+  const r = rng(seed);
+  const q = resample(p, 0.12);
+  const n = q.length;
+  const ph = [r() * 6.28, r() * 6.28, r() * 6.28];
+  const out: Poly = [];
+  for (let i = 0; i < n; i++) {
+    const a = q[(i - 1 + n) % n], b = q[(i + 1) % n];
+    let nx = -(b[1] - a[1]), ny = b[0] - a[0];
+    const l = Math.hypot(nx, ny) || 1;
+    nx /= l;
+    ny /= l;
+    const t = i / n;
+    const d = amount * (0.6 * Math.sin(t * 6.28 * 3 + ph[0]) + 0.3 * Math.sin(t * 6.28 * 11 + ph[1]) + 0.25 * Math.sin(t * 6.28 * 29 + ph[2]));
+    out.push([q[i][0] + nx * d, q[i][1] + ny * d]);
+  }
+  return out;
+};
+
+export const bbox = (polys: Poly[]) => {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const p of polys)
+    for (const [x, y] of p) {
+      if (x < x0) x0 = x;
+      if (y < y0) y0 = y;
+      if (x > x1) x1 = x;
+      if (y > y1) y1 = y;
+    }
+  return { x0, y0, x1, y1, w: x1 - x0, h: y1 - y0 };
+};
+
+// ── Colour ─────────────────────────────────────────────────────────────────────
+
+const hex = (c: string) => {
+  if (c.startsWith("rgb")) return c.replace(/[^\d,.]/g, "").split(",").slice(0, 3).map(Number);
+  const v = c.replace("#", "");
+  const n = parseInt(v.length === 3 ? v.split("").map((x) => x + x).join("") : v, 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+};
+export const shade = (c: string, k: number) => {
+  const [r, g, b] = hex(c);
+  const f = (x: number) => Math.round(Math.max(0, Math.min(255, k < 0 ? x * (1 + k) : x + (255 - x) * k)));
+  return `rgb(${f(r)},${f(g)},${f(b)})`;
+};
+export const rgba = (c: string, a: number) => {
+  const [r, g, b] = hex(c);
+  return `rgba(${r},${g},${b},${a})`;
+};
+
+// ── Noise tiles (made once) ────────────────────────────────────────────────────
+
+type Tiles = { mottle: HTMLCanvasElement; grain: HTMLCanvasElement; tooth: HTMLCanvasElement; streak: HTMLCanvasElement };
+let tiles: Tiles | null = null;
+
+const valueNoise = (N: number, cells: number, r: () => number) => {
+  const lat = Float32Array.from({ length: cells * cells }, () => r());
+  const out = new Float32Array(N * N);
+  for (let y = 0; y < N; y++) {
+    const fy = (y / N) * cells, y0 = Math.floor(fy), ty = fy - y0, sy = ty * ty * (3 - 2 * ty);
+    for (let x = 0; x < N; x++) {
+      const fx = (x / N) * cells, x0 = Math.floor(fx), tx = fx - x0, sx = tx * tx * (3 - 2 * tx);
+      const g = (i: number, j: number) => lat[(j % cells) * cells + (i % cells)];
+      const a = g(x0, y0) + (g(x0 + 1, y0) - g(x0, y0)) * sx;
+      const b = g(x0, y0 + 1) + (g(x0 + 1, y0 + 1) - g(x0, y0 + 1)) * sx;
+      out[y * N + x] = a + (b - a) * sy;
+    }
+  }
+  return out;
+};
+
+const toCanvas = (N: number, px: (i: number) => [number, number, number, number]) => {
+  const c = document.createElement("canvas");
+  c.width = c.height = N;
+  const g = c.getContext("2d")!;
+  const img = g.createImageData(N, N);
+  for (let i = 0; i < N * N; i++) {
+    const [r, gg, b, a] = px(i);
+    img.data[i * 4] = r;
+    img.data[i * 4 + 1] = gg;
+    img.data[i * 4 + 2] = b;
+    img.data[i * 4 + 3] = a;
+  }
+  g.putImageData(img, 0, 0);
+  return c;
+};
+
+const makeTiles = (): Tiles => {
+  const r = rng(77031);
+  const N = 512;
+  const a = valueNoise(N, 5, r), b = valueNoise(N, 13, r), c = valueNoise(N, 37, r);
+  // pigment pooling: multiply layer 0.72…1.0
+  const mottle = toCanvas(N, (i) => {
+    const v = 0.55 * a[i] + 0.3 * b[i] + 0.15 * c[i];
+    const k = Math.round(255 * (0.72 + 0.28 * Math.min(1, Math.max(0, (v - 0.25) * 1.9))));
+    return [k, k, k, 255];
+  });
+  // granulation: fine dark specks (multiply)
+  const fine = valueNoise(N, 160, r);
+  const grain = toCanvas(N, (i) => {
+    const v = fine[i] * 0.7 + r() * 0.3;
+    const k = Math.round(255 * (0.86 + 0.14 * v));
+    return [k, k, k, 255];
+  });
+  // paper tooth for crayon: white specks where the wax skipped
+  const toothN = valueNoise(N, 90, r);
+  const tooth = toCanvas(N, (i) => {
+    const v = toothN[i] * 0.6 + r() * 0.4;
+    const al = v > 0.62 ? Math.min(255, Math.round((v - 0.62) * 900)) : 0;
+    return [255, 250, 238, al];
+  });
+  // brush streaks (gouache): stretched noise
+  const sN = valueNoise(N, 64, r);
+  const streak = toCanvas(N, (i) => {
+    const x = i % N, y = Math.floor(i / N);
+    const v = sN[(Math.floor(y / 1) % N) * N + (Math.floor(x / 9) % N)];
+    const k = Math.round(255 * (0.86 + 0.14 * v));
+    return [k, k, k, 255];
+  });
+  return { mottle, grain, tooth, streak };
+};
+const getTiles = () => (tiles ??= makeTiles());
+
+// ── Painting ───────────────────────────────────────────────────────────────────
+
+export type Style = "wash" | "crayon" | "gouache" | "flat";
+export type G = CanvasRenderingContext2D;
+
+export type Paint = {
+  color: string;
+  style?: Style;
+  /** Pigment that pools at the edges and in blooms (default: a darker `color`). */
+  tone?: string;
+  /** 0…1 strength of edge darkening / pooling (default 0.5). */
+  edge?: number;
+  /** Coloured-pencil outline, or false. */
+  line?: string | false;
+  /** Extra drawing in cm space, clipped to the shape (windows, faces, grass strokes…). */
+  marks?: (g: G, r: () => number, ppc: number) => void;
+  /** Drawing outside the clip but inside the margin (rare: drawn on top, unclipped). */
+  over?: (g: G, r: () => number, ppc: number) => void;
+  seed?: number;
+  /** Skip the scissor jitter (perfect edge, e.g. printed panels). */
+  clean?: boolean;
+  /** Cut-out holes (windows, doorways): punched through after painting, pencil-lined. */
+  holes?: Poly[];
+  /** Light paper-core rim along the cut (default: on unless `clean`). */
+  rim?: boolean;
+};
+
+export const trace = (g: G, p: Poly) => {
+  g.beginPath();
+  g.moveTo(p[0][0], p[0][1]);
+  for (let i = 1; i < p.length; i++) g.lineTo(p[i][0], p[i][1]);
+  g.closePath();
+};
+const traceAll = (g: G, ps: Poly[]) => {
+  g.beginPath();
+  for (const p of ps) {
+    g.moveTo(p[0][0], p[0][1]);
+    for (let i = 1; i < p.length; i++) g.lineTo(p[i][0], p[i][1]);
+    g.closePath();
+  }
+};
+
+const pattern = (g: G, tile: HTMLCanvasElement, cmPerTile: number, r: () => number) => {
+  const pat = g.createPattern(tile, "repeat")!;
+  const k = cmPerTile / tile.width;
+  pat.setTransform(new DOMMatrix().translate(r() * 40, r() * 40).rotate(r() * 360).scale(k, k));
+  return pat;
+};
+
+export const MARGIN = 0.3;
+
+/** Paint polygons into a canvas laid out in cm (y up). Returns the canvas + its cm rectangle. */
+export const paintCanvas = (polys: Poly[], paint: Paint, ppc: number) => {
+  const T = getTiles();
+  const r = rng(paint.seed ?? 1);
+  const cut = paint.clean ? polys : polys.map((p, i) => scissor(p, (paint.seed ?? 1) * 31 + i * 7));
+  const bb = bbox(cut);
+  const m = MARGIN;
+  const wcm = bb.w + 2 * m, hcm = bb.h + 2 * m;
+  const scale = Math.min(ppc, 2048 / Math.max(wcm, hcm));
+  const W = Math.max(4, Math.ceil(wcm * scale)), H = Math.max(4, Math.ceil(hcm * scale));
+  const c = document.createElement("canvas");
+  c.width = W;
+  c.height = H;
+  const g = c.getContext("2d")!;
+  const sx = W / wcm, sy = H / hcm;
+  g.setTransform(sx, 0, 0, -sy, -(bb.x0 - m) * sx, (bb.y1 + m) * sy);
+  const px = sx; // pixels per cm
+  const style = paint.style ?? "wash";
+  const tone = paint.tone ?? shade(paint.color, -0.28);
+  const e = paint.edge ?? 0.5;
+  const full = () => g.fillRect(bb.x0 - m, bb.y0 - m, wcm, hcm);
+
+  g.save();
+  traceAll(g, cut);
+  g.clip();
+  g.fillStyle = paint.color;
+  full();
+
+  if (style === "wash") {
+    g.globalCompositeOperation = "multiply";
+    g.globalAlpha = 0.6 * e + 0.15;
+    g.fillStyle = pattern(g, T.mottle, 9, r);
+    full();
+    // pooled pigment blobs
+    g.globalAlpha = 1;
+    const n = Math.round(2 + (bb.w * bb.h) / 40);
+    for (let i = 0; i < n; i++) {
+      const x = bb.x0 + r() * bb.w, y = bb.y0 + r() * bb.h, rr = 0.6 + r() * Math.min(4, Math.max(bb.w, bb.h) * 0.35);
+      g.filter = `blur(${Math.max(1, rr * 0.5 * px)}px)`;
+      g.fillStyle = rgba(tone, 0.12 * e + 0.04);
+      g.beginPath();
+      g.ellipse(x, y, rr, rr * (0.5 + r() * 0.6), r() * 3, 0, Math.PI * 2);
+      g.fill();
+    }
+    g.filter = "none";
+    g.globalCompositeOperation = "multiply";
+    g.globalAlpha = 0.5;
+    g.fillStyle = pattern(g, T.grain, 5, r);
+    full();
+  } else if (style === "crayon") {
+    // waxy strokes on top of a light base, then paper tooth showing through
+    g.globalCompositeOperation = "source-over";
+    const area = bb.w * bb.h;
+    const n = Math.round(area * 26 + 30);
+    const ang = -0.9 + r() * 0.3;
+    for (let i = 0; i < n; i++) {
+      const x = bb.x0 + r() * bb.w, y = bb.y0 + r() * bb.h, L = 0.25 + r() * 0.7;
+      const a = ang + (r() - 0.5) * 0.5;
+      g.strokeStyle = r() < 0.55 ? rgba(tone, 0.16 + r() * 0.16) : rgba(shade(paint.color, 0.22), 0.14 + r() * 0.12);
+      g.lineWidth = 0.05 + r() * 0.08;
+      g.lineCap = "round";
+      g.beginPath();
+      g.moveTo(x, y);
+      g.lineTo(x + Math.cos(a) * L, y + Math.sin(a) * L);
+      g.stroke();
+    }
+    g.globalCompositeOperation = "source-atop";
+    g.globalAlpha = 0.55;
+    g.fillStyle = pattern(g, T.tooth, 4, r);
+    full();
+  } else if (style === "gouache") {
+    g.globalCompositeOperation = "multiply";
+    g.globalAlpha = 0.35 * e + 0.1;
+    g.fillStyle = pattern(g, T.mottle, 12, r);
+    full();
+    g.globalAlpha = 0.55;
+    g.fillStyle = pattern(g, T.streak, 6, r);
+    full();
+  } else {
+    g.globalCompositeOperation = "multiply";
+    g.globalAlpha = 0.35;
+    g.fillStyle = pattern(g, T.grain, 5, r);
+    full();
+  }
+
+  // edge darkening: pigment dries at the rim
+  if (e > 0 && style !== "flat") {
+    g.globalCompositeOperation = "multiply";
+    g.globalAlpha = 0.55 * e;
+    g.filter = `blur(${Math.max(1, 0.1 * px)}px)`;
+    g.strokeStyle = tone;
+    g.lineWidth = 0.32;
+    for (const p of cut) {
+      trace(g, p);
+      g.stroke();
+    }
+    g.filter = "none";
+  }
+
+  g.globalCompositeOperation = "source-over";
+  g.globalAlpha = 1;
+  paint.marks?.(g, r, px);
+  g.restore();
+
+  // coloured-pencil outline, drawn twice with a small wobble like a real sketch line
+  if (paint.line) {
+    g.save();
+    traceAll(g, cut);
+    g.clip();
+    g.strokeStyle = rgba(paint.line, 0.75);
+    g.lineWidth = 0.05;
+    g.lineJoin = "round";
+    for (const p of cut) {
+      trace(g, scissor(p, (paint.seed ?? 1) + 991, 0.02));
+      g.stroke();
+    }
+    g.strokeStyle = rgba(paint.line, 0.35);
+    g.lineWidth = 0.035;
+    for (const p of cut) {
+      trace(g, scissor(p, (paint.seed ?? 1) + 517, 0.03));
+      g.stroke();
+    }
+    g.restore();
+  }
+  // the cut: a hair of lighter paper core catches the lamp
+  if (paint.rim ?? !paint.clean) {
+  g.save();
+  traceAll(g, cut);
+  g.clip();
+  g.globalAlpha = 0.45;
+  g.strokeStyle = "rgba(255,248,232,0.55)";
+  g.lineWidth = 0.05;
+  for (const p of cut) {
+    trace(g, p);
+    g.stroke();
+  }
+  g.restore();
+  }
+  if (paint.holes?.length) {
+    const hs = paint.holes.map((h, i) => (paint.clean ? h : scissor(h, (paint.seed ?? 1) * 17 + i * 13, 0.025)));
+    // the rim of a hole darkens like any cut edge, then the hole is punched out
+    g.save();
+    traceAll(g, cut);
+    g.clip();
+    g.globalCompositeOperation = "multiply";
+    g.filter = `blur(${Math.max(1, 0.08 * px)}px)`;
+    g.strokeStyle = rgba(tone, 0.5);
+    g.lineWidth = 0.22;
+    for (const h of hs) {
+      trace(g, h);
+      g.stroke();
+    }
+    g.filter = "none";
+    g.globalCompositeOperation = "source-over";
+    if (paint.line) {
+      g.strokeStyle = rgba(paint.line, 0.7);
+      g.lineWidth = 0.1;
+      for (const h of hs) {
+        trace(g, h);
+        g.stroke();
+      }
+    }
+    g.globalCompositeOperation = "destination-out";
+    for (const h of hs) {
+      trace(g, h);
+      g.fill();
+    }
+    g.restore();
+  }
+  paint.over?.(g, r, px);
+  return { canvas: c, x0: bb.x0 - m, y0: bb.y0 - m, w: wcm, h: hcm };
+};
+
+export const canvasTexture = (c: HTMLCanvasElement) => {
+  const t = new CanvasTexture(c);
+  t.colorSpace = SRGBColorSpace;
+  t.minFilter = LinearMipmapLinearFilter;
+  t.anisotropy = 8;
+  t.needsUpdate = true;
+  return t;
+};
+
+// ── Mark helpers (cm space, call inside Paint.marks) ───────────────────────────
+
+/** A coloured-pencil stroke through points (slightly doubled). */
+export const pencil = (g: G, pts: Poly, color: string, w = 0.05, alpha = 0.8, smooth = true) => {
+  const p = smooth && pts.length > 2 ? spline(pts, 8) : pts;
+  g.save();
+  g.lineCap = "round";
+  g.lineJoin = "round";
+  g.strokeStyle = rgba(color, alpha);
+  g.lineWidth = w;
+  g.beginPath();
+  g.moveTo(p[0][0], p[0][1]);
+  for (const q of p.slice(1)) g.lineTo(q[0], q[1]);
+  g.stroke();
+  g.strokeStyle = rgba(color, alpha * 0.35);
+  g.lineWidth = w * 0.6;
+  g.beginPath();
+  g.moveTo(p[0][0] + 0.012, p[0][1] - 0.01);
+  for (const q of p.slice(1)) g.lineTo(q[0] + 0.012, q[1] - 0.01);
+  g.stroke();
+  g.restore();
+};
+
+export const dot = (g: G, x: number, y: number, rx: number, color: string, ry = rx, alpha = 1) => {
+  g.save();
+  g.fillStyle = rgba(color, alpha);
+  g.beginPath();
+  g.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
+  g.fill();
+  g.restore();
+};
+
+/** Crayon scribble filling a polygon (cheeks, grass tufts, shading). */
+export const scribble = (g: G, poly: Poly, color: string, r: () => number, density = 30, alpha = 0.35, ang = -0.8) => {
+  const bb = bbox([poly]);
+  g.save();
+  trace(g, poly);
+  g.clip();
+  g.lineCap = "round";
+  const n = Math.round(bb.w * bb.h * density + 6);
+  for (let i = 0; i < n; i++) {
+    const x = bb.x0 + r() * bb.w, y = bb.y0 + r() * bb.h, L = 0.15 + r() * 0.4, a = ang + (r() - 0.5) * 0.4;
+    g.strokeStyle = rgba(color, alpha * (0.5 + r() * 0.5));
+    g.lineWidth = 0.04 + r() * 0.05;
+    g.beginPath();
+    g.moveTo(x, y);
+    g.lineTo(x + Math.cos(a) * L, y + Math.sin(a) * L);
+    g.stroke();
+  }
+  g.restore();
+};
+
+/** Fill a polygon with flat colour inside a mark callback. */
+export const fillPoly = (g: G, poly: Poly, color: string, alpha = 1) => {
+  g.save();
+  g.fillStyle = rgba(color, alpha);
+  trace(g, poly);
+  g.fill();
+  g.restore();
+};
+
+==== 14239 project/src/kits/storybook/Person.tsx
+// Person — the general paper puppet for script-directed books (the approved `Kid` in Puppet.tsx stays untouched).
+// Same construction as Kid (painted cut-paper parts on brass split pins, page space in cm, origin between the feet),
+// generalised: child / adult / elder builds, eight hair styles (incl. hijab and peci), five outfits, any colours.
+
+import React from "react";
+import { blob, dot, ellipse, pencil, rect, scribble, shade, type Paint, type Poly } from "./paint.ts";
+import { Pivot, Sheet } from "./Sheet.tsx";
+import { Pin, type KidPose } from "./Puppet.tsx";
+
+export type PersonLook = {
+  build: "child" | "adult" | "elder";
+  hair: "bob" | "puffs" | "short" | "long" | "bun" | "bald" | "hijab" | "peci";
+  outfit: "dress" | "shirt-shorts" | "shirt-pants" | "long-skirt" | "robe";
+  skin: string;
+  hairColor: string;
+  top: string; // dress / shirt / robe colour
+  bottom: string; // shorts / trousers / skirt colour
+  shoes: string;
+  accent: string; // hair clip, hijab trim, collar
+  dots?: string; // polka dots on the top
+  stripes?: string; // stripes on the top
+  beard?: boolean;
+  glasses?: boolean;
+  line: string;
+};
+
+const P = (p: Poly | Poly[]) => () => p;
+
+const marksFor = (L: PersonLook) => (g: CanvasRenderingContext2D, r: () => number) => {
+  if (L.dots) for (let yy = 0; yy < 14; yy += 0.75) for (let xx = -3; xx < 3; xx += 0.75) dot(g, xx + ((yy / 0.75) % 2) * 0.37 + (r() - 0.5) * 0.08, yy + (r() - 0.5) * 0.08, 0.12, L.dots, 0.11, 0.85);
+  if (L.stripes) for (let yy = 0; yy < 14; yy += 0.7) { g.fillStyle = L.stripes; g.globalAlpha = 0.8; g.fillRect(-4, yy, 8, 0.28); g.globalAlpha = 1; }
+};
+
+export const Person: React.FC<{ id: string; look: PersonLook; pose: KidPose; x?: number; y?: number; z?: number; scale?: number; flip?: boolean; rot?: number; tears?: number; s?: number }> = ({
+  id, look, pose, x = 0, y = 0, z = 0.3, scale = 1, flip = false, rot = 0, tears = 0, s = 0,
+}) => {
+  const L = look;
+  const adult = L.build !== "child";
+  // proportions: an adult has longer legs and torso and a smaller head (relative)
+  const legK = adult ? 1.45 : 1;
+  const hipY = 3.0 * legK, shoulderY = hipY + (adult ? 3.3 : 2.65), neckY = shoulderY + 0.4;
+  const headK = adult ? 0.86 : 1;
+  const ph = (pose.walk ?? 0) * Math.PI * 2;
+  const st = pose.stride ?? 0;
+  const crouch = pose.crouch ?? 0;
+  const legF = st * 0.42 * Math.sin(ph) + crouch * 0.35;
+  const legB = -st * 0.42 * Math.sin(ph) - crouch * 0.35;
+  const kneeF = st * 0.55 * Math.max(0, Math.sin(ph - 1.4)) + crouch * 0.6;
+  const kneeB = -(st * 0.55 * Math.max(0, Math.sin(ph + Math.PI - 1.4))) - crouch * 0.6;
+  const bob = st * 0.16 * Math.abs(Math.cos(ph)) - crouch * 0.55 * legK + (pose.hop ?? 0) - (L.build === "elder" ? 0.15 : 0);
+  const armF = (pose.armF ?? 0.1) - st * 0.35 * Math.sin(ph);
+  const armB = (pose.armB ?? -0.1) + st * 0.35 * Math.sin(ph);
+  const lk = pose.look ?? [0, 0];
+  const blink = (pose.blink ?? 0) > 0.5;
+  const mouth = pose.mouth ?? "smile";
+  const ln: Paint["line"] = L.line;
+  const sx = flip ? -scale : scale;
+  const long = L.outfit === "dress" || L.outfit === "long-skirt" || L.outfit === "robe";
+  const legColor = L.outfit === "shirt-shorts" || L.outfit === "dress" ? L.skin : L.bottom;
+  const thighColor = L.outfit === "shirt-shorts" ? L.bottom : legColor;
+
+  const leg = (key: string, hip: number, knee: number, dx: number, zz: number) => (
+    <Pivot at={[dx, hipY]} rot={hip} z={zz}>
+      <Sheet id={`${id}-${key}-thigh`} shape={P(rect(dx - 0.42, hipY - 1.55 * legK, dx + 0.42, hipY + 0.2, 0.4))} paint={{ color: thighColor, style: "crayon", line: ln }} z={0} />
+      <Pivot at={[dx, hipY - 1.35 * legK]} rot={-knee} z={0.008}>
+        <Sheet id={`${id}-${key}-shin`} shape={P(rect(dx - 0.38, 0.45, dx + 0.38, hipY - 1.15 * legK, 0.36))} paint={{ color: legColor, style: "crayon", line: ln }} z={0} />
+        <Sheet id={`${id}-${key}-shoe`} shape={P(blob([[dx - 0.55, 0.05], [dx + 0.95, 0.05], [dx + 1.0, 0.45], [dx + 0.4, 0.75], [dx - 0.5, 0.7]], 8))} paint={{ color: L.shoes, style: "gouache", line: ln }} z={0.006} />
+        <Pin x={dx} y={hipY - 1.35 * legK} z={0.012} r={0.12} />
+      </Pivot>
+    </Pivot>
+  );
+  const arm = (key: string, sh: number, el: number, dx: number, zz: number) => {
+    const ua = adult ? 1.25 : 1;
+    return (
+      <Pivot at={[dx, shoulderY]} rot={sh} z={zz}>
+        <Sheet id={`${id}-${key}-upper`} shape={P(rect(dx - 0.45, shoulderY - 1.5 * ua, dx + 0.45, shoulderY + 0.35, 0.42))} paint={{ color: L.top, style: "wash", line: ln, marks: marksFor(L) }} z={0} />
+        <Pivot at={[dx, shoulderY - 1.3 * ua]} rot={el} z={0.008}>
+          <Sheet id={`${id}-${key}-fore`} shape={P(rect(dx - 0.33, shoulderY - 2.55 * ua, dx + 0.33, shoulderY - 1.1 * ua, 0.3))} paint={{ color: L.outfit === "robe" || adult ? L.top : L.skin, style: "crayon", line: ln }} z={0} />
+          <Sheet id={`${id}-${key}-hand`} shape={P(ellipse(dx, shoulderY - 2.62 * ua, 0.42, 0.46, 24))} paint={{ color: L.skin, style: "crayon", line: ln }} z={0.004} />
+          <Pin x={dx} y={shoulderY - 1.3 * ua} z={0.01} r={0.11} />
+        </Pivot>
+        <Pin x={dx} y={shoulderY} z={0.012} r={0.13} />
+      </Pivot>
+    );
+  };
+  // torso + skirt shapes
+  const shirtTop = shoulderY + 0.3;
+  const body: Poly = long
+    ? blob([[-1.95 - (L.outfit === "robe" ? 0.2 : 0), adult ? 0.9 : 2.35], [-0.9, adult ? 0.75 : 2.15], [0, adult ? 0.85 : 2.3], [0.9, adult ? 0.75 : 2.15], [1.95, adult ? 0.9 : 2.35], [1.2, shoulderY - 0.45], [0.75, shirtTop], [-0.75, shirtTop], [-1.2, shoulderY - 0.45]], 10)
+    : blob([[-1.25, hipY - 0.55], [0, hipY - 0.7], [1.25, hipY - 0.55], [1.3, shoulderY - 0.4], [0.85, shirtTop], [-0.85, shirtTop], [-1.3, shoulderY - 0.4]], 10);
+  const hk = headK;
+  const H = (pts: [number, number][]): Poly => pts.map(([a, b]) => [a * hk, neckY + (b - 6.05) * hk]);
+  const hy = (v: number) => neckY + (v - 6.05) * hk;
+
+  return (
+    <group position={[x, y, z]} rotation={[0, 0, rot]} scale={[sx, scale, 1]}>
+      <group position={[0, bob, 0]}>
+        {leg("legB", legB, kneeB, -0.45, 0.012)}
+        {leg("legF", legF, kneeF, 0.45, 0.03)}
+        <Pivot at={[0, hipY - 0.4]} rot={(pose.lean ?? 0) + (L.build === "elder" ? 0.12 : 0)}>
+          {arm("armB", armB, pose.elbowB ?? 0.15, -0.95, 0.0)}
+          {!long && <Sheet id={`${id}-shorts`} shape={P(blob([[-1.35, hipY - 1.2], [1.35, hipY - 1.2], [1.3, hipY + 0.1], [-1.3, hipY + 0.1]], 6))} paint={{ color: L.bottom, style: "wash", line: ln }} z={0.045} />}
+          <Sheet id={`${id}-top`} shape={P(body)} paint={{ color: L.top, style: "wash", line: ln, marks: marksFor(L) }} z={0.05} />
+          {L.outfit === "long-skirt" && (
+            <Sheet id={`${id}-skirt`} shape={P(blob([[-2.0, adult ? 0.85 : 2.3], [2.0, adult ? 0.85 : 2.3], [1.35, hipY + 0.2], [-1.35, hipY + 0.2]], 8))} paint={{ color: L.bottom, style: "wash", line: ln }} z={0.052} />
+          )}
+          <Sheet id={`${id}-collar`} shape={P(blob([[-0.95, shirtTop], [-0.2, shirtTop - 0.6], [0, shirtTop - 0.4], [0.2, shirtTop - 0.6], [0.95, shirtTop], [0, shirtTop + 0.2]], 8))} paint={{ color: L.accent, style: "gouache", line: ln }} z={0.058} />
+          <Pivot at={[0, neckY]} rot={pose.head ?? 0} z={0.06}>
+            {/* hair behind the face */}
+            {L.hair === "bob" && <Sheet id={`${id}-hb`} shape={P(H([[-2.25, 6.6], [-2.35, 8.3], [-1.5, 9.85], [0, 10.25], [1.5, 9.85], [2.35, 8.3], [2.25, 6.6], [1.4, 6.3], [-1.4, 6.3]]))} paint={{ color: L.hairColor, style: "gouache", line: ln, edge: 0.7 }} z={0} />}
+            {L.hair === "long" && <Sheet id={`${id}-hb`} shape={P(H([[-2.2, 4.6], [-2.4, 8.3], [-1.5, 9.85], [0, 10.25], [1.5, 9.85], [2.4, 8.3], [2.2, 4.6], [0, 4.9]]))} paint={{ color: L.hairColor, style: "gouache", line: ln, edge: 0.7 }} z={0} />}
+            {L.hair === "puffs" && (
+              <>
+                <Sheet id={`${id}-pl`} shape={P(ellipse(-1.85 * hk, hy(9.4), 0.95 * hk, 0.9 * hk, 32))} paint={{ color: L.hairColor, style: "gouache", line: ln }} z={0} />
+                <Sheet id={`${id}-pr`} shape={P(ellipse(1.85 * hk, hy(9.4), 0.95 * hk, 0.9 * hk, 32))} paint={{ color: L.hairColor, style: "gouache", line: ln }} z={0} />
+              </>
+            )}
+            {L.hair === "bun" && <Sheet id={`${id}-bun`} shape={P(ellipse(0, hy(10.2), 0.95 * hk, 0.8 * hk, 32))} paint={{ color: L.hairColor, style: "gouache", line: ln }} z={0} />}
+            {L.hair === "hijab" && <Sheet id={`${id}-hj`} shape={P(H([[-2.3, 5.4], [-2.45, 8.0], [-1.6, 9.9], [0, 10.4], [1.6, 9.9], [2.45, 8.0], [2.3, 5.4], [1.2, 4.9], [-1.2, 4.9]]))} paint={{ color: L.accent, style: "gouache", line: ln, edge: 0.6 }} z={0} />}
+            <Sheet
+              id={`${id}-face`}
+              shape={P(H([[-1.85, 7.6], [-1.6, 6.55], [0, 6.05], [1.6, 6.55], [1.85, 7.6], [1.55, 9.0], [0, 9.55], [-1.55, 9.0]]))}
+              paint={{
+                color: L.skin, style: "crayon", line: ln,
+                marks: (g, r) => {
+                  if (L.build === "child") {
+                    scribble(g, ellipse(-1.05 * hk, hy(7.2), 0.42, 0.3, 20), shade(L.skin, -0.12), r, 120, 0.45);
+                    scribble(g, ellipse(1.05 * hk, hy(7.2), 0.42, 0.3, 20), shade(L.skin, -0.12), r, 120, 0.45);
+                  }
+                  if (L.build === "elder") { pencil(g, [[-1.2 * hk, hy(8.6)], [-0.5 * hk, hy(8.7)]], shade(L.skin, -0.4), 0.04, 0.5); pencil(g, [[0.5 * hk, hy(8.7)], [1.2 * hk, hy(8.6)]], shade(L.skin, -0.4), 0.04, 0.5); }
+                  pencil(g, [[-0.05, hy(7.75)], [0.08, hy(7.55)], [-0.05, hy(7.45)]], shade(L.skin, -0.45), 0.05, 0.6);
+                  if (L.beard) scribble(g, H([[-1.5, 7.2], [0, 6.1], [1.5, 7.2], [0, 6.6]]), shade(L.hairColor, 0.15), r, 160, 0.8);
+                },
+              }}
+              z={0.01}
+            />
+            <group position={[lk[0] * 0.18, lk[1] * 0.12, 0]}>
+              <Sheet id={`${id}-eyes`} visible={!blink} shape={P([ellipse(-0.7 * hk, hy(8.0), 0.2 * hk, 0.27 * hk, 20), ellipse(0.7 * hk, hy(8.0), 0.2 * hk, 0.27 * hk, 20)])}
+                paint={{ color: "#2a1d18", style: "flat", clean: true, marks: (g) => { dot(g, -0.64 * hk, hy(8.09), 0.07, "#fff6e6"); dot(g, 0.76 * hk, hy(8.09), 0.07, "#fff6e6"); } }} z={0.02} cast={false} />
+            </group>
+            <Sheet id={`${id}-eyesShut`} visible={blink} shape={P([rect(-1.0 * hk, hy(7.9), -0.4 * hk, hy(8.05), 0.07), rect(0.4 * hk, hy(7.9), 1.0 * hk, hy(8.05), 0.07)])} paint={{ color: "#2a1d18", style: "flat", clean: true }} z={0.02} cast={false} />
+            {L.glasses && <Sheet id={`${id}-glasses`} shape={P([ellipse(-0.7 * hk, hy(8.0), 0.45 * hk, 0.4 * hk, 24), ellipse(0.7 * hk, hy(8.0), 0.45 * hk, 0.4 * hk, 24)])} paint={{ color: "#f2ead8", style: "flat", clean: true, line: "#3b2b26", holes: [ellipse(-0.7 * hk, hy(8.0), 0.36 * hk, 0.31 * hk, 24), ellipse(0.7 * hk, hy(8.0), 0.36 * hk, 0.31 * hk, 24)] }} z={0.024} cast={false} />}
+            <Sheet id={`${id}-m-smile`} visible={mouth === "smile"} shape={P(H([[-0.42, 7.05], [0, 6.75], [0.42, 7.05], [0, 6.92]]))} paint={{ color: "#8a3a33", style: "flat", clean: true }} z={0.02} cast={false} />
+            <Sheet id={`${id}-m-open`} visible={mouth === "open"} shape={P(ellipse(0, hy(6.92), 0.22 * hk, 0.26 * hk, 20))} paint={{ color: "#7a2f2b", style: "flat", clean: true }} z={0.02} cast={false} />
+            <Sheet id={`${id}-m-sad`} visible={mouth === "sad"} shape={P(H([[-0.38, 6.8], [0, 7.02], [0.38, 6.8], [0, 6.92]]))} paint={{ color: "#8a3a33", style: "flat", clean: true }} z={0.02} cast={false} />
+            <Sheet id={`${id}-m-flat`} visible={mouth === "flat"} shape={P(rect(-0.3 * hk, hy(6.88), 0.3 * hk, hy(6.98), 0.05))} paint={{ color: "#8a3a33", style: "flat", clean: true }} z={0.02} cast={false} />
+            {/* tears roll down from the eyes while `tears` > 0 */}
+            {tears > 0 && [-0.75, 0.75].map((ex, i) => {
+              const k = ((s * 0.9 + i * 0.45) % 1);
+              return <Sheet key={i} id={`${id}-tear${i}`} y={-k * 1.4 * hk} scale={1 - k * 0.3} shape={P(ellipse(ex * hk, hy(7.7), 0.11, 0.15, 12))} paint={{ color: "#8fc6e8", style: "flat", clean: true, line: "#4f86a8" }} z={0.026} cast={false} />;
+            })}
+            {/* hair / cap in front */}
+            {L.hair === "bob" && <Sheet id={`${id}-bangs`} shape={P(H([[-2.0, 8.3], [-1.9, 9.4], [-0.9, 10.05], [0.6, 10.1], [1.8, 9.5], [2.05, 8.4], [1.4, 8.75], [0.85, 8.55], [0.2, 8.85], [-0.5, 8.6], [-1.2, 8.85]]))} paint={{ color: L.hairColor, style: "gouache", line: ln, edge: 0.7 }} z={0.03} />}
+            {(L.hair === "puffs" || L.hair === "bun" || L.hair === "long") && <Sheet id={`${id}-cap`} shape={P(H([[-1.85, 8.5], [-1.5, 9.5], [0, 9.95], [1.5, 9.5], [1.85, 8.5], [0.9, 8.95], [0, 8.75], [-0.9, 8.95]]))} paint={{ color: L.hairColor, style: "gouache", line: ln }} z={0.03} />}
+            {L.hair === "short" && <Sheet id={`${id}-short`} shape={P(H([[-1.95, 8.2], [-1.8, 9.5], [-0.6, 10.15], [0.9, 10.1], [1.9, 9.4], [1.95, 8.3], [1.3, 8.95], [0.4, 8.85], [-0.6, 9.05], [-1.3, 8.7]]))} paint={{ color: L.hairColor, style: "gouache", line: ln, edge: 0.6 }} z={0.03} />}
+            {L.hair === "peci" && <Sheet id={`${id}-peci`} shape={P(H([[-1.75, 9.05], [-1.6, 10.35], [1.6, 10.35], [1.75, 9.05], [0, 9.2]]))} paint={{ color: "#2b2522", style: "gouache", line: ln }} z={0.03} />}
+            {L.hair === "hijab" && <Sheet id={`${id}-hjf`} shape={P(H([[-1.95, 8.2], [-1.6, 9.55], [0, 10.05], [1.6, 9.55], [1.95, 8.2], [1.5, 9.15], [0, 9.55], [-1.5, 9.15]]))} paint={{ color: L.accent, style: "gouache", line: ln }} z={0.03} />}
+            {L.hair === "bald" && L.build !== "child" && <Sheet id={`${id}-fringe`} shape={P([...H([[-1.95, 7.9], [-1.7, 8.9], [-1.4, 8.3]]), ...H([[1.4, 8.3], [1.7, 8.9], [1.95, 7.9]])])} paint={{ color: L.hairColor, style: "gouache", line: ln }} z={0.03} />}
+            {(L.hair === "bob" || L.hair === "puffs") && L.build === "child" && <Sheet id={`${id}-clip`} shape={P(H([[0.95, 9.55], [1.75, 9.95], [1.6, 9.35], [1.75, 8.95], [0.95, 9.3]]))} paint={{ color: L.accent, style: "gouache", line: ln }} z={0.04} />}
+          </Pivot>
+          {arm("armF", armF, pose.elbowF ?? -0.15, 0.95, 0.08)}
+        </Pivot>
+      </group>
+    </group>
+  );
+};

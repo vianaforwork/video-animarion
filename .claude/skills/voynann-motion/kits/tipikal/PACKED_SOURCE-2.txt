@@ -1,0 +1,2344 @@
+VOYNANN Motion - packed source files of this folder. Do not edit by hand.
+The skill upload in the Claude app accepts at most 200 files, so the source files are packed here.
+`node <skill folder>/new-project.mjs <project folder> --kit=<style>` unpacks them into the project.
+Format: per file one line with four '=' signs, the byte length and the path, then exactly that many bytes.
+
+==== 24223 project/scripts/make.mjs
+// TIPIKAL — story → film ("Tipe-tipe …" relatable 3D comedy sketches).
+//   node scripts/make.mjs --library [set]         what exists: sets + places, cast, props, vehicles, actions, faces, shots, pops, sounds
+//   node scripts/make.mjs <id> --plan             compile stories/<id>/story.json: shot list + warnings
+//   node scripts/make.mjs <id> --stills auto      one still per shot from ONE page → out/<id>/stills/_sheet.jpg (or --stills 2s,9.5s)
+//   node scripts/make.mjs <id> --preview          plan + sound + 540×960 preview (rendered at 2×, downscaled) + QA gate report
+//   node scripts/make.mjs <id> --final            plan + sound + QA gate (stops on FAIL) + 1080×1920 @ 60 + delivery scan
+// Characters (tokoh):
+//   node scripts/make.mjs --menu                  the buyer's character cards → out/_menu/kartu-tokoh-1|2|3.jpg
+//   node scripts/make.mjs <id> --cast             this story's people, full body + face → out/<id>/tokoh.jpg
+//   node scripts/make.mjs <id> --save-tokoh andi[,bu] [--nama "Mas Andi"]   keep people → tokoh/tokoh-<nama>.json
+//   story.json "cast": { "andi": { "tokoh": "mas-andi" } } uses a saved file (+ optional "look" changes on top)
+// Voice (optional; the genre works without a narrator): stories/<id>/vo.(mp3|wav|m4a) → word timings (whisper.cpp);
+// the voice has one line per type (its "say", or the card text), plus intro.say / outro.say when given.
+// Own objects: stories/<id>/props.json ({ "name": { "about", "size", "parts": [...], "hold"? } }, same format as the library).
+// Flags: --silent (no sound), --no-music, --wide (16:9: only when asked), --no-qa, --force-qa.
+import fs from "node:fs";
+import path from "node:path";
+import { execFileSync, spawnSync } from "node:child_process";
+import { compile, timeline, voTexts, introDur, SOUNDS } from "../src/tipikal/compile.ts";
+import { SETS } from "../src/tipikal/sets/index.ts";
+import { CAST, MENU, lookProblems, menuText, mergeLook, resolveLook, tokohCode } from "../src/tipikal/cast.ts";
+import { PROPS } from "../src/tipikal/props/lib.ts";
+import { VEHICLES } from "../src/tipikal/vehicles/lib.ts";
+import { ACTIONS } from "../src/tipikal/actions.ts";
+import { EXPRS } from "../src/kits/tipikal/face.ts";
+import { syncVo } from "./lib/vo.mjs";
+import { buildSound } from "./lib/tipikal-sound.mjs";
+import { deliveryScan, sceneGate } from "./qa-gate.mjs";
+
+const args = process.argv.slice(2);
+const flag = (f) => args.includes(f);
+const val = (f) => (args.includes(f) ? args[args.indexOf(f) + 1] : undefined);
+const sh = (cmd, a) => { const r = spawnSync(cmd, a, { stdio: "inherit" }); if (r.status) process.exit(r.status); };
+const t0All = Date.now();
+const secs = () => `${((Date.now() - t0All) / 1000).toFixed(0)} s`;
+
+// ---------------------------------------------------------------- character cards (TipikalCard strips → stacked JPGs)
+const renderCards = (groups, h, outDir, names) => {
+  fs.mkdirSync(outDir, { recursive: true });
+  const tmp = path.join(outDir, "_strips"), pf = path.join(outDir, "_card-props.json");
+  fs.rmSync(tmp, { recursive: true, force: true });
+  fs.writeFileSync(pf, JSON.stringify({ strips: groups.flat(), h }));
+  sh("npx", ["remotion", "render", "src/index.ts", "TipikalCard", tmp, "--sequence", "--image-format=jpeg", "--jpeg-quality=92", `--props=${pf}`, "--concurrency=2", "--log=error"]);
+  const files = fs.readdirSync(tmp).filter((f) => /^element-\d+\.jpe?g$/.test(f)).sort((a, b) => parseInt(a.slice(8)) - parseInt(b.slice(8))).map((f) => path.join(tmp, f));
+  let k = 0;
+  const made = groups.map((g, gi) => {
+    const part = files.slice(k, (k += g.length)), to = path.join(outDir, names[gi]);
+    if (part.length === 1) fs.copyFileSync(part[0], to);
+    else execFileSync("ffmpeg", ["-v", "error", "-y", ...part.flatMap((f) => ["-i", f]), "-filter_complex", part.map((_, i) => `[${i}:v]`).join("") + `vstack=inputs=${part.length}`, "-q:v", "3", to]);
+    return to;
+  });
+  fs.rmSync(tmp, { recursive: true, force: true });
+  fs.rmSync(pf, { force: true });
+  return made;
+};
+const rows = (a, n) => Array.from({ length: Math.ceil(a.length / n) }, (_, i) => a.slice(i * n, i * n + n));
+const BASE = { skin: "#d39a66", hair: { color: "#1d1712", style: "short" }, top: { kind: "tee", color: "#2e9a8e" }, bottom: { kind: "long", color: "#2b2d36" }, feet: { kind: "sandal", color: "#7a4b2a" }, face: { brows: "thick" } };
+
+if (flag("--menu")) {
+  const presets = Object.keys(CAST).map((k) => ({ look: resolveLook(k), code: tokohCode(k), name: k }));
+  const card1 = [
+    { kind: "header", title: "KARTU TOKOH", lines: ["Pilih tokoh siap pakai T1–T" + presets.length + ", lalu ganti apa saja:", "rambut (R), penutup kepala (K), atasan (A), bawahan (C), alas kaki (D),", "wajah (F), badan (B), kulit (S), warna (W).", "Contoh: “Tipe 1 pakai T3, jaket W1, helm K2 W7.”", "“Ibunya T2, kerudung W4, badan B5.”"] },
+    ...rows(presets, 6).map((items, i) => ({ kind: "people", frame: "body", title: i ? undefined : "TOKOH SIAP PAKAI", items })),
+  ];
+  const hair = MENU.hair.map((o) => ({ look: { ...BASE, hair: { color: o.style === "bald-ring" ? "#9e9a92" : "#1d1712", style: o.style } }, code: o.code, name: o.name, rotY: { bun: 1.6, ponytail: 1.5, long: 0.9, "bald-ring": 0.9 }[o.style] ?? 0.42 }));
+  const hats = MENU.hat.map((o) => ({ look: { ...BASE, hat: { kind: o.kind, color: { helmet: "#e0412f", "half-helmet": "#2b2d33", kerudung: "#4f6fb8", cap: "#2d6fd0", headband: "#d63b30", peci: "#1c1a1e" }[o.kind] } }, code: o.code, name: o.name, rotY: 0.35 }));
+  const card2 = [
+    { kind: "people", frame: "head", title: "RAMBUT · sebut juga warnanya", items: hair.slice(0, 4) },
+    { kind: "people", frame: "head", items: hair.slice(4, 8) },
+    { kind: "people", frame: "head", items: hair.slice(8) },
+    { kind: "people", frame: "head", title: "PENUTUP KEPALA · bisa diwarnai", items: hats.slice(0, 4) },
+    { kind: "people", frame: "head", items: hats.slice(4) },
+  ];
+  const tops = MENU.top.map((o) => ({ look: { ...BASE, top: { kind: o.kind, color: "#2f6fd0", ...(o.kind === "jacket" ? { accent: "#f2f2ee" } : {}), ...(o.kind === "koko" ? { color: "#f1ede4", accent: "#c9b98a" } : {}) } }, code: o.code, name: o.name, rotY: 0.15, expr: "neutral" }));
+  const bottoms = MENU.bottom.map((o) => ({ look: { ...BASE, bottom: { kind: o.kind, color: "#8a5a3a" } }, code: o.code, name: o.name, rotY: 0.15, expr: "neutral" }));
+  const feet = MENU.feet.map((o) => ({ look: { ...BASE, feet: { kind: o.kind, color: "#d63b30" } }, code: o.code, name: o.name, rotY: 0.3, expr: "neutral" }));
+  const face = MENU.face.map((o) => ({ look: { ...BASE, face: { brows: "thick", ...o.face } }, code: o.code, name: o.name, rotY: 0.2, expr: "neutral" }));
+  const build = MENU.build.map((o) => ({ look: { ...BASE, top: { kind: "tee", color: "#f07c2a" }, build: o.build }, code: o.code, name: o.name, rotY: 0.15 }));
+  const card3 = [
+    { kind: "people", frame: "body", title: "ATASAN · bisa ditambah dasi, rompi, celemek, ransel, dll.", items: tops },
+    { kind: "people", frame: "body", title: "BAWAHAN · ALAS KAKI", items: [...bottoms, ...feet] },
+    { kind: "people", frame: "head", title: "WAJAH · boleh digabung", items: face.slice(0, 4) },
+    { kind: "people", frame: "head", items: face.slice(4) },
+    { kind: "people", frame: "body", title: "BADAN", items: build },
+    { kind: "swatches", title: "KULIT (S) · WARNA (W) untuk baju, rambut, helm, motor", colors: [...MENU.skin, ...MENU.colors], lines: [
+      "Tambahan atasan: " + MENU.extras.map((e) => e.name).join(", ") + ".",
+      "Sebut bagian + warna, mis. “jaket W8, helm K2 W1, kulit S4”. Warna lain boleh, sebut namanya. Kendaraan juga bisa diwarnai.",
+    ] },
+  ];
+  const made = renderCards([card1, card2, card3], 480, path.join("out", "_menu"), ["kartu-tokoh-1.jpg", "kartu-tokoh-2.jpg", "kartu-tokoh-3.jpg"]);
+  console.log("cards:\n  " + made.join("\n  ") + "\n\n" + menuText());
+  process.exit(0);
+}
+
+if (flag("--library")) {
+  const only = val("--library") && !val("--library").startsWith("--") ? val("--library") : null;
+  for (const S of Object.values(SETS)) {
+    if (only && S.id !== only) continue;
+    console.log(`SET "${S.id}" (labels: ${S.theme}${S.indoor ? ", indoors" : ""}) — ${S.about}\n  places: ${Object.entries(S.spots).map(([k, s]) => `${k}${s.seat !== undefined ? "[seat]" : ""}${s.surface ? "[table]" : ""}${s.lane ? "[lane]" : ""}`).join(", ")}\n`);
+  }
+  if (only) { for (const [k, s] of Object.entries(SETS[only]?.spots ?? {})) console.log(`  ${k.padEnd(20)} ${s.about ?? ""}`); process.exit(0); }
+  console.log("CAST presets:\n" + Object.entries(CAST).map(([k, c]) => `  ${tokohCode(k).padEnd(4)}${k.padEnd(17)} ${c.about}`).join("\n"));
+  console.log("\n" + menuText());
+  const saved = fs.existsSync("tokoh") ? fs.readdirSync("tokoh").filter((f) => f.endsWith(".json")) : [];
+  console.log(saved.length ? `SAVED tokoh/: ${saved.join(", ")}` : "SAVED tokoh/: none");
+  console.log("\nVEHICLES (a prop with this kind; people get on with \"ride\"; \"color\", \"color2\", \"plate\"):\n" + Object.entries(VEHICLES).map(([k, v]) => `  ${k.padEnd(10)} ${v.about}`).join("\n"));
+  console.log("\nPROPS:\n" + Object.entries(PROPS).map(([k, p]) => `  ${k.padEnd(14)} ${p.about}${p.hold ? `  [held: ${p.hold.hand === "both" ? "both hands" : p.hold.hand === "L" ? "left hand" : "right hand"}]` : ""}`).join("\n"));
+  console.log("\nACTIONS (\"do\"):\n" + Object.entries(ACTIONS).map(([k, a]) => `  ${k.padEnd(12)} ${a.about}`).join("\n"));
+  console.log(`\nEXPRESSIONS ("expr"): ${EXPRS.join(", ")}`);
+  console.log("SHOTS: establish (wide from high), wide, medium, close, reaction, low (hero), top, insert (a prop), follow (behind a mover), ots (\"over\": a person)");
+  console.log("MOVES: push (default), pull, still, orbit, rise, track    TIME: day, sore, malam    LIGHT (jalan): red, yellow, green");
+  console.log("POPS (\"pop\"): ?  !  ?!  ...  ♥  zzz  sticker (round sticker, short \"text\" like \"100\" or \"OK\", default ?)  bubble (text)  sfx (comic word: CIIIT! TIIIN! GUBRAK!)  tag (pill: SANDAL −1)  stamp (big stamp word)");
+  console.log(`SOUNDS ("sound"): ${SOUNDS.join(", ")}`);
+  console.log("LABEL THEMES (\"theme\", default from the set): jalan, kelas, kantor, kondangan, rumah, warung");
+  process.exit(0);
+}
+
+const id = args.find((a) => !a.startsWith("--") && a !== val("--stills") && a !== val("--save-tokoh") && a !== val("--nama"));
+if (!id) { console.error("usage: node scripts/make.mjs <id> --plan | --stills auto | --preview | --final   (or --library, --menu)"); process.exit(1); }
+const dir = path.join("stories", id), out = path.join("out", id);
+const storyFile = path.join(dir, "story.json");
+if (!fs.existsSync(storyFile)) { console.error(`missing ${storyFile}`); process.exit(1); }
+fs.mkdirSync(out, { recursive: true });
+let story;
+try { story = JSON.parse(fs.readFileSync(storyFile, "utf8")); } catch (e) { console.error(`${storyFile} is not valid JSON: ${e.message}`); process.exit(1); }
+const extraFile = path.join(dir, "props.json");
+let extraProps;
+if (fs.existsSync(extraFile)) { try { extraProps = JSON.parse(fs.readFileSync(extraFile, "utf8")); } catch (e) { console.error(`${extraFile} is not valid JSON: ${e.message}`); process.exit(1); } }
+
+// ---------------------------------------------------------------- saved characters (tokoh/tokoh-<slug>.json)
+const slug = (x) => String(x).toLowerCase().normalize("NFKD").replace(/[̀-ͯ]/g, "").replace(/^tokoh-/, "").replace(/\.json$/, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+const savedTokoh = () => (fs.existsSync("tokoh") ? fs.readdirSync("tokoh").filter((f) => f.endsWith(".json")) : []);
+for (const [cid, c] of Object.entries(story.cast ?? {})) {
+  if (!c.tokoh) continue;
+  const f = [path.join("tokoh", `tokoh-${slug(c.tokoh)}.json`), path.join("tokoh", `${slug(c.tokoh)}.json`), c.tokoh].find((x) => x.endsWith(".json") && fs.existsSync(x));
+  if (!f) { console.error(`✗ cast "${cid}": saved tokoh "${c.tokoh}" not found in tokoh/ (have: ${savedTokoh().join(", ") || "none"}) — copy the buyer's tokoh-*.json there`); process.exit(2); }
+  let t;
+  try { t = JSON.parse(fs.readFileSync(f, "utf8")); } catch (e) { console.error(`✗ ${f} is not valid JSON: ${e.message}`); process.exit(2); }
+  if (!t.preset || !CAST[t.preset] || !t.look) { console.error(`✗ ${f}: needs "preset" (one of ${Object.keys(CAST).join(", ")}) and "look"`); process.exit(2); }
+  story.cast[cid] = { ...c, preset: t.preset, look: mergeLook(t.look, c.look), name: c.name ?? t.nama };
+}
+if (flag("--save-tokoh")) {
+  const ids = String(val("--save-tokoh") ?? "").split(",").filter(Boolean);
+  if (!ids.length) { console.error("usage: --save-tokoh <castId>[,<castId>] [--nama \"Nama\"]"); process.exit(1); }
+  fs.mkdirSync("tokoh", { recursive: true });
+  for (const cid of ids) {
+    const c = story.cast?.[cid];
+    if (!c) { console.error(`✗ "${cid}" is not in cast (have: ${Object.keys(story.cast ?? {}).join(", ")})`); process.exit(2); }
+    if (!CAST[c.preset]) { console.error(`✗ cast "${cid}": preset "${c.preset}" does not exist`); process.exit(2); }
+    const look = resolveLook(c.preset, c.look), bad = lookProblems(look);
+    if (bad.length) { console.error(`✗ cast "${cid}":\n  ` + bad.join("\n  ")); process.exit(2); }
+    const nama = (ids.length === 1 && val("--nama")) || c.name || cid;
+    const file = path.join("tokoh", `tokoh-${slug(nama)}.json`);
+    fs.writeFileSync(file, JSON.stringify({ voynann: "tipikal-tokoh/1", nama, preset: c.preset, look, dari: id, catatan: "Tokoh TIPIKAL tersimpan. Di video berikutnya cukup sebut namanya. Untuk proyek atau komputer lain: salin file ini ke folder tokoh/ di proyek itu." }, null, 2) + "\n");
+    console.log(`saved: ${file}   (story.json: "cast": { "${cid}": { "tokoh": "${slug(nama)}" } })`);
+  }
+  if (!["--cast", "--plan", "--stills", "--preview", "--final"].some(flag)) process.exit(0);
+}
+if (flag("--cast")) {
+  const people = Object.entries(story.cast ?? {}).filter(([, c]) => CAST[c.preset]).map(([cid, c]) => ({ look: resolveLook(c.preset, c.look), code: c.name ?? cid, name: c.tokoh ? "tokoh tersimpan" : `dari ${tokohCode(c.preset)} ${c.preset}` }));
+  if (!people.length) { console.error("✗ story has no cast"); process.exit(2); }
+  const bad = Object.entries(story.cast).flatMap(([cid, c]) => (CAST[c.preset] ? lookProblems(resolveLook(c.preset, c.look)).map((p) => `cast "${cid}": ${p}`) : [`cast "${cid}": preset "${c.preset}" does not exist (have: ${Object.keys(CAST).join(", ")})`]));
+  if (bad.length) { console.error("✗ " + bad.join("\n  ")); process.exit(2); }
+  const strips = [
+    ...rows(people, 4).map((items, i) => ({ kind: "people", frame: "body", title: i ? undefined : `TOKOH · ${story.title ?? id}`, items })),
+    ...rows(people, 4).map((items) => ({ kind: "people", frame: "head", items: items.map((x) => ({ ...x, rotY: 0.25 })) })),
+  ];
+  const [file] = renderCards([strips], 600, out, ["tokoh.jpg"]);
+  console.log(`cast card: ${file}`);
+  if (!["--plan", "--stills", "--preview", "--final"].some(flag)) process.exit(0);
+}
+
+// ---------------------------------------------------------------- timing
+const vo = ["vo.wav", "vo.mp3", "vo.m4a"].map((f) => path.join(dir, f)).find((f) => fs.existsSync(f));
+const texts = voTexts(story);
+let lines, voice;
+if (vo) {
+  // an intro without a spoken line: the voice starts after the intro view
+  const lead = story.intro !== false && !(story.intro && story.intro.say) ? Math.max(0.35, introDur(story)) : 0.35;
+  const cache = path.join(out, "timing.json");
+  const stamp = `${fs.statSync(vo).mtimeMs}|${lead}|${texts.join("|")}`;
+  const c = fs.existsSync(cache) ? JSON.parse(fs.readFileSync(cache, "utf8")) : null;
+  if (c?.stamp === stamp && fs.existsSync(c.voice)) { lines = c.lines; voice = c.voice; console.log(`voice: ${vo} (timings cached)`); }
+  else {
+    const r = syncVo(vo, texts, path.join(out, "vo"), lead);
+    lines = r.lines; voice = r.voice;
+    // this genre leaves long pauses between the type lines (the vignette plays): a line whose first words whisper
+    // placed inside a pause starts where the voice comes back
+    const sd = spawnSync("ffmpeg", ["-hide_banner", "-i", vo, "-af", "silencedetect=noise=-38dB:d=0.35", "-f", "null", "-"], { encoding: "utf8" }).stderr;
+    const ss = [...sd.matchAll(/silence_start: ([\d.]+)/g)].map((m) => +m[1] + lead), se = [...sd.matchAll(/silence_end: ([\d.]+)/g)].map((m) => +m[1] + lead);
+    for (const L of lines) {
+      const last = L.words[L.words.length - 1].t;
+      const k = ss.findIndex((a, n) => se[n] !== undefined && se[n] - a >= 0.6 && a >= L.t0 - 0.15 && se[n] <= last + 0.05);
+      if (k < 0) continue;
+      let j = 0;
+      L.words = L.words.map((w) => (w.t < se[k] ? { ...w, t: se[k] + 0.12 * j++ } : w));
+      for (let n = 1; n < L.words.length; n++) if (L.words[n].t < L.words[n - 1].t + 0.05) L.words[n] = { ...L.words[n], t: L.words[n - 1].t + 0.05 };
+      L.t0 = se[k];
+      L.t1 = Math.max(L.t1, L.words[L.words.length - 1].t + 0.2);
+    }
+    fs.writeFileSync(cache, JSON.stringify({ stamp, lines, voice }));
+    console.log(r.method === "whisper" ? `voice: ${vo} — whisper matched all but ${r.missed} word(s)` : `voice: ${vo} — whisper.cpp not found: lines laid onto the speech runs`);
+    if (r.missed > texts.join(" ").split(/\s+/).length * 0.15) console.log(`! many words not matched: is the recording these lines?\n  heard: ${r.heard}`);
+  }
+} else {
+  lines = timeline(story);
+  console.log("voice: none (the genre works without a narrator: cards, pops, sound words, music + SFX carry it)");
+}
+
+// ---------------------------------------------------------------- plan
+const silent = flag("--silent"), wide = flag("--wide") || story.format === "landscape";
+const wantSound = !silent && (flag("--preview") || flag("--final"));
+const audio = wantSound ? `stories/${id}/mix.wav` : undefined;
+let plan;
+try { plan = compile(story, lines, { aspect: wide ? 16 / 9 : 9 / 16, audio, extraProps, voice: !!vo }); }
+catch (e) { console.error(`\n✗ ${e.message}`); process.exit(2); }
+console.log(`\n"${plan.title}" — ${plan.types.length} types, ${plan.shots.length} shots, ${plan.duration}s${wide ? ", 16:9" : ""}`);
+plan.shots.forEach((S, i) => {
+  const who = S.actors.filter((a) => !a.extra).map((a) => `${a.id}${a.mount.kind === "ride" ? "@" + a.mount.veh : a.mount.kind === "sit" ? "(sit)" : ""}:${a.keys.map((k) => k.do || k.expr).filter(Boolean).join(">")}`).join(" ");
+  const label = S.type === -1 ? "intro" : S.type === -2 ? "outro" : `type ${S.type + 1}`;
+  console.log(`${String(i + 1).padStart(2)}  ${S.t0.toFixed(2).padStart(6)}–${S.t1.toFixed(2).padEnd(6)} ${label.padEnd(7)} ${S.kind.padEnd(9)} vis ${S.vis.toFixed(2)} ${S.set}${S.follow ? " follow" : ""}${S.freeze ? " freeze" : ""}${S.marks.length ? `  pop:${S.marks.map((m) => m.text).join(",")}` : ""}\n      [${who}]`);
+});
+if (plan.warnings.length) console.log(`\n! ${plan.warnings.length} warning(s):\n  ` + plan.warnings.join("\n  "));
+else console.log("\nno warnings");
+
+if (wantSound) {
+  const r = buildSound(plan, { voice, outDir: path.join(out, "sound"), mixFile: path.join("public", audio), music: !flag("--no-music") });
+  console.log(`sound: public/${audio}  ${r.lufs} LUFS  ${r.peak} dBTP  (${r.events} cues, ${(r.events / (plan.duration / 60)).toFixed(0)}/min)`);
+}
+const tag = wide ? "-wide" : "";
+const planFile = path.join(out, `plan${tag}.json`), propsFile = path.join(out, `props${tag}.json`);
+const extraOut = extraProps ? { extraProps } : {};
+fs.writeFileSync(planFile, JSON.stringify(plan));
+fs.writeFileSync(propsFile, JSON.stringify({ plan, ...extraOut }));
+if (flag("--plan")) process.exit(plan.warnings.length ? 3 : 0);
+
+const run = sh;
+const comp = (k) => `Tipikal${k}${wide ? "Wide" : ""}`;
+const gateDir = path.join(out, `qa-gate${tag}`);
+// the scene probe runs in one tab: with several tabs it can read a pose from another frame (false one-frame flicks)
+const gate = { comp: comp("Preview"), cuts: plan.shots.slice(1).map((s) => s.t0), out: gateDir, props: propsFile, extra: ["--concurrency=1"] };
+if (flag("--stills")) {
+  let list = val("--stills");
+  const auto = !list || list === "auto";
+  if (auto) list = plan.shots.map((s) => `${(s.freeze ? Math.max(s.t0 + 0.05, Math.min(s.t1 - 0.05, s.freeze + 0.25)) : s.t0 + (s.t1 - s.t0) * 0.62).toFixed(2)}s`).join(",");
+  const frames = list.split(",").map((t) => (t.endsWith("s") ? Math.round(parseFloat(t) * 30) : parseInt(t, 10)));
+  const sdir = path.join(out, `stills${tag}`);
+  fs.rmSync(sdir, { recursive: true, force: true });
+  fs.mkdirSync(sdir, { recursive: true });
+  const sp = path.join(out, `stills-props${tag}.json`);
+  fs.writeFileSync(sp, JSON.stringify({ plan: { ...plan, audio: undefined }, ...extraOut, frames }));
+  const t1 = Date.now();
+  run("npx", ["remotion", "render", "src/index.ts", wide ? "TipikalStillsWide" : "TipikalStills", sdir, "--sequence", "--image-format=jpeg", "--jpeg-quality=92", `--props=${sp}`, "--concurrency=2", "--log=error"]);
+  const made = fs.readdirSync(sdir).filter((f) => /^element-\d+\.jpe?g$/.test(f)).sort((a, b) => parseInt(a.slice(8)) - parseInt(b.slice(8)));
+  const files = made.map((f, i) => { const to = path.join(sdir, `f${String(frames[i]).padStart(4, "0")}${auto ? `-shot${i + 1}` : ""}.jpg`); fs.renameSync(path.join(sdir, f), to); return to; });
+  const W = wide ? 960 : 540, H = wide ? 540 : 960, cols = Math.min(wide ? 3 : 5, files.length), n = cols * Math.ceil(files.length / cols);
+  const sheet = (labels) => {
+    const pads = Array.from({ length: n - files.length }, () => ["-f", "lavfi", "-i", `color=c=black:s=${W}x${H}`]).flat();
+    const filter = Array.from({ length: n }, (_, i) => `[${i}:v]scale=${W}:${H},setsar=1${labels && i < files.length ? `,drawtext=text='${auto ? i + 1 : frames[i]}':x=10:y=10:fontsize=34:fontcolor=yellow:box=1:boxcolor=black@0.6` : ""}[v${i}]`).join(";") + ";" +
+      Array.from({ length: n }, (_, i) => `[v${i}]`).join("") + `xstack=inputs=${n}:layout=` + Array.from({ length: n }, (_, i) => `${(i % cols) * W}_${Math.floor(i / cols) * H}`).join("|") + `,scale='min(2700,iw)':-2`;
+    execFileSync("ffmpeg", ["-v", "error", "-y", ...files.flatMap((f) => ["-i", f]), ...pads, "-filter_complex", filter, "-frames:v", "1", path.join(sdir, "_sheet.jpg")], { stdio: ["ignore", "ignore", "ignore"] });
+  };
+  if (n > 1) { try { sheet(true); } catch { try { sheet(false); } catch { console.log("(contact sheet skipped: ffmpeg not available)"); } } }
+  console.log(`stills: ${files.length} in ${((Date.now() - t1) / 1000).toFixed(0)} s → ${path.join(sdir, "_sheet.jpg")}${auto ? "  (sheet order = shot order, 5 per row)" : ""}`);
+}
+if (flag("--preview")) {
+  const big = path.join(out, "_ss.mp4"), file = path.join(out, wide ? `${id}_preview_960x540.mp4` : `${id}_preview_540x960.mp4`);
+  const t1 = Date.now();
+  run("npx", ["remotion", "render", "src/index.ts", comp("PreviewSS"), big, `--props=${propsFile}`, "--concurrency=3", "--crf=12", "--log=error"]);
+  execFileSync("ffmpeg", ["-v", "error", "-y", "-i", big, "-vf", wide ? "scale=960:540:flags=lanczos" : "scale=540:960:flags=lanczos", "-c:v", "libx264", "-crf", "17", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", file]);
+  fs.rmSync(big);
+  console.log(`\npreview: ${file}  (${((Date.now() - t1) / 1000).toFixed(0)} s)`);
+  if (!flag("--no-qa")) sceneGate({ ...gate, force: true });
+}
+if (flag("--final")) {
+  if (!flag("--no-qa")) sceneGate({ ...gate, force: flag("--force-qa") });
+  const file = path.join(out, wide ? `${id}_1920x1080_60fps.mp4` : `${id}_1080x1920_60fps.mp4`);
+  const t1 = Date.now();
+  run("npx", ["remotion", "render", "src/index.ts", comp("Final"), file, `--props=${propsFile}`, "--concurrency=3", "--crf=16", "--log=error"]);
+  console.log(`\nfinal: ${file}  (render ${((Date.now() - t1) / 1000).toFixed(0)} s)`);
+  if (!flag("--no-qa") && deliveryScan({ file, cuts: gate.cuts, out: path.join(gateDir, "delivered") }) === "FAIL") {
+    console.error(`✗ the delivered film has a hard glitch (see ${path.join(gateDir, "delivered")}) — fix it before delivery`);
+    process.exitCode = 1;
+  }
+}
+console.log(`(total ${secs()})`);
+
+==== 16179 project/src/kits/tipikal/face.ts
+// TIPIKAL faces — a big expressive 2D cartoon face drawn on a canvas and wrapped on the oval head as a decal patch.
+// Technique adapted from the CERDIK face decal (face-plane coordinates projected on a sphere patch, discrete
+// expressions cached), redrawn for this look: white eyes with big pupils and lids, a nose, chunky brows and a wide
+// meme mouth. Face-plane coords: x right as you look at the face, y up, both in head radii.
+import { CanvasTexture, LinearFilter, SRGBColorSpace } from "three";
+import type { FaceSpec } from "./spec.ts";
+
+export const PATCH = { lon: (72 * Math.PI) / 180, lat: (72 * Math.PI) / 180 };
+
+export type Expr =
+  | "neutral" | "happy" | "grin" | "smug" | "shock" | "huh" | "panic" | "relief" | "innocent" | "focus" | "angry" | "proud"
+  | "laugh" | "sleep" | "sad" | "cry" | "bored" | "annoyed" | "scared" | "wow" | "chew";
+export const EXPRS: Expr[] = ["neutral", "happy", "grin", "smug", "shock", "huh", "panic", "relief", "innocent", "focus", "angry", "proud", "laugh", "sleep", "sad", "cry", "bored", "annoyed", "scared", "wow", "chew"];
+
+export type FaceState = {
+  expr: Expr;
+  /** eyelids 0 open … 1 closed (blink) */
+  blink?: number;
+  /** pupils looking (x right as seen, y up) in head radii */
+  look?: [number, number];
+  /** talking: mouth open (0 / 1) */
+  open?: number;
+};
+
+type P2 = [number, number];
+const projector = (W: number, H: number) => (p: P2): P2 => {
+  const [x, y] = p;
+  const r2 = Math.min(0.995, x * x + y * y);
+  const z = Math.sqrt(1 - r2);
+  const lon = Math.atan2(x, z), lat = Math.asin(Math.max(-1, Math.min(1, y)));
+  return [((lon + PATCH.lon) / (2 * PATCH.lon)) * W, ((PATCH.lat - lat) / (2 * PATCH.lat)) * H];
+};
+
+const ellipse = (cx: number, cy: number, rx: number, ry: number, rot = 0, n = 56): P2[] => {
+  const pts: P2[] = [];
+  const c = Math.cos(rot), s = Math.sin(rot);
+  for (let i = 0; i <= n; i++) {
+    const a = (Math.PI * 2 * i) / n;
+    const x = Math.cos(a) * rx, y = Math.sin(a) * ry;
+    pts.push([cx + x * c - y * s, cy + x * s + y * c]);
+  }
+  return pts;
+};
+const quad = (a: P2, c: P2, b: P2, n = 24): P2[] => {
+  const pts: P2[] = [];
+  for (let i = 0; i <= n; i++) {
+    const t = i / n, u = 1 - t;
+    pts.push([u * u * a[0] + 2 * u * t * c[0] + t * t * b[0], u * u * a[1] + 2 * u * t * c[1] + t * t * b[1]]);
+  }
+  return pts;
+};
+const lens = (upper: P2[], lower: P2[]): P2[] => [...upper, ...lower.slice().reverse()];
+/** thick tapered stroke along a polyline as a filled polygon */
+const ribbon = (pts: P2[], w0: number, w1: number): P2[] => {
+  const L: P2[] = [], R: P2[] = [];
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)];
+    const dx = b[0] - a[0], dy = b[1] - a[1];
+    const l = Math.hypot(dx, dy) || 1;
+    const t = i / (pts.length - 1);
+    const w = (w0 + (w1 - w0) * t) * (0.55 + 0.45 * Math.sin(Math.PI * Math.min(1, t * 1.15 + 0.08)));
+    L.push([pts[i][0] - (dy / l) * w / 2, pts[i][1] + (dx / l) * w / 2]);
+    R.push([pts[i][0] + (dy / l) * w / 2, pts[i][1] - (dx / l) * w / 2]);
+  }
+  return [...L, ...R.reverse()];
+};
+
+type Ctx = { g: CanvasRenderingContext2D; P: (p: P2) => P2; k: number };
+const path = (C: Ctx, pts: P2[]) => {
+  const { g, P } = C;
+  g.beginPath();
+  pts.forEach((p, i) => { const q = P(p); if (i) g.lineTo(q[0], q[1]); else g.moveTo(q[0], q[1]); });
+  g.closePath();
+};
+const fill = (C: Ctx, pts: P2[], color: string) => { path(C, pts); C.g.fillStyle = color; C.g.fill(); };
+const stroke = (C: Ctx, pts: P2[], w: number, color: string, closed = false) => {
+  const { g, P, k } = C;
+  g.beginPath();
+  pts.forEach((p, i) => { const q = P(p); if (i) g.lineTo(q[0], q[1]); else g.moveTo(q[0], q[1]); });
+  if (closed) g.closePath();
+  g.lineWidth = w * k;
+  g.lineCap = "round";
+  g.lineJoin = "round";
+  g.strokeStyle = color;
+  g.stroke();
+};
+
+const INK = "#1a1310";
+const MOUTH = "#5b1620";
+const TONGUE = "#e2606a";
+const TEETH = "#fffdf7";
+
+// ------------------------------------------------------------------ expression table
+const EX = 0.33, EY = 0.1, MY = -0.4;
+type Eye = { open: number; low?: number; size?: number; pupil?: number; slope?: number; closed?: "up" | "down" };
+type Brow = { y: number; a: number; asym?: number };
+type MouthK = "line" | "smile" | "open" | "grin" | "o" | "grimace" | "smirk" | "shout" | "wobble" | "side" | "whistle" | "frown" | "chew";
+type Row = { eye: Eye; eyeR?: Eye; brow: Brow; mouth: MouthK; mo?: number; sweat?: boolean; blush?: boolean; tears?: boolean; sparkle?: boolean };
+
+const TABLE: Record<Expr, Row> = {
+  neutral: { eye: { open: 0.82 }, brow: { y: 0.36, a: 0 }, mouth: "line" },
+  happy: { eye: { open: 0.95, low: 0.22 }, brow: { y: 0.42, a: -0.12 }, mouth: "open", mo: 0.6 },
+  grin: { eye: { open: 0.7, low: 0.38 }, brow: { y: 0.4, a: -0.1 }, mouth: "grin" },
+  proud: { eye: { open: 0, closed: "up" }, brow: { y: 0.42, a: -0.14 }, mouth: "grin", blush: true },
+  smug: { eye: { open: 0.48, low: 0.15 }, eyeR: { open: 0.55, low: 0.15 }, brow: { y: 0.36, a: -0.04, asym: 0.08 }, mouth: "smirk" },
+  shock: { eye: { open: 1, size: 1.2, pupil: 0.42 }, brow: { y: 0.5, a: -0.16 }, mouth: "o", mo: 1 },
+  huh: { eye: { open: 0.95, size: 1.05 }, eyeR: { open: 0.5, low: 0.1 }, brow: { y: 0.42, a: 0, asym: 0.14 }, mouth: "side" },
+  panic: { eye: { open: 1, size: 1.15, pupil: 0.5 }, brow: { y: 0.48, a: -0.4 }, mouth: "grimace", sweat: true },
+  relief: { eye: { open: 0, closed: "down" }, brow: { y: 0.42, a: -0.3 }, mouth: "smile", sweat: true },
+  innocent: { eye: { open: 0.9 }, brow: { y: 0.46, a: -0.1 }, mouth: "whistle" },
+  focus: { eye: { open: 0.55, slope: 0.35 }, brow: { y: 0.3, a: 0.32 }, mouth: "line" },
+  angry: { eye: { open: 0.7, slope: 0.45 }, brow: { y: 0.3, a: 0.45 }, mouth: "shout", mo: 0.8 },
+  laugh: { eye: { open: 0, closed: "up" }, brow: { y: 0.46, a: -0.2 }, mouth: "open", mo: 1, blush: true },
+  sleep: { eye: { open: 0, closed: "down" }, brow: { y: 0.38, a: -0.05 }, mouth: "o", mo: 0 },
+  sad: { eye: { open: 0.75, low: 0.05 }, brow: { y: 0.42, a: -0.35 }, mouth: "frown" },
+  cry: { eye: { open: 0, closed: "down" }, brow: { y: 0.44, a: -0.4 }, mouth: "wobble", tears: true },
+  bored: { eye: { open: 0.36, low: 0.12 }, brow: { y: 0.32, a: 0.02 }, mouth: "line" },
+  annoyed: { eye: { open: 0.42, low: 0.1, slope: 0.15 }, brow: { y: 0.32, a: 0.25, asym: 0.05 }, mouth: "side" },
+  scared: { eye: { open: 1, size: 1.1, pupil: 0.45 }, brow: { y: 0.5, a: -0.38 }, mouth: "wobble", sweat: true },
+  wow: { eye: { open: 1, size: 1.18, pupil: 1.15 }, brow: { y: 0.5, a: -0.12 }, mouth: "open", mo: 0.9, sparkle: true },
+  chew: { eye: { open: 0.62, low: 0.3 }, brow: { y: 0.4, a: -0.08 }, mouth: "chew", blush: true },
+};
+
+const drawEye = (C: Ctx, side: -1 | 1, e: Eye, blink: number, look: P2, skinShade: string, spec: FaceSpec) => {
+  const sz = e.size ?? 1;
+  const cx = side * EX, cy = EY;
+  const rx = 0.135 * sz, ry = 0.165 * sz;
+  const open = e.closed ? 0 : e.open * (1 - blink);
+  if (open < 0.08) {
+    const up = e.closed === "up";
+    const pts = up
+      ? quad([cx - rx, cy - 0.03], [cx, cy + 0.11], [cx + rx, cy - 0.03])
+      : quad([cx - rx, cy + 0.02], [cx, cy - 0.07], [cx + rx, cy + 0.02]);
+    stroke(C, pts, 0.045, INK);
+    return;
+  }
+  const top = cy - ry + 2 * ry * open;
+  const low = cy - ry + 2 * ry * (e.low ?? 0) * 0.5;
+  const slope = (e.slope ?? 0) * -side;
+  const vis: P2[] = ellipse(cx, cy, rx, ry).map(([x, y]) => {
+    const lim = top + slope * (x - cx);
+    return [x, Math.max(low, Math.min(lim, y))];
+  });
+  fill(C, vis, "#ffffff");
+  C.g.save();
+  path(C, vis);
+  C.g.clip();
+  const pr = 0.085 * (e.pupil ?? 1) * sz;
+  const px = cx + look[0] * 0.55, py = cy + look[1] * 0.55 - 0.01;
+  fill(C, ellipse(px, py, pr, pr * 1.12), spec.pupil ?? "#2a1a12");
+  fill(C, ellipse(px, py, pr * 0.52, pr * 0.58), "#0b0706");
+  fill(C, ellipse(px + pr * 0.38, py + pr * 0.42, pr * 0.3, pr * 0.3), "#ffffff");
+  C.g.restore();
+  stroke(C, vis, 0.03, INK, true);
+  // upper lid line, heavier
+  const lidPts: P2[] = [];
+  for (let i = 0; i <= 20; i++) {
+    const x = cx - rx * 1.05 + (2.1 * rx * i) / 20;
+    const yEll = cy + ry * Math.sqrt(Math.max(0, 1 - ((x - cx) / rx) ** 2));
+    lidPts.push([x, Math.min(yEll, top + slope * (x - cx))]);
+  }
+  stroke(C, lidPts, 0.05, INK);
+  if (spec.lashes) {
+    stroke(C, [[cx + side * rx * 0.85, top + slope * rx * 0.85 * side - 0.01], [cx + side * rx * 1.3, top + 0.06]], 0.03, INK);
+  }
+  void skinShade;
+};
+
+const drawBrow = (C: Ctx, side: -1 | 1, b: Brow, spec: FaceSpec) => {
+  const w = spec.brows === "bushy" ? 0.1 : spec.brows === "thin" ? 0.045 : 0.07;
+  const by = b.y + (b.asym ?? 0) * side;
+  const half = 0.15;
+  const inner: P2 = [side * (EX - half * 0.9), by - b.a * half];
+  const outer: P2 = [side * (EX + half * 0.9), by + b.a * half];
+  const mid: P2 = [(inner[0] + outer[0]) / 2, (inner[1] + outer[1]) / 2 + 0.035];
+  fill(C, ribbon(quad(inner, mid, outer, 14), w * 1.15, w * 0.8), INK);
+};
+
+const drawMouth = (C: Ctx, k: MouthK, mo: number) => {
+  switch (k) {
+    case "line": stroke(C, quad([-0.12, MY + 0.01], [0, MY - 0.02], [0.12, MY + 0.01]), 0.04, INK); break;
+    case "smile": stroke(C, quad([-0.18, MY + 0.05], [0, MY - 0.09], [0.18, MY + 0.05]), 0.045, INK); break;
+    case "smirk": stroke(C, quad([-0.14, MY - 0.01], [0.04, MY - 0.04], [0.19, MY + 0.07]), 0.045, INK); break;
+    case "wobble": stroke(C, [[-0.14, MY], [-0.07, MY + 0.025], [0, MY - 0.015], [0.07, MY + 0.025], [0.14, MY]], 0.04, INK); break;
+    case "side": stroke(C, quad([0.02, MY - 0.02], [0.12, MY - 0.03], [0.2, MY + 0.02]), 0.042, INK); break;
+    case "frown": stroke(C, quad([-0.16, MY - 0.05], [0, MY + 0.06], [0.16, MY - 0.05]), 0.045, INK); break;
+    case "chew": {
+      // full cheeks, small closed mouth to one side
+      stroke(C, quad([-0.08, MY], [0.02, MY - 0.035], [0.11, MY + 0.005]), 0.042, INK);
+      stroke(C, quad([0.34, MY + 0.05], [0.42, MY - 0.06], [0.33, MY - 0.15]), 0.03, "rgba(90,40,20,0.45)");
+      stroke(C, quad([-0.34, MY + 0.05], [-0.42, MY - 0.06], [-0.33, MY - 0.15]), 0.03, "rgba(90,40,20,0.45)");
+      break;
+    }
+    case "whistle": {
+      fill(C, ellipse(0.06, MY - 0.01, 0.045, 0.05), MOUTH);
+      stroke(C, ellipse(0.06, MY - 0.01, 0.045, 0.05), 0.035, INK, true);
+      break;
+    }
+    case "o": {
+      const h = 0.09 + mo * 0.07, w = 0.07 + mo * 0.03;
+      fill(C, ellipse(0, MY - 0.03, w, h), MOUTH);
+      fill(C, ellipse(0, MY - 0.03 - h * 0.55, w * 0.7, h * 0.32), TONGUE);
+      stroke(C, ellipse(0, MY - 0.03, w, h), 0.04, INK, true);
+      break;
+    }
+    case "open": {
+      const h = 0.12 + mo * 0.06;
+      const upper = quad([-0.22, MY + 0.06], [0, MY + 0.03], [0.22, MY + 0.06]);
+      const lower = quad([-0.22, MY + 0.06], [0, MY - h * 1.9], [0.22, MY + 0.06]);
+      fill(C, lens(upper, lower), MOUTH);
+      const bottom = MY + 0.06 - (0.03 + h * 1.9) * 0.5;
+      fill(C, ellipse(0, bottom + 0.035, 0.1, 0.045), TONGUE);
+      fill(C, lens(upper, quad([-0.2, MY + 0.03], [0, MY - 0.03], [0.2, MY + 0.03])), TEETH);
+      stroke(C, lens(upper, lower), 0.04, INK, true);
+      break;
+    }
+    case "grin": {
+      const upper = quad([-0.26, MY + 0.08], [0, MY + 0.02], [0.26, MY + 0.08]);
+      const lower = quad([-0.26, MY + 0.08], [0, MY - 0.2], [0.26, MY + 0.08]);
+      fill(C, lens(upper, lower), TEETH);
+      stroke(C, quad([-0.23, MY + 0.02], [0, MY - 0.06], [0.23, MY + 0.02]), 0.02, "#a99f97");
+      for (const x of [-0.12, 0, 0.12]) stroke(C, [[x, MY + 0.05 - Math.abs(x) * 0.1], [x, MY - 0.08 + Math.abs(x) * 0.4]], 0.016, "#b5aca4");
+      stroke(C, lens(upper, lower), 0.04, INK, true);
+      break;
+    }
+    case "grimace": {
+      const pts: P2[] = [[-0.24, MY + 0.06], [0.24, MY + 0.06], [0.22, MY - 0.1], [-0.22, MY - 0.1]];
+      fill(C, pts, TEETH);
+      stroke(C, [[-0.23, MY - 0.02], [0.23, MY - 0.02]], 0.018, "#9c938b");
+      for (const x of [-0.12, 0, 0.12]) stroke(C, [[x, MY + 0.06], [x, MY - 0.1]], 0.016, "#9c938b");
+      stroke(C, pts, 0.04, INK, true);
+      break;
+    }
+    case "shout": {
+      const h = 0.16 + mo * 0.06;
+      const pts: P2[] = [[-0.2, MY + 0.06], [0.2, MY + 0.06], [0.12, MY - h], [-0.12, MY - h]];
+      fill(C, pts, MOUTH);
+      fill(C, ellipse(0, MY - h + 0.04, 0.1, 0.04), TONGUE);
+      fill(C, [[-0.19, MY + 0.06], [0.19, MY + 0.06], [0.17, MY + 0.01], [-0.17, MY + 0.01]], TEETH);
+      stroke(C, pts, 0.04, INK, true);
+      break;
+    }
+  }
+};
+
+const cache = new Map<string, CanvasTexture>();
+const q = (x: number, n: number) => Math.round(Math.max(0, Math.min(1, x)) * n) / n;
+
+export const faceTexture = (spec: FaceSpec, st: FaceState, skin: string, size = 1024): CanvasTexture => {
+  const blink = q(st.blink ?? 0, 2);
+  const look: P2 = [Math.round((st.look?.[0] ?? 0) * 20) / 20, Math.round((st.look?.[1] ?? 0) * 20) / 20];
+  const open = (st.open ?? 0) > 0.5 ? 1 : 0;
+  const key = `${JSON.stringify(spec)}|${st.expr}|${blink}|${look}|${open}|${skin}|${size}`;
+  const hit = cache.get(key);
+  if (hit) return hit;
+  const cv = document.createElement("canvas");
+  cv.width = size;
+  cv.height = size;
+  const g = cv.getContext("2d")!;
+  g.clearRect(0, 0, size, size);
+  // features are authored small and drawn scaled up around the face centre (big meme faces)
+  const FS = 1.24, CY = -0.02;
+  const k = (size / (2 * PATCH.lon)) * FS;
+  const P0 = projector(size, size);
+  const C: Ctx = { g, P: (p) => P0([p[0] * FS, (p[1] - CY) * FS + CY]), k };
+  const R = TABLE[st.expr] ?? TABLE.neutral;
+  const shade = "rgba(90,40,20,0.35)";
+  if (spec.beard) {
+    const up = quad([-0.34, -0.42], [0, -0.6], [0.34, -0.42]);
+    const dn = quad([-0.34, -0.42], [0, -0.9], [0.34, -0.42]);
+    fill(C, lens(up, dn), "#2a1d16");
+  }
+  if (spec.blush || R.blush) {
+    fill(C, ellipse(-0.47, -0.16, 0.11, 0.06), "rgba(235,95,95,0.5)");
+    fill(C, ellipse(0.47, -0.16, 0.11, 0.06), "rgba(235,95,95,0.5)");
+  }
+  drawEye(C, -1, R.eye, blink, look, shade, spec);
+  drawEye(C, 1, R.eyeR ?? R.eye, blink, look, shade, spec);
+  if (spec.glasses) {
+    for (const sd of [-1, 1] as const) stroke(C, ellipse(sd * EX, EY, 0.18, 0.17), 0.032, INK, true);
+    stroke(C, quad([-EX + 0.18, EY + 0.03], [0, EY + 0.07], [EX - 0.18, EY + 0.03]), 0.03, INK);
+  }
+  drawBrow(C, -1, R.brow, spec);
+  drawBrow(C, 1, R.brow, spec);
+  // nose: a little hook
+  stroke(C, quad([0.0, -0.06], [0.07, -0.14], [-0.01, -0.18]), 0.035, shade);
+  if (spec.mustache) {
+    const y = MY + 0.12;
+    for (const sd of [-1, 1] as const) fill(C, lens(quad([0, y + 0.03], [sd * 0.13, y + 0.06], [sd * 0.25, y - 0.02]), quad([0, y - 0.03], [sd * 0.14, y - 0.04], [sd * 0.25, y - 0.02])), "#2a1d16");
+  }
+  const talking = (st.open ?? 0) > 0.5 && !["o", "open", "shout", "grin", "grimace"].includes(R.mouth);
+  drawMouth(C, talking ? "open" : R.mouth, talking ? 0.25 : R.mo ?? 0.5);
+  if (spec.old) {
+    for (const sd of [-1, 1] as const) {
+      stroke(C, quad([sd * 0.24, MY + 0.16], [sd * 0.31, MY + 0.06], [sd * 0.27, MY - 0.04]), 0.022, shade);
+      stroke(C, quad([sd * (EX - 0.1), EY - 0.2], [sd * EX, EY - 0.25], [sd * (EX + 0.1), EY - 0.2]), 0.02, shade);
+    }
+  }
+  if (R.tears) {
+    for (const sd of [-1, 1] as const) {
+      const x = sd * (EX + 0.02);
+      const tr = [...quad([x - 0.035, EY - 0.08], [x, EY - 0.3], [x + 0.035, EY - 0.08])];
+      fill(C, tr, "#8fd6ff");
+      stroke(C, tr, 0.016, "#25628f", true);
+    }
+  }
+  if (R.sparkle) {
+    for (const sd of [-1, 1] as const) {
+      const cx = sd * EX + 0.03, cy = EY + 0.05, r = 0.035;
+      fill(C, [[cx, cy + r * 1.6], [cx + r * 0.4, cy + r * 0.4], [cx + r * 1.6, cy], [cx + r * 0.4, cy - r * 0.4], [cx, cy - r * 1.6], [cx - r * 0.4, cy - r * 0.4], [cx - r * 1.6, cy], [cx - r * 0.4, cy + r * 0.4]], "#ffffff");
+    }
+  }
+  if (R.sweat) {
+    const drop = [...quad([0.62, 0.42], [0.55, 0.26], [0.62, 0.21]), ...quad([0.62, 0.21], [0.69, 0.26], [0.62, 0.42])];
+    fill(C, drop, "#8fd6ff");
+    stroke(C, drop, 0.022, "#25628f", true);
+  }
+  const t = new CanvasTexture(cv);
+  t.colorSpace = SRGBColorSpace;
+  t.minFilter = LinearFilter;
+  t.generateMipmaps = false;
+  t.anisotropy = 8;
+  cache.set(key, t);
+  return t;
+};
+
+==== 2267 project/src/kits/tipikal/motor.ts
+// Generic matic scooter — dimensions and contact anchors (pure maths, shared by the renderer and the poses).
+// Local frame: faces +z, up +y, LEFT side = +x, origin on the ground midway between the wheels. No brand marks.
+import { add, cross, dot, mul, nrm, sub, type V3 } from "./math.ts";
+
+/** The scooter is modelled at real size and drawn at K (a slightly toy-like scale that suits the chunky cast:
+ *  the riders' feet reach the road when they stop). Every anchor below is already scaled. */
+export const K = 0.88;
+const k3 = (v: V3): V3 => [v[0] * K, v[1] * K, v[2] * K];
+export const MOTOR = {
+  wheelR: 0.235 * K,
+  rearZ: -0.6 * K,
+  frontZ: 0.64 * K,
+  /** seat surface height under the rider / pillions */
+  seatTop: 0.815 * K,
+  riderZ: -0.2 * K,
+  pillionZ: [-0.5 * K, -0.7 * K] as number[],
+  floorTop: 0.345 * K,
+  floorZ: [-0.06 * K, 0.37 * K] as [number, number],
+  /** steering axis: top (head) → front hub */
+  axisTop: k3([0, 1.02, 0.45]),
+  axisBot: k3([0, 0.235, 0.64]),
+  grip: k3([0.3, 1.045, 0.42]),
+  gripR: 0.021 * K,
+  rackTop: 0.845 * K,
+  rackZ: -0.98 * K,
+  /** half width of the body at the seat / floor */
+  halfW: 0.23 * K,
+};
+
+/** Rodrigues rotation of point p about the axis through a (direction k, unit) by angle th. */
+export const rotAxis = (p: V3, a: V3, k: V3, th: number): V3 => {
+  const v = sub(p, a);
+  const c = Math.cos(th), s = Math.sin(th);
+  const r = add(add(mul(v, c), cross(k, v), s), k, dot(k, v) * (1 - c));
+  return add(a, r);
+};
+export const steerAxisDir = (): V3 => nrm(sub(MOTOR.axisBot, MOTOR.axisTop));
+
+/** Grip centre (motor-local) for the left (+1) / right (−1) hand with the bars turned by `steer` (rad, + = left). */
+export const gripAt = (side: 1 | -1, steer = 0): V3 => {
+  const g: V3 = [MOTOR.grip[0] * side, MOTOR.grip[1], MOTOR.grip[2]];
+  // rotating about an axis pointing DOWN-forward: + angle turns the bars to the right; flip so + = left turn
+  return rotAxis(g, MOTOR.axisTop, steerAxisDir(), -steer);
+};
+
+/** Wrist target that puts the palm on top of a grip (fingers wrapping it), given the shoulder position. */
+export const wristOnGrip = (grip: V3, shoulder: V3, s = 1): V3 => {
+  const d = nrm(sub(grip, shoulder));
+  return add(add(grip, [0, 0.047 * s, 0]), d, -0.045 * s);
+};
+
+==== 15395 project/src/tipikal/camera.ts
+// TIPIKAL camera solver — picks a camera for every shot automatically. For a shot kind and its subjects it tries a fan
+// of angles, heights and distances and scores each: are the subjects' heads and bodies visible (rays tested against
+// the set's colliders, the other people and vehicles), do faces sit BELOW the header + type card (the label-safe band
+// of the frame), does the camera see faces, is there something behind them, is it a different angle from the last
+// shot. Pure TypeScript (no three).
+
+import type { Box, PCam, SetMeta, ShotKind, V3 } from "./types.ts";
+
+export type Subj = { id: string; p: V3; face: number; s: number; kind: "person" | "prop" | "vehicle"; head: number; size?: V3 };
+export type Occ = { c: V3; r: number; id: string };
+
+const D = Math.PI / 180;
+const add = (a: V3, b: V3, k = 1): V3 => [a[0] + b[0] * k, a[1] + b[1] * k, a[2] + b[2] * k];
+const sub = (a: V3, b: V3): V3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const len = (a: V3) => Math.hypot(a[0], a[1], a[2]);
+const nrm = (a: V3): V3 => { const l = len(a) || 1; return [a[0] / l, a[1] / l, a[2] / l]; };
+const dot = (a: V3, b: V3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const wrapA = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
+
+/** Head / chest of a person, centre of a prop or vehicle (world). */
+export const headOf = (s: Subj): V3 => (s.kind === "person" ? add(s.p, [0, s.head, 0]) : add(s.p, [0, (s.size?.[1] ?? 0.3) * 0.6, 0]));
+export const chestOf = (s: Subj): V3 => (s.kind === "person" ? add(s.p, [0, s.head - 0.5 * s.s, 0]) : add(s.p, [0, (s.size?.[1] ?? 0.3) * 0.4, 0]));
+
+const rayBox = (o: V3, d: V3, b: Box) => {
+  let t0 = 0, t1 = 1;
+  for (let i = 0; i < 3; i++) {
+    if (Math.abs(d[i]) < 1e-9) { if (o[i] < b.min[i] || o[i] > b.max[i]) return Infinity; continue; }
+    let a = (b.min[i] - o[i]) / d[i], c = (b.max[i] - o[i]) / d[i];
+    if (a > c) [a, c] = [c, a];
+    t0 = Math.max(t0, a); t1 = Math.min(t1, c);
+    if (t0 > t1) return Infinity;
+  }
+  return t0;
+};
+const raySphere = (o: V3, d: V3, c: V3, r: number) => {
+  const m = sub(o, c), b = dot(m, d), cc = dot(m, m) - r * r, a = dot(d, d);
+  const disc = b * b - a * cc;
+  if (disc < 0) return Infinity;
+  const t = (-b - Math.sqrt(disc)) / a;
+  return t >= 0 && t <= 1 ? t : cc < 0 ? 0 : Infinity;
+};
+const inside = (p: V3, b: Box, pad = 0) => p[0] > b.min[0] - pad && p[0] < b.max[0] + pad && p[1] > b.min[1] - pad && p[1] < b.max[1] + pad && p[2] > b.min[2] - pad && p[2] < b.max[2] + pad;
+/** Fraction of the way from a to b that is clear (1 = nothing in between). */
+export const clearRay = (a: V3, b: V3, W: SetMeta, occ: Occ[], skip: Set<string>) => {
+  const d = sub(b, a);
+  let t = 1;
+  for (const c of W.colliders) t = Math.min(t, rayBox(a, d, c));
+  for (const o of occ) if (!skip.has(o.id)) t = Math.min(t, raySphere(a, d, o.c, o.r));
+  return t;
+};
+
+export type Solve = { a: PCam; b: PCam; vis: number; box: number; az: number; note?: string };
+
+/** V = vertical span at the subject (m), headY = where the main head sits in the frame (0 top … 1 bottom). The top
+ *  ~28 % of the frame belongs to the header + type card, so heads sit at 0.4 – 0.55. */
+type Kind = { fov: number; el: number; offs: number[]; V: (s: Subj) => number; headY: number };
+const pV = (s: Subj, person: number, prop = 2.4) => (s.kind === "person" ? person * Math.max(0.75, s.s) : Math.max(0.45, Math.max(...(s.size ?? [0.3, 0.3, 0.3])) * prop));
+const KIND: Record<string, Kind> = {
+  close: { fov: 36, el: 4, offs: [26, -26, 40, -40, 12, -12, 56, -56], V: (s) => pV(s, 1.2, 1.6), headY: 0.55 },
+  reaction: { fov: 34, el: 3, offs: [20, -20, 34, -34, 48, -48, 8, -8], V: (s) => pV(s, 1.1, 1.5), headY: 0.56 },
+  medium: { fov: 40, el: 8, offs: [34, -34, 50, -50, 20, -20, 64, -64, 0], V: (s) => pV(s, 1.95, 2.0), headY: 0.46 },
+  low: { fov: 44, el: -10, offs: [22, -22, 36, -36, 10, -10], V: (s) => pV(s, 2.3, 2.2), headY: 0.46 },
+  wide: { fov: 44, el: 13, offs: [0, 24, -24, 42, -42, 66, -66, 95, -95], V: (s) => pV(s, 3.6, 3.2), headY: 0.48 },
+  establish: { fov: 46, el: 28, offs: [30, -30, 50, -50, 10, -10, 75, -75], V: (s) => pV(s, 5.5, 5.0), headY: 0.5 },
+  top: { fov: 44, el: 60, offs: [0, 35, -35, 90, -90, 180], V: (s) => pV(s, 3.4, 3.0), headY: 0.5 },
+  insert: { fov: 38, el: 30, offs: [0, 30, -30, 55, -55, 80, -80, 180], V: (s) => pV(s, 1.0, 2.4), headY: 0.55 },
+  follow: { fov: 42, el: 11, offs: [155, -155, 135, -135, 175, 120, -120, 100, -100], V: (s) => pV(s, 2.4, 2.0), headY: 0.46 },
+};
+
+export type SolveOpts = {
+  aspect: number;
+  prevAz?: number;
+  prevId?: string;
+  side?: "left" | "right";
+  move?: string;
+  over?: Subj;
+  /** keep heads above this frame height (the outro card sits below) */
+  maxHeadY?: number;
+};
+
+/** Camera for one shot. `subs[0]` is the main subject; `occ` = everything else that can block the view. */
+export const solveShot = (kind: ShotKind, subs: Subj[], W: SetMeta, occ: Occ[], o: SolveOpts): Solve => {
+  if (kind === "ots" && o.over) return solveOts(subs[0], o.over, W, occ, o);
+  const K = KIND[kind] ?? KIND.medium;
+  const main = subs[0];
+  const skip = new Set(subs.map((s) => s.id));
+  const hfov = (f: number) => Math.atan(Math.tan((f * D) / 2) * o.aspect);
+  const V0 = K.V(main);
+  // the aim point: the main head at headY of the frame (groups: their centre, heads still below the labels)
+  const aimFor = (s: Subj): V3 => {
+    if (s.kind !== "person") return add(s.p, [0, (s.size?.[1] ?? 0.3) * 0.5, 0]);
+    const h = headOf(s);
+    return [h[0], h[1] - (0.5 - K.headY) * V0, h[2]];
+  };
+  const group = subs.length > 1 && kind !== "close" && kind !== "reaction" && kind !== "insert";
+  const groupAim: V3 = (() => { const c = subs.map(aimFor).reduce((x, y) => add(x, y), [0, 0, 0] as V3); const k = 1 / subs.length; const top = Math.max(...subs.map((s) => headOf(s)[1])); return [c[0] * k, Math.min(c[1] * k, top - (0.5 - K.headY) * V0), c[2] * k]; })();
+  // a group is framed on its centre; when it cannot all fit, the main subject alone (the others may leave the frame)
+  const aims: V3[] = group ? [groupAim, aimFor(main)] : [aimFor(main)];
+  const baseFace = main.face;
+  // the subjects can hide each other too (a rider in front of the kids behind her)
+  const occAll: Occ[] = [...occ, ...subs.filter((q) => q.kind === "person").flatMap((q) => [{ c: headOf(q), r: 0.2 * q.s, id: q.id }, { c: chestOf(q), r: 0.19 * q.s, id: q.id }])];
+  const tanV = Math.tan((K.fov * D) / 2), tanH = tanV * o.aspect;
+  /** where a point lands in the frame (0..1, y down) */
+  const screen = (pos: V3, aimP: V3, P: V3) => {
+    const f = nrm(sub(aimP, pos)), r = nrm([f[2], 0, -f[0]]), u: V3 = [r[1] * f[2] - r[2] * f[1], r[2] * f[0] - r[0] * f[2], r[0] * f[1] - r[1] * f[0]];
+    const v = sub(P, pos), z = dot(v, f);
+    if (z < 0.05) return { x: 9, y: 9 };
+    return { x: 0.5 - (0.5 * dot(v, r)) / (z * tanH), y: 0.5 - (0.5 * dot(v, u)) / (z * tanV) };
+  };
+  let best: (Solve & { score: number }) | null = null;
+  const dists = [1, 0.85, 1.2, 0.7, 1.45];
+  const els = kind === "close" || kind === "reaction" ? [K.el, K.el + 8, K.el + 16, K.el - 4] : kind === "establish" || kind === "top" ? [K.el, K.el + 10, K.el - 10] : [K.el, K.el + 9, K.el + 18, K.el - 5];
+  for (const aim of aims)
+  for (const dk of dists)
+    for (const el of els)
+      for (const off of K.offs) {
+        const A = baseFace + off * D;
+        let d = V0 / (2 * Math.tan((K.fov * D) / 2));
+        if (subs.length > 1 && aim === groupAim) {
+          const right: V3 = [Math.cos(A), 0, -Math.sin(A)];
+          const xs = subs.map((s) => dot(sub(s.p, aim), right));
+          const ext = subs.map((s) => (s.kind === "vehicle" ? Math.max(...(s.size ?? [1, 1, 1])) * 0.5 : 0.35 * s.s));
+          const spread = Math.max(...xs.map((x, i) => x + ext[i])) - Math.min(...xs.map((x, i) => x - ext[i])) + 0.3;
+          d = Math.max(d, spread / 2 / Math.tan(hfov(K.fov) * 0.92));
+          const tops = subs.map((s) => headOf(s)[1] + 0.25 * s.s), bots = subs.map((s) => s.p[1]);
+          const vspan = (Math.max(...tops) - Math.min(...bots)) / (1 - (0.5 - K.headY) * 2 - 0.12);
+          if (group && kind !== "medium") d = Math.max(d, vspan / (2 * Math.tan((K.fov * D) / 2)));
+        }
+        d *= dk;
+        const dir: V3 = [Math.cos(el * D) * Math.sin(A), Math.sin(el * D), Math.cos(el * D) * Math.cos(A)];
+        const pos = add(aim, dir, d);
+        if (kind === "low") pos[1] = Math.max(0.3, Math.min(pos[1], main.p[1] + 0.6));
+        if (pos[1] < 0.2 || pos[1] < W.bounds.min[1] || pos[1] > W.bounds.max[1]) continue;
+        if (pos[0] < W.bounds.min[0] || pos[0] > W.bounds.max[0] || pos[2] < W.bounds.min[2] || pos[2] > W.bounds.max[2]) continue;
+        if (W.colliders.some((c) => inside(pos, c, 0.22))) continue;
+        if (occ.some((q) => !skip.has(q.id) && len(sub(pos, q.c)) < q.r + 0.55)) continue;
+        const minD = kind === "close" || kind === "reaction" ? 0.55 : kind === "insert" || kind === "top" ? 0.45 : kind === "wide" || kind === "establish" ? 1.8 : 1.2;
+        if (subs.some((q) => len(sub(pos, headOf(q))) < minD * (q === main ? 0.7 : 1))) continue;
+        // visibility of the subjects (main counts most)
+        // a face counts as seen only when its centre AND both sides are clear (a thin post can hide half a face while
+        // the ray to its centre slips past)
+        const headPts = (q: Subj): V3[] => {
+          const h = headOf(q), side = nrm([pos[2] - h[2], 0, -(pos[0] - h[0])]), r = 0.13 * q.s;
+          return [h, add(h, side, r), add(h, side, -r)];
+        };
+        const pts = subs.flatMap((s, i) => (s.kind === "person" ? [[headPts(s), i], [[chestOf(s)], i]] : [[[add(s.p, [0, (s.size?.[1] ?? 0.3) * 0.5, 0])], i], [[add(s.p, [0, (s.size?.[1] ?? 0.3) * 0.9, 0])], i]]) as [V3[], number][]);
+        let vMain = 0, nMain = 0, vAll = 0, hiddenFaces = 0;
+        for (const [qs, i] of pts) {
+          const c = qs.every((q) => clearRay(pos, q, W, occAll, new Set([subs[i].id])) >= 0.985) ? 1 : 0;
+          if (i === 0) { vMain += c; nMain++; }
+          else if (qs.length === 3 && !c) hiddenFaces++;
+          vAll += c;
+        }
+        vMain /= nMain || 1;
+        vAll /= pts.length || 1;
+        // something big right in front of the lens at the frame edges
+        const fwd = nrm(sub(aim, pos)), rgt = nrm([fwd[2], 0, -fwd[0]]);
+        let clutter = 0;
+        for (const k of [-0.55, 0.55]) {
+          const edge = add(aim, rgt, Math.tan(hfov(K.fov)) * d * k);
+          if (clearRay(pos, edge, W, occ, skip) < 0.55) clutter += 1;
+        }
+        // depth behind the subject (not a wall right behind, not empty sky)
+        const far = add(aim, fwd, 40);
+        const hitT = clearRay(aim, far, W, [], skip);
+        const back = hitT < 1 ? Math.min(1, (hitT * 40) / 7) : 0.35;
+        // faces toward the camera (all people in the shot; the main one counts double)
+        const people = subs.filter((q) => q.kind === "person");
+        const faceOf = (q: Subj) => Math.cos(wrapA(Math.atan2(pos[0] - q.p[0], pos[2] - q.p[2]) - q.face));
+        const front = people.length ? people.reduce((acc, q, i) => acc + faceOf(q) * (i === 0 ? 2 : 1), 0) / (people.length + 1) : 1;
+        const wantFront = kind === "insert" || kind === "top" || kind === "follow" ? 0 : kind === "establish" ? 0.6 : 1.3;
+        // in frame: heads inside the picture and below the labels (main counts most)
+        let frameP = 0;
+        subs.forEach((q, i) => {
+          const h = screen(pos, aim, kind === "insert" || q.kind !== "person" ? add(q.p, [0, (q.size?.[1] ?? 0.3) * 0.5, 0]) : headOf(q));
+          const mx = i === 0 ? 0.14 : 0.08;
+          const okX = h.x > mx && h.x < 1 - mx, okY = h.y > (q.kind === "person" ? 0.31 : 0.2) && h.y < (o.maxHeadY ?? 0.86);
+          if (!okX || !okY) frameP += i === 0 ? 3 : 1.2 / Math.max(1, subs.length - 1);
+          if (o.maxHeadY && h.y > o.maxHeadY) frameP += 2.5;
+        });
+        let score = 4 * vMain + 1.6 * vAll - 1.4 * hiddenFaces - frameP + wantFront * front - 0.7 * clutter + 0.6 * back - 0.9 * Math.max(0, 1 - dk) - 0.25 * Math.max(0, dk - 1) - 0.01 * Math.abs(el - K.el);
+        if (o.prevAz !== undefined && o.prevId === main.id && Math.abs(wrapA(A - o.prevAz)) < 18 * D) score -= 0.9;
+        if (o.side) { const want = o.side === "left" ? 1 : -1; if (Math.sign(off) === want) score += 0.45; }
+        if (!best || score > best.score) {
+          const a: PCam = { pos, target: aim, fov: K.fov };
+          best = { a, b: a, vis: vMain, box: Math.max(4, Math.min(30, d * 1.3 + 3)), az: A, score };
+        }
+      }
+  if (!best) {
+    const A = baseFace, d = (V0 / (2 * Math.tan((K.fov * D) / 2))) * 0.7;
+    const aim = aims[aims.length - 1];
+    const pos = add(aim, [Math.sin(A) * d, 0.3, Math.cos(A) * d]);
+    return { a: { pos, target: aim, fov: K.fov }, b: { pos, target: aim, fov: K.fov }, vis: 0, box: 8, az: A, note: "no clear camera position found" };
+  }
+  best.b = moved(best.a, o.move ?? (kind === "establish" || kind === "wide" ? "push" : "push"), W);
+  return best;
+};
+
+/** Over-the-shoulder: camera behind `over`'s shoulder looking at `subj`. */
+const solveOts = (subj: Subj, over: Subj, W: SetMeta, occ: Occ[], o: SolveOpts): Solve => {
+  const target = add(headOf(subj), [0, -0.1 * subj.s, 0]);
+  const from = headOf(over);
+  const back = nrm([from[0] - target[0], 0, from[2] - target[2]]);
+  const side: V3 = [back[2], 0, -back[0]];
+  let best: (Solve & { score: number }) | null = null;
+  for (const sd of [1, -1])
+    for (const k of [0.75, 1.05, 0.55]) {
+      const pos = add(add(add(from, back, k), side, 0.42 * sd), [0, 0.12, 0]);
+      if (W.colliders.some((c) => inside(pos, c, 0.15))) continue;
+      const v = clearRay(pos, target, W, occ, new Set([subj.id]));
+      const score = (v >= 0.985 ? 4 : 0) + (o.side ? (o.side === "left" ? -sd : sd) * 0.3 : 0) - Math.abs(k - 0.75);
+      // aim a little above the head so it sits below the labels
+      const aim: V3 = add(target, [0, 0.08, 0]);
+      if (!best || score > best.score) best = { a: { pos, target: aim, fov: 40 }, b: { pos, target: aim, fov: 40 }, vis: v >= 0.985 ? 1 : 0, box: 6, az: Math.atan2(pos[0] - target[0], pos[2] - target[2]), score };
+    }
+  if (!best) return solveShot("medium", [subj], W, occ, { ...o, over: undefined });
+  best.b = moved(best.a, o.move ?? "push", W);
+  return best;
+};
+
+/** The end key of a camera move (small: the genre cuts often, the camera only breathes). */
+export const moved = (a: PCam, move: string, W: SetMeta): PCam => {
+  const v = sub(a.target, a.pos), d = len(v);
+  let b: PCam = a;
+  if (move === "push") b = { ...a, pos: add(a.pos, v, 0.07), fov: a.fov - 0.8 };
+  else if (move === "pull") b = { ...a, pos: add(a.pos, v, -0.1), fov: a.fov + 1 };
+  else if (move === "orbit") {
+    const r = sub(a.pos, a.target), c = Math.cos(8 * D), s = Math.sin(8 * D);
+    b = { ...a, pos: add(a.target, [r[0] * c + r[2] * s, r[1], -r[0] * s + r[2] * c]) };
+  } else if (move === "rise") b = { ...a, pos: add(a.pos, [0, d * 0.15, 0]), target: add(a.target, [0, d * 0.04, 0]) };
+  else if (move === "track") { const rgt = nrm([v[2], 0, -v[0]]); b = { ...a, pos: add(a.pos, rgt, d * 0.06), target: add(a.target, rgt, d * 0.06) }; }
+  if (W.colliders.some((c) => inside(b.pos, c, 0.1)) || b.pos[0] < W.bounds.min[0] || b.pos[0] > W.bounds.max[0] || b.pos[2] < W.bounds.min[2] || b.pos[2] > W.bounds.max[2]) return a;
+  return b;
+};
+
+==== 18298 project/src/tipikal/cast.ts
+// TIPIKAL cast library: ready characters (original designs, no brands). A story picks a preset and may override any
+// look field:  "cast": { "andi": { "preset": "mas", "look": { "top": { "color": "#d63b30" }, "hat": { "kind": "cap" } } } }
+// Pure data (node + browser). The kartu tokoh (make.mjs --menu) shows the codes below to the buyer.
+import type { PersonSpec } from "../kits/tipikal/spec.ts";
+
+export type Look = PersonSpec;
+
+export const CAST: Record<string, { about: string; look: Look }> = {
+  bapak: { about: "bapak-bapak: brown shirt, round belly, mustache", look: {
+    skin: "#b97a4c", build: { wide: 1.28 }, hair: { color: "#1d1712", style: "neat" },
+    top: { kind: "shirt", color: "#b88a5a" }, bottom: { kind: "long", color: "#4a4036" }, feet: { kind: "sandal", color: "#2f2a26" }, face: { brows: "thick", mustache: true } } },
+  ibu: { about: "ibu-ibu: kerudung, long blouse, long skirt", look: {
+    skin: "#c98c5c", build: { wide: 1.12 }, hat: { kind: "kerudung", color: "#4f6fb8" },
+    top: { kind: "blouse", color: "#d9577a", short: false }, bottom: { kind: "long-skirt", color: "#3a3f6e" }, feet: { kind: "sandal", color: "#8a5a3a" }, face: { brows: "thin", lashes: true, blush: true } } },
+  mas: { about: "mas-mas: denim jacket, jeans, sneakers", look: {
+    skin: "#d39a66", hair: { color: "#1d1712", style: "short" },
+    top: { kind: "jacket", color: "#3c5f9e", accent: "#e9e3d3" }, bottom: { kind: "long", color: "#2b2d36" }, feet: { kind: "shoe", color: "#f2f2ee" }, face: { brows: "thick" } } },
+  mbak: { about: "mbak-mbak: long hair, yellow blouse, jeans", look: {
+    skin: "#e3b085", build: { s: 0.96 }, hair: { color: "#2a1a12", style: "long" },
+    top: { kind: "blouse", color: "#f2c94c" }, bottom: { kind: "long", color: "#3a5fa0" }, feet: { kind: "shoe", color: "#e94b6a" }, face: { brows: "thin", lashes: true, blush: true } } },
+  bocil: { about: "bocil (kid): orange tee, shorts, sandals", look: {
+    skin: "#d39a66", build: { s: 0.6 }, hair: { color: "#1d1712", style: "kid" },
+    top: { kind: "tee", color: "#f07c2a" }, bottom: { kind: "shorts", color: "#3c5f9e" }, feet: { kind: "sandal", color: "#e94b6a" } } },
+  nenek: { about: "nenek: grey bun, glasses, brown long blouse and skirt", look: {
+    skin: "#c98c5c", build: { s: 0.92, wide: 1.05 }, hair: { color: "#b8b3aa", style: "bun" },
+    top: { kind: "blouse", color: "#8a5a3a", short: false, accent: "#e8c58a" }, bottom: { kind: "long-skirt", color: "#5a3a22" }, feet: { kind: "sandal", color: "#3b2618" }, face: { brows: "thin", glasses: true, lashes: true, old: true } } },
+  kakek: { about: "kakek: peci, white koko shirt, green sarung, grey mustache", look: {
+    skin: "#b97a4c", build: { s: 0.94 }, hair: { color: "#c9c4bb", style: "bald-ring" }, hat: { kind: "peci", color: "#1c1a1e" },
+    top: { kind: "koko", color: "#f1ede4", accent: "#c9b98a" }, bottom: { kind: "long-skirt", color: "#3b6b4a" }, feet: { kind: "sandal", color: "#3b2618" }, face: { brows: "bushy", mustache: true, old: true } } },
+  guru: { about: "pak guru: brown collared shirt, glasses, neat hair", look: {
+    skin: "#d39a66", hair: { color: "#231812", style: "neat" },
+    top: { kind: "shirt", color: "#a0683a" }, bottom: { kind: "long", color: "#2b2d36" }, feet: { kind: "shoe", color: "#2b2622" }, face: { brows: "thick", glasses: true } } },
+  bos: { about: "bos: dark suit, red tie, big build, mustache", look: {
+    skin: "#e0aa78", build: { s: 1.04, wide: 1.35 }, hair: { color: "#151210", style: "neat" },
+    top: { kind: "jacket", color: "#2a2f3c", collar: "#f4f1e8", tie: "#c0392b" }, bottom: { kind: "long", color: "#2a2f3c" }, feet: { kind: "shoe", color: "#1d1b1a" }, face: { brows: "bushy", mustache: true } } },
+  kurir: { about: "kurir / ojek (no brand): navy rider jacket with a grey reflective band, half helmet, backpack", look: {
+    skin: "#a8693f", hat: { kind: "half-helmet", color: "#2b2d33" },
+    top: { kind: "jacket", color: "#2c3e63", band: "#d7dade" }, bottom: { kind: "long", color: "#26272c" }, feet: { kind: "shoe", color: "#30323a" }, face: { brows: "thick" }, bag: "#3a3d45" } },
+  murid: { about: "murid SMA (boy): white school shirt, grey trousers, blue backpack", look: {
+    skin: "#d39a66", build: { s: 0.93 }, hair: { color: "#1d1712", style: "short" },
+    top: { kind: "shirt", color: "#f6f5f0", short: true }, bottom: { kind: "long", color: "#7d8086" }, feet: { kind: "shoe", color: "#222326" }, face: { brows: "thick" }, bag: "#2f6fd0" } },
+  "murid-cewek": { about: "murid SMA (girl): white kerudung and shirt, long grey skirt, pink backpack", look: {
+    skin: "#e3b085", build: { s: 0.9 }, hat: { kind: "kerudung", color: "#f6f5f0" },
+    top: { kind: "shirt", color: "#f6f5f0" }, bottom: { kind: "long-skirt", color: "#7d8086" }, feet: { kind: "shoe", color: "#222326" }, face: { brows: "thin", lashes: true, blush: true }, bag: "#e94b6a" } },
+  pegawai: { about: "pegawai kantoran: light-blue shirt, tie, ID lanyard, glasses", look: {
+    skin: "#c98c5c", hair: { color: "#1d1712", style: "neat" },
+    top: { kind: "shirt", color: "#9cc3e6", tie: "#2f4f93", lanyard: "#d63b30" }, bottom: { kind: "long", color: "#2b2d36" }, feet: { kind: "shoe", color: "#1d1b1a" }, face: { brows: "thick", glasses: true } } },
+  parkir: { about: "tukang parkir: orange vest, red cap, mustache", look: {
+    skin: "#8f5a36", hat: { kind: "cap", color: "#d63b30" }, hair: { color: "#1d1712", style: "short" },
+    top: { kind: "tee", color: "#f2efe6", vest: "#f07c2a" }, bottom: { kind: "long", color: "#3a3d45" }, feet: { kind: "sandal", color: "#2f2a26" }, face: { brows: "thick", mustache: true } } },
+  "pengantin-pria": { about: "pengantin pria: white wedding jacket with gold trim, peci, brown kain", look: {
+    skin: "#d39a66", hat: { kind: "peci", color: "#1c1a1e", color2: "#e2b54a" }, hair: { color: "#1d1712", style: "short" },
+    top: { kind: "jacket", color: "#f4efe2", collar: "#e2b54a", accent: "#e2b54a" }, bottom: { kind: "long-skirt", color: "#6b3f22" }, feet: { kind: "shoe", color: "#1d1b1a" }, face: { brows: "thick" } } },
+  "pengantin-wanita": { about: "pengantin wanita: white kebaya with gold, hair bun, brown kain", look: {
+    skin: "#e3b085", hair: { color: "#1d1712", style: "bun" },
+    top: { kind: "blouse", color: "#f4efe2", short: false, accent: "#e2b54a", collar: "#e2b54a" }, bottom: { kind: "long-skirt", color: "#6b3f22" }, feet: { kind: "sandal", color: "#e2b54a" }, face: { brows: "thin", lashes: true, blush: true } } },
+  pedagang: { about: "pedagang: green tee, white apron, towel on the shoulder", look: {
+    skin: "#b97a4c", hair: { color: "#231812", style: "short" },
+    top: { kind: "tee", color: "#3fa45b", apron: "#f2efe6" }, bottom: { kind: "long", color: "#3a3d45" }, feet: { kind: "sandal", color: "#2f2a26" }, face: { brows: "thick", mustache: true }, towel: "#f2efe6" } },
+};
+
+const isObj = (x: unknown): x is Record<string, unknown> => !!x && typeof x === "object" && !Array.isArray(x);
+const deep = (a: Record<string, unknown>, b: Record<string, unknown>): Record<string, unknown> => {
+  const o: Record<string, unknown> = { ...a };
+  for (const [k, v] of Object.entries(b)) o[k] = isObj(v) && isObj(a[k]) ? deep(a[k] as Record<string, unknown>, v) : v;
+  return o;
+};
+/** Deep-merge look overrides (later wins). */
+export const mergeLook = (a?: Record<string, unknown>, b?: Record<string, unknown>): Record<string, unknown> => deep(a ?? {}, b ?? {});
+
+// ------------------------------------------------------------------ KARTU TOKOH: the buyer's menu
+export const MENU = {
+  hair: [
+    { code: "R1", name: "pendek", style: "short" }, { code: "R2", name: "jabrik", style: "spiky" }, { code: "R3", name: "rapi", style: "neat" },
+    { code: "R4", name: "anak", style: "kid" }, { code: "R5", name: "bob", style: "bob" }, { code: "R6", name: "panjang", style: "long" },
+    { code: "R7", name: "sanggul", style: "bun" }, { code: "R8", name: "kuncir", style: "ponytail" }, { code: "R9", name: "keriting", style: "curly" },
+    { code: "R10", name: "botak pinggir", style: "bald-ring" }, { code: "R11", name: "botak", style: "bald" },
+  ],
+  hat: [
+    { code: "K1", name: "tanpa", kind: "none" }, { code: "K2", name: "helm", kind: "helmet" }, { code: "K3", name: "helm cetok", kind: "half-helmet" },
+    { code: "K4", name: "peci", kind: "peci" }, { code: "K5", name: "kerudung", kind: "kerudung" }, { code: "K6", name: "topi", kind: "cap" }, { code: "K7", name: "ikat kepala", kind: "headband" },
+  ],
+  top: [
+    { code: "A1", name: "kaos", kind: "tee" }, { code: "A2", name: "kemeja", kind: "shirt" }, { code: "A3", name: "jaket", kind: "jacket" },
+    { code: "A4", name: "hoodie", kind: "hoodie" }, { code: "A5", name: "koko", kind: "koko" }, { code: "A6", name: "blus / kebaya", kind: "blouse" },
+  ],
+  extras: [
+    { name: "dasi", field: "top.tie" }, { name: "rompi", field: "top.vest" }, { name: "celemek", field: "top.apron" }, { name: "tali ID", field: "top.lanyard" },
+    { name: "garis reflektor", field: "top.band" }, { name: "kerah", field: "top.collar" }, { name: "resleting / list depan", field: "top.accent" },
+    { name: "lengan pendek", field: "top.short", flag: true }, { name: "ransel", field: "bag" }, { name: "handuk di bahu", field: "towel" },
+  ],
+  bottom: [
+    { code: "C1", name: "celana panjang", kind: "long" }, { code: "C2", name: "celana pendek", kind: "shorts" }, { code: "C3", name: "rok", kind: "skirt" }, { code: "C4", name: "rok panjang / sarung", kind: "long-skirt" },
+  ],
+  feet: [{ code: "D1", name: "sandal", kind: "sandal" }, { code: "D2", name: "sepatu", kind: "shoe" }, { code: "D3", name: "nyeker", kind: "bare" }],
+  face: [
+    { code: "F1", name: "kacamata", face: { glasses: true } }, { code: "F2", name: "kumis", face: { mustache: true } }, { code: "F3", name: "jenggot", face: { beard: true } },
+    { code: "F4", name: "bulu mata + pipi", face: { lashes: true, blush: true } }, { code: "F5", name: "alis tebal", face: { brows: "bushy" } },
+    { code: "F6", name: "alis tipis", face: { brows: "thin" } }, { code: "F7", name: "keriput", face: { old: true } },
+  ],
+  build: [
+    { code: "B1", name: "bocil", build: { s: 0.6 } }, { code: "B2", name: "remaja", build: { s: 0.9 } }, { code: "B3", name: "sedang", build: { s: 1 } },
+    { code: "B4", name: "tinggi", build: { s: 1.08 } }, { code: "B5", name: "gendut", build: { wide: 1.35 } },
+  ],
+  skin: [
+    { code: "S1", name: "terang", hex: "#f0c8a0" }, { code: "S2", name: "kuning langsat", hex: "#e3b085" }, { code: "S3", name: "sawo", hex: "#d39a66" },
+    { code: "S4", name: "sawo matang", hex: "#b97a4c" }, { code: "S5", name: "gelap", hex: "#8f5a36" },
+  ],
+  colors: [
+    { code: "W1", name: "merah", hex: "#d63b30" }, { code: "W2", name: "oranye", hex: "#f07c2a" }, { code: "W3", name: "kuning", hex: "#f2c94c" },
+    { code: "W4", name: "hijau", hex: "#3fa45b" }, { code: "W5", name: "tosca", hex: "#2e9a8e" }, { code: "W6", name: "biru muda", hex: "#9cc3e6" },
+    { code: "W7", name: "biru", hex: "#2f6fd0" }, { code: "W8", name: "dongker", hex: "#2c3e63" }, { code: "W9", name: "ungu", hex: "#7a4fa3" },
+    { code: "W10", name: "pink", hex: "#e94b6a" }, { code: "W11", name: "marun", hex: "#8e2a32" }, { code: "W12", name: "cokelat", hex: "#8a5a3a" },
+    { code: "W13", name: "krem", hex: "#efe2c4" }, { code: "W14", name: "putih", hex: "#f6f5f0" }, { code: "W15", name: "abu", hex: "#7d8086" }, { code: "W16", name: "hitam", hex: "#26272c" },
+  ],
+} as const;
+
+export const tokohCode = (preset: string) => `T${Object.keys(CAST).indexOf(preset) + 1}`;
+export const presetOfCode = (code: string) => Object.keys(CAST)[parseInt(code.replace(/^T/i, ""), 10) - 1];
+
+export const menuText = () => [
+  "KARTU TOKOH codes (buyer says a code or a word → write the field in the cast entry's \"look\"):",
+  "  T1…T" + Object.keys(CAST).length + " tokoh siap pakai = preset: " + Object.keys(CAST).map((k) => `${tokohCode(k)} ${k}`).join(", "),
+  "  rambut → hair.style (+ hair.color): " + MENU.hair.map((h) => `${h.code} ${h.name}="${h.style}"`).join(", "),
+  "  penutup kepala → hat.kind (+ hat.color, hat.color2 = stripe/band): " + MENU.hat.map((h) => `${h.code} ${h.name}="${h.kind}"`).join(", "),
+  "  atasan → top.kind (+ top.color): " + MENU.top.map((h) => `${h.code} ${h.name}="${h.kind}"`).join(", "),
+  "  tambahan → colour fields: " + MENU.extras.map((e) => `${e.name}=${e.field}${"flag" in e ? " (true)" : ""}`).join(", "),
+  "  bawahan → bottom.kind (+ bottom.color): " + MENU.bottom.map((h) => `${h.code} ${h.name}="${h.kind}"`).join(", "),
+  "  alas kaki → feet.kind (+ feet.color): " + MENU.feet.map((h) => `${h.code} ${h.name}="${h.kind}"`).join(", "),
+  "  wajah → face: " + MENU.face.map((f) => `${f.code} ${f.name}=${JSON.stringify(f.face)}`).join(", "),
+  "  badan → build: " + MENU.build.map((b) => `${b.code} ${b.name}=${JSON.stringify(b.build)}`).join(", "),
+  "  kulit → skin: " + MENU.skin.map((c) => `${c.code} ${c.name} ${c.hex}`).join(", "),
+  "  warna → any colour field: " + MENU.colors.map((c) => `${c.code} ${c.name} ${c.hex}`).join(", "),
+  "  A colour the buyer names that is not on the card: pick a flat hex close to it (no neon, no gradients).",
+].join("\n");
+
+// ------------------------------------------------------------------ look validation
+const HEX = /^#[0-9a-fA-F]{6}$/;
+const SETS = {
+  hair: MENU.hair.map((h) => h.style) as string[], hat: MENU.hat.map((h) => h.kind) as string[], top: MENU.top.map((h) => h.kind) as string[],
+  bottom: MENU.bottom.map((h) => h.kind) as string[], feet: MENU.feet.map((h) => h.kind) as string[],
+};
+const RANGE: Record<string, [number, number]> = { s: [0.5, 1.15], wide: [0.85, 1.5], head: [0.85, 1.3] };
+/** Problems with a final look, in plain words (empty = fine). */
+export const lookProblems = (look: Record<string, unknown>): string[] => {
+  const p: string[] = [];
+  const known = ["name", "build", "skin", "hair", "hat", "top", "bottom", "feet", "face", "bag", "towel"];
+  for (const k of Object.keys(look)) if (!known.includes(k)) p.push(`unknown look field "${k}" (have: ${known.filter((x) => x !== "name").join(", ")})`);
+  const hex = (v: unknown, where: string) => { if (typeof v !== "string" || !HEX.test(v)) p.push(`${where} must be a colour like "#2f6fd0" (got ${JSON.stringify(v)})`); };
+  hex(look.skin, "skin");
+  const part = (k: "top" | "bottom" | "feet", extra: Record<string, "hex" | "bool"> = {}) => {
+    const v = look[k] as Record<string, unknown> | undefined;
+    if (!isObj(v)) { p.push(`${k} missing (needs { "kind", "color" })`); return; }
+    if (!SETS[k].includes(String(v.kind))) p.push(`${k}.kind "${v.kind}" unknown (have: ${SETS[k].join(", ")})`);
+    hex(v.color, `${k}.color`);
+    for (const [f, val] of Object.entries(v)) {
+      if (f === "kind" || f === "color") continue;
+      if (!extra[f]) p.push(`unknown ${k} field "${f}" (have: kind, color${Object.keys(extra).length ? ", " + Object.keys(extra).join(", ") : ""})`);
+      else if (extra[f] === "bool") { if (typeof val !== "boolean") p.push(`${k}.${f} must be true or false`); }
+      else hex(val, `${k}.${f}`);
+    }
+  };
+  part("top", { accent: "hex", collar: "hex", tie: "hex", vest: "hex", apron: "hex", lanyard: "hex", band: "hex", short: "bool" });
+  part("bottom");
+  part("feet");
+  const h = look.hair as Record<string, unknown> | undefined;
+  if (h !== undefined) {
+    if (!isObj(h)) p.push(`hair must be { "color": "#…", "style": … }`);
+    else { if (!SETS.hair.includes(String(h.style))) p.push(`hair.style "${h.style}" unknown (have: ${SETS.hair.join(", ")})`); hex(h.color, "hair.color"); }
+  }
+  const t = look.hat as Record<string, unknown> | undefined;
+  if (t !== undefined) {
+    if (!isObj(t)) p.push(`hat must be { "kind": … }`);
+    else {
+      if (!SETS.hat.includes(String(t.kind))) p.push(`hat.kind "${t.kind}" unknown (have: ${SETS.hat.join(", ")})`);
+      if (t.color !== undefined) hex(t.color, "hat.color");
+      if (t.color2 !== undefined) hex(t.color2, "hat.color2");
+    }
+  }
+  const f = look.face as Record<string, unknown> | undefined;
+  if (f !== undefined) {
+    if (!isObj(f)) p.push(`face must be an object`);
+    else for (const [k, v] of Object.entries(f)) {
+      if (k === "brows") { if (!["thin", "thick", "bushy"].includes(String(v))) p.push(`face.brows "${v}" unknown (have: thin, thick, bushy)`); }
+      else if (k === "pupil") hex(v, "face.pupil");
+      else if (["mustache", "beard", "glasses", "lashes", "blush", "old"].includes(k)) { if (typeof v !== "boolean") p.push(`face.${k} must be true or false`); }
+      else p.push(`unknown face field "${k}" (have: brows, mustache, beard, glasses, lashes, blush, old)`);
+    }
+  }
+  const b = look.build as Record<string, unknown> | undefined;
+  if (b !== undefined) {
+    if (!isObj(b)) p.push(`build must be an object`);
+    else for (const [k, v] of Object.entries(b)) {
+      const r = RANGE[k];
+      if (!r) p.push(`unknown build field "${k}" (have: s, wide, head)`);
+      else if (typeof v !== "number" || v < r[0] || v > r[1]) p.push(`build.${k} must be a number ${r[0]}–${r[1]} (got ${JSON.stringify(v)})`);
+    }
+  }
+  if (look.bag !== undefined) hex(look.bag, "bag");
+  if (look.towel !== undefined) hex(look.towel, "towel");
+  return p;
+};
+/** Preset + overrides → final look. */
+export const resolveLook = (preset: string, over?: Record<string, unknown>): Look => {
+  const base = CAST[preset];
+  if (!base) throw new Error(`cast preset "${preset}" does not exist (have: ${Object.keys(CAST).join(", ")})`);
+  return (over ? deep(base.look as unknown as Record<string, unknown>, over) : base.look) as unknown as Look;
+};
+
+/** Background people: rotate presets with colour variations (never the same as the story's own colours). */
+const EXTRA_PRESETS = ["mas", "mbak", "ibu", "bapak", "bocil", "pegawai", "kakek", "murid"];
+const EXTRA_TOPS = ["#e2563d", "#3fa45b", "#2f6fd0", "#f2c94c", "#7a4fa3", "#2e9a8e", "#e94b6a", "#8a5a3a"];
+const EXTRA_SKIN = ["#d39a66", "#e3b085", "#b97a4c", "#c98c5c", "#8f5a36"];
+export const extraLook = (i: number, presets = EXTRA_PRESETS): Look => {
+  const p = presets[i % presets.length];
+  return resolveLook(p, { top: { color: EXTRA_TOPS[(i * 3 + 1) % EXTRA_TOPS.length] }, skin: EXTRA_SKIN[(i * 2 + 1) % EXTRA_SKIN.length] });
+};
+
+==== 17161 project/src/tipikal/Overlay.tsx
+// TIPIKAL label system — our own designs, flat colours, hard ink shadows (no glow, no gradient, no blur), themed per set:
+//   jalan     green road-guide sign + red speed-limit number disc
+//   kelas     chalkboard header + notebook-paper card with a red circled "grade" number
+//   kantor    navy ID-badge header + white file card with a navy number tab
+//   kondangan maroon wedding banner with a gold double border + cream card with a gold disc
+//   rumah     wooden house sign + cream card with an orange disc
+//   warung    red shop banner with a scalloped awning edge + white card with a red disc
+// Header (persistent), TypeCard (slams in per type), Sticker (? ! pops), Bubble, Sfx (comic lettering), Tag (HUD pill),
+// Stamp (rubber-stamp word), Outro card. Laid out on a 1080 × 1920 (or 1920 × 1080) frame and scaled.
+import React from "react";
+import { backOut, clamp01, easeIn } from "../kits/tipikal/math.ts";
+import { F_ROUND, F_SIGN } from "../kits/tipikal/fonts.ts";
+import type { LabelTheme } from "./types.ts";
+import { popFit, type PopFit } from "./textfit.ts";
+
+const INK = "#1b1512";
+type Theme = { hBg: string; hFg: string; hBorder: string; hInner?: string; cardBg: string; cardFg: string; numBg: string; numRing: string; numFg: string; accent: string; picto: string; numShape: "disc" | "tab" | "grade" };
+export const THEMES: Record<LabelTheme, Theme> = {
+  jalan: { hBg: "#0f7a47", hFg: "#ffffff", hBorder: INK, hInner: "#ffffff", cardBg: "#fffdf4", cardFg: INK, numBg: "#ffffff", numRing: "#d63b30", numFg: INK, accent: "#d63b30", picto: "motor", numShape: "disc" },
+  kelas: { hBg: "#2f5a45", hFg: "#f4f2e8", hBorder: "#8a5a3a", cardBg: "#fbfbf6", cardFg: "#1f2a44", numBg: "#ffffff", numRing: "#d63b30", numFg: "#d63b30", accent: "#d63b30", picto: "buku", numShape: "grade" },
+  kantor: { hBg: "#2c3e63", hFg: "#ffffff", hBorder: INK, hInner: "#9cc3e6", cardBg: "#ffffff", cardFg: "#1f2a44", numBg: "#2c3e63", numRing: "#2c3e63", numFg: "#ffffff", accent: "#2f6fd0", picto: "tas", numShape: "tab" },
+  kondangan: { hBg: "#8e2a32", hFg: "#fbf3df", hBorder: INK, hInner: "#e2b54a", cardBg: "#f6f1e2", cardFg: "#4a1d22", numBg: "#e2b54a", numRing: "#8e2a32", numFg: "#4a1d22", accent: "#b8323a", picto: "cincin", numShape: "disc" },
+  rumah: { hBg: "#9a6a3f", hFg: "#fbf3df", hBorder: INK, hInner: "#f2d27a", cardBg: "#fbf4e4", cardFg: INK, numBg: "#f07c2a", numRing: INK, numFg: "#ffffff", accent: "#d9531e", picto: "rumah", numShape: "disc" },
+  warung: { hBg: "#c8352e", hFg: "#ffffff", hBorder: INK, hInner: "#ffffff", cardBg: "#ffffff", cardFg: INK, numBg: "#f2c230", numRing: "#c8352e", numFg: INK, accent: "#c8352e", picto: "toko", numShape: "disc" },
+};
+
+const Picto: React.FC<{ kind: string; size: number; color: string }> = ({ kind, size, color }) => {
+  const s = { width: size, height: size * 0.8 };
+  if (kind === "motor") return (
+    <svg {...s} viewBox="0 0 100 80"><circle cx="22" cy="62" r="13" fill="none" stroke={color} strokeWidth="7" /><circle cx="80" cy="62" r="13" fill="none" stroke={color} strokeWidth="7" />
+      <path d="M10 54 L16 40 L48 40 L54 52 L66 52 L72 20 L82 20 L84 26 L77 28 L72 52 L84 50 L90 58 L60 60 L24 50 Z" fill={color} /><circle cx="44" cy="12" r="8" fill={color} /><path d="M38 22 L52 22 L60 44 L52 46 L46 32 L36 40 L30 36 Z" fill={color} /></svg>
+  );
+  if (kind === "buku") return (
+    <svg {...s} viewBox="0 0 100 80"><path d="M8 14 Q30 6 50 16 Q70 6 92 14 L92 70 Q70 62 50 72 Q30 62 8 70 Z" fill="none" stroke={color} strokeWidth="7" strokeLinejoin="round" /><path d="M50 16 L50 72" stroke={color} strokeWidth="6" />
+      <path d="M62 52 L84 22 L90 27 L68 57 L60 60 Z" fill={color} /></svg>
+  );
+  if (kind === "tas") return (
+    <svg {...s} viewBox="0 0 100 80"><rect x="8" y="22" width="84" height="52" rx="8" fill="none" stroke={color} strokeWidth="7" /><path d="M34 22 L34 12 L66 12 L66 22" fill="none" stroke={color} strokeWidth="7" /><path d="M8 44 L92 44" stroke={color} strokeWidth="6" /><rect x="44" y="38" width="12" height="12" fill={color} /></svg>
+  );
+  if (kind === "cincin") return (
+    <svg {...s} viewBox="0 0 100 80"><circle cx="38" cy="48" r="22" fill="none" stroke={color} strokeWidth="7" /><circle cx="62" cy="48" r="22" fill="none" stroke={color} strokeWidth="7" /><path d="M50 4 L58 14 L50 22 L42 14 Z" fill={color} /></svg>
+  );
+  if (kind === "rumah") return (
+    <svg {...s} viewBox="0 0 100 80"><path d="M10 40 L50 8 L90 40" fill="none" stroke={color} strokeWidth="8" strokeLinejoin="round" /><path d="M20 36 L20 74 L80 74 L80 36" fill="none" stroke={color} strokeWidth="7" /><rect x="42" y="50" width="16" height="24" fill={color} /></svg>
+  );
+  return (
+    <svg {...s} viewBox="0 0 100 80"><path d="M6 30 L14 8 L86 8 L94 30 Z" fill={color} /><path d="M14 30 L14 74 L86 74 L86 30" fill="none" stroke={color} strokeWidth="7" /><rect x="26" y="44" width="20" height="30" fill={color} /><rect x="56" y="42" width="20" height="16" fill="none" stroke={color} strokeWidth="5" /></svg>
+  );
+};
+
+/** Render "*word*" spans in the theme's accent colour. */
+const rich = (s: string, accent: string) => s.split(/(\*[^*]+\*)/g).map((p, i) => (p.startsWith("*") ? <span key={i} style={{ color: accent }}>{p.slice(1, -1)}</span> : <span key={i}>{p}</span>));
+
+export type Layout = { w: number; h: number; wide: boolean };
+const headerTop = (L: Layout) => (L.wide ? 34 : 168);
+const cardTop = (L: Layout) => (L.wide ? 150 : 318);
+
+/** Header card (drops in over the first ~0.4 s, then stays). */
+export const Header: React.FC<{ t: number; small: string; big: string; theme: LabelTheme; L: Layout }> = ({ t, small, big, theme, L }) => {
+  const T = THEMES[theme];
+  const k = backOut(t / 0.42, 1.4);
+  const text = `${small ? small + " " : ""}${big}`;
+  const maxW = L.wide ? 1300 : 840;
+  const size = Math.round(Math.min(70, maxW / Math.max(6, text.length * 0.47)));
+  const sign = theme === "jalan" || theme === "kantor" || theme === "warung";
+  return (
+    <div style={{ position: "absolute", left: 0, right: 0, top: headerTop(L), display: "flex", justifyContent: "center", transform: `translateY(${-300 * (1 - k)}px)` }}>
+      <div style={{ position: "relative", background: T.hBg, borderRadius: theme === "kelas" ? 10 : 20, padding: theme === "kelas" ? 12 : 8, boxShadow: `0 7px 0 ${INK}`, border: `${theme === "kelas" ? 12 : 5}px solid ${T.hBorder}` }}>
+        {theme === "warung" ? (
+          <div style={{ position: "absolute", left: -5, right: -5, top: -26, height: 26, display: "flex", overflow: "hidden", borderRadius: "10px 10px 0 0", border: `5px solid ${INK}`, borderBottom: "none" }}>
+            {Array.from({ length: 14 }, (_, i) => <div key={i} style={{ flex: 1, background: i % 2 ? "#ffffff" : "#c8352e" }} />)}
+          </div>
+        ) : null}
+        {theme === "kantor" ? <div style={{ position: "absolute", left: "50%", top: -34, width: 70, height: 30, marginLeft: -35, background: "#9cc3e6", border: `5px solid ${INK}`, borderRadius: "8px 8px 0 0" }} /> : null}
+        <div style={{ border: T.hInner && sign ? `5px solid ${T.hInner}` : theme === "kondangan" ? `4px double ${T.hInner}` : theme === "rumah" ? `4px dashed ${T.hInner}` : "none", borderRadius: 13, padding: theme === "kondangan" ? "10px 30px 8px 22px" : "8px 30px 6px 20px", display: "flex", alignItems: "center", gap: 18 }}>
+          <Picto kind={T.picto} size={Math.round(size * 1.2)} color={T.hFg} />
+          <div style={{ color: T.hFg, fontFamily: theme === "kelas" || theme === "kondangan" || theme === "rumah" ? F_ROUND : F_SIGN, fontWeight: 800, lineHeight: 1, fontSize: theme === "kelas" || theme === "kondangan" || theme === "rumah" ? size * 0.92 : size, letterSpacing: sign ? 1.5 : 0.5, whiteSpace: "nowrap", paddingTop: 4 }}>
+            {text}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+/** Type card: enters at s = 0 (slide + settle ~0.3 s), leaves over the last 0.18 s before `dur`. */
+export const TypeCard: React.FC<{ s: number; dur: number; n: number; text: string; theme: LabelTheme; L: Layout }> = ({ s, dur, n, text, theme, L }) => {
+  if (s < 0 || s > dur) return null;
+  const T = THEMES[theme];
+  const kin = backOut(s / 0.3, 1.7), kout = easeIn((s - (dur - 0.18)) / 0.18);
+  const x = -1250 * (1 - kin) + 1250 * kout;
+  const rot = -4 * (1 - clamp01(s / 0.3)) + 2 * kout;
+  const pop = backOut((s - 0.12) / 0.26, 2.2);
+  const W = L.wide ? 1180 : 900;
+  const fs = text.replace(/\*/g, "").length > 34 ? 56 : 62;
+  const lined = theme === "kelas";
+  return (
+    <div style={{ position: "absolute", left: 0, right: 0, top: cardTop(L), display: "flex", justifyContent: "center", transform: `translateX(${x}px) rotate(${rot}deg)` }}>
+      <div style={{ position: "relative", width: W, paddingLeft: 92 }}>
+        <div style={{
+          background: T.cardBg, overflow: "hidden",
+          border: `6px solid ${INK}`, borderRadius: theme === "kantor" ? 14 : 28, boxShadow: `10px 10px 0 ${INK}`,
+          padding: "18px 30px 14px 100px", fontFamily: F_ROUND, fontWeight: 800, fontSize: fs, lineHeight: 1.0, color: T.cardFg, letterSpacing: -0.5, position: "relative",
+          outline: theme === "kondangan" ? `4px solid ${T.numBg}` : undefined, outlineOffset: theme === "kondangan" ? -14 : undefined,
+        }}>
+          {lined ? Array.from({ length: 6 }, (_, i) => <div key={i} style={{ position: "absolute", left: 0, right: 0, top: 14 + i * 43, height: 3, background: "#b9d6ee" }} />) : null}
+          {lined ? <div style={{ position: "absolute", left: 82, top: 0, bottom: 0, width: 4, background: "#e2563d" }} /> : null}
+          {lined ? <span style={{ position: "relative" }}>{rich(text, T.accent)}</span> : null}
+          {lined ? null : rich(text, T.accent)}
+        </div>
+        {T.numShape === "tab" ? (
+          <div style={{ position: "absolute", left: 20, top: "50%", width: 130, height: 150, marginTop: -75, background: T.numBg, border: `6px solid ${INK}`, borderRadius: 18, boxSizing: "border-box", display: "flex", alignItems: "center", justifyContent: "center", transform: `scale(${pop})`, fontFamily: F_SIGN, fontWeight: 800, fontSize: 90, color: T.numFg, paddingTop: 6 }}>{n}</div>
+        ) : T.numShape === "grade" ? (
+          <div style={{ position: "absolute", left: 4, top: "50%", width: 156, height: 150, marginTop: -75, display: "flex", alignItems: "center", justifyContent: "center", transform: `scale(${pop}) rotate(-8deg)` }}>
+            <svg width="156" height="150" viewBox="0 0 156 150" style={{ position: "absolute", left: 0, top: 0 }}><ellipse cx="78" cy="75" rx="66" ry="60" fill="#ffffff" stroke={INK} strokeWidth="6" /><ellipse cx="78" cy="75" rx="56" ry="50" fill="none" stroke={T.numRing} strokeWidth="9" /></svg>
+            <span style={{ position: "relative", fontFamily: F_ROUND, fontWeight: 800, fontSize: 92, color: T.numFg, lineHeight: 1, paddingTop: 8 }}>{n}</span>
+          </div>
+        ) : (
+          <div style={{ position: "absolute", left: 0, top: "50%", width: 160, height: 160, marginTop: -80, borderRadius: "50%", background: T.numBg, border: `19px solid ${T.numRing}`, outline: `6px solid ${INK}`, boxSizing: "border-box", display: "flex", alignItems: "center", justifyContent: "center", transform: `scale(${pop})`, fontFamily: F_SIGN, fontWeight: 800, fontSize: 86, color: T.numFg, lineHeight: 1, paddingTop: 6 }}>{n}</div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+/** Closing card ("Kamu tipe yang mana?") — slams in, holds. */
+export const OutroCard: React.FC<{ s: number; text: string; theme: LabelTheme; L: Layout }> = ({ s, text, theme, L }) => {
+  if (s < 0) return null;
+  const T = THEMES[theme];
+  const k = backOut(s / 0.34, 1.9);
+  return (
+    <div style={{ position: "absolute", left: 0, right: 0, top: L.wide ? 790 : 1390, display: "flex", justifyContent: "center", transform: `scale(${k}) rotate(${-3 * (1 - clamp01(s / 0.34))}deg)` }}>
+      <div style={{ background: T.hBg, color: T.hFg, border: `7px solid ${INK}`, borderRadius: 26, boxShadow: `10px 10px 0 ${INK}`, padding: "20px 44px 14px", fontFamily: F_ROUND, fontWeight: 800, fontSize: text.length > 24 ? 60 : 72, lineHeight: 1.0, textAlign: "center", whiteSpace: text.length > 30 ? "normal" : "nowrap", maxWidth: L.wide ? 1300 : 960 }}>
+        {text}
+      </div>
+    </div>
+  );
+};
+
+/** "?" / "!" sticker that pops at s = 0 and gently rocks; (x, y) = the point it hangs from. */
+/** Round sticker; a text wider than the badge (e.g. "100.000") makes it a pill, and the type shrinks only if needed. */
+export const Sticker: React.FC<{ s: number; x: number; y: number; text: string; fill?: string; size?: number; fit?: PopFit }> = ({ s, x, y, text, fill = "#ffffff", size = 132, fit }) => {
+  if (s < 0) return null;
+  const k = backOut(s / 0.24, 2.4);
+  const rock = Math.sin(s * 2 * Math.PI * 0.9) * (fit?.pill ? 3 : 5) * clamp01(s / 0.3);
+  const F = fit ?? popFit("sticker", text);
+  const fs = F.fs, w = F.pill ? F.w : size;
+  return (
+    <div style={{ position: "absolute", left: x - w / 2, top: y - size, width: w, height: size, transform: `scale(${k}) rotate(${rock}deg)`, transformOrigin: "50% 100%" }}>
+      <div style={{ width: "100%", height: "100%", borderRadius: size / 2, whiteSpace: "nowrap", background: fill, border: `7px solid ${INK}`, boxSizing: "border-box", boxShadow: `6px 6px 0 ${INK}`, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: F_ROUND, fontWeight: 800, fontSize: fs, color: text === "♥" ? "#e94b6a" : INK, lineHeight: 1, paddingTop: size * 0.08 }}>
+        {text}
+      </div>
+    </div>
+  );
+};
+/** Speech bubble with a tail toward (x, y). */
+export const Bubble: React.FC<{ s: number; x: number; y: number; text: string; side?: 1 | -1; size?: number; fit?: PopFit }> = ({ s, x, y, text, side = 1, fit }) => {
+  if (s < 0) return null;
+  const k = backOut(s / 0.24, 2);
+  return (
+    <div style={{ position: "absolute", left: x, top: y, transform: `translate(${side > 0 ? "-12%" : "-88%"}, -100%) scale(${k})`, transformOrigin: side > 0 ? "12% 100%" : "88% 100%" }}>
+      <div style={{ position: "relative", marginBottom: 34 }}>
+        <div style={{ background: "#ffffff", border: `7px solid ${INK}`, borderRadius: 40, padding: "10px 32px 6px", fontFamily: F_ROUND, fontWeight: 800, fontSize: (fit ?? popFit("bubble", text)).fs, color: INK, whiteSpace: "nowrap", boxShadow: `6px 6px 0 ${INK}` }}>{text}</div>
+        <svg width="70" height="48" viewBox="0 0 70 48" style={{ position: "absolute", bottom: -40, left: side > 0 ? 34 : undefined, right: side < 0 ? 34 : undefined, transform: side < 0 ? "scaleX(-1)" : undefined }}>
+          <path d="M6 0 L48 0 L8 44 Z" fill="#ffffff" stroke={INK} strokeWidth="7" strokeLinejoin="round" />
+          <rect x="9" y="0" width="36" height="8" fill="#ffffff" />
+        </svg>
+      </div>
+    </div>
+  );
+};
+/** Comic lettering (CIIIT!, TIIIN!) — slams in, holds, fades out over the last 0.15 s of `dur`. */
+export const Sfx: React.FC<{ s: number; dur: number; x: number; y: number; text: string; color?: string; rot?: number; fit?: PopFit }> = ({ s, dur, x, y, text, color = "#ffd23a", rot = -8, fit }) => {
+  if (s < 0 || s > dur) return null;
+  const size = (fit ?? popFit("sfx", text)).fs;
+  const k = backOut(s / 0.2, 2.2);
+  const o = 1 - clamp01((s - (dur - 0.15)) / 0.15);
+  return (
+    <div style={{ position: "absolute", left: x, top: y, transform: `translate(-50%, -50%) rotate(${rot}deg) scale(${k})`, opacity: o }}>
+      <span style={{ fontFamily: F_ROUND, fontWeight: 800, fontSize: size, color, WebkitTextStroke: `${Math.round(size * 0.1)}px ${INK}`, paintOrder: "stroke fill", letterSpacing: 2, whiteSpace: "nowrap", textShadow: `7px 7px 0 ${INK}` }}>{text}</span>
+    </div>
+  );
+};
+/** HUD pill tag (e.g. "SANDAL −1"). */
+export const Tag: React.FC<{ s: number; x: number; y: number; text: string; bg?: string; fit?: PopFit }> = ({ s, x, y, text, bg = "#d63b30", fit }) => {
+  if (s < 0) return null;
+  const k = backOut(s / 0.22, 2);
+  return (
+    <div style={{ position: "absolute", left: x, top: y, transform: `translate(-50%, -50%) scale(${k})` }}>
+      <div style={{ background: bg, color: "#ffffff", border: `6px solid ${INK}`, borderRadius: 999, padding: "6px 30px 2px", fontFamily: F_ROUND, fontWeight: 800, fontSize: (fit ?? popFit("tag", text)).fs, whiteSpace: "nowrap", boxShadow: `6px 6px 0 ${INK}` }}>{text}</div>
+    </div>
+  );
+};
+/** Rubber-stamp word over the punchline ("NGEYEL", "SULTAN"). */
+export const Stamp: React.FC<{ s: number; x: number; y: number; text: string; color?: string; fit?: PopFit }> = ({ s, x, y, text, color = "#d63b30", fit }) => {
+  if (s < 0) return null;
+  const k = 1 + 0.6 * (1 - clamp01(s / 0.16));
+  return (
+    <div style={{ position: "absolute", left: x, top: y, transform: `translate(-50%, -50%) rotate(-12deg) scale(${k})`, opacity: clamp01(s / 0.08) }}>
+      <div style={{ border: `9px solid ${color}`, outline: `4px solid ${color}`, outlineOffset: 5, borderRadius: 14, padding: "4px 28px 0", fontFamily: F_SIGN, fontWeight: 800, fontSize: (fit ?? popFit("stamp", text)).fs, color, letterSpacing: 4, whiteSpace: "nowrap", background: "#ffffffdd" }}>{text}</div>
+    </div>
+  );
+};
+
+==== 16310 project/src/tipikal/props/lib.ts
+// TIPIKAL prop library — every object is plain data: a list of simple parts (box, cyl, cone, sphere, torus, lathe)
+// with a material and a flat colour. Prop.tsx builds the meshes (cel-shaded with an ink outline, like the people);
+// the director reads sizes (cameras) and the hold spec (hands). Authors add objects in stories/<id>/props.json with
+// the same format. Units: metres. A part's `pos` is its BOTTOM centre (sphere / torus: centre). No brands, no logos.
+//
+// hold: how a hand carries it
+//   hand "R" | "L" | "both";  mode "hand" = follows the hand (phone, book, fan, broom: prop +y along the fingers,
+//   +z out of the palm), "upright" = stays upright (cup, plate, box, jug); at = the prop point that sits on the palm
+//   (for "both": the point between the two palms).
+
+export type V3 = [number, number, number];
+export type Mat = "toon" | "flat" | "shiny" | "screen";
+export type Part =
+  | { shape: "box"; size: V3; pos?: V3; rot?: V3; color: string; mat?: Mat; round?: number }
+  | { shape: "cyl"; r: number; r2?: number; h: number; pos?: V3; rot?: V3; color: string; mat?: Mat; seg?: number }
+  | { shape: "cone"; r: number; h: number; pos?: V3; rot?: V3; color: string; mat?: Mat; seg?: number }
+  | { shape: "sphere"; r: number; pos?: V3; scale?: V3; color: string; mat?: Mat }
+  | { shape: "torus"; r: number; tube: number; pos?: V3; rot?: V3; color: string; mat?: Mat; arc?: number }
+  | { shape: "lathe"; profile: [number, number][]; pos?: V3; rot?: V3; color: string; mat?: Mat };
+
+export type Hold = { hand: "R" | "L" | "both"; mode: "hand" | "upright"; at: V3; /** "hand" mode: turn the prop (degrees, x y z) from how it rests to how the hand holds it */ rot?: V3 };
+export type PropDef = {
+  about: string;
+  parts: Part[];
+  /** bounding size (w, h, d) — cameras frame it, occluders use it */
+  size: V3;
+  hold?: Hold;
+  /** no ink outline (thin / flat things) */
+  noInk?: boolean;
+};
+
+const P = (x: number, y: number, z: number): V3 => [x, y, z];
+
+export const PROPS: Record<string, PropDef> = {
+  // ---------------------------------------------------------------- in the hand
+  hp: { about: "HP (smartphone)", size: P(0.075, 0.15, 0.01), hold: { hand: "R", mode: "hand", at: P(0, 0.06, -0.005) },
+    parts: [{ shape: "box", size: P(0.072, 0.148, 0.009), pos: P(0, 0, 0), color: "#24262c", round: 0.12 }, { shape: "box", size: P(0.062, 0.13, 0.002), pos: P(0, 0.009, 0.0045), color: "#7cc6ee", mat: "screen" }] },
+  piring: { about: "piring nasi (plate of rice with a fried egg)", size: P(0.24, 0.07, 0.24), hold: { hand: "L", mode: "upright", at: P(0, 0, 0) },
+    parts: [{ shape: "cyl", r: 0.12, r2: 0.09, h: 0.022, color: "#f4f3ee" }, { shape: "sphere", r: 0.07, pos: P(-0.02, 0.022, 0), scale: P(1, 0.55, 1), color: "#fbfaf4" }, { shape: "cyl", r: 0.04, h: 0.01, pos: P(0.05, 0.03, 0.02), color: "#ffffff" }, { shape: "cyl", r: 0.017, h: 0.012, pos: P(0.05, 0.034, 0.02), color: "#f2b630" }] },
+  sendok: { about: "sendok (spoon)", size: P(0.03, 0.15, 0.02), noInk: true, hold: { hand: "R", mode: "hand", at: P(0, 0.04, -0.006) },
+    parts: [{ shape: "box", size: P(0.012, 0.12, 0.004), color: "#c9cdd2", mat: "shiny" }, { shape: "sphere", r: 0.02, pos: P(0, 0.13, 0), scale: P(1, 1.3, 0.35), color: "#c9cdd2", mat: "shiny" }] },
+  gelas: { about: "gelas es teh (glass of iced tea)", size: P(0.08, 0.13, 0.08), hold: { hand: "R", mode: "upright", at: P(-0.04, 0.05, 0) },
+    parts: [{ shape: "cyl", r: 0.036, r2: 0.042, h: 0.12, color: "#d9ecf2" }, { shape: "cyl", r: 0.034, r2: 0.039, h: 0.09, pos: P(0, 0.006, 0), color: "#c46a2c" }, { shape: "cyl", r: 0.005, h: 0.08, pos: P(0.012, 0.09, 0), rot: [0, 0, -12], color: "#e94b6a" }] },
+  kopi: { about: "cangkir kopi (coffee cup)", size: P(0.1, 0.09, 0.08), hold: { hand: "R", mode: "upright", at: P(-0.06, 0.04, 0) },
+    parts: [{ shape: "cyl", r: 0.038, r2: 0.034, h: 0.08, color: "#f4f1e8" }, { shape: "cyl", r: 0.033, h: 0.005, pos: P(0, 0.074, 0), color: "#5a3a22" }, { shape: "torus", r: 0.022, tube: 0.007, pos: P(-0.045, 0.042, 0), rot: [90, 0, 0], color: "#f4f1e8" }] },
+  botol: { about: "botol minum (water bottle)", size: P(0.07, 0.24, 0.07), hold: { hand: "R", mode: "upright", at: P(-0.034, 0.1, 0) },
+    parts: [{ shape: "cyl", r: 0.032, h: 0.19, color: "#8fd0ee" }, { shape: "cyl", r: 0.02, h: 0.03, pos: P(0, 0.19, 0), color: "#8fd0ee" }, { shape: "cyl", r: 0.022, h: 0.025, pos: P(0, 0.215, 0), color: "#2f6fd0" }] },
+  "es-plastik": { about: "es teh plastik (iced tea in a tied plastic bag with a straw)", size: P(0.1, 0.22, 0.1), hold: { hand: "R", mode: "upright", at: P(0, 0.17, -0.02) },
+    parts: [{ shape: "sphere", r: 0.055, pos: P(0, 0.07, 0), scale: P(1, 1.25, 1), color: "#d98a3d" }, { shape: "cone", r: 0.03, h: 0.07, pos: P(0, 0.13, 0), color: "#e9dfcf" }, { shape: "cyl", r: 0.005, h: 0.12, pos: P(0.02, 0.1, 0), rot: [0, 0, -10], color: "#e94b6a" }] },
+  mangkok: { about: "mangkok bakso (bowl of meatball soup)", size: P(0.18, 0.09, 0.18), hold: { hand: "both", mode: "upright", at: P(0, 0.02, 0) },
+    parts: [{ shape: "lathe", profile: [[0, 0], [0.05, 0], [0.085, 0.05], [0.09, 0.08]], color: "#f4f3ee" }, { shape: "cyl", r: 0.082, h: 0.005, pos: P(0, 0.068, 0), color: "#c98a45" }, { shape: "sphere", r: 0.022, pos: P(0.02, 0.075, 0.01), color: "#8a5a3a" }, { shape: "sphere", r: 0.02, pos: P(-0.03, 0.075, -0.01), color: "#8a5a3a" }] },
+  buku: { about: "buku (open book / notebook)", size: P(0.3, 0.02, 0.22), hold: { hand: "both", mode: "upright", at: P(0, 0, -0.02) },
+    parts: [{ shape: "box", size: P(0.15, 0.012, 0.22), pos: P(0.075, 0, 0), rot: [0, 0, 6], color: "#f6f4ec" }, { shape: "box", size: P(0.15, 0.012, 0.22), pos: P(-0.075, 0, 0), rot: [0, 0, -6], color: "#f6f4ec" }, { shape: "box", size: P(0.31, 0.006, 0.23), pos: P(0, -0.006, 0), color: "#2f6fd0" }] },
+  kertas: { about: "kertas ujian (exam sheet)", size: P(0.21, 0.004, 0.3), noInk: true, hold: { hand: "R", mode: "hand", at: P(0, 0.004, -0.12), rot: [-90, 0, 0] },
+    parts: [{ shape: "box", size: P(0.21, 0.003, 0.297), color: "#fbfaf4" }, { shape: "box", size: P(0.15, 0.001, 0.01), pos: P(0, 0.003, 0.1), color: "#3a3d45" }, { shape: "box", size: P(0.12, 0.001, 0.01), pos: P(0, 0.003, 0.06), color: "#3a3d45" }, { shape: "box", size: P(0.16, 0.001, 0.01), pos: P(0, 0.003, 0.02), color: "#3a3d45" }] },
+  pensil: { about: "pensil (pencil)", size: P(0.012, 0.16, 0.012), noInk: true, hold: { hand: "R", mode: "hand", at: P(0, 0.05, 0) },
+    parts: [{ shape: "cyl", r: 0.005, h: 0.14, color: "#f2c230", seg: 6 }, { shape: "cone", r: 0.005, h: 0.02, pos: P(0, 0.14, 0), color: "#e7c9a0", seg: 6 }] },
+  tas: { about: "tas tangan (handbag)", size: P(0.28, 0.3, 0.12), hold: { hand: "R", mode: "upright", at: P(0, 0.29, 0) },
+    parts: [{ shape: "box", size: P(0.28, 0.2, 0.11), color: "#a3262e", round: 0.15 }, { shape: "torus", r: 0.07, tube: 0.01, pos: P(0, 0.2, 0), rot: [0, 0, 0], color: "#5a1d22", arc: 180 }] },
+  kresek: { about: "kantong kresek (plastic shopping bag with groceries)", size: P(0.3, 0.36, 0.2), hold: { hand: "R", mode: "upright", at: P(0, 0.35, 0) },
+    parts: [{ shape: "sphere", r: 0.14, pos: P(0, 0.14, 0), scale: P(1, 1, 0.7), color: "#f2efe6" }, { shape: "torus", r: 0.05, tube: 0.012, pos: P(0, 0.3, 0), color: "#f2efe6", arc: 180 }, { shape: "box", size: P(0.07, 0.1, 0.06), pos: P(0.04, 0.22, 0), color: "#3fa45b" }] },
+  payung: { about: "payung (umbrella, held over the head)", size: P(1.0, 1.0, 1.0), hold: { hand: "R", mode: "hand", at: P(0, 0.06, -0.012) },
+    parts: [{ shape: "cyl", r: 0.008, h: 0.78, color: "#2c2d31" }, { shape: "cone", r: 0.5, h: 0.22, pos: P(0, 0.62, 0), color: "#d63b30", seg: 8 }, { shape: "cyl", r: 0.018, h: 0.07, pos: P(0, 0, 0), color: "#7a4b2a" }] },
+  kado: { about: "kado (wrapped gift box with a ribbon)", size: P(0.28, 0.24, 0.24), hold: { hand: "both", mode: "upright", at: P(0, 0.12, 0) },
+    parts: [{ shape: "box", size: P(0.28, 0.2, 0.24), color: "#e94b6a" }, { shape: "box", size: P(0.04, 0.205, 0.245), color: "#f4d23e" }, { shape: "box", size: P(0.285, 0.205, 0.04), color: "#f4d23e" }, { shape: "torus", r: 0.035, tube: 0.012, pos: P(0, 0.215, 0), rot: [0, 0, 0], color: "#f4d23e" }] },
+  amplop: { about: "amplop (envelope)", size: P(0.18, 0.09, 0.006), noInk: true, hold: { hand: "R", mode: "hand", at: P(0, 0.02, 0) },
+    parts: [{ shape: "box", size: P(0.17, 0.09, 0.004), color: "#fbfaf4" }, { shape: "box", size: P(0.17, 0.02, 0.005), pos: P(0, 0.07, 0), color: "#e2dccb" }] },
+  kipas: { about: "kipas tangan (folding hand fan)", size: P(0.26, 0.2, 0.02), noInk: true, hold: { hand: "R", mode: "hand", at: P(0, 0.02, 0) },
+    parts: [{ shape: "cyl", r: 0.2, h: 0.006, rot: [90, 0, 0], color: "#d63b30", seg: 12 }, { shape: "cyl", r: 0.06, h: 0.007, rot: [90, 0, 0], color: "#f4d23e", seg: 12 }, { shape: "box", size: P(0.02, 0.09, 0.01), pos: P(0, -0.08, 0), color: "#7a4b2a" }] },
+  galon: { about: "galon (19-litre water jug), carried with both arms", size: P(0.28, 0.5, 0.28), hold: { hand: "both", mode: "upright", at: P(0, 0.24, -0.02) },
+    parts: [{ shape: "cyl", r: 0.135, h: 0.36, color: "#7fc3e8" }, { shape: "cyl", r: 0.135, r2: 0.05, h: 0.06, pos: P(0, 0.36, 0), color: "#7fc3e8" }, { shape: "cyl", r: 0.045, h: 0.05, pos: P(0, 0.42, 0), color: "#7fc3e8" }, { shape: "cyl", r: 0.05, h: 0.03, pos: P(0, 0.465, 0), color: "#2f6fd0" }, { shape: "torus", r: 0.137, tube: 0.006, pos: P(0, 0.12, 0), rot: [90, 0, 0], color: "#9fd3f0" }, { shape: "torus", r: 0.137, tube: 0.006, pos: P(0, 0.24, 0), rot: [90, 0, 0], color: "#9fd3f0" }] },
+  kardus: { about: "kardus (cardboard box), carried with both arms", size: P(0.4, 0.3, 0.3), hold: { hand: "both", mode: "upright", at: P(0, 0.12, -0.02) },
+    parts: [{ shape: "box", size: P(0.4, 0.3, 0.3), color: "#c9935a", round: 0.02 }, { shape: "box", size: P(0.06, 0.302, 0.302), color: "#dcb27c", round: 0.02 }] },
+  sapu: { about: "sapu (broom)", size: P(0.3, 1.2, 0.1), hold: { hand: "R", mode: "hand", at: P(0, 0.75, -0.015) },
+    parts: [{ shape: "cyl", r: 0.013, h: 1.05, color: "#9a6a3f" }, { shape: "cone", r: 0.13, h: 0.3, pos: P(0, -0.12, 0), rot: [180, 0, 0], color: "#d9be7c", seg: 10 }] },
+  helm: { about: "helm (helmet, carried)", size: P(0.3, 0.25, 0.32), hold: { hand: "R", mode: "upright", at: P(0, 0.22, 0) },
+    parts: [{ shape: "sphere", r: 0.15, pos: P(0, 0.06, 0), scale: P(1, 1.05, 1.08), color: "#2d6fd0" }, { shape: "box", size: P(0.2, 0.02, 0.1), pos: P(0, 0.07, 0.12), color: "#26272c" }] },
+  mic: { about: "mic (microphone)", size: P(0.05, 0.22, 0.05), hold: { hand: "R", mode: "hand", at: P(0, 0.05, -0.02) },
+    parts: [{ shape: "cyl", r: 0.016, r2: 0.022, h: 0.16, color: "#2a2b30" }, { shape: "sphere", r: 0.03, pos: P(0, 0.18, 0), color: "#9ea3a9", mat: "shiny" }] },
+  tongkat: { about: "tongkat (walking cane)", size: P(0.12, 0.9, 0.05), hold: { hand: "R", mode: "upright", at: P(0, 0.86, 0) },
+    parts: [{ shape: "cyl", r: 0.013, h: 0.86, color: "#7a4b2a" }, { shape: "torus", r: 0.045, tube: 0.013, pos: P(-0.045, 0.86, 0), rot: [90, 0, 0], color: "#7a4b2a", arc: 180 }] },
+  remote: { about: "remote TV", size: P(0.05, 0.16, 0.02), hold: { hand: "R", mode: "hand", at: P(0, 0.05, -0.01) },
+    parts: [{ shape: "box", size: P(0.045, 0.16, 0.018), color: "#2c2d31", round: 0.2 }, { shape: "box", size: P(0.015, 0.012, 0.004), pos: P(0, 0.13, 0.009), color: "#d63b30" }] },
+  kerupuk: { about: "kerupuk (big cracker)", size: P(0.14, 0.14, 0.02), noInk: true, hold: { hand: "R", mode: "hand", at: P(0, 0.02, 0) },
+    parts: [{ shape: "cyl", r: 0.07, h: 0.012, rot: [90, 0, 0], color: "#f7e7b8", seg: 9 }] },
+  "kue-toples": { about: "toples kue (jar of Lebaran cookies)", size: P(0.18, 0.2, 0.18), hold: { hand: "both", mode: "upright", at: P(0, 0.08, 0) },
+    parts: [{ shape: "cyl", r: 0.085, h: 0.16, color: "#d9ecf2" }, { shape: "cyl", r: 0.08, h: 0.12, pos: P(0, 0.01, 0), color: "#e2a65a" }, { shape: "cyl", r: 0.09, h: 0.035, pos: P(0, 0.16, 0), color: "#d63b30" }] },
+  bola: { about: "bola (football)", size: P(0.22, 0.22, 0.22), hold: { hand: "both", mode: "upright", at: P(0, 0.11, 0) },
+    parts: [{ shape: "sphere", r: 0.11, pos: P(0, 0.11, 0), color: "#f6f4ec" }, { shape: "sphere", r: 0.04, pos: P(0, 0.215, 0.03), scale: P(1, 0.3, 1), color: "#26272c" }] },
+  laptop: { about: "laptop (open, on a desk)", size: P(0.34, 0.24, 0.24),
+    parts: [{ shape: "box", size: P(0.34, 0.016, 0.24), color: "#9ea3a9" }, { shape: "box", size: P(0.34, 0.23, 0.012), pos: P(0, 0.012, -0.115), rot: [-12, 0, 0], color: "#9ea3a9" }, { shape: "box", size: P(0.31, 0.2, 0.002), pos: P(0, 0.024, -0.107), rot: [-12, 0, 0], color: "#7cc6ee", mat: "screen" }] },
+  // ---------------------------------------------------------------- on the ground / on a table
+  "kursi-plastik": { about: "kursi plastik (red plastic chair)", size: P(0.46, 0.8, 0.46),
+    parts: [{ shape: "box", size: P(0.44, 0.04, 0.42), pos: P(0, 0.42, 0), color: "#d63b30" }, { shape: "box", size: P(0.44, 0.36, 0.04), pos: P(0, 0.46, -0.2), rot: [-8, 0, 0], color: "#d63b30" }, ...[[1, 1], [1, -1], [-1, 1], [-1, -1]].map(([x, z]) => ({ shape: "cyl" as const, r: 0.018, h: 0.42, pos: P(x * 0.19, 0, z * 0.18), color: "#c3352b" }))] },
+  "meja-lipat": { about: "meja lipat (small folding table)", size: P(0.9, 0.72, 0.6),
+    parts: [{ shape: "box", size: P(0.9, 0.04, 0.6), pos: P(0, 0.68, 0), color: "#e9e6dc" }, ...[[1, 1], [1, -1], [-1, 1], [-1, -1]].map(([x, z]) => ({ shape: "cyl" as const, r: 0.018, h: 0.68, pos: P(x * 0.4, 0, z * 0.25), color: "#5b6066" }))] },
+  ember: { about: "ember (plastic bucket)", size: P(0.32, 0.3, 0.32), hold: { hand: "R", mode: "upright", at: P(0, 0.33, 0) },
+    parts: [{ shape: "lathe", profile: [[0, 0], [0.12, 0], [0.155, 0.28], [0.16, 0.3]], color: "#2f7fd1" }, { shape: "torus", r: 0.15, tube: 0.005, pos: P(0, 0.31, 0), rot: [0, 0, 0], color: "#5b6066", arc: 180 }] },
+  karung: { about: "karung beras (rice sack)", size: P(0.45, 0.6, 0.3), hold: { hand: "both", mode: "upright", at: P(0, 0.3, -0.05) },
+    parts: [{ shape: "box", size: P(0.42, 0.55, 0.28), color: "#efe8d6", round: 0.25 }, { shape: "box", size: P(0.2, 0.12, 0.002), pos: P(0, 0.25, 0.141), color: "#2f6fd0" }] },
+  tumpeng: { about: "tumpeng (cone of yellow rice on a tray)", size: P(0.5, 0.45, 0.5),
+    parts: [{ shape: "cyl", r: 0.26, h: 0.03, color: "#9a6a3f" }, { shape: "cone", r: 0.16, h: 0.38, pos: P(0, 0.03, 0), color: "#f2c230" }, ...[0, 1, 2, 3, 4, 5].map((i) => ({ shape: "sphere" as const, r: 0.04, pos: P(Math.cos(i * 1.05) * 0.2, 0.06, Math.sin(i * 1.05) * 0.2), color: ["#d63b30", "#3fa45b", "#8a5a3a"][i % 3] }))] },
+};
+
+/** The library plus a story's own props (props.json). Own definitions win. */
+export const propLib = (extra?: Record<string, PropDef>) => (extra ? { ...PROPS, ...extra } : PROPS);
+
+/** Props an action brings along when the person holds nothing in that hand. */
+export const AUTO_PROPS: Record<string, string[]> = {
+  phone: ["hp"], call: ["hp"], selfie: ["hp"], eat: ["piring", "sendok"], drink: ["gelas"], fan: ["kipas"], umbrella: ["payung"],
+  read: ["buku"], sweep: ["sapu"], sing: ["mic"],
+};
+
+/** Plain-language problems in a prop definition (props.json). */
+export const propProblems = (id: string, d: PropDef): string[] => {
+  const p: string[] = [];
+  if (!d || typeof d !== "object") return [`prop "${id}": must be an object { about, size, parts }`];
+  if (!Array.isArray(d.parts) || !d.parts.length) p.push(`prop "${id}": "parts" must be a list of shapes`);
+  if (!Array.isArray(d.size) || d.size.length !== 3) p.push(`prop "${id}": "size" must be [w, h, d] in metres`);
+  const shapes = ["box", "cyl", "cone", "sphere", "torus", "lathe"];
+  (d.parts ?? []).forEach((pt, i) => {
+    if (!shapes.includes((pt as { shape: string }).shape)) p.push(`prop "${id}" part ${i + 1}: shape must be one of ${shapes.join(", ")}`);
+    if (typeof (pt as { color?: string }).color !== "string" || !/^#[0-9a-fA-F]{6}$/.test((pt as { color: string }).color)) p.push(`prop "${id}" part ${i + 1}: "color" must be like "#d63b30"`);
+  });
+  if (d.hold && (!["R", "L", "both"].includes(d.hold.hand) || !["hand", "upright"].includes(d.hold.mode) || !Array.isArray(d.hold.at))) p.push(`prop "${id}": hold = { "hand": "R"|"L"|"both", "mode": "hand"|"upright", "at": [x, y, z] }`);
+  return p;
+};
+
+==== 21240 project/src/tipikal/sets/Jalan.tsx
+// Indonesian street set — low-poly, flat real colours, built from a data layout (STREET in ../set.ts):
+// asphalt road along x with dashed centre line, black-and-white painted curbs, sidewalks, ruko shophouses with
+// generic shop signs, houses with fences, a warung with snack strips and galon, a gang arch, electric poles,
+// trees, a traffic light with countdown, zebra crossing + stop line, puddles. No brands, no real places.
+import React, { useMemo } from "react";
+import { CanvasTexture, CylinderGeometry, ExtrudeGeometry, IcosahedronGeometry, LinearMipmapLinearFilter, RepeatWrapping, Shape, SRGBColorSpace } from "three";
+import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
+import { at, basis, flat, lamp, M, stick, toon } from "../../kits/tipikal/mats.ts";
+import { hash, type V3 } from "../../kits/tipikal/math.ts";
+import { F_SIGN } from "../../kits/tipikal/fonts.ts";
+
+import type { Bldg, StreetLayout } from "./jalan.ts";
+
+// ------------------------------------------------------------------ textures
+const texCache = new Map<string, CanvasTexture>();
+export const canvasTex = (key: string, w: number, h: number, draw: (g: CanvasRenderingContext2D) => void, repeat?: [number, number]) => {
+  const hit = texCache.get(key);
+  if (hit) return hit;
+  const cv = document.createElement("canvas");
+  cv.width = w;
+  cv.height = h;
+  draw(cv.getContext("2d")!);
+  const t = new CanvasTexture(cv);
+  t.colorSpace = SRGBColorSpace;
+  t.anisotropy = 8;
+  t.minFilter = LinearMipmapLinearFilter;
+  if (repeat) {
+    t.wrapS = t.wrapT = RepeatWrapping;
+    t.repeat.set(repeat[0], repeat[1]);
+  }
+  texCache.set(key, t);
+  return t;
+};
+export const signTex = (text: string, bg: string, fg = "#ffffff", w = 512, h = 128) =>
+  canvasTex(`sign|${text}|${bg}|${fg}|${w}x${h}`, w, h, (g) => {
+    g.fillStyle = bg;
+    g.fillRect(0, 0, w, h);
+    g.strokeStyle = fg;
+    g.lineWidth = h * 0.06;
+    g.strokeRect(h * 0.08, h * 0.08, w - h * 0.16, h - h * 0.16);
+    g.fillStyle = fg;
+    let size = h * 0.66;
+    g.font = `800 ${size}px ${F_SIGN}, sans-serif`;
+    while (g.measureText(text).width > w * 0.86 && size > 10) {
+      size -= 2;
+      g.font = `800 ${size}px ${F_SIGN}, sans-serif`;
+    }
+    g.textAlign = "center";
+    g.textBaseline = "middle";
+    g.fillText(text, w / 2, h * 0.54);
+  });
+const curbTex = (len: number) => canvasTex(`curb|${len}`, 64, 8, (g) => {
+  g.fillStyle = "#f2f0ea";
+  g.fillRect(0, 0, 64, 8);
+  g.fillStyle = "#26262a";
+  g.fillRect(0, 0, 32, 8);
+}, [len / 1.2, 1]);
+const zincTex = () => canvasTex("zinc", 64, 64, (g) => {
+  g.fillStyle = "#a9b0b4";
+  g.fillRect(0, 0, 64, 64);
+  g.fillStyle = "#8f979c";
+  for (let x = 0; x < 64; x += 8) g.fillRect(x, 0, 3, 64);
+}, [6, 1]);
+
+// ------------------------------------------------------------------ shared geometry
+const GEO = (() => {
+  const box = new RoundedBoxGeometry(1, 1, 1, 1, 0.03);
+  const sharp = new RoundedBoxGeometry(1, 1, 1, 1, 0.004);
+  const cyl = new CylinderGeometry(1, 1, 1, 10, 1);
+  cyl.translate(0, 0.5, 0);
+  const cyl6 = new CylinderGeometry(1, 1, 1, 6, 1);
+  cyl6.translate(0, 0.5, 0);
+  const ico = new IcosahedronGeometry(1, 1);
+  const gable = (() => {
+    const s = new Shape();
+    s.moveTo(-0.5, 0);
+    s.lineTo(0.5, 0);
+    s.lineTo(0, 0.42);
+    s.closePath();
+    const g = new ExtrudeGeometry(s, { depth: 1, bevelEnabled: false });
+    g.translate(0, 0, -0.5);
+    return g;
+  })();
+  const disc = new CylinderGeometry(1, 1, 1, 20, 1);
+  // galon: a 19 L water jug (body + shoulder + neck + cap)
+  return { box, sharp, cyl, cyl6, ico, gable, disc };
+})();
+
+const B = (p: V3, s: V3, c: string, k?: string, rough = 0.9) => <M key={k} g={GEO.sharp} m={at(p, s)} material={flat(c, rough, false)} />;
+
+// ------------------------------------------------------------------ pieces
+/** A galon (19 L jug, translucent-blue look as flat colours) standing on y = 0 at p. */
+export const Galon: React.FC<{ p: V3; tilt?: number }> = ({ p, tilt = 0 }) => (
+  <group position={p} rotation={[0, 0, tilt]}>
+    <M g={GEO.cyl} m={at([0, 0, 0], [0.135, 0.36, 0.135])} material={toon("#7fc3e8")} />
+    <M g={GEO.cyl} m={at([0, 0.36, 0], [0.11, 0.05, 0.11])} material={toon("#6db5df")} />
+    <M g={GEO.cyl} m={at([0, 0.41, 0], [0.045, 0.06, 0.045])} material={toon("#7fc3e8")} />
+    <M g={GEO.cyl} m={at([0, 0.465, 0], [0.05, 0.03, 0.05])} material={toon("#2f6fd0")} />
+    {[0.09, 0.2, 0.31].map((y) => <M key={y} g={GEO.cyl} m={at([0, y, 0], [0.139, 0.018, 0.139])} material={toon("#9fd3f0")} />)}
+  </group>
+);
+export const GALON_H = 0.495;
+/** warung bench: top height (world) and its offset from the warung front */
+export const BENCH_TOP = 0.52;
+export const GALON_R = 0.139;
+
+const Ruko: React.FC<{ b: Extract<Bldg, { kind: "ruko" }>; edge: number }> = ({ b, edge }) => {
+  const sd = b.side, d = 7, floors = b.floors ?? 2, h = floors * 3.3 + 0.6;
+  const fz = sd * edge; // facade plane
+  const cz = fz + sd * d / 2;
+  const trim = b.trim ?? "#f4f1e8";
+  const out: React.ReactNode[] = [];
+  out.push(B([b.x, h / 2, cz], [b.w - 0.12, h, d], b.color, "body"));
+  // ground floor opening: dark shop interior + shutter
+  const ow = b.w - 1.0, oh = 2.7;
+  out.push(B([b.x, oh / 2 + 0.16, fz + sd * 0.12], [ow, oh, 0.3], "#3d3631", "open"));
+  const sh = b.shutter ?? 0.35;
+  out.push(<M key="sh" g={GEO.sharp} m={at([b.x, 0.16 + oh - (oh * sh) / 2, fz - sd * 0.02], [ow, oh * sh, 0.06])} material={flat("#b9bdc1", 0.6, false)} />);
+  // shelves inside (colourful goods) when open enough
+  if (sh < 0.6) {
+    for (let i = 0; i < 4; i++) {
+      const hx = b.x - ow / 2 + 0.5 + (i * (ow - 1)) / 3;
+      out.push(B([hx, 0.62, fz - sd * 0.22], [0.7, 0.9, 0.36], ["#e2563d", "#f2c230", "#3fa45b", "#3b7ad0"][(i + Math.round(b.x)) % 4], "g" + i));
+    }
+  }
+  // sign board
+  if (b.sign) {
+    out.push(
+      <mesh key="sign" position={[b.x, 3.35, fz - sd * 0.08]} rotation={[0, sd > 0 ? Math.PI : 0, 0]} castShadow>
+        <boxGeometry args={[b.w - 0.7, 0.9, 0.1]} />
+        <meshStandardMaterial attach="material-0" color={b.signColor ?? "#c8352e"} />
+        <meshStandardMaterial attach="material-1" color={b.signColor ?? "#c8352e"} />
+        <meshStandardMaterial attach="material-2" color={b.signColor ?? "#c8352e"} />
+        <meshStandardMaterial attach="material-3" color={b.signColor ?? "#c8352e"} />
+        <meshStandardMaterial attach="material-4" map={signTex(b.sign, b.signColor ?? "#c8352e")} roughness={0.8} />
+        <meshStandardMaterial attach="material-5" map={signTex(b.sign, b.signColor ?? "#c8352e")} roughness={0.8} />
+      </mesh>,
+    );
+  }
+  // upper floors: windows + balcony slab
+  for (let f = 1; f < floors; f++) {
+    const y = f * 3.3 + 1.6;
+    out.push(B([b.x, f * 3.3 + 0.05, fz - sd * 0.35], [b.w - 0.3, 0.14, 0.75], trim, "slab" + f));
+    for (const wx of [-0.25, 0.25]) {
+      out.push(B([b.x + wx * b.w, y, fz - sd * 0.01], [b.w * 0.32, 1.5, 0.08], trim, `wf${f}${wx}`));
+      out.push(B([b.x + wx * b.w, y, fz - sd * 0.04], [b.w * 0.26, 1.3, 0.06], "#3c5568", `wg${f}${wx}`, 0.3));
+    }
+    // railing
+    out.push(B([b.x, f * 3.3 + 0.62, fz - sd * 0.7], [b.w - 0.35, 0.06, 0.06], "#2f3236", "rail" + f));
+    for (let i = 0; i <= 6; i++) out.push(B([b.x - (b.w - 0.4) / 2 + (i * (b.w - 0.4)) / 6, f * 3.3 + 0.36, fz - sd * 0.7], [0.04, 0.55, 0.04], "#2f3236", `rb${f}${i}`));
+  }
+  // parapet band
+  out.push(B([b.x, h + 0.2, cz], [b.w, 0.4, d + 0.1], trim, "par"));
+  return <group>{out}</group>;
+};
+
+const Rumah: React.FC<{ b: Extract<Bldg, { kind: "rumah" }>; edge: number }> = ({ b, edge }) => {
+  const sd = b.side, setback = 3.2, d = 7, h = 3.2;
+  const fz = sd * (edge + setback);
+  const cz = fz + sd * d / 2;
+  const out: React.ReactNode[] = [];
+  out.push(B([b.x, h / 2, cz], [b.w - 0.4, h, d], b.color, "body"));
+  out.push(<M key="roof" g={GEO.gable} m={basis([b.x, h, cz], [0, 0, 1], [0, 1, 0], [-1, 0, 0], [d + 1.0, b.w * 0.5, b.w])} material={flat(b.roof ?? "#c4573f", 0.85)} />);
+  // door + windows
+  out.push(B([b.x - b.w * 0.18, 1.05, fz - sd * 0.03], [0.95, 2.1, 0.08], "#7a4a2b", "door"));
+  out.push(B([b.x + b.w * 0.2, 1.6, fz - sd * 0.03], [1.3, 1.1, 0.08], "#f4f1e8", "wf"));
+  out.push(B([b.x + b.w * 0.2, 1.6, fz - sd * 0.06], [1.1, 0.9, 0.06], "#3c5568", "wg", 0.3));
+  // front fence: low wall + bars + gate
+  const fc = b.fence ?? "#3f7f5b";
+  const z = sd * (edge + 0.15);
+  out.push(B([b.x, 0.3, z], [b.w, 0.6, 0.2], "#e9e3d6", "fw"));
+  out.push(B([b.x, 1.3, z], [b.w, 0.06, 0.06], fc, "ft"));
+  for (let i = 0; i <= 12; i++) out.push(B([b.x - b.w / 2 + (i * b.w) / 12, 0.95, z], [0.04, 0.7, 0.04], fc, "fb" + i));
+  // yard
+  out.push(B([b.x, 0.08, sd * (edge + setback / 2)], [b.w, 0.16, setback], "#9bbf6a", "yard"));
+  return <group>{out}</group>;
+};
+
+const Warung: React.FC<{ b: Extract<Bldg, { kind: "warung" }>; edge: number }> = ({ b, edge }) => {
+  const sd = b.side, d = 4.5;
+  const fz = sd * (edge + 1.2);
+  const cz = fz + sd * d / 2;
+  const out: React.ReactNode[] = [];
+  out.push(B([b.x, 1.5, cz + sd * 0.6], [b.w, 3.0, d], b.color, "body"));
+  // counter
+  out.push(B([b.x, 0.5, fz - sd * 0.15], [b.w - 0.8, 1.0, 0.6], "#9a6a3f", "cnt"));
+  // glass jars on the counter
+  for (let i = 0; i < 5; i++) out.push(<M key={"jar" + i} g={GEO.cyl} m={at([b.x - 1.0 + i * 0.5, 1.0, fz - sd * 0.2], [0.11, 0.26, 0.11])} material={flat(["#f2c230", "#e2563d", "#7cc4e4", "#f29bbb", "#9bd16c"][i], 0.3, false)} />);
+  // snack strips (renteng) hanging from the roof edge
+  for (let i = 0; i < 9; i++) {
+    const c = ["#e2563d", "#f2c230", "#3fa45b", "#3b7ad0", "#f07c2a", "#e94b6a"][i % 6];
+    out.push(B([b.x - b.w / 2 + 0.5 + (i * (b.w - 1)) / 8, 2.05, fz - sd * 0.5], [0.16, 0.9, 0.02], c, "sn" + i, 0.6));
+  }
+  // posts + zinc roof (lean-to)
+  for (const px of [-b.w / 2 + 0.15, b.w / 2 - 0.15]) out.push(B([b.x + px, 1.35, fz - sd * 0.9], [0.12, 2.7, 0.12], "#7b5634", "post" + px));
+  out.push(
+    <mesh key="roof" position={[b.x, 2.75, fz - sd * 0.1]} rotation={[sd * 0.18, 0, 0]} castShadow receiveShadow>
+      <boxGeometry args={[b.w + 0.4, 0.05, 2.2]} />
+      <meshStandardMaterial map={zincTex()} roughness={0.7} />
+    </mesh>,
+  );
+  // sign on the front of the roof
+  out.push(
+    <mesh key="sign" position={[b.x, 3.3, fz - sd * 1.05]} rotation={[0, sd > 0 ? Math.PI : 0, 0]}>
+      <planeGeometry args={[b.w * 0.7, 0.62]} />
+      <meshStandardMaterial map={signTex(b.sign, "#f4f1e6", "#c8352e")} roughness={0.8} />
+    </mesh>,
+  );
+  out.push(B([b.x - b.w * 0.35, 3.0, fz - sd * 1.05], [0.06, 0.6, 0.06], "#7b5634", "sp1"));
+  out.push(B([b.x + b.w * 0.35, 3.0, fz - sd * 1.05], [0.06, 0.6, 0.06], "#7b5634", "sp2"));
+  // bench + galon rack
+  out.push(B([b.x - 0.6, BENCH_TOP - 0.04, fz - sd * 1.35], [2.0, 0.08, 0.4], "#9a6a3f", "bench"));
+  for (const lx of [-1.45, 0.25]) out.push(B([b.x + lx, (0.16 + BENCH_TOP - 0.08) / 2, fz - sd * 1.35], [0.08, BENCH_TOP - 0.08 - 0.16, 0.34], "#7b5634", "bl" + lx));
+  for (let i = 0; i < 3; i++) out.push(<Galon key={"ga" + i} p={[b.x + b.w / 2 - 0.35 - i * 0.32, 0, fz - sd * 1.0]} />);
+  out.push(<Galon key="ga3" p={[b.x + b.w / 2 - 0.5, GALON_H, fz - sd * 1.0]} />);
+  return <group>{out}</group>;
+};
+
+const Gang: React.FC<{ b: Extract<Bldg, { kind: "gang" }>; edge: number }> = ({ b, edge }) => {
+  const sd = b.side;
+  const z = sd * (edge + 0.2);
+  const out: React.ReactNode[] = [];
+  const half = b.w / 2;
+  // alley floor + side walls going in
+  out.push(B([b.x, 0.075, sd * (edge + 6)], [b.w, 0.15, 12], "#b9b2a5", "floor"));
+  for (const wx of [-half - 0.12, half + 0.12]) out.push(B([b.x + wx, 1.4, sd * (edge + 6)], [0.24, 2.8, 12], "#e6dccb", "wall" + wx));
+  // arch: two pillars + beam with the gang name, red/white bands
+  for (const wx of [-half - 0.15, half + 0.15]) {
+    out.push(B([b.x + wx, 1.6, z], [0.36, 3.2, 0.36], "#f4f1e8", "pil" + wx));
+    out.push(B([b.x + wx, 0.5, z], [0.38, 0.35, 0.38], "#c8352e", "pr" + wx));
+    out.push(B([b.x + wx, 1.6, z], [0.38, 0.3, 0.38], "#c8352e", "pm" + wx));
+  }
+  out.push(
+    <mesh key="beam" position={[b.x, 3.35, z]} rotation={[0, sd > 0 ? Math.PI : 0, 0]} castShadow>
+      <boxGeometry args={[b.w + 0.9, 0.62, 0.32]} />
+      <meshStandardMaterial attach="material-0" color="#c8352e" />
+      <meshStandardMaterial attach="material-1" color="#c8352e" />
+      <meshStandardMaterial attach="material-2" color="#f4f1e8" />
+      <meshStandardMaterial attach="material-3" color="#f4f1e8" />
+      <meshStandardMaterial attach="material-4" map={signTex(b.sign, "#c8352e")} />
+      <meshStandardMaterial attach="material-5" map={signTex(b.sign, "#c8352e")} />
+    </mesh>,
+  );
+  // potted plants inside
+  for (let i = 0; i < 3; i++) {
+    const pz = sd * (edge + 2.5 + i * 2.6);
+    out.push(<M key={"pot" + i} g={GEO.cyl} m={at([b.x + half - 0.35, 0.15, pz], [0.18, 0.35, 0.18])} material={flat("#b8613f", 0.9, false)} />);
+    out.push(<M key={"pl" + i} g={GEO.ico} m={at([b.x + half - 0.35, 0.75, pz], [0.32, 0.36, 0.32])} material={flat("#4f9a45")} />);
+  }
+  return <group>{out}</group>;
+};
+
+const Tree: React.FC<{ p: V3; seed: number }> = ({ p, seed }) => (
+  <group position={p}>
+    <M g={GEO.cyl6} m={at([0, 0, 0], [0.13, 2.4, 0.13])} material={flat("#7a5236")} />
+    <M g={GEO.ico} m={at([0, 3.0, 0], [1.25, 1.05, 1.25])} material={flat(hash(seed) > 0.5 ? "#4f9a45" : "#5aa84c")} />
+    <M g={GEO.ico} m={at([0.55, 2.55, 0.3], [0.85, 0.75, 0.85])} material={flat("#468d3d")} />
+    <M g={GEO.ico} m={at([-0.5, 2.7, -0.35], [0.8, 0.72, 0.8])} material={flat("#5daf4e")} />
+  </group>
+);
+
+/** Traffic light with countdown. state: which lamp is on; count: number shown (null = blank). Faces −x. */
+export const TrafficLight: React.FC<{ x: number; z: number; armTo: number; state: "red" | "yellow" | "green"; count?: number | null }> = ({ x, z, armTo, state, count }) => {
+  const head = (p: V3, k: string) => (
+    <group key={k} position={p}>
+      {B([0, 0, 0], [0.32, 1.0, 0.36], "#1e1f22", "hb")}
+      {(["red", "yellow", "green"] as const).map((c, i) => {
+        const on = state === c;
+        const col = c === "red" ? (on ? "#ff3b2f" : "#5a1f1c") : c === "yellow" ? (on ? "#ffc21f" : "#5a4a1c") : on ? "#39e07a" : "#1d4a2c";
+        return (
+          <group key={c}>
+            <mesh position={[-0.165, 0.3 - i * 0.3, 0]} rotation={[0, 0, Math.PI / 2]} material={on ? lamp(col) : flat(col, 0.5, false)}>
+              <cylinderGeometry args={[0.1, 0.1, 0.02, 16]} />
+            </mesh>
+            <mesh position={[-0.2, 0.34 - i * 0.3, 0]} material={flat("#1e1f22", 0.8, false)}>
+              <boxGeometry args={[0.08, 0.02, 0.24]} />
+            </mesh>
+          </group>
+        );
+      })}
+    </group>
+  );
+  const cnt = count == null ? "" : String(Math.max(0, count)).padStart(2, "0");
+  return (
+    <group>
+      <M g={GEO.cyl} m={at([x, 0, z], [0.09, 5.6, 0.09])} material={flat("#5b6066", 0.6, false)} />
+      <M g={GEO.cyl} m={stick([x, 5.45, z], [x, 5.45, armTo], 0.06)} material={flat("#5b6066", 0.6, false)} />
+      {head([x, 4.95, armTo + Math.sign(z - armTo) * 0.4], "h1")}
+      {head([x - 0.12, 2.9, z], "h2")}
+      <group position={[x - 0.12, 2.9, z + Math.sign(armTo - z) * 0.5]}>
+        {B([0, 0, 0], [0.24, 0.5, 0.62], "#1e1f22", "cb2")}
+        <mesh position={[-0.125, 0, 0]} rotation={[0, -Math.PI / 2, 0]}>
+          <planeGeometry args={[0.55, 0.42]} />
+          <meshBasicMaterial map={countTex(cnt)} toneMapped={false} />
+        </mesh>
+      </group>
+      {/* countdown box beside the overhead head */}
+      <group position={[x, 4.95, armTo + Math.sign(z - armTo) * 0.95]}>
+        {B([0, 0, 0], [0.24, 0.5, 0.62], "#1e1f22", "cb")}
+        <mesh position={[-0.125, 0, 0]} rotation={[0, -Math.PI / 2, 0]}>
+          <planeGeometry args={[0.55, 0.42]} />
+          <meshBasicMaterial map={countTex(cnt)} toneMapped={false} />
+        </mesh>
+      </group>
+    </group>
+  );
+};
+const countTex = (s: string) => canvasTex("cnt|" + s, 128, 96, (g) => {
+  g.fillStyle = "#111214";
+  g.fillRect(0, 0, 128, 96);
+  g.fillStyle = "#ff3b2f";
+  g.font = `800 84px ${F_SIGN}, monospace`;
+  g.textAlign = "center";
+  g.textBaseline = "middle";
+  g.fillText(s, 64, 52);
+});
+
+const Pole: React.FC<{ p: V3 }> = ({ p }) => (
+  <group position={p}>
+    <M g={GEO.cyl} m={at([0, 0, 0], [0.11, 8.4, 0.11])} material={flat("#9a9c9e", 0.9, false)} />
+    {B([0, 7.9, 0], [0.12, 0.12, 1.6], "#7d7f82", "cross")}
+  </group>
+);
+
+/** Catenary cable between two points (a few straight segments). */
+const Cable: React.FC<{ a: V3; b: V3; sag: number }> = ({ a, b, sag }) => {
+  const pts: V3[] = [];
+  for (let i = 0; i <= 8; i++) {
+    const t = i / 8;
+    pts.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t - sag * 4 * t * (1 - t), a[2] + (b[2] - a[2]) * t]);
+  }
+  return <group>{pts.slice(0, -1).map((p, i) => <M key={i} g={GEO.cyl} m={stick(p, pts[i + 1], 0.018)} material={flat("#222326", 0.8, false)} shadow={false} />)}</group>;
+};
+
+// ------------------------------------------------------------------ the street
+export const Street: React.FC<{ L: StreetLayout; range?: [number, number]; light?: "red" | "yellow" | "green"; count?: number | null }> = ({ L, range, light = "red", count = null }) => {
+  const [r0, r1] = range ?? [L.x0, L.x1];
+  const inR = (x: number, pad = 8) => x > r0 - pad && x < r1 + pad;
+  const len = r1 - r0 + 40, mid = (r0 + r1) / 2;
+  const edge = L.roadHalf + 0.2 + L.walk;
+  const cross = L.cross;
+  const items = useMemo(() => L.buildings.filter((b) => inR(b.x, 14)), [L, r0, r1]); // eslint-disable-line react-hooks/exhaustive-deps
+  const segs: [number, number][] = [];
+  // curbs/sidewalks are split around the cross street
+  if (cross && cross.x > mid - len / 2 && cross.x < mid + len / 2) {
+    segs.push([mid - len / 2, cross.x - cross.half]);
+    segs.push([cross.x + cross.half, mid + len / 2]);
+  } else segs.push([mid - len / 2, mid + len / 2]);
+  const out: React.ReactNode[] = [];
+  // ground under everything (beyond the buildings)
+  out.push(B([mid, -0.08, 0], [len + 60, 0.1, 80], "#8f9a6e", "ground"));
+  // asphalt
+  out.push(<M key="road" g={GEO.sharp} m={at([mid, -0.02, 0], [len, 0.04, L.roadHalf * 2 + 0.4])} material={flat("#50535a", 0.95, false)} />);
+  if (cross) for (const sd of [1, -1]) out.push(<M key={"xroad" + sd} g={GEO.sharp} m={at([cross.x, -0.02, sd * (L.roadHalf + 0.2 + 20)], [cross.half * 2, 0.04, 40])} material={flat("#50535a", 0.95, false)} />);
+  // centre dashes + edge lines
+  for (let x = Math.floor((mid - len / 2) / 6) * 6; x < mid + len / 2; x += 6) {
+    if (cross && Math.abs(x + 1.5 - cross.x) < cross.half + 1.5) continue;
+    out.push(B([x + 1.5, 0.004, 0], [3, 0.012, 0.14], "#f1efe6", "d" + x, 0.7));
+  }
+  for (const [a, b] of segs) {
+    for (const sd of [1, -1] as const) {
+      const sl = b - a;
+      out.push(B([(a + b) / 2, 0.004, sd * (L.roadHalf - 0.25)], [sl, 0.012, 0.12], "#f1efe6", `el${sd}${a}`, 0.7));
+      // curb (painted black / white) + sidewalk
+      out.push(
+        <mesh key={`curb${sd}${a}`} position={[(a + b) / 2, 0.09, sd * (L.roadHalf + 0.1)]} castShadow receiveShadow>
+          <boxGeometry args={[sl, 0.18, 0.2]} />
+          <meshStandardMaterial map={curbTex(Math.round(sl))} roughness={0.85} />
+        </mesh>,
+      );
+      out.push(B([(a + b) / 2, 0.08, sd * (L.roadHalf + 0.2 + L.walk / 2)], [sl, 0.16, L.walk], "#d4cdbf", `walk${sd}${a}`));
+    }
+  }
+  // stop line + zebra
+  if (L.stopLine !== undefined) out.push(B([L.stopLine, 0.005, -L.roadHalf / 2], [0.4, 0.012, L.roadHalf - 0.1], "#f1efe6", "stop", 0.7));
+  if (L.zebra) {
+    const [z0, z1] = L.zebra;
+    for (let z = -L.roadHalf + 0.4; z < L.roadHalf - 0.2; z += 0.9) out.push(B([(z0 + z1) / 2, 0.005, z + 0.25], [z1 - z0, 0.012, 0.5], "#f1efe6", "zb" + z, 0.7));
+  }
+  // puddles
+  L.puddles.filter((p) => inR(p.x)).forEach((p, i) =>
+    out.push(<M key={"pd" + i} g={GEO.disc} m={basis([p.x, 0.006, p.z], [1, 0, 0], [0, 1, 0], [0, 0, 1], [p.r * 1.3, 0.012, p.r])} material={flat("#6f8aa0", 0.15, false)} shadow={false} />),
+  );
+  // buildings
+  items.forEach((b, i) => {
+    if (b.kind === "ruko") out.push(<Ruko key={"b" + i} b={b} edge={edge} />);
+    else if (b.kind === "rumah") out.push(<Rumah key={"b" + i} b={b} edge={edge} />);
+    else if (b.kind === "warung") out.push(<Warung key={"b" + i} b={b} edge={edge} />);
+    else out.push(<Gang key={"b" + i} b={b} edge={edge} />);
+  });
+  L.trees.filter((t) => inR(t.x)).forEach((t, i) => out.push(<Tree key={"t" + i} p={[t.x, 0.16, t.side * (L.roadHalf + 1.0)]} seed={i + t.x} />));
+  // poles + cables
+  const poles: V3[] = [];
+  for (let x = L.poles.x0; x <= L.poles.x1; x += L.poles.every) if (inR(x, 30)) poles.push([x, 0.16, L.poles.side * (L.roadHalf + 0.55)]);
+  poles.forEach((p, i) => out.push(<Pole key={"p" + i} p={p} />));
+  poles.slice(0, -1).forEach((p, i) => {
+    const q = poles[i + 1];
+    for (const dz of [-0.7, 0, 0.7]) out.push(<Cable key={`c${i}${dz}`} a={[p[0], 8.05, p[2] + dz]} b={[q[0], 8.05, q[2] + dz]} sag={0.9} />);
+  });
+  if (L.light && inR(L.light.x)) out.push(<TrafficLight key="tl" x={L.light.x} z={L.light.side * (L.roadHalf + 0.6)} armTo={L.light.side * 1.4} state={light} count={count} />);
+  return <group>{out}</group>;
+};
+
+==== 16913 project/src/tipikal/sets/pieces.tsx
+// Shared set pieces for the TIPIKAL sets: boxes, room shells (floor, walls with windows, ceiling), furniture people
+// sit at (chairs, desks, tables, sofas — tagged <Solid kind="set"> for the QA probe so sitting / leaning reads as
+// touching), plants, frames, clocks, fans, lamps, motorbikes parked as dressing. Low-poly, flat real colours.
+import React from "react";
+import { CylinderGeometry, IcosahedronGeometry, SphereGeometry, TorusGeometry } from "three";
+import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
+import { Solid } from "../../core/qa/scene-qa.tsx";
+import { at, basis, flat, inkHull, lamp, M, toon } from "../../kits/tipikal/mats.ts";
+import { hash, type V3 } from "../../kits/tipikal/math.ts";
+import { canvasTex, signTex } from "./Jalan.tsx";
+
+export const GEO = {
+  box: new RoundedBoxGeometry(1, 1, 1, 1, 0.02),
+  soft: new RoundedBoxGeometry(1, 1, 1, 3, 0.12),
+  cyl: (() => { const g = new CylinderGeometry(1, 1, 1, 14, 1); g.translate(0, 0.5, 0); return g; })(),
+  cyl6: (() => { const g = new CylinderGeometry(1, 1, 1, 6, 1); g.translate(0, 0.5, 0); return g; })(),
+  cone: (() => { const g = new CylinderGeometry(0, 1, 1, 10, 1); g.translate(0, 0.5, 0); return g; })(),
+  ico: new IcosahedronGeometry(1, 1),
+  sph: new SphereGeometry(1, 16, 12),
+  torus: new TorusGeometry(1, 0.08, 8, 24),
+};
+
+/** flat box: centre p, size s */
+export const Bx: React.FC<{ p: V3; s: V3; c: string; rough?: number; shadow?: boolean; soft?: boolean; rot?: number }> = ({ p, s, c, rough = 0.88, shadow = true, soft, rot }) => (
+  <M g={soft ? GEO.soft : GEO.box} m={rot ? basis(p, [Math.cos(rot), 0, -Math.sin(rot)], [0, 1, 0], [Math.sin(rot), 0, Math.cos(rot)], s) : at(p, s)} material={flat(c, rough, false)} shadow={shadow} />
+);
+/** toon box with an ink outline (small objects that read like the characters) */
+export const Tb: React.FC<{ p: V3; s: V3; c: string; ink?: boolean }> = ({ p, s, c, ink = true }) => (
+  <group>
+    <M g={GEO.box} m={at(p, s)} material={toon(c)} />
+    {ink ? <M g={GEO.box} m={at(p, [s[0] + 0.016, s[1] + 0.016, s[2] + 0.016])} material={inkHull} shadow={false} /> : null}
+  </group>
+);
+export const Cy: React.FC<{ p: V3; r: number; h: number; c: string; toonish?: boolean }> = ({ p, r, h, c, toonish }) => (
+  <M g={GEO.cyl} m={at(p, [r, h, r])} material={toonish ? toon(c) : flat(c, 0.85, false)} />
+);
+
+// ------------------------------------------------------------------ textures
+export const tileTex = (a: string, b: string, n: number, key: string) => canvasTex(`tile|${a}|${b}|${n}|${key}`, 128, 128, (g) => {
+  g.fillStyle = a; g.fillRect(0, 0, 128, 128);
+  g.fillStyle = b;
+  g.fillRect(0, 0, 128, 3); g.fillRect(0, 0, 3, 128); g.fillRect(0, 64, 128, 3); g.fillRect(64, 0, 3, 128);
+}, [n, n]);
+export const stripeTex = (a: string, b: string, n: number) => canvasTex(`stripe|${a}|${b}|${n}`, 64, 64, (g) => {
+  g.fillStyle = a; g.fillRect(0, 0, 64, 64); g.fillStyle = b; g.fillRect(0, 0, 32, 64);
+}, [n, 1]);
+export { signTex };
+
+/** Floor plane (a thin box so it can't z-fight the ground below). */
+export const Floor: React.FC<{ x0: number; x1: number; z0: number; z1: number; tex?: [string, string, number]; color?: string; y?: number }> = ({ x0, x1, z0, z1, tex, color = "#d9d2c3", y = 0 }) => (
+  <mesh position={[(x0 + x1) / 2, y - 0.025, (z0 + z1) / 2]} receiveShadow>
+    <boxGeometry args={[x1 - x0, 0.05, z1 - z0]} />
+    {tex ? <meshStandardMaterial map={tileTex(tex[0], tex[1], tex[2], `${x1 - x0}x${z1 - z0}`)} roughness={0.8} /> : <meshStandardMaterial color={color} roughness={0.85} />}
+  </mesh>
+);
+
+/** A wall along x (at z) or along z (at x) from a to b, height h, thickness 0.2, with window openings [from, to, sill, top]. */
+export const Wall: React.FC<{ along: "x" | "z"; at: number; a: number; b: number; h: number; c: string; holes?: [number, number, number, number][]; base?: string; shadow?: boolean }> = ({ along, at: w, a, b, h, c, holes = [], base, shadow = false }) => {
+  const out: React.ReactNode[] = [];
+  const seg = (u0: number, u1: number, y0: number, y1: number, k: string) => {
+    if (u1 - u0 < 0.01 || y1 - y0 < 0.01) return;
+    const p: V3 = along === "x" ? [(u0 + u1) / 2, (y0 + y1) / 2, w] : [w, (y0 + y1) / 2, (u0 + u1) / 2];
+    const s: V3 = along === "x" ? [u1 - u0, y1 - y0, 0.2] : [0.2, y1 - y0, u1 - u0];
+    out.push(<M key={k} g={GEO.box} m={at(p, s)} material={flat(c, 0.92, false)} shadow={shadow} />);
+  };
+  const hs = [...holes].sort((x, y) => x[0] - y[0]);
+  let u = a;
+  hs.forEach(([h0, h1, sill, top], i) => {
+    seg(u, h0, 0, h, "w" + i);
+    seg(h0, h1, 0, sill, "s" + i);
+    seg(h0, h1, top, h, "t" + i);
+    u = h1;
+  });
+  seg(u, b, 0, h, "end");
+  if (base) {
+    const p: V3 = along === "x" ? [(a + b) / 2, 0.06, w] : [w, 0.06, (a + b) / 2];
+    const s: V3 = along === "x" ? [b - a, 0.12, 0.24] : [0.24, 0.12, b - a];
+    out.push(<M key="base" g={GEO.box} m={at(p, s)} material={flat(base, 0.8, false)} shadow={false} />);
+  }
+  return <group>{out}</group>;
+};
+
+/** Window frame + sky / view panel in an opening of a wall (inside face at `face` offset). */
+export const WindowPane: React.FC<{ along: "x" | "z"; at: number; u0: number; u1: number; sill: number; top: number; frame?: string; view?: string; curtain?: string }> = ({ along, at: w, u0, u1, sill, top, frame = "#f4f1e8", view = "#9fd2f0", curtain }) => {
+  const cu = (u0 + u1) / 2, cy = (sill + top) / 2, wu = u1 - u0, hy = top - sill;
+  const P = (u: number, y: number, d = 0): V3 => (along === "x" ? [u, y, w + d] : [w + d, y, u]);
+  const S = (su: number, sy: number, sd: number): V3 => (along === "x" ? [su, sy, sd] : [sd, sy, su]);
+  return (
+    <group>
+      <M g={GEO.box} m={at(P(cu, cy, 0), S(wu, hy, 0.04))} material={lamp(view)} shadow={false} />
+      <M g={GEO.box} m={at(P(cu, sill, 0), S(wu + 0.12, 0.08, 0.3))} material={flat(frame, 0.7, false)} />
+      <M g={GEO.box} m={at(P(cu, top, 0), S(wu + 0.12, 0.08, 0.26))} material={flat(frame, 0.7, false)} />
+      <M g={GEO.box} m={at(P(u0, cy, 0), S(0.08, hy, 0.26))} material={flat(frame, 0.7, false)} />
+      <M g={GEO.box} m={at(P(u1, cy, 0), S(0.08, hy, 0.26))} material={flat(frame, 0.7, false)} />
+      <M g={GEO.box} m={at(P(cu, cy, 0), S(0.05, hy, 0.22))} material={flat(frame, 0.7, false)} />
+      {curtain ? <M g={GEO.box} m={at(P(u0 + 0.2, cy + 0.05, 0.14), S(0.42, hy + 0.2, 0.05))} material={flat(curtain, 0.95, false)} /> : null}
+      {curtain ? <M g={GEO.box} m={at(P(u1 - 0.2, cy + 0.05, 0.14), S(0.42, hy + 0.2, 0.05))} material={flat(curtain, 0.95, false)} /> : null}
+    </group>
+  );
+};
+
+/** Ceiling slab (casts no shadow, so the sun still lights the room through the open sides). */
+export const Ceiling: React.FC<{ x0: number; x1: number; z0: number; z1: number; y: number; c?: string }> = ({ x0, x1, z0, z1, y, c = "#e6e1d6" }) => (
+  <M g={GEO.box} m={at([(x0 + x1) / 2, y + 0.05, (z0 + z1) / 2], [x1 - x0, 0.1, z1 - z0])} material={lamp(c)} shadow={false} />
+);
+export const TubeLamp: React.FC<{ p: V3; along?: "x" | "z" }> = ({ p, along = "x" }) => (
+  <group>
+    <M g={GEO.box} m={at(p, along === "x" ? [1.2, 0.06, 0.16] : [0.16, 0.06, 1.2])} material={flat("#e9e6de", 0.7, false)} shadow={false} />
+    <M g={GEO.box} m={at([p[0], p[1] - 0.04, p[2]], along === "x" ? [1.1, 0.03, 0.06] : [0.06, 0.03, 1.1])} material={lamp("#fffaf0")} shadow={false} />
+  </group>
+);
+export const CeilingFan: React.FC<{ p: V3; t: number }> = ({ p, t }) => (
+  <group position={p}>
+    <M g={GEO.cyl} m={at([0, -0.35, 0], [0.02, 0.35, 0.02])} material={flat("#7d8086", 0.6, false)} shadow={false} />
+    <M g={GEO.cyl} m={at([0, -0.45, 0], [0.09, 0.1, 0.09])} material={flat("#e9e6de", 0.6, false)} shadow={false} />
+    <group position={[0, -0.4, 0]} rotation={[0, t * 2.2, 0]}>
+      {[0, 1, 2].map((i) => <M key={i} g={GEO.box} m={basis([Math.cos((i * 2 * Math.PI) / 3) * 0.38, 0, Math.sin((i * 2 * Math.PI) / 3) * 0.38], [Math.cos((i * 2 * Math.PI) / 3), 0, Math.sin((i * 2 * Math.PI) / 3)], [0, 1, 0], [-Math.sin((i * 2 * Math.PI) / 3), 0, Math.cos((i * 2 * Math.PI) / 3)], [0.62, 0.015, 0.12])} material={flat("#e9e6de", 0.6, false)} shadow={false} />)}
+    </group>
+  </group>
+);
+export const Clock: React.FC<{ p: V3; facing: V3 }> = ({ p, facing }) => {
+  const f = facing, r: V3 = [f[2], 0, -f[0]];
+  return (
+    <group>
+      <M g={GEO.cyl} m={basis(p, r, f, [0, 1, 0], [0.18, 0.05, 0.18])} material={flat("#f6f4ec", 0.6, false)} shadow={false} />
+      <M g={GEO.torus} m={basis([p[0] + f[0] * 0.05, p[1], p[2] + f[2] * 0.05], r, [0, 1, 0], f, [0.18, 0.18, 0.4])} material={flat("#2c2d31", 0.6, false)} shadow={false} />
+      <M g={GEO.box} m={basis([p[0] + f[0] * 0.055, p[1] + 0.05, p[2] + f[2] * 0.055], r, [0, 1, 0], f, [0.015, 0.11, 0.01])} material={flat("#2c2d31", 0.6, false)} shadow={false} />
+      <M g={GEO.box} m={basis([p[0] + f[0] * 0.056 + r[0] * 0.04, p[1], p[2] + f[2] * 0.056 + r[2] * 0.04], r, [0, 1, 0], f, [0.08, 0.012, 0.01])} material={flat("#2c2d31", 0.6, false)} shadow={false} />
+    </group>
+  );
+};
+/** A framed picture (abstract flat shapes, no real images). */
+export const PictureFrame: React.FC<{ p: V3; facing: V3; w: number; h: number; seed: number }> = ({ p, facing, w, h, seed }) => {
+  const f = facing, r: V3 = [f[2], 0, -f[0]];
+  const cols = ["#f2c94c", "#3fa45b", "#2f6fd0", "#e2563d", "#7a4fa3", "#9fd2f0"];
+  const c1 = cols[Math.floor(hash(seed) * 6)], c2 = cols[Math.floor(hash(seed + 3) * 6)];
+  const o = (k: number): V3 => [p[0] + f[0] * k, p[1], p[2] + f[2] * k];
+  return (
+    <group>
+      <M g={GEO.box} m={basis(o(0), r, [0, 1, 0], f, [w + 0.08, h + 0.08, 0.04])} material={flat("#6b4a2a", 0.7, false)} shadow={false} />
+      <M g={GEO.box} m={basis(o(0.022), r, [0, 1, 0], f, [w, h, 0.01])} material={flat("#f6f1e2", 0.9, false)} shadow={false} />
+      <M g={GEO.box} m={basis([o(0.03)[0], p[1] - h * 0.18, o(0.03)[2]], r, [0, 1, 0], f, [w * 0.8, h * 0.4, 0.008])} material={flat(c1, 0.9, false)} shadow={false} />
+      <M g={GEO.sph} m={basis([o(0.03)[0] + r[0] * w * 0.2, p[1] + h * 0.18, o(0.03)[2] + r[2] * w * 0.2], r, [0, 1, 0], f, [h * 0.14, h * 0.14, 0.006])} material={flat(c2, 0.9, false)} shadow={false} />
+    </group>
+  );
+};
+export const Plant: React.FC<{ p: V3; s?: number; pot?: string }> = ({ p, s = 1, pot = "#b8613f" }) => (
+  <group position={p} scale={s}>
+    <M g={GEO.cyl} m={at([0, 0, 0], [0.2, 0.36, 0.2])} material={flat(pot, 0.9, false)} />
+    <M g={GEO.ico} m={at([0, 0.72, 0], [0.34, 0.42, 0.34])} material={flat("#4f9a45")} />
+    <M g={GEO.ico} m={at([0.16, 0.55, 0.08], [0.22, 0.26, 0.22])} material={flat("#5aa84c")} />
+    <M g={GEO.ico} m={at([-0.14, 0.6, -0.1], [0.2, 0.24, 0.2])} material={flat("#468d3d")} />
+  </group>
+);
+export const Tree: React.FC<{ p: V3; seed: number; s?: number }> = ({ p, seed, s = 1 }) => (
+  <group position={p} scale={s}>
+    <M g={GEO.cyl6} m={at([0, 0, 0], [0.13, 2.4, 0.13])} material={flat("#7a5236")} />
+    <M g={GEO.ico} m={at([0, 3.0, 0], [1.25, 1.05, 1.25])} material={flat(hash(seed) > 0.5 ? "#4f9a45" : "#5aa84c")} />
+    <M g={GEO.ico} m={at([0.55, 2.55, 0.3], [0.85, 0.75, 0.85])} material={flat("#468d3d")} />
+    <M g={GEO.ico} m={at([-0.5, 2.7, -0.35], [0.8, 0.72, 0.8])} material={flat("#5daf4e")} />
+  </group>
+);
+
+// ------------------------------------------------------------------ furniture (tagged for the QA probe)
+/** Wooden chair facing `face` (yaw); seat top at h. */
+export const Chair: React.FC<{ id: string; p: V3; face: number; h?: number; c?: string; back?: boolean }> = ({ id, p, face, h = 0.38, c = "#9a6a3f", back = true }) => (
+  <Solid id={id} kind="set" touch={["*"]}>
+    <group position={p} rotation={[0, face, 0]}>
+      <M g={GEO.box} m={at([0, h - 0.025, -0.04], [0.46, 0.05, 0.34])} material={flat(c, 0.8, false)} />
+      {[[1, 1], [1, -1], [-1, 1], [-1, -1]].map(([x, z], i) => <M key={i} g={GEO.box} m={at([x * 0.18, (h - 0.05) / 2, z > 0 ? 0.1 : -0.18], [0.04, h - 0.05, 0.04])} material={flat(c, 0.8, false)} />)}
+      {back ? <M g={GEO.box} m={at([0, h + 0.22, -0.205], [0.42, 0.36, 0.03])} material={flat(c, 0.8, false)} /> : null}
+      {back ? [1, -1].map((x) => <M key={"bp" + x} g={GEO.box} m={at([x * 0.18, h + 0.1, -0.2], [0.035, 0.2, 0.035])} material={flat(c, 0.8, false)} />) : null}
+    </group>
+  </Solid>
+);
+export const OfficeChair: React.FC<{ id: string; p: V3; face: number; c?: string; h?: number }> = ({ id, p, face, c = "#2c2d31", h = 0.4 }) => (
+  <Solid id={id} kind="set" touch={["*"]}>
+    <group position={p} rotation={[0, face, 0]}>
+      <M g={GEO.soft} m={at([0, h - 0.04, -0.05], [0.5, 0.08, 0.36])} material={flat(c, 0.8, false)} />
+      <M g={GEO.soft} m={at([0, h + 0.33, -0.26], [0.46, 0.5, 0.06])} material={flat(c, 0.8, false)} />
+      <M g={GEO.cyl} m={at([0, 0.08, 0], [0.03, h - 0.12, 0.03])} material={flat("#8d9096", 0.5, false)} />
+      {[0, 1, 2, 3, 4].map((i) => { const a = (i * 2 * Math.PI) / 5; return <M key={i} g={GEO.box} m={basis([Math.cos(a) * 0.15, 0.04, Math.sin(a) * 0.15], [Math.cos(a), 0, Math.sin(a)], [0, 1, 0], [-Math.sin(a), 0, Math.cos(a)], [0.3, 0.035, 0.04])} material={flat("#3a3d42", 0.6, false)} />; })}
+    </group>
+  </Solid>
+);
+export const PlasticChair: React.FC<{ id: string; p: V3; face: number; c?: string; h?: number }> = ({ id, p, face, c = "#d63b30", h = 0.38 }) => (
+  <Solid id={id} kind="set" touch={["*"]}>
+    <group position={p} rotation={[0, face, 0]}>
+      <M g={GEO.box} m={at([0, h - 0.02, -0.04], [0.47, 0.04, 0.34])} material={toon(c)} />
+      <M g={GEO.box} m={basis([0, h + 0.24, -0.225], [1, 0, 0], [0, 0.99, -0.14], [0, 0.14, 0.99], [0.44, 0.36, 0.035])} material={toon(c)} />
+      {[[1, 1], [1, -1], [-1, 1], [-1, -1]].map(([x, z], i) => <M key={i} g={GEO.cyl} m={at([x * 0.19, 0, z > 0 ? 0.1 : -0.19], [0.02, h - 0.03, 0.02])} material={toon(c)} />)}
+    </group>
+  </Solid>
+);
+/** Table: top at h, size w × d, legs; `cloth` hangs a tablecloth to the floor (buffet). */
+export const Table: React.FC<{ id: string; p: V3; w: number; d: number; h?: number; c?: string; leg?: string; cloth?: string; rot?: number }> = ({ id, p, w, d, h = 0.76, c = "#b98a5c", leg, cloth, rot = 0 }) => (
+  <Solid id={id} kind="set" touch={["*"]}>
+    <group position={p} rotation={[0, rot, 0]}>
+      <M g={GEO.box} m={at([0, h - 0.025, 0], [w, 0.05, d])} material={flat(cloth ?? c, 0.85, false)} />
+      {cloth ? <M g={GEO.box} m={at([0, (h - 0.05) / 2, 0], [w - 0.02, h - 0.05, d - 0.02])} material={flat(cloth, 0.95, false)} /> : [[1, 1], [1, -1], [-1, 1], [-1, -1]].map(([x, z], i) => <M key={i} g={GEO.box} m={at([x * (w / 2 - 0.05), (h - 0.05) / 2, z * (d / 2 - 0.05)], [0.05, h - 0.05, 0.05])} material={flat(leg ?? c, 0.8, false)} />)}
+    </group>
+  </Solid>
+);
+export const Sofa: React.FC<{ id: string; p: V3; face: number; w: number; c?: string; h?: number }> = ({ id, p, face, w, c = "#8e2a32", h = 0.36 }) => (
+  <Solid id={id} kind="set" touch={["*"]}>
+    <group position={p} rotation={[0, face, 0]}>
+      <M g={GEO.soft} m={at([0, h / 2, 0.02], [w, h, 0.62])} material={flat(c, 0.9, false)} />
+      <M g={GEO.soft} m={at([0, h + 0.25, -0.3], [w, 0.62, 0.2])} material={flat(c, 0.9, false)} />
+      <M g={GEO.soft} m={at([w / 2 + 0.06, h + 0.06, 0], [0.16, 0.36, 0.72])} material={flat(c, 0.9, false)} />
+      <M g={GEO.soft} m={at([-w / 2 - 0.06, h + 0.06, 0], [0.16, 0.36, 0.72])} material={flat(c, 0.9, false)} />
+    </group>
+  </Solid>
+);
+/** A motorbike parked as dressing (simple, no rider). */
+export const ParkedMotor: React.FC<{ p: V3; rot: number; c: string }> = ({ p, rot, c }) => (
+  <group position={p} rotation={[0, rot, 0]}>
+    <M g={GEO.soft} m={at([0, 0.5, -0.25], [0.28, 0.32, 0.9])} material={toon(c)} />
+    <M g={GEO.soft} m={at([0, 0.7, -0.35], [0.26, 0.06, 0.62])} material={toon("#26272c")} />
+    <M g={GEO.soft} m={at([0, 0.6, 0.42], [0.36, 0.62, 0.12])} material={toon(c)} />
+    <M g={GEO.box} m={at([0, 0.92, 0.42], [0.62, 0.04, 0.05])} material={toon("#26272c")} />
+    {[0.55, -0.55].map((z) => <M key={z} g={GEO.cyl} m={basis([0.05, 0.2, z], [0, 1, 0], [-1, 0, 0], [0, 0, 1], [0.2, 0.1, 0.2])} material={toon("#2a2a2e")} />)}
+  </group>
+);
+/** Shop / room sign board (generic words only). */
+export const SignBoard: React.FC<{ p: V3; w: number; h: number; text: string; bg: string; fg?: string; facing: V3 }> = ({ p, w, h, text, bg, fg = "#ffffff", facing }) => {
+  const f = facing, r: V3 = [f[2], 0, -f[0]];
+  return (
+    <group>
+      <M g={GEO.box} m={basis(p, r, [0, 1, 0], f, [w, h, 0.06])} material={flat(bg, 0.8, false)} />
+      <mesh position={[p[0] + f[0] * 0.032, p[1], p[2] + f[2] * 0.032]} rotation={[0, Math.atan2(f[0], f[2]), 0]}>
+        <planeGeometry args={[w * 0.98, h * 0.94]} />
+        <meshStandardMaterial map={signTex(text, bg, fg, 512, Math.round(512 * (h / w)) || 128)} roughness={0.8} />
+      </mesh>
+    </group>
+  );
+};
+export { stripeTex as stripes };
+
+==== 15357 project/src/tipikal/vehicles/Vehicle.tsx
+// TIPIKAL vehicles (pictures): scooter (kit Motor), underbone motorbike, bicycle, small family car with open windows,
+// angkot (kit). Generic shapes, no brand marks, made-up plate text. Children (riders) ride along inside the group:
+// steering, lean, wheel spin, blinkers and brake lamp come from the director's track.
+import React, { useEffect, useMemo } from "react";
+import { CylinderGeometry, DoubleSide, ExtrudeGeometry, MeshToonMaterial, Quaternion, Shape, TorusGeometry, Vector3, type Material } from "three";
+import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
+import { Motor, type Lamps } from "../../kits/tipikal/Motor.tsx";
+import { Angkot } from "../../kits/tipikal/vehicles.tsx";
+import { at, basis, hullOf, inkHull, lamp, M, stick, toon } from "../../kits/tipikal/mats.ts";
+import { darker } from "../../kits/tipikal/Person.tsx";
+import type { V3 } from "../../kits/tipikal/math.ts";
+import { VEHICLES, steerAxis, type VehDef } from "./lib.ts";
+import { plateTex } from "./plate.ts";
+
+type P2 = [number, number];
+const profile = (pts: P2[], width: number, bevel = 0.02) => {
+  const sh = new Shape();
+  pts.forEach(([z, y], i) => (i ? sh.lineTo(z, y) : sh.moveTo(z, y)));
+  sh.closePath();
+  const depth = Math.max(0.01, width - 2 * bevel);
+  const g = new ExtrudeGeometry(sh, { depth, bevelEnabled: true, bevelThickness: bevel, bevelSize: bevel * 0.8, bevelSegments: 2, curveSegments: 4 });
+  g.rotateY(-Math.PI / 2);
+  g.translate(depth / 2, 0, 0);
+  g.computeVertexNormals();
+  return g;
+};
+const wheelG = (r: number, w: number) => { const g = new CylinderGeometry(r, r, w, 26, 1); g.rotateZ(Math.PI / 2); return g; };
+const G = (() => {
+  const box = new RoundedBoxGeometry(1, 1, 1, 2, 0.1);
+  const cyl = new CylinderGeometry(1, 1, 1, 12, 1); cyl.translate(0, 0.5, 0);
+  // underbone (bebek)
+  const bShield = profile([[0.26, 0.36], [0.33, 0.36], [0.4, 0.55], [0.43, 0.78], [0.41, 0.93], [0.34, 0.95], [0.3, 0.8], [0.27, 0.55]], 0.34, 0.02);
+  const bRear = profile([[-0.12, 0.6], [-0.2, 0.74], [-0.86, 0.8], [-0.98, 0.72], [-0.9, 0.6], [-0.4, 0.55]], 0.26, 0.025);
+  const bSeat = profile([[-0.06, 0.8], [-0.12, 0.865], [-0.8, 0.875], [-0.9, 0.82], [-0.82, 0.79], [-0.2, 0.79]], 0.25, 0.025);
+  const bHead = new RoundedBoxGeometry(0.34, 0.13, 0.2, 2, 0.05);
+  const bTire = wheelG(0.3, 0.075), bRim = wheelG(0.2, 0.08);
+  // bicycle
+  const sTire = new TorusGeometry(0.29, 0.022, 8, 32); sTire.rotateY(Math.PI / 2);
+  // car
+  const cWheel = wheelG(0.32, 0.22), cRim = wheelG(0.19, 0.23);
+  const ring = new TorusGeometry(1, 0.11, 8, 28);
+  const hulls = { bShield: hullOf(bShield, 0.01), bRear: hullOf(bRear, 0.01), bSeat: hullOf(bSeat, 0.01), bHead: hullOf(bHead, 0.01), bTire: hullOf(bTire, 0.01), box: hullOf(box, 0.012), cWheel: hullOf(cWheel, 0.012) };
+  return { box, cyl, bShield, bRear, bSeat, bHead, bTire, bRim, sTire, cWheel, cRim, ring, hulls };
+})();
+
+const B = (p: V3, s: V3, mat: Material, key: string, ink = false) => (
+  <group key={key}>
+    <M g={G.box} m={at(p, s)} material={mat} />
+    {ink ? <M g={G.hulls.box} m={at(p, s)} material={inkHull} shadow={false} /> : null}
+  </group>
+);
+const blinkMat = (on?: boolean) => (on ? lamp("#ffb21f") : toon("#d77b10"));
+const steerQ = (d: VehDef, steer: number) => new Quaternion().setFromAxisAngle(new Vector3(...steerAxis(d)), -steer);
+
+// ------------------------------------------------------------------ underbone motorbike
+const Bebek: React.FC<{ c: string; c2: string; plate: string; steer: number; spin: number; lamps: Lamps; children?: React.ReactNode }> = ({ c, c2, plate, steer, spin, lamps, children }) => {
+  const d = VEHICLES.bebek, K = 0.88;
+  const body = toon(c), acc = toon(c2), dark = toon("#2c2d31"), chrome = toon("#b9bcc2");
+  const plateMat = useMemo(() => new MeshToonMaterial({ map: plateTex(plate) }), [plate]);
+  useEffect(() => () => plateMat.dispose(), [plateMat]);
+  const raw = (v: V3): V3 => [v[0] / K, v[1] / K, v[2] / K];
+  const piv = raw(d.axisTop!);
+  const Wheel = ({ z }: { z: number }) => (
+    <group position={[0, 0.3, z]} rotation={[spin / (0.3 * K), 0, 0]}>
+      <mesh geometry={G.bTire} material={toon("#2a2a2e")} castShadow />
+      <mesh geometry={G.hulls.bTire} material={inkHull} />
+      <mesh geometry={G.bRim} material={toon("#9ea3a9")} />
+    </group>
+  );
+  return (
+    <group>
+      <group scale={K}>
+        <M g={G.bShield} m={at([0, 0, 0])} material={body} /><M g={G.hulls.bShield} m={at([0, 0, 0])} material={inkHull} shadow={false} />
+        <M g={G.bRear} m={at([0, 0, 0])} material={body} /><M g={G.hulls.bRear} m={at([0, 0, 0])} material={inkHull} shadow={false} />
+        <M g={G.bSeat} m={at([0, 0, 0])} material={toon("#25262b")} /><M g={G.hulls.bSeat} m={at([0, 0, 0])} material={inkHull} shadow={false} />
+        {[1, -1].map((sd) => B([sd * 0.132, 0.66, -0.55], [0.012, 0.04, 0.6], acc, "st" + sd))}
+        {/* underbone spine + engine + pegs + exhaust */}
+        <M g={G.cyl} m={stick([0, 0.95, 0.38], [0, 0.48, 0.12], 0.045)} material={dark} />
+        <M g={G.cyl} m={stick([0, 0.48, 0.12], [0, 0.62, -0.3], 0.045)} material={dark} />
+        {B([0, 0.33, -0.08], [0.26, 0.26, 0.44], toon("#6d7178"), "eng", true)}
+        {B([0, 0.47, 0.08], [0.18, 0.12, 0.16], toon("#8a8f96"), "cyl")}
+        {[1, -1].map((sd) => <M key={"pg" + sd} g={G.cyl} m={stick([sd * 0.13, 0.32, -0.02], [sd * 0.29, 0.32, -0.02], 0.016)} material={dark} />)}
+        {[1, -1].map((sd) => <M key={"pp" + sd} g={G.cyl} m={stick([sd * 0.12, 0.37, -0.45], [sd * 0.24, 0.37, -0.45], 0.014)} material={dark} />)}
+        <M g={G.cyl} m={stick([-0.13, 0.2, -0.18], [-0.19, 0.36, -0.88], 0.042)} material={chrome} />
+        {B([0, 0.66, -0.97], [0.15, 0.06, 0.03], lamps.brake ? lamp("#ff2b2b") : toon("#b0222a"), "tail")}
+        {B([0.12, 0.62, -0.95], [0.045, 0.035, 0.03], blinkMat(lamps.blinkL), "rbl")}{B([-0.12, 0.62, -0.95], [0.045, 0.035, 0.03], blinkMat(lamps.blinkR), "rbr")}
+        <M g={G.box} m={basis([0, 0.5, -0.93], [1, 0, 0], [0, 0.97, -0.24], [0, 0.24, 0.97], [0.2, 0.08, 0.008])} material={plateMat} />
+        <M g={G.cyl} m={stick([0, 0.3, -0.62], [0, 0.62, -0.25], 0.03)} material={dark} />
+        <Wheel z={-0.62} />
+        <group position={piv} quaternion={steerQ(d, steer)}>
+          <group position={[-piv[0], -piv[1], -piv[2]]}>
+            <M g={G.bHead} m={at([0, 1.02, 0.45])} material={body} /><M g={G.hulls.bHead} m={at([0, 1.02, 0.45])} material={inkHull} shadow={false} />
+            {B([0, 1.02, 0.555], [0.15, 0.07, 0.02], lamp("#fff6d8"), "hl")}
+            {B([0.17, 1.0, 0.54], [0.045, 0.035, 0.02], blinkMat(lamps.blinkL), "fbl")}{B([-0.17, 1.0, 0.54], [0.045, 0.035, 0.02], blinkMat(lamps.blinkR), "fbr")}
+            {[1, -1].map((sd) => (
+              <group key={"g" + sd}>
+                <M g={G.cyl} m={stick([sd * 0.17, 1.06, 0.4], [sd * 0.35, 1.06, 0.4], 0.021)} material={toon("#202024")} />
+                <M g={G.cyl} m={stick([sd * 0.06, 0.3, 0.66], [sd * 0.06, 0.95, 0.46], 0.022)} material={toon("#9ea3a9")} />
+              </group>
+            ))}
+            <Wheel z={0.66} />
+          </group>
+        </group>
+      </group>
+      {children}
+    </group>
+  );
+};
+
+// ------------------------------------------------------------------ bicycle
+const Sepeda: React.FC<{ c: string; c2: string; steer: number; spin: number; children?: React.ReactNode }> = ({ c, c2, steer, spin, children }) => {
+  const d = VEHICLES.sepeda;
+  const fr = toon(c), dark = toon("#2c2d31");
+  const P = d.pedals!, th = spin / 0.32;
+  const crank = (a: number, sd: 1 | -1): V3 => [sd * P.x, P.c[1] + Math.sin(a) * P.r, P.c[2] + Math.cos(a) * P.r];
+  const piv = d.axisTop!;
+  const Wheel = ({ z }: { z: number }) => (
+    <group position={[0, 0.3, z]} rotation={[spin / 0.3, 0, 0]}>
+      <mesh geometry={G.sTire} material={toon("#26272c")} castShadow />
+      {[0, 1, 2, 3, 4, 5].map((i) => <M key={i} g={G.cyl} m={stick([0, 0, 0], [0, Math.cos((i * Math.PI) / 3) * 0.28, Math.sin((i * Math.PI) / 3) * 0.28], 0.004)} material={toon("#b9bcc2")} shadow={false} />)}
+      <M g={G.cyl} m={stick([-0.03, 0, 0], [0.03, 0, 0], 0.025)} material={toon("#9ea3a9")} />
+    </group>
+  );
+  const T = (a: V3, b: V3, r = 0.022, k = "") => <M key={k} g={G.cyl} m={stick(a, b, r)} material={fr} />;
+  return (
+    <group>
+      {T([0, P.c[1], P.c[2]], [0, 0.74, -0.29], 0.022, "seat")}
+      {T([0, 0.72, -0.27], [0, 0.86, 0.36], 0.022, "top")}
+      {T([0, P.c[1], P.c[2]], [0, 0.78, 0.37], 0.025, "down")}
+      {T([0, P.c[1], P.c[2]], [0, 0.3, -0.5], 0.016, "cs")}
+      {T([0, 0.72, -0.28], [0, 0.3, -0.5], 0.016, "ss")}
+      <M g={G.cyl} m={stick([0, 0.74, -0.3], [0, 0.77, -0.31], 0.012)} material={dark} />
+      {B([0, 0.785, -0.31], [0.14, 0.05, 0.26], toon("#25262b"), "saddle", true)}
+      {/* chainring + crank arms + pedals */}
+      <M g={G.cyl} m={basis([0.06, P.c[1], P.c[2]], [0, 1, 0], [-1, 0, 0], [0, 0, 1], [0.09, 0.012, 0.09])} material={toon("#9ea3a9")} />
+      {([1, -1] as const).map((sd) => { const a = sd === 1 ? th : th + Math.PI; const pe = crank(a, sd); return (
+        <group key={"cr" + sd}>
+          <M g={G.cyl} m={stick([sd * 0.07, P.c[1], P.c[2]], pe, 0.012)} material={toon("#9ea3a9")} />
+          {B([pe[0] + sd * 0.03, pe[1], pe[2]], [0.09, 0.02, 0.06], dark, "pd" + sd)}
+        </group>
+      ); })}
+      <Wheel z={-0.5} />
+      <group position={piv} quaternion={steerQ(d, steer)}>
+        <group position={[-piv[0], -piv[1], -piv[2]]}>
+          {T([0, 0.86, 0.38], [0, 0.3, 0.5], 0.02, "fork")}
+          {T([0, 0.86, 0.38], [0, 0.99, 0.34], 0.018, "stem")}
+          <M g={G.cyl} m={stick([-0.27, 1.0, 0.36], [0.27, 1.0, 0.36], 0.016)} material={dark} />
+          {[1, -1].map((sd) => <M key={"gr" + sd} g={G.cyl} m={stick([sd * 0.2, 1.0, 0.36], [sd * 0.3, 1.0, 0.36], 0.022)} material={toon("#202024")} />)}
+          {/* front basket */}
+          {B([0, 0.86, 0.54], [0.3, 0.18, 0.22], toon(c2), "bk", true)}
+          <Wheel z={0.5} />
+        </group>
+      </group>
+      {children}
+    </group>
+  );
+};
+
+// ------------------------------------------------------------------ small family car (open windows: the driver shows)
+const Mobil: React.FC<{ c: string; c2: string; plate: string; steer: number; spin: number; lamps: Lamps; children?: React.ReactNode }> = ({ c, c2, plate, steer, spin, lamps, children }) => {
+  const d = VEHICLES.mobil;
+  const body = toon(c), trim = toon(c2), seat = toon("#5a4a3e"), dark = toon("#2a2b30");
+  const plateMat = useMemo(() => new MeshToonMaterial({ map: plateTex(plate) }), [plate]);
+  useEffect(() => () => plateMat.dispose(), [plateMat]);
+  const fenderMat = useMemo(() => new MeshToonMaterial({ color: c, side: DoubleSide }), [c]);
+  useEffect(() => () => fenderMat.dispose(), [fenderMat]);
+  const w = d.wheel!;
+  const wheels: [number, number][] = [[0.78, 1.25], [-0.78, 1.25], [0.78, -1.25], [-0.78, -1.25]];
+  return (
+    <group>
+      {/* lower body: floor, side panels, hood, trunk, bumpers (closed parts: nobody is inside a solid) */}
+      {B([0, 0.27, 0], [1.6, 0.1, 3.7], dark, "floor")}
+      {[1, -1].map((sd) => B([sd * 0.8, 0.62, 0], [0.1, 0.7, 3.8], body, "side" + sd, true))}
+      {B([0, 0.62, 1.48], [1.62, 0.62, 0.96], body, "hood", true)}
+      {B([0, 0.64, -1.62], [1.62, 0.66, 0.66], body, "trunk", true)}
+      {B([0, 0.42, 1.98], [1.66, 0.2, 0.12], trim, "bf")}{B([0, 0.44, -1.98], [1.66, 0.2, 0.12], trim, "br")}
+      {[1, -1].map((sd) => B([sd * 0.55, 0.74, 1.955], [0.3, 0.13, 0.04], lamp("#fff4d6"), "hl" + sd))}
+      {[1, -1].map((sd) => B([sd * 0.62, 0.78, -1.955], [0.26, 0.14, 0.04], lamps.brake ? lamp("#ff2b2b") : toon("#a3222a"), "tl" + sd))}
+      {B([0.72, 0.62, -1.955], [0.08, 0.06, 0.03], blinkMat(lamps.blinkL), "bl")}{B([-0.72, 0.62, -1.955], [0.08, 0.06, 0.03], blinkMat(lamps.blinkR), "br2")}
+      <M g={G.box} m={at([0, 0.44, -2.05], [0.4, 0.12, 0.01])} material={plateMat} />
+      <M g={G.box} m={at([0, 0.42, 2.05], [0.4, 0.12, 0.01])} material={plateMat} />
+      {/* pillars + roof */}
+      {[1, -1].flatMap((sd) => [
+        <M key={"pa" + sd} g={G.cyl} m={stick([sd * 0.76, 0.96, 0.98], [sd * 0.7, 1.46, 0.36], 0.045)} material={body} />,
+        <M key={"pb" + sd} g={G.cyl} m={stick([sd * 0.78, 0.96, -0.48], [sd * 0.74, 1.46, -0.48], 0.05)} material={body} />,
+        <M key={"pc" + sd} g={G.cyl} m={stick([sd * 0.78, 0.96, -1.3], [sd * 0.72, 1.46, -1.15], 0.06)} material={body} />,
+      ])}
+      {B([0, 1.48, -0.4], [1.5, 0.07, 1.6], body, "roof", true)}
+      {/* cabin: dashboard, seats, steering wheel */}
+      {B([0, 0.86, 0.82], [1.5, 0.2, 0.3], toon("#3a3d42"), "dash")}
+      {[1, -1].map((sd) => (
+        <group key={"seat" + sd}>
+          {B([sd * 0.36, 0.44, -0.05], [0.5, 0.12, 0.5], seat, "cu" + sd)}
+          {B([sd * 0.36, 0.82, -0.36], [0.5, 0.66, 0.12], seat, "bk" + sd)}
+        </group>
+      ))}
+      {B([0, 0.62, -0.95], [1.4, 0.5, 0.4], seat, "rear")}
+      <group position={w.c} rotation={[-w.tilt, 0, 0]}>
+        <group rotation={[0, 0, steer * 1.6]}>
+          <mesh geometry={G.ring} scale={[w.r, w.r, w.r]} material={dark} />
+          <M g={G.cyl} m={stick([-w.r, 0, 0], [w.r, 0, 0], 0.012)} material={dark} />
+        </group>
+      </group>
+      <M g={G.cyl} m={stick([w.c[0], 0.8, 0.7], [w.c[0], w.c[1] - 0.05, w.c[2] + 0.05], 0.025)} material={dark} />
+      {wheels.map(([x, z], i) => (
+        <group key={i} position={[x, 0.32, z]} rotation={[0, z > 0 ? steer : 0, 0]}>
+          <group rotation={[spin / 0.32, 0, 0]}>
+            <mesh geometry={G.cWheel} material={toon("#26262a")} castShadow />
+            <mesh geometry={G.hulls.cWheel} material={inkHull} />
+            <mesh geometry={G.cRim} material={toon("#c9ccd1")} />
+          </group>
+        </group>
+      ))}
+      {children}
+    </group>
+  );
+};
+
+export type VehicleProps = { kind: string; color?: string; color2?: string; plate?: string; steer?: number; spin?: number; lean?: number; lamps?: Lamps; scale?: number; rack?: boolean; children?: React.ReactNode };
+/** Any vehicle of the library by kind. */
+export const Vehicle: React.FC<VehicleProps> = ({ kind, color, color2, plate = "", steer = 0, spin = 0, lean = 0, lamps = {}, scale = 1, rack = false, children }) => {
+  const d = VEHICLES[kind];
+  const c = color ?? d.color, c2 = color2 ?? d.color2;
+  const sp = spin / scale;
+  let inner: React.ReactNode;
+  if (d.kind === "matic") inner = <Motor spec={{ body: c, accent: c2, seat: "#25262b", plate, rack }} steer={steer} spin={sp} lamps={lamps} />;
+  else if (d.kind === "bebek") inner = <group><Bebek c={c} c2={c2} plate={plate} steer={steer} spin={sp} lamps={lamps} />{rack ? B([0, d.rack![1] - 0.012, d.rack![2]], [0.3, 0.024, 0.28], toon("#3b3d42"), "rk") : null}</group>;
+  else if (d.kind === "sepeda") inner = <Sepeda c={c} c2={c2} steer={steer} spin={sp} />;
+  else if (d.kind === "mobil") inner = <Mobil c={c} c2={c2} plate={plate} steer={steer} spin={sp} lamps={lamps} />;
+  else inner = <Angkot spec={{ body: c, stripe: c2 }} spin={sp} brake={lamps.brake} />;
+  // riders sit in the leaning group but outside the scaled model (a small bike does not shrink its rider)
+  return (
+    <group rotation={[0, 0, d.kind === "mobil" || d.kind === "angkot" ? 0 : -lean]}>
+      <group scale={scale}>{inner}</group>
+      {children}
+    </group>
+  );
+};
+void darker;

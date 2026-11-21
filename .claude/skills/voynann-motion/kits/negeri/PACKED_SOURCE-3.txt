@@ -1,0 +1,1502 @@
+VOYNANN Motion - packed source files of this folder. Do not edit by hand.
+The skill upload in the Claude app accepts at most 200 files, so the source files are packed here.
+`node <skill folder>/new-project.mjs <project folder> --kit=<style>` unpacks them into the project.
+Format: per file one line with four '=' signs, the byte length and the path, then exactly that many bytes.
+
+==== 4388 project/public/negeri/OFL-fredoka.txt
+Copyright 2016 The Fredoka Project Authors (https://github.com/hafontia/Fredoka-One)
+
+This Font Software is licensed under the SIL Open Font License, Version 1.1.
+This license is copied below, and is also available with a FAQ at:
+http://scripts.sil.org/OFL
+
+
+-----------------------------------------------------------
+SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007
+-----------------------------------------------------------
+
+PREAMBLE
+The goals of the Open Font License (OFL) are to stimulate worldwide
+development of collaborative font projects, to support the font creation
+efforts of academic and linguistic communities, and to provide a free and
+open framework in which fonts may be shared and improved in partnership
+with others.
+
+The OFL allows the licensed fonts to be used, studied, modified and
+redistributed freely as long as they are not sold by themselves. The
+fonts, including any derivative works, can be bundled, embedded, 
+redistributed and/or sold with any software provided that any reserved
+names are not used by derivative works. The fonts and derivatives,
+however, cannot be released under any other type of license. The
+requirement for fonts to remain under this license does not apply
+to any document created using the fonts or their derivatives.
+
+DEFINITIONS
+"Font Software" refers to the set of files released by the Copyright
+Holder(s) under this license and clearly marked as such. This may
+include source files, build scripts and documentation.
+
+"Reserved Font Name" refers to any names specified as such after the
+copyright statement(s).
+
+"Original Version" refers to the collection of Font Software components as
+distributed by the Copyright Holder(s).
+
+"Modified Version" refers to any derivative made by adding to, deleting,
+or substituting -- in part or in whole -- any of the components of the
+Original Version, by changing formats or by porting the Font Software to a
+new environment.
+
+"Author" refers to any designer, engineer, programmer, technical
+writer or other person who contributed to the Font Software.
+
+PERMISSION & CONDITIONS
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of the Font Software, to use, study, copy, merge, embed, modify,
+redistribute, and sell modified and unmodified copies of the Font
+Software, subject to the following conditions:
+
+1) Neither the Font Software nor any of its individual components,
+in Original or Modified Versions, may be sold by itself.
+
+2) Original or Modified Versions of the Font Software may be bundled,
+redistributed and/or sold with any software, provided that each copy
+contains the above copyright notice and this license. These can be
+included either as stand-alone text files, human-readable headers or
+in the appropriate machine-readable metadata fields within text or
+binary files as long as those fields can be easily viewed by the user.
+
+3) No Modified Version of the Font Software may use the Reserved Font
+Name(s) unless explicit written permission is granted by the corresponding
+Copyright Holder. This restriction only applies to the primary font name as
+presented to the users.
+
+4) The name(s) of the Copyright Holder(s) or the Author(s) of the Font
+Software shall not be used to promote, endorse or advertise any
+Modified Version, except to acknowledge the contribution(s) of the
+Copyright Holder(s) and the Author(s) or with their explicit written
+permission.
+
+5) The Font Software, modified or unmodified, in part or in whole,
+must be distributed entirely under this license, and must not be
+distributed under any other license. The requirement for fonts to
+remain under this license does not apply to any document created
+using the Font Software.
+
+TERMINATION
+This license becomes null and void if any of the above conditions are
+not met.
+
+DISCLAIMER
+THE FONT SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT
+OF COPYRIGHT, PATENT, TRADEMARK, OR OTHER RIGHT. IN NO EVENT SHALL THE
+COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+INCLUDING ANY GENERAL, SPECIAL, INDIRECT, INCIDENTAL, OR CONSEQUENTIAL
+DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
+OTHER DEALINGS IN THE FONT SOFTWARE.
+
+==== 4402 project/public/negeri/OFL-plus-jakarta-sans.txt
+Copyright 2020 The Plus Jakarta Sans Project Authors (https://github.com/tokotype/PlusJakartaSans)
+
+This Font Software is licensed under the SIL Open Font License, Version 1.1.
+This license is copied below, and is also available with a FAQ at:
+http://scripts.sil.org/OFL
+
+
+-----------------------------------------------------------
+SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007
+-----------------------------------------------------------
+
+PREAMBLE
+The goals of the Open Font License (OFL) are to stimulate worldwide
+development of collaborative font projects, to support the font creation
+efforts of academic and linguistic communities, and to provide a free and
+open framework in which fonts may be shared and improved in partnership
+with others.
+
+The OFL allows the licensed fonts to be used, studied, modified and
+redistributed freely as long as they are not sold by themselves. The
+fonts, including any derivative works, can be bundled, embedded, 
+redistributed and/or sold with any software provided that any reserved
+names are not used by derivative works. The fonts and derivatives,
+however, cannot be released under any other type of license. The
+requirement for fonts to remain under this license does not apply
+to any document created using the fonts or their derivatives.
+
+DEFINITIONS
+"Font Software" refers to the set of files released by the Copyright
+Holder(s) under this license and clearly marked as such. This may
+include source files, build scripts and documentation.
+
+"Reserved Font Name" refers to any names specified as such after the
+copyright statement(s).
+
+"Original Version" refers to the collection of Font Software components as
+distributed by the Copyright Holder(s).
+
+"Modified Version" refers to any derivative made by adding to, deleting,
+or substituting -- in part or in whole -- any of the components of the
+Original Version, by changing formats or by porting the Font Software to a
+new environment.
+
+"Author" refers to any designer, engineer, programmer, technical
+writer or other person who contributed to the Font Software.
+
+PERMISSION & CONDITIONS
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of the Font Software, to use, study, copy, merge, embed, modify,
+redistribute, and sell modified and unmodified copies of the Font
+Software, subject to the following conditions:
+
+1) Neither the Font Software nor any of its individual components,
+in Original or Modified Versions, may be sold by itself.
+
+2) Original or Modified Versions of the Font Software may be bundled,
+redistributed and/or sold with any software, provided that each copy
+contains the above copyright notice and this license. These can be
+included either as stand-alone text files, human-readable headers or
+in the appropriate machine-readable metadata fields within text or
+binary files as long as those fields can be easily viewed by the user.
+
+3) No Modified Version of the Font Software may use the Reserved Font
+Name(s) unless explicit written permission is granted by the corresponding
+Copyright Holder. This restriction only applies to the primary font name as
+presented to the users.
+
+4) The name(s) of the Copyright Holder(s) or the Author(s) of the Font
+Software shall not be used to promote, endorse or advertise any
+Modified Version, except to acknowledge the contribution(s) of the
+Copyright Holder(s) and the Author(s) or with their explicit written
+permission.
+
+5) The Font Software, modified or unmodified, in part or in whole,
+must be distributed entirely under this license, and must not be
+distributed under any other license. The requirement for fonts to
+remain under this license does not apply to any document created
+using the Font Software.
+
+TERMINATION
+This license becomes null and void if any of the above conditions are
+not met.
+
+DISCLAIMER
+THE FONT SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT
+OF COPYRIGHT, PATENT, TRADEMARK, OR OTHER RIGHT. IN NO EVENT SHALL THE
+COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+INCLUDING ANY GENERAL, SPECIAL, INDIRECT, INCIDENTAL, OR CONSEQUENTIAL
+DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
+OTHER DEALINGS IN THE FONT SOFTWARE.
+
+==== 664 project/remotion.config.ts
+// See all configuration options: https://remotion.dev/docs/config
+import fs from "node:fs";
+import { Config } from "@remotion/cli/config";
+
+Config.setVideoImageFormat("jpeg");
+Config.setJpegQuality(95);
+Config.setOverwriteOutput(true);
+// WebGL film: GPU-backed ANGLE path in headless Chrome, or software "swangle" when scripts/gl.mjs found
+// no usable GPU on this computer (remembered in .gl-mode). The GL env var overrides both.
+type GL = Parameters<typeof Config.setChromiumOpenGlRenderer>[0];
+const gl = (process.env.GL || (fs.existsSync(".gl-mode") ? fs.readFileSync(".gl-mode", "utf8").trim() : "") || "angle") as GL;
+Config.setChromiumOpenGlRenderer(gl);
+
+==== 990 project/series/republik-komen/world.json
+{
+  "voynann": "negeri-world/1",
+  "country": "Republik Komen",
+  "flag": [
+    "#d7262e",
+    "#f7f5ef"
+  ],
+  "host": {
+    "preset": "presiden"
+  },
+  "voice": "aku",
+  "custom": {},
+  "days": [
+    {
+      "day": 1,
+      "story": "hari-1",
+      "population": 12480,
+      "builds": [
+        {
+          "id": "ronda",
+          "kind": "pos-ronda",
+          "plot": "S1",
+          "name": "POS RONDA",
+          "by": "@budi.santuy",
+          "day": 1
+        }
+      ],
+      "plates": [
+        {
+          "handle": "@sari.kopi",
+          "no": 2,
+          "slot": "R1",
+          "day": 1
+        },
+        {
+          "handle": "@dimas_07",
+          "no": 3,
+          "slot": "R2",
+          "day": 1
+        },
+        {
+          "handle": "@uci.nyemil",
+          "no": 4,
+          "slot": "R3",
+          "day": 1
+        }
+      ],
+      "citizens": {
+        "budi": {
+          "preset": "ronda",
+          "handle": "@budi.santuy"
+        }
+      }
+    }
+  ]
+}
+
+==== 1214 project/src/kits/negeri/cam.ts
+// NEGERI camera maths for the browser: the shot type the Stage reads and the projection the 2D overlay uses to pin
+// bubbles / name tags to 3D points. Pure easing helpers live in math.ts (node + browser).
+import { PerspectiveCamera, Vector3 } from "three";
+import type { V3 } from "./math.ts";
+
+export type { V3 } from "./math.ts";
+export { backOut, clamp01, hash, lin, mix, mix3, outCubic, rng, sm, smoother } from "./math.ts";
+export type Shot = { pos: V3; target: V3; fov: number; roll?: number; shadowAt?: V3; shadowBox?: number };
+
+const tmpCam = new PerspectiveCamera();
+/** World point → overlay space (0..1, y down); vis = in front of the camera and inside the frame. */
+export const project = (shot: Shot, aspect: number, p: V3) => {
+  tmpCam.fov = shot.fov;
+  tmpCam.aspect = aspect;
+  tmpCam.near = 0.08;
+  tmpCam.far = 2000;
+  tmpCam.position.set(...shot.pos);
+  tmpCam.up.set(Math.sin(shot.roll ?? 0), Math.cos(shot.roll ?? 0), 0);
+  tmpCam.lookAt(...shot.target);
+  tmpCam.updateProjectionMatrix();
+  tmpCam.updateMatrixWorld();
+  const v = new Vector3(...p).project(tmpCam);
+  return { x: (v.x + 1) / 2, y: (1 - v.y) / 2, vis: v.z < 1 && v.z > -1 && Math.abs(v.x) < 1 && Math.abs(v.y) < 1 };
+};
+
+==== 313 project/src/kits/negeri/chibi/exprs.ts
+// The chibi's expressions (pure: node + browser).
+export type Expr = "neutral" | "happy" | "talk" | "proud" | "shocked" | "annoyed" | "sleep" | "smug" | "laugh" | "sad" | "angry";
+export const EXPRS: Expr[] = ["neutral", "happy", "talk", "proud", "shocked", "annoyed", "sleep", "smug", "laugh", "sad", "angry"];
+
+==== 9964 project/src/kits/negeri/chibi/face.ts
+// NEGERI faces — a 2D anime-chibi face (big glossy eyes, blush, tiny nose) drawn on a canvas and projected onto a
+// spherical patch on the front of the head (the CERDIK decal technique, new drawing). Expressions swap like a 2D
+// cartoon; every combination is drawn once and cached.
+
+import { CanvasTexture, LinearFilter, SRGBColorSpace } from "three";
+import type { ChibiSpec } from "./spec.ts";
+
+export const PATCH = { lon: (75 * Math.PI) / 180, lat: (75 * Math.PI) / 180 };
+
+import type { Expr } from "./exprs.ts";
+export type { Expr } from "./exprs.ts";
+export { EXPRS } from "./exprs.ts";
+export type FaceState = { expr: Expr; open?: number; blink?: number; look?: [number, number] };
+
+type P2 = [number, number];
+const projector = (W: number, H: number) => (p: P2): P2 => {
+  const [x, y] = p;
+  const r2 = Math.min(0.995, x * x + y * y);
+  const z = Math.sqrt(1 - r2);
+  const lon = Math.atan2(x, z), lat = Math.asin(Math.max(-1, Math.min(1, y)));
+  return [((lon + PATCH.lon) / (2 * PATCH.lon)) * W, ((PATCH.lat - lat) / (2 * PATCH.lat)) * H];
+};
+const ellipse = (cx: number, cy: number, rx: number, ry: number, n = 40): P2[] =>
+  Array.from({ length: n + 1 }, (_, i) => { const a = (i / n) * Math.PI * 2; return [cx + Math.cos(a) * rx, cy + Math.sin(a) * ry] as P2; });
+const quad = (a: P2, c: P2, b: P2, n = 20): P2[] =>
+  Array.from({ length: n + 1 }, (_, i) => { const t = i / n, u = 1 - t; return [u * u * a[0] + 2 * u * t * c[0] + t * t * b[0], u * u * a[1] + 2 * u * t * c[1] + t * t * b[1]] as P2; });
+const lens = (upper: P2[], lower: P2[]): P2[] => [...upper, ...lower.slice().reverse()];
+
+type Ctx = { g: CanvasRenderingContext2D; P: (p: P2) => P2; k: number };
+const path = (C: Ctx, pts: P2[]) => { C.g.beginPath(); pts.forEach((p, i) => { const q = C.P(p); if (i) C.g.lineTo(q[0], q[1]); else C.g.moveTo(q[0], q[1]); }); };
+const fill = (C: Ctx, pts: P2[], color: string) => { path(C, pts); C.g.closePath(); C.g.fillStyle = color; C.g.fill(); };
+const stroke = (C: Ctx, pts: P2[], w: number, color: string) => {
+  path(C, pts); C.g.lineWidth = w * C.k; C.g.lineCap = "round"; C.g.lineJoin = "round"; C.g.strokeStyle = color; C.g.stroke();
+};
+
+const INK = "#24170f";
+const IRIS = "#3a2216";
+const MOUTH = "#6b2421";
+const TONGUE = "#e0646a";
+const TEETH = "#fffdf8";
+const EX = 0.3, EY = -0.06, MY = -0.36;
+
+const openEye = (C: Ctx, cx: number, cy: number, s: ChibiSpec, look: P2, lid = 0) => {
+  const rx = 0.105, ry = 0.14;
+  const lx = cx + look[0], ly = cy + look[1];
+  let pts = ellipse(lx, ly, rx, ry);
+  const top = ly + ry - lid * 2 * ry;
+  if (lid > 0.01) pts = pts.filter((p) => p[1] <= top);
+  if (pts.length > 2) fill(C, pts, IRIS);
+  if (lid < 0.45) {
+    fill(C, ellipse(lx + 0.034, ly + 0.052, 0.038, 0.042), "#ffffff");
+    fill(C, ellipse(lx - 0.036, ly - 0.06, 0.018, 0.018), "#ffffff");
+  }
+  // upper lash line (thick), lids follow it down
+  const lt = Math.min(top, ly + ry) + 0.012;
+  stroke(C, quad([lx - rx * 1.2, lt - 0.035 + lid * 0.03], [lx, lt + 0.03 - lid * 0.03], [lx + rx * 1.2, lt - 0.035 + lid * 0.03]), 0.038, INK);
+  if (s.face?.lashes) {
+    const sd = Math.sign(cx);
+    stroke(C, [[lx + sd * rx * 1.15, lt - 0.03], [lx + sd * rx * 1.6, lt + 0.015]], 0.026, INK);
+  }
+};
+
+export const faceTexture = (spec: ChibiSpec, st: FaceState, size = 1024): CanvasTexture => {
+  const open = Math.round(Math.max(0, Math.min(1, st.open ?? 0)) * 3) / 3;
+  const blink = Math.round(Math.max(0, Math.min(1, st.blink ?? 0)) * 2) / 2;
+  const look: P2 = [Math.round((st.look?.[0] ?? 0) * 40) / 40, Math.round((st.look?.[1] ?? 0) * 40) / 40];
+  const key = `${spec.skin}|${spec.hair.color}|${JSON.stringify(spec.face ?? {})}|${st.expr}|${open}|${blink}|${look}|${size}`;
+  const hit = cache.get(key);
+  if (hit) return hit;
+  const cv = document.createElement("canvas");
+  cv.width = size; cv.height = size;
+  const g = cv.getContext("2d")!;
+  g.clearRect(0, 0, size, size);
+  const C: Ctx = { g, P: projector(size, size), k: size / (2 * PATCH.lon) };
+  const f = spec.face ?? {};
+  const brow = spec.hair.style === "bald" ? "#4a3a30" : spec.hair.color;
+  const e = st.expr;
+
+  if (f.blush || e === "proud" || e === "happy" || e === "laugh") {
+    for (const sd of [-1, 1]) fill(C, ellipse(sd * 0.48, -0.24, 0.1, 0.05), "rgba(232,104,96,0.42)");
+  }
+  // ---- eyes
+  for (const sd of [-1, 1] as const) {
+    const cx = sd * EX, cy = EY;
+    if (blink >= 0.99 && e !== "shocked" && e !== "sleep" && e !== "proud" && e !== "laugh") {
+      stroke(C, quad([cx - 0.085, cy - 0.005], [cx, cy - 0.04], [cx + 0.085, cy - 0.005]), 0.036, INK);
+      continue;
+    }
+    switch (e) {
+      case "proud":
+      case "laugh":
+        stroke(C, quad([cx - 0.09, cy - 0.03], [cx, cy + 0.08], [cx + 0.09, cy - 0.03]), e === "laugh" ? 0.048 : 0.042, INK);
+        break;
+      case "sad":
+        openEye(C, cx, cy, spec, [look[0], look[1] - 0.025], 0.28);
+        break;
+      case "angry":
+        openEye(C, cx, cy, spec, look, 0.42);
+        break;
+      case "sleep":
+        stroke(C, quad([cx - 0.09, cy + 0.0], [cx, cy - 0.065], [cx + 0.09, cy + 0.0]), 0.036, INK);
+        break;
+      case "shocked": {
+        fill(C, ellipse(cx, cy + 0.01, 0.125, 0.15), "#ffffff");
+        stroke(C, ellipse(cx, cy + 0.01, 0.125, 0.15), 0.026, INK);
+        fill(C, ellipse(cx + look[0] * 0.5, cy + 0.0, 0.04, 0.048), IRIS);
+        break;
+      }
+      case "annoyed":
+        openEye(C, cx, cy, spec, look, 0.5);
+        break;
+      case "smug":
+        openEye(C, cx, cy, spec, look, 0.35);
+        break;
+      default:
+        openEye(C, cx, cy, spec, look, blink * 0.6);
+    }
+  }
+  // ---- brows
+  const bw = f.brows === "thick" ? 0.055 : 0.036;
+  const browAt = (sd: number, dy: number, a: number) => {
+    const cx = sd * EX, by = 0.22 + dy;
+    const inner: P2 = [cx - sd * 0.08, by - a * 0.08], outer: P2 = [cx + sd * 0.08, by + a * 0.08];
+    stroke(C, quad(inner, [cx, by + 0.025 + dy * 0.1], outer), bw, brow);
+  };
+  for (const sd of [-1, 1]) {
+    if (e === "shocked") browAt(sd, 0.1, -0.3);
+    else if (e === "annoyed") browAt(sd, -0.02, 0.45);
+    else if (e === "proud" || e === "happy" || e === "laugh") browAt(sd, 0.03, -0.15);
+    else if (e === "sad") browAt(sd, 0.03, -0.45);
+    else if (e === "angry") browAt(sd, -0.035, 0.65);
+    else if (e === "sleep") browAt(sd, -0.02, -0.25);
+    else if (e === "smug") browAt(sd, sd > 0 ? 0.04 : -0.01, 0.1);
+    else browAt(sd, 0, 0);
+  }
+  if (f.glasses) {
+    for (const sd of [-1, 1]) stroke(C, ellipse(sd * EX, EY, 0.14, 0.14), 0.024, "#2b2b2b");
+    stroke(C, quad([-EX + 0.14, EY + 0.03], [0, EY + 0.06], [EX - 0.14, EY + 0.03]), 0.022, "#2b2b2b");
+  }
+  // ---- nose
+  stroke(C, quad([-0.025, -0.155], [0, -0.18], [0.025, -0.155]), 0.022, "rgba(110,52,34,0.55)");
+  if (f.mustache) {
+    for (const sd of [-1, 1]) fill(C, lens(quad([0, -0.2], [sd * 0.12, -0.15], [sd * 0.21, -0.25]), quad([0, -0.27], [sd * 0.12, -0.3], [sd * 0.21, -0.25])), brow);
+  }
+  if (f.beard) {
+    const bc = spec.hair.style === "bald" ? "#4a3a30" : spec.hair.color;
+    fill(C, lens(quad([-0.38, -0.18], [0, -0.64], [0.38, -0.18]), quad([-0.38, -0.18], [0, -1.08], [0.38, -0.18])), bc);
+  }
+  // ---- mouth (any face can talk: the open value flaps the mouth, the eyes / brows keep the expression)
+  const talkOpen = e === "talk" ? Math.max(open, 0.34) : open;
+  const talking = talkOpen > 0.05 && e !== "sleep" && e !== "shocked";
+  if (e === "shocked") {
+    const h = 0.1 + open * 0.03;
+    fill(C, ellipse(0, MY - 0.03, 0.075, h), MOUTH);
+    fill(C, ellipse(0, MY - 0.03 - h * 0.5, 0.045, h * 0.35), TONGUE);
+    stroke(C, ellipse(0, MY - 0.03, 0.075, h), 0.026, INK);
+  } else if (e === "sleep") {
+    fill(C, ellipse(0.02, MY - 0.01, 0.045, 0.04 + open * 0.02), MOUTH);
+    stroke(C, ellipse(0.02, MY - 0.01, 0.045, 0.04 + open * 0.02), 0.022, INK);
+  } else if (e === "annoyed" && !talking) {
+    stroke(C, [[-0.1, MY], [-0.05, MY + 0.018], [0, MY - 0.005], [0.05, MY + 0.018], [0.1, MY]], 0.03, INK);
+  } else if (e === "sad" && !talking) {
+    stroke(C, quad([-0.09, MY - 0.035], [0, MY + 0.035], [0.09, MY - 0.035]), 0.03, INK);
+  } else if (e === "angry" && !talking) {
+    const up = quad([-0.11, MY + 0.02], [0, MY + 0.035], [0.11, MY + 0.02]), lo = quad([-0.11, MY + 0.02], [0, MY - 0.11], [0.11, MY + 0.02]);
+    fill(C, lens(up, lo), TEETH);
+    stroke(C, [[-0.1, MY - 0.02], [0.1, MY - 0.02]], 0.016, INK);
+    stroke(C, lens(up, lo), 0.026, INK);
+  } else if (e === "proud" || e === "happy" || e === "laugh" || talkOpen > 0.05) {
+    const w = e === "proud" ? 0.17 : e === "laugh" ? 0.18 : e === "happy" ? 0.15 : 0.11;
+    const h = e === "proud" ? 0.13 + talkOpen * 0.06 : e === "laugh" ? 0.18 + talkOpen * 0.05 : e === "happy" ? 0.1 + talkOpen * 0.07 : 0.05 + talkOpen * 0.11;
+    const upper = quad([-w, MY + 0.03], [0, MY + 0.045], [w, MY + 0.03]);
+    const lower = quad([-w, MY + 0.03], [0, MY + 0.03 - h * 2], [w, MY + 0.03]);
+    fill(C, lens(upper, lower), MOUTH);
+    const bottom = MY + 0.03 - h;
+    if (h > 0.08) fill(C, ellipse(0, bottom + h * 0.28, w * 0.5, h * 0.3), TONGUE);
+    if (e === "proud" || e === "happy" || e === "laugh") fill(C, lens(upper, quad([-w * 0.9, MY + 0.015], [0, MY - 0.02], [w * 0.9, MY + 0.015])), TEETH);
+    stroke(C, lens(upper, lower), 0.026, INK);
+  } else if (e === "smug" && !talking) {
+    stroke(C, quad([-0.11, MY + 0.0], [0.03, MY - 0.04], [0.13, MY + 0.05]), 0.03, INK);
+  } else {
+    stroke(C, quad([-0.09, MY + 0.02], [0, MY - 0.05], [0.09, MY + 0.02]), 0.03, INK);
+  }
+  if (e === "annoyed") {
+    const drop = [...quad([0.6, 0.34], [0.53, 0.2], [0.6, 0.16]), ...quad([0.6, 0.16], [0.67, 0.2], [0.6, 0.34])];
+    fill(C, drop, "#9fd8f5");
+    stroke(C, drop, 0.016, "#3b7ea6");
+  }
+  const t = new CanvasTexture(cv);
+  t.colorSpace = SRGBColorSpace;
+  t.minFilter = LinearFilter;
+  t.generateMipmaps = false;
+  t.anisotropy = 4;
+  cache.set(key, t);
+  return t;
+};
+const cache = new Map<string, CanvasTexture>();
+
+==== 1720 project/src/kits/negeri/chibi/spec.ts
+// NEGERI character look — pure data. Every person (the host and every warga) is a ChibiSpec; the cast library
+// (src/negeri/cast.ts) holds ready presets and a story / saved tokoh overrides any field.
+
+export type HairStyle = "short" | "fringe" | "spiky" | "long" | "bun" | "bald";
+export type Motif = "kawung" | "parang" | "dots" | "stripes" | "none";
+export type HatKind = "none" | "peci" | "kerudung" | "mahkota" | "caping" | "topi" | "helm";
+
+export type ChibiSpec = {
+  /** overall scale (1 ≈ 1.2 m chibi adult; kids ≈ 0.75) */
+  scale?: number;
+  /** belly: 1 = standard, up to 1.3 = round */
+  belly?: number;
+  skin: string;
+  hair: { style: HairStyle; color: string };
+  shirt: {
+    color: string;
+    /** batik / pattern painted on the shirt */
+    motif?: Motif;
+    motifColor?: string;
+    collar?: string;
+    buttons?: string;
+    /** long sleeves (otherwise short sleeves, bare forearms) */
+    long?: boolean;
+    /** long top over the hips (kebaya / tunic / robe): the hip band takes the shirt colour */
+    tunic?: boolean;
+  };
+  pants: string;
+  shoes: string;
+  hat?: { kind: HatKind; color?: string; color2?: string };
+  face?: { brows?: "thin" | "thick"; lashes?: boolean; blush?: boolean; mustache?: boolean; beard?: boolean; glasses?: boolean };
+  /** ID card on a lanyard (text on the card: PRESIDEN, LURAH, RAJA…) */
+  lanyard?: { strap: string; card?: string; text: string };
+  /** sarung (checked cloth) over the legs instead of trousers */
+  sarung?: { color: string; check: string };
+  /** open vest painted over the shirt (safari, safety vest) */
+  vest?: string;
+  /** apron (celemek) over the front */
+  apron?: string;
+  /** diagonal sash (selempang) */
+  sash?: string;
+};
+
+==== 1104 project/src/kits/negeri/fonts.ts
+import { continueRender, delayRender, staticFile } from "remotion";
+
+// NEGERI type (both SIL OFL, licences in public/negeri/):
+//   Fredoka — rounded display face for the chip, counter, punch words and CTA (game-UI feel)
+//   Plus Jakarta Sans — handles, comment text, labels
+export const F_DISPLAY = "NegeriFredoka";
+export const F_TEXT = "NegeriJakarta";
+
+let ready: Promise<void> | null = null;
+export const fontsReady = (): Promise<void> => {
+  if (ready) return ready;
+  if (typeof document === "undefined") return (ready = Promise.resolve());
+  const handle = delayRender("negeri fonts");
+  const faces = [
+    new FontFace(F_DISPLAY, `url(${staticFile("negeri/Fredoka.ttf")}) format("truetype")`, { weight: "300 700" }),
+    new FontFace(F_TEXT, `url(${staticFile("negeri/PlusJakartaSans.ttf")}) format("truetype")`, { weight: "200 800" }),
+  ];
+  ready = Promise.all(faces.map(async (f) => { await f.load(); (document.fonts as unknown as { add(f: FontFace): void }).add(f); })).then(
+    () => continueRender(handle),
+    (e) => { continueRender(handle); throw e; },
+  );
+  return ready;
+};
+
+==== 1998 project/src/kits/negeri/math.ts
+// NEGERI maths shared by node (director) and the browser (renderer). No three, no React.
+export type V3 = [number, number, number];
+
+export const clamp01 = (x: number) => (x < 0 ? 0 : x > 1 ? 1 : x);
+export const lin = (s: number, a: number, b: number) => clamp01((s - a) / (b - a));
+export const sm = (t: number) => { const x = clamp01(t); return x * x * (3 - 2 * x); };
+export const smoother = (t: number) => { const x = clamp01(t); return x * x * x * (x * (x * 6 - 15) + 10); };
+/** ease-out with a small overshoot (cards, pop-ins); c = overshoot amount */
+export const backOut = (t: number, c = 1.4) => { const x = clamp01(t) - 1; return 1 + (c + 1) * x * x * x + c * x * x; };
+export const outCubic = (t: number) => 1 - Math.pow(1 - clamp01(t), 3);
+export const mix = (a: number, b: number, t: number) => a + (b - a) * t;
+export const mix3 = (a: V3, b: V3, t: number): V3 => [mix(a[0], b[0], t), mix(a[1], b[1], t), mix(a[2], b[2], t)];
+export const add3 = (a: V3, b: V3, k = 1): V3 => [a[0] + b[0] * k, a[1] + b[1] * k, a[2] + b[2] * k];
+export const wrapA = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
+/** Deterministic hash 0..1 */
+export const hash = (n: number) => { const x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
+/** Seeded PRNG */
+export const rng = (seed: number) => { let s = seed >>> 0 || 1; return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; }; };
+/** Local (x, z) of a frame at `at` turned by `yaw` (0 = front toward +z) → world. */
+export const toWorld = (p: V3, at: V3, yaw: number): V3 => [at[0] + p[0] * Math.cos(yaw) + p[2] * Math.sin(yaw), at[1] + p[1], at[2] - p[0] * Math.sin(yaw) + p[2] * Math.cos(yaw)];
+export const fwdOf = (yaw: number): V3 => [Math.sin(yaw), 0, Math.cos(yaw)];
+/** the frame's own right-hand side (its −x) */
+export const rightOf = (yaw: number): V3 => [-Math.cos(yaw), 0, Math.sin(yaw)];
+export const yawTo = (from: V3, to: V3) => Math.atan2(to[0] - from[0], to[2] - from[2]);
+
+==== 2386 project/src/kits/negeri/ui/layout.ts
+// NEGERI 2D layout maths shared by the director (camera framing) and the renderer (cards, speech). Pure.
+// Portrait 1080 × 1920: cards are full-width bands; landscape 1920 × 1080: cards sit in a side column.
+export type Band = [number, number];
+
+const textLines = (text: string, size: number, width: number) => Math.max(1, Math.ceil(text.length / ((width / (size * 0.5)) * 0.9)));
+/** the comment cards: the winner (big) and the other top comments (a compact list under it) */
+export const commentLayout = (comments: { text: string }[], wide: boolean) => {
+  const W = wide ? 860 : 940, top = wide ? 250 : 470;
+  const size = (comments[0]?.text.length ?? 0) > 44 ? 50 : 62;
+  const lines = textLines(comments[0]?.text ?? "", size, W - 70);
+  const winnerH = 204 + lines * size * 1.08;
+  const others = Math.max(0, Math.min(3, comments.length) - 1);
+  const othersTop = top + winnerH + 26, othersH = others ? 40 + others * 66 : 0;
+  return { W, top, size, winnerH, others, othersTop, othersH, bottom: others ? othersTop + othersH : top + winnerH };
+};
+/** portrait: the vertical band a card covers (0..1 of the height) */
+export const bandP = (o: { kind: string; comments?: { text: string }[] }): Band | null => {
+  switch (o.kind) {
+    case "rules": return [0.235, 0.44];
+    case "comment": return [0.235, (commentLayout(o.comments ?? [], false).bottom + 16) / 1920];
+    case "cta": return [0.235, 0.46];
+    case "build": return [0.65, 0.84];
+    case "title": return [0.235, 0.41];
+    case "bigcounter": return [0.3, 0.49];
+    default: return null;
+  }
+};
+/** landscape: the horizontal column a card covers (0..1 of the width) */
+export const colW = (o: { kind: string }): Band | null => {
+  switch (o.kind) {
+    case "rules": return [0.52, 1];
+    case "comment": return [0.48, 1];
+    case "cta": return [0.5, 1];
+    case "title": return [0.5, 1];
+    case "build": return [0, 0.5];
+    default: return null;
+  }
+};
+/** the largest free interval of [lo, hi] after cutting out the bands */
+export const freeOf = (lo: number, hi: number, bands: Band[]): Band => {
+  let free: Band[] = [[lo, hi]];
+  for (const b of bands) free = free.flatMap(([a, c]) => (b[1] <= a || b[0] >= c ? [[a, c] as Band] : ([[a, Math.max(a, b[0])], [Math.min(c, b[1]), c]] as Band[])).filter(([x, y]) => y - x > 0.02));
+  return free.sort((p, q) => q[1] - q[0] - (p[1] - p[0]))[0] ?? [lo, hi];
+};
+
+==== 9165 project/src/kits/negeri/world/geo.ts
+// NEGERI world geometry: low-poly pieces baked into single vertex-coloured, flat-shaded geometries.
+// Every prop is built from boxes / prisms / cylinders with a colour each, merged once, then drawn (or instanced).
+
+import {
+  BoxGeometry, BufferGeometry, Color, ConeGeometry, CylinderGeometry, Euler, Float32BufferAttribute, IcosahedronGeometry, Matrix4,
+  Quaternion, Vector3,
+} from "three";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import { rng, type V3 } from "../math.ts";
+
+export type Part = BufferGeometry;
+
+export const colorize = (g: BufferGeometry, color: string, jitter = 0, seed = 1) => {
+  const ng = g.index ? g.toNonIndexed() : g;
+  const n = ng.getAttribute("position").count;
+  const c = new Color(color);
+  const r = rng(seed);
+  const arr = new Float32Array(n * 3);
+  for (let i = 0; i < n; i += 3) {
+    const k = 1 + (r() - 0.5) * jitter;
+    for (let v = 0; v < 3; v++) { arr[(i + v) * 3] = c.r * k; arr[(i + v) * 3 + 1] = c.g * k; arr[(i + v) * 3 + 2] = c.b * k; }
+  }
+  ng.setAttribute("color", new Float32BufferAttribute(arr, 3));
+  ng.deleteAttribute("uv");
+  return ng;
+};
+const place = (g: BufferGeometry, pos: V3, rot: V3 = [0, 0, 0], scale: V3 = [1, 1, 1]) => {
+  g.applyMatrix4(new Matrix4().compose(new Vector3(...pos), new Quaternion().setFromEuler(new Euler(...rot)), new Vector3(...scale)));
+  return g;
+};
+
+/** box: size, centre position */
+export const box = (size: V3, pos: V3, color: string, rot: V3 = [0, 0, 0], jitter = 0) =>
+  place(colorize(new BoxGeometry(...size), color, jitter), pos, rot);
+/** box resting on y = pos[1] (its bottom at pos[1]) */
+export const boxOn = (size: V3, pos: V3, color: string, rot: V3 = [0, 0, 0]) => box(size, [pos[0], pos[1] + size[1] / 2, pos[2]], color, rot);
+export const cyl = (rTop: number, rBot: number, h: number, pos: V3, color: string, seg = 8, rot: V3 = [0, 0, 0]) =>
+  place(colorize(new CylinderGeometry(rTop, rBot, h, seg, 1), color), pos, rot);
+/** cylinder between two points */
+export const rod = (a: V3, b: V3, r: number, color: string, seg = 6) => {
+  const A = new Vector3(...a), B = new Vector3(...b);
+  const d = B.clone().sub(A);
+  const L = d.length();
+  const g = colorize(new CylinderGeometry(r, r, L, seg, 1), color);
+  g.applyMatrix4(new Matrix4().compose(A.clone().add(B).multiplyScalar(0.5), new Quaternion().setFromUnitVectors(new Vector3(0, 1, 0), d.normalize()), new Vector3(1, 1, 1)));
+  return g;
+};
+export const cone = (r: number, h: number, pos: V3, color: string, seg = 6, rot: V3 = [0, 0, 0]) => place(colorize(new ConeGeometry(r, h, seg, 1), color), pos, rot);
+export const blob = (r: number, pos: V3, color: string, scale: V3 = [1, 1, 1], detail = 0, seed = 1) =>
+  place(colorize(new IcosahedronGeometry(r, detail), color, 0.12, seed), pos, [0, 0, 0], scale);
+/** triangular prism along z: base width w (x), height h, length l; bottom at y = 0 */
+export const prism = (w: number, h: number, l: number, pos: V3, color: string, rot: V3 = [0, 0, 0]) => {
+  const x = w / 2, z = l / 2;
+  const v = [
+    // left slope
+    -x, 0, z, 0, h, z, 0, h, -z, -x, 0, z, 0, h, -z, -x, 0, -z,
+    // right slope
+    x, 0, z, x, 0, -z, 0, h, -z, x, 0, z, 0, h, -z, 0, h, z,
+    // front, back triangles
+    -x, 0, z, x, 0, z, 0, h, z,
+    x, 0, -z, -x, 0, -z, 0, h, -z,
+  ];
+  const g = new BufferGeometry();
+  g.setAttribute("position", new Float32BufferAttribute(v, 3));
+  g.computeVertexNormals();
+  return place(colorize(g, color), pos, rot);
+};
+export const merge = (parts: BufferGeometry[]) => {
+  const g = mergeGeometries(parts.map((p) => (p.index ? p.toNonIndexed() : p)), false)!;
+  g.computeVertexNormals();
+  g.computeBoundingSphere();
+  return g;
+};
+
+// ------------------------------------------------------------------ props
+/** A-frame tent, door on +z. White fabric (tinted per instance), dark door. */
+export const tentGeo = () => merge([
+  prism(1.7, 1.25, 2.1, [0, 0, 0], "#ffffff"),
+  // door flap: a smaller dark triangle just in front of the front face
+  (() => { const g = prism(0.8, 0.7, 0.01, [0, 0, 1.056], "#3a3a3a"); return g; })(),
+  // ridge pole tips
+  cyl(0.025, 0.025, 0.3, [0, 1.3, 1.12], "#6b5a48", 5),
+  cyl(0.025, 0.025, 0.3, [0, 1.3, -1.12], "#6b5a48", 5),
+]);
+
+/** House body (walls white → tinted per instance), door + windows, plinth; front = +z. 3 × 3 m, walls 2.1 m. */
+export const houseBodyGeo = () => {
+  const W = 3, D = 3, H = 2.1;
+  const parts = [
+    boxOn([W + 0.16, 0.22, D + 0.16], [0, 0, 0], "#b9b1a4"),
+    boxOn([W, H, D], [0, 0.22, 0], "#ffffff"),
+    // gable triangles (wall colour), ridge along x → gables on ±x
+    prism(D, 1.0, 0.02, [W / 2 - 0.01, 0.22 + H, 0], "#ffffff", [0, Math.PI / 2, 0]),
+    prism(D, 1.0, 0.02, [-W / 2 + 0.01, 0.22 + H, 0], "#ffffff", [0, Math.PI / 2, 0]),
+    // door
+    boxOn([0.78, 1.55, 0.06], [-0.55, 0.22, D / 2 + 0.01], "#6b4a33"),
+    boxOn([0.92, 0.08, 0.08], [-0.55, 1.77, D / 2 + 0.02], "#f2ede4"),
+    // window + frame
+    boxOn([0.9, 0.75, 0.05], [0.75, 0.98, D / 2 + 0.01], "#f2ede4"),
+    boxOn([0.74, 0.6, 0.06], [0.75, 1.055, D / 2 + 0.02], "#5d7a8c"),
+    boxOn([0.04, 0.6, 0.07], [0.75, 1.055, D / 2 + 0.03], "#f2ede4"),
+    // side window
+    boxOn([0.05, 0.6, 0.8], [W / 2 + 0.01, 1.05, 0.2], "#5d7a8c"),
+    // step
+    boxOn([0.9, 0.12, 0.35], [-0.55, 0, D / 2 + 0.25], "#b9b1a4"),
+  ];
+  return merge(parts);
+};
+/** Gable roof (white → tinted per instance), ridge along x, eaves overhang. */
+export const houseRoofGeo = () => {
+  const W = 3, D = 3, H = 2.1 + 0.22, rise = 1.0, over = 0.35;
+  const half = D / 2 + over;
+  const slope = Math.atan2(rise + over * (rise / (D / 2)), half);
+  const len = Math.hypot(half, rise + over * (rise / (D / 2)));
+  const y0 = H - over * (rise / (D / 2));
+  const parts: BufferGeometry[] = [];
+  for (const s of [-1, 1]) {
+    const cz = (s * half) / 2, cy = y0 + (rise + over * (rise / (D / 2))) / 2;
+    parts.push(box([W + 0.5, 0.08, len], [0, cy + 0.04, cz], "#ffffff", [s * slope, 0, 0]));
+  }
+  parts.push(box([W + 0.56, 0.12, 0.18], [0, H + rise + 0.05, 0], "#e7e0d6"));
+  return merge(parts);
+};
+
+/** Coconut tree (≈ 7 m), leaning slightly toward +x. */
+export const coconutGeo = (seed = 1) => {
+  const r = rng(seed);
+  const parts: BufferGeometry[] = [];
+  const H = 6.2 + r() * 1.2, lean = 0.5 + r() * 0.5;
+  const N = 7;
+  const pt = (t: number): V3 => [lean * t * t, H * t, 0];
+  for (let i = 0; i < N; i++) {
+    const a = pt(i / N), b = pt((i + 1) / N);
+    parts.push(rod(a, b, 0.17 - (i / N) * 0.06, i % 2 ? "#8a6a4c" : "#9a7a58", 7));
+  }
+  const top = pt(1);
+  // fronds: folded strips drooping outward
+  const F = 9;
+  for (let k = 0; k < F; k++) {
+    const az = (k / F) * Math.PI * 2 + r() * 0.3;
+    const L = 2.4 + r() * 0.6;
+    const dir: V3 = [Math.cos(az), 0, Math.sin(az)];
+    const seg = 5;
+    const v: number[] = [];
+    let prev: V3 = top, prevW = 0.12;
+    for (let s = 1; s <= seg; s++) {
+      const t = s / seg;
+      const p: V3 = [top[0] + dir[0] * L * t, top[1] + 0.35 * Math.sin(t * Math.PI * 0.6) - 1.5 * t * t, top[2] + dir[2] * L * t];
+      const w = 0.42 * Math.sin(Math.PI * Math.min(1, t * 1.1)) + 0.02;
+      const side: V3 = [-dir[2], 0, dir[0]];
+      const fold = 0.1;
+      const A0: V3 = [prev[0], prev[1] + 0.02, prev[2]];
+      const L0: V3 = [prev[0] + side[0] * prevW, prev[1] - fold * prevW * 2, prev[2] + side[2] * prevW];
+      const R0: V3 = [prev[0] - side[0] * prevW, prev[1] - fold * prevW * 2, prev[2] - side[2] * prevW];
+      const A1: V3 = [p[0], p[1] + 0.02, p[2]];
+      const L1: V3 = [p[0] + side[0] * w, p[1] - fold * w * 2, p[2] + side[2] * w];
+      const R1: V3 = [p[0] - side[0] * w, p[1] - fold * w * 2, p[2] - side[2] * w];
+      v.push(...A0, ...L0, ...L1, ...A0, ...L1, ...A1, ...A0, ...A1, ...R1, ...A0, ...R1, ...R0);
+      // underside (double-sided by duplication with reversed winding)
+      v.push(...A0, ...L1, ...L0, ...A0, ...A1, ...L1, ...A0, ...R1, ...A1, ...A0, ...R0, ...R1);
+      prev = p; prevW = w;
+    }
+    const g = new BufferGeometry();
+    g.setAttribute("position", new Float32BufferAttribute(v, 3));
+    g.computeVertexNormals();
+    parts.push(colorize(g, k % 2 ? "#5f9a3c" : "#6aa543", 0.08, seed + k));
+  }
+  for (let c = 0; c < 3; c++) {
+    const az = (c / 3) * Math.PI * 2;
+    parts.push(blob(0.16, [top[0] + Math.cos(az) * 0.18, top[1] - 0.25, top[2] + Math.sin(az) * 0.18], "#7a8a3a"));
+  }
+  return merge(parts);
+};
+
+/** Round shade tree (mango / ketapang look). */
+export const roundTreeGeo = (seed = 1) => {
+  const r = rng(seed);
+  const H = 2.2 + r() * 0.8;
+  return merge([
+    cyl(0.14, 0.2, H, [0, H / 2, 0], "#7d5d42", 7),
+    blob(1.5, [0, H + 1.0, 0], "#5c9440", [1, 0.85, 1], 1, seed),
+    blob(1.05, [0.9, H + 0.6, 0.3], "#6aa548", [1, 0.85, 1], 1, seed + 3),
+    blob(0.95, [-0.8, H + 0.7, -0.4], "#558a3b", [1, 0.85, 1], 1, seed + 5),
+  ]);
+};
+export const bushGeo = (seed = 1) => merge([
+  blob(0.55, [0, 0.4, 0], "#5f9a40", [1.2, 0.8, 1], 1, seed),
+  blob(0.4, [0.5, 0.3, 0.1], "#6aa846", [1, 0.8, 1], 1, seed + 1),
+]);
+export const rockGeo = (seed = 1) => merge([blob(0.45, [0, 0.18, 0], "#a39c90", [1.3, 0.6, 1], 0, seed)]);
+
+==== 9541 project/src/negeri/Cards.tsx
+// NEGERI kartu tokoh + look development, each rendered from ONE page (one composition frame per strip / view).
+//   NegeriCard  strips for the buyer's character cards (make.mjs --menu / --cast): header, people (full body or
+//               head), colour swatches
+//   NegeriLook  look-dev views: every building of the library finished (frame i = building i), then map views
+import React, { useEffect, useState } from "react";
+import { AbsoluteFill, continueRender, delayRender, useCurrentFrame, useVideoConfig } from "remotion";
+import { ThreeCanvas } from "@remotion/three";
+import { PCFShadowMap } from "three";
+import { SORE, Stage } from "../kits/negeri/Stage.tsx";
+import type { Shot } from "../kits/negeri/cam.ts";
+import { F_DISPLAY, F_TEXT, fontsReady } from "../kits/negeri/fonts.ts";
+import { Chibi } from "../kits/negeri/chibi/Chibi.tsx";
+import { POSES } from "../kits/negeri/chibi/rig.ts";
+import type { Expr } from "../kits/negeri/chibi/exprs.ts";
+import type { ChibiSpec } from "../kits/negeri/chibi/spec.ts";
+import { Building } from "../kits/negeri/world/Building.tsx";
+import { lotAppear, World } from "../kits/negeri/world/World.tsx";
+import { dwellingsFor } from "../kits/negeri/world/map.ts";
+import { QaProbe } from "../core/qa/scene-qa.tsx";
+import type { BuildingDef } from "./buildings.ts";
+
+const useFonts = () => {
+  const [h] = useState(() => delayRender("fonts"));
+  useEffect(() => { fontsReady().then(() => continueRender(h)); }, [h]);
+};
+const Canvas: React.FC<{ shot: Shot; children: React.ReactNode }> = ({ shot, children }) => {
+  const { width, height } = useVideoConfig();
+  return (
+    <ThreeCanvas width={width} height={height} shadows={{ type: PCFShadowMap }} dpr={1} gl={{ antialias: false, preserveDrawingBuffer: true }} camera={{ fov: shot.fov, position: shot.pos, near: 0.08, far: 2000 }}>
+      <Stage shot={shot} look={SORE} t={1}>{children}</Stage>
+      <QaProbe />
+    </ThreeCanvas>
+  );
+};
+
+// ------------------------------------------------------------------ cards
+export type CardItem = { look: ChibiSpec; code?: string; name: string; rotY?: number; expr?: Expr; pose?: "stand" | "wave" | "proud" };
+export type CardStrip =
+  | { kind: "header"; title: string; lines: string[] }
+  | { kind: "people"; title?: string; frame: "body" | "head"; items: CardItem[] }
+  | { kind: "swatches"; title: string; colors: { code: string; name: string; hex: string }[]; lines: string[] };
+export type CardProps = { strips: CardStrip[]; h: number };
+const INK = "#1b1b1b", PAPER = "#fffaf0", RED = "#d7263d", GREEN = "#1f5f4a";
+const band = (title: string) => (
+  <div style={{ position: "absolute", left: 0, right: 0, top: 0, height: 64, background: GREEN, color: PAPER, display: "flex", alignItems: "center", paddingLeft: 32, fontFamily: F_TEXT, fontWeight: 800, fontSize: 30, letterSpacing: 1 }}>{title}</div>
+);
+const PeopleStrip: React.FC<{ s: Extract<CardStrip, { kind: "people" }> }> = ({ s }) => {
+  const { width: W, height: H } = useVideoConfig();
+  const n = s.items.length, head = s.frame === "head";
+  const tb = s.title ? 64 : 0, lb = 84;
+  const smax = Math.max(...s.items.map((i) => i.look.scale ?? 1));
+  const d = head ? 0.7 : 0.85;
+  const y0 = head ? 0.6 * smax : 0, y1 = head ? 1.32 * smax : 1.32 * smax;
+  const A = W / H, f01 = (H - tb - lb) / H, V = 22;
+  const vis = Math.max((y1 - y0) / f01, (Math.max(n, head ? 4 : 5) * d) / (A * 0.97));
+  const dist = vis / (2 * Math.tan(((V / 2) * Math.PI) / 180));
+  const offPx = tb + (H - tb - lb) / 2 - H / 2;
+  const camY = (y0 + y1) / 2 + (offPx / H) * vis;
+  const xs = s.items.map((_, i) => (i - (n - 1) / 2) * d);
+  return (
+    <AbsoluteFill style={{ background: "#9cc9dd" }}>
+      <Canvas shot={{ pos: [0, camY, dist], target: [0, camY, 0], fov: V, shadowAt: [0, 0, 0], shadowBox: Math.max(5, n * d) }}>
+        <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow><planeGeometry args={[80, 80]} /><meshStandardMaterial color="#8cbf5a" roughness={1} /></mesh>
+        {s.items.map((it, i) => (
+          <group key={i} position={[xs[i], 0, 0]} rotation={[0, it.rotY ?? (head ? 0.32 : 0.15), 0]}>
+            <Chibi spec={it.look} pose={it.pose === "wave" ? POSES.wave(0.8) : it.pose === "proud" ? POSES.proud() : POSES.stand()} face={{ expr: it.expr ?? "happy", open: 0 }} faceRes={head ? 1024 : 768} />
+          </group>
+        ))}
+      </Canvas>
+      {s.title ? band(s.title) : null}
+      <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: lb, background: PAPER }} />
+      {s.items.map((it, i) => (
+        <div key={i} style={{ position: "absolute", bottom: 8, left: W / 2 + (xs[i] / (vis * A)) * W - 100, width: 200, textAlign: "center", fontFamily: F_TEXT, fontWeight: 800, color: INK, lineHeight: 1.05 }}>
+          {it.code ? <div style={{ fontSize: 30, color: RED }}>{it.code}</div> : null}
+          <div style={{ fontSize: it.code ? 20 : 26 }}>{it.name}</div>
+        </div>
+      ))}
+    </AbsoluteFill>
+  );
+};
+export const NegeriCard: React.FC<CardProps> = ({ strips }) => {
+  const f = useCurrentFrame();
+  useFonts();
+  const s = strips[f];
+  if (!s) return <AbsoluteFill style={{ background: PAPER }} />;
+  if (s.kind === "people") return <PeopleStrip s={s} />;
+  if (s.kind === "header") return (
+    <AbsoluteFill style={{ background: PAPER, padding: "40px 40px", fontFamily: F_TEXT, fontWeight: 800, color: INK }}>
+      <div style={{ fontFamily: F_DISPLAY, fontWeight: 700, fontSize: 70, color: GREEN }}>{s.title}</div>
+      <div style={{ width: 120, height: 10, background: RED, margin: "14px 0 20px" }} />
+      {s.lines.map((l, i) => <div key={i} style={{ fontSize: 29, lineHeight: 1.3, marginBottom: 8, color: i === s.lines.length - 1 ? RED : INK }}>{l}</div>)}
+    </AbsoluteFill>
+  );
+  return (
+    <AbsoluteFill style={{ background: PAPER, fontFamily: F_TEXT, fontWeight: 800, color: INK }}>
+      {band(s.title)}
+      <div style={{ position: "absolute", top: 84, left: 32, right: 32, display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gap: 10 }}>
+        {s.colors.map((c) => (
+          <div key={c.code} style={{ textAlign: "center" }}>
+            <div style={{ height: 58, background: c.hex, border: `3px solid ${INK}`, borderRadius: 10 }} />
+            <div style={{ fontSize: 22, color: RED, marginTop: 4 }}>{c.code}</div>
+            <div style={{ fontSize: 17 }}>{c.name}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{ position: "absolute", left: 32, right: 32, bottom: 22 }}>{s.lines.map((l, i) => <div key={i} style={{ fontSize: 22, lineHeight: 1.32, marginTop: 6 }}>{l}</div>)}</div>
+    </AbsoluteFill>
+  );
+};
+export const cardMetadata = ({ props }: { props: CardProps }) => ({ durationInFrames: Math.max(1, props.strips.length), height: props.h || 400 });
+
+// ------------------------------------------------------------------ look development
+export type LookProps = { items: { kind: string; def: BuildingDef; vars: Record<string, string> }[]; pop?: number; map?: boolean };
+export const NegeriLook: React.FC<LookProps> = ({ items, pop = 40000, map = true }) => {
+  const f = useCurrentFrame();
+  useFonts();
+  const { width, height } = useVideoConfig();
+  const aspect = width / height;
+  if (f < items.length) {
+    const it = items[f];
+    const [w, d] = it.def.size, h = it.def.h;
+    const sp = it.def.special;
+    const ext = sp === "road" ? 30 : sp === "field" ? 50 : sp === "station" ? 26 : Math.max(w, d, h * 1.3);
+    const hf = 2 * Math.atan(Math.tan((40 * Math.PI) / 360) * aspect);
+    const dist = Math.max(ext * 0.62 / Math.tan(hf / 2), h * 1.4 / Math.tan((20 * Math.PI) / 180)) + Math.max(w, d) * 0.4;
+    const A = 0.55, el = 0.36;
+    const tgt: [number, number, number] = [0, h * 0.4, 0];
+    const shot: Shot = { pos: [Math.sin(A) * Math.cos(el) * dist, tgt[1] + Math.sin(el) * dist, Math.cos(A) * Math.cos(el) * dist], target: tgt, fov: 40, shadowAt: [0, 0, 0], shadowBox: Math.max(12, ext * 1.2) };
+    return (
+      <AbsoluteFill style={{ background: "#9cc9dd" }}>
+        <Canvas shot={shot}>
+          <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow><planeGeometry args={[400, 400]} /><meshStandardMaterial color="#8cbf5a" roughness={1} /></mesh>
+          <Building def={it.def} vars={it.vars} pos={[0, 0, 0]} yaw={0} t={10} night={false} />
+        </Canvas>
+        <div style={{ position: "absolute", left: 20, top: 20, background: PAPER, border: `4px solid ${INK}`, borderRadius: 12, padding: "6px 16px", fontFamily: F_TEXT, fontWeight: 800, fontSize: 30 }}>{it.kind}</div>
+      </AbsoluteFill>
+    );
+  }
+  if (!map) return <AbsoluteFill style={{ background: PAPER }} />;
+  // map views: top-down of the whole country, an aerial from the south, the plaza
+  const views: Shot[] = [
+    { pos: [15, 330, -14], target: [15, 0, -15], fov: 40, shadowAt: [15, 0, -15], shadowBox: 140 },
+    { pos: [-20, 80, 95], target: [12, 0, -25], fov: 40, shadowAt: [12, 0, -25], shadowBox: 110 },
+    { pos: [0, 2.2, 13], target: [0, 1.2, -4], fov: 42, shadowAt: [0, 0, -4], shadowBox: 18 },
+  ];
+  const v = views[(f - items.length) % views.length];
+  const appear = lotAppear(() => dwellingsFor(pop), 0, 0);
+  return (
+    <AbsoluteFill style={{ background: "#9cc9dd" }}>
+      <Canvas shot={v}>
+        <World t={3} flag={["#d7262e", "#f7f5ef"]} appear={appear} upgrade={0} night={false} builds={[]} />
+      </Canvas>
+    </AbsoluteFill>
+  );
+};
+export const lookMetadata = ({ props }: { props: LookProps }) => ({ durationInFrames: Math.max(1, props.items.length + (props.map === false ? 0 : 3)) });
+
+==== 8409 project/src/negeri/series.ts
+// NEGERI series continuity — the country between episodes. world.json keeps every finished day (population, builds
+// with their plots, named houses with their slots); the state at the start of Day N is all days before N folded
+// together, so a day can be re-rendered (or re-committed) without duplicating anything. Pure TypeScript.
+
+import { ALIASES, BUILDINGS, type BuildingDef } from "./buildings.ts";
+import { PLOTS, SLOTS, SPECIAL, type Plot } from "../kits/negeri/world/map.ts";
+import type { BuildSpec, PlacedBuild, PlacedPlate, SeriesWorld, Story, WorldDay } from "./types.ts";
+
+export const DEFAULT_FLAG: [string, string] = ["#d7262e", "#f7f5ef"];
+
+/** kind (or alias) → canonical kind, its definition and its default display name */
+export const resolveKind = (kind: string, custom: Record<string, BuildingDef> = {}): { kind: string; def: BuildingDef; name: string } | null => {
+  const k = kind.toLowerCase().trim().replace(/\s+/g, "-");
+  if (custom[k]) return { kind: k, def: custom[k], name: custom[k].name };
+  if (BUILDINGS[k]) return { kind: k, def: BUILDINGS[k], name: BUILDINGS[k].name };
+  const a = ALIASES[k];
+  if (a && BUILDINGS[a[0]]) return { kind: a[0], def: BUILDINGS[a[0]], name: a[1] };
+  return null;
+};
+
+export const newWorld = (story: Story): SeriesWorld => ({
+  voynann: "negeri-world/1",
+  country: story.country ?? "Republik Komen",
+  flag: story.flag ?? DEFAULT_FLAG,
+  host: story.host ?? { preset: "presiden" },
+  voice: story.voice ?? "aku",
+  custom: {},
+  days: [],
+});
+
+export type State = { population: number; builds: PlacedBuild[]; plates: PlacedPlate[]; lastDay: number };
+/** The country at the start of `day` (every other story's days before it). */
+export const stateBefore = (w: SeriesWorld | null, day: number, storyId: string): State => {
+  const days = (w?.days ?? []).filter((d) => d.day < day && d.story !== storyId).sort((a, b) => a.day - b.day);
+  const builds: PlacedBuild[] = [], plates: PlacedPlate[] = [];
+  let population = 1, lastDay = 0;
+  for (const d of days) {
+    population = d.population;
+    lastDay = d.day;
+    for (const b of d.builds) {
+      // a build on a plot replaces whatever stood there
+      const i = builds.findIndex((x) => x.plot === b.plot && b.plot !== "road");
+      if (i >= 0) builds.splice(i, 1);
+      builds.push(b);
+    }
+    plates.push(...d.plates);
+  }
+  return { population, builds, plates, lastDay };
+};
+/** plots / slots taken by any other story (earlier or later days) */
+const takenElsewhere = (w: SeriesWorld | null, storyId: string, day: number) => {
+  const plots = new Set<string>(), slots = new Set<string>(), handles = new Set<string>();
+  for (const d of w?.days ?? []) {
+    if (d.story === storyId) continue;
+    for (const b of d.builds) if (b.kind !== "rumah") plots.add(b.plot); else slots.add(b.plot);
+    for (const p of d.plates) { slots.add(p.slot); if (d.day < day) handles.add(p.handle.toLowerCase()); }
+    for (const b of d.builds) if (b.kind === "rumah" && b.by && d.day < day) handles.add(b.by.toLowerCase());
+  }
+  return { plots, slots, handles };
+};
+
+const CLS = { S: 0, M: 1, L: 2, XL: 3 };
+const fits = (def: BuildingDef, p: Plot) => def.size[0] <= p.w + 0.05 && def.size[1] <= p.d + 0.05;
+
+export type Placed = { builds: (PlacedBuild & { def: BuildingDef })[]; plates: PlacedPlate[]; errors: string[]; warnings: string[] };
+/**
+ * This episode's builds and new named houses → plots / slots. A day that was committed before keeps its places
+ * (re-renders look the same); a new day takes the nearest free plot that fits each building.
+ */
+export const placeEpisode = (story: Story, w: SeriesWorld | null, custom: Record<string, BuildingDef>, byOf: (b: BuildSpec) => string | undefined): Placed => {
+  const errors: string[] = [], warnings: string[] = [];
+  const prev = w?.days.find((d) => d.story === story.id);
+  const st = stateBefore(w, story.day, story.id);
+  const taken = takenElsewhere(w, story.id, story.day);
+  const usedPlots = new Set(taken.plots), usedSlots = new Set(taken.slots);
+  let no = 2 + st.plates.length + st.builds.filter((b) => b.kind === "rumah").length;
+  const out: Placed["builds"] = [];
+  for (const b of story.builds ?? []) {
+    const r = resolveKind(b.kind, custom);
+    if (!r) { errors.push(`build "${b.id}": kind "${b.kind}" is not in the library (have: ${Object.keys(BUILDINGS).join(", ")}; aliases: ${Object.keys(ALIASES).join(", ")}) — or define it in buildings.json`); continue; }
+    const name = (b.name ?? r.name).toUpperCase();
+    const by = byOf(b);
+    const old = prev?.builds.find((x) => x.id === b.id && x.kind === r.kind);
+    let plot: string | undefined = old?.plot;
+    if (plot && (r.def.special === "slot" ? usedSlots.has(plot) : usedPlots.has(plot) && !b.plot)) plot = undefined;
+    if (!plot && b.plot) {
+      const p = PLOTS.find((x) => x.id === b.plot) ?? (r.def.special === "slot" ? undefined : undefined);
+      const s = SLOTS.find((x) => x.id === b.plot);
+      if (r.def.special === "slot" ? !s : !p) errors.push(`build "${b.id}": plot "${b.plot}" does not exist (plots: ${PLOTS.map((x) => x.id).join(", ")}; house slots R1…R${SLOTS.length})`);
+      else if (p && !fits(r.def, p)) errors.push(`build "${b.id}": ${r.kind} (${r.def.size.join(" × ")} m) does not fit plot ${p.id} (${p.w} × ${p.d} m)`);
+      else plot = b.plot;
+      if (plot && st.builds.some((x) => x.plot === plot)) warnings.push(`build "${b.id}": plot ${plot} already has ${st.builds.find((x) => x.plot === plot)!.name} — it is replaced`);
+    }
+    if (!plot) {
+      if (r.def.special === "slot") plot = SLOTS.find((s) => !usedSlots.has(s.id))?.id;
+      else if (r.def.special) {
+        const sp = SPECIAL[r.def.special === "station" ? "station" : r.def.special === "field" ? "field" : r.def.special];
+        const already = st.builds.find((x) => x.plot === sp.id && x.kind === r.kind);
+        if (already) errors.push(`build "${b.id}": the ${r.kind} already stands (day ${already.day}) — pick another building`);
+        plot = sp.id;
+      } else {
+        const cands = PLOTS.filter((p) => !usedPlots.has(p.id) && !st.builds.some((x) => x.plot === p.id) && fits(r.def, p));
+        cands.sort((a, c) => (c.pref?.includes(r.kind) ? 1 : 0) - (a.pref?.includes(r.kind) ? 1 : 0) || CLS[a.cls] - CLS[c.cls] || PLOTS.indexOf(a) - PLOTS.indexOf(c));
+        // a preferred plot is kept for its building while others are free
+        const pick = cands.find((p) => !p.pref || p.pref.includes(r.kind) || cands.every((q) => q.pref && !q.pref.includes(r.kind)));
+        plot = pick?.id;
+      }
+    }
+    if (!plot) { errors.push(`build "${b.id}": no free plot fits ${r.kind} (${r.def.size.join(" × ")} m) — the map is full for this size; give "plot": "<id>" to replace an old building`); continue; }
+    if (r.def.special === "slot") usedSlots.add(plot); else usedPlots.add(plot);
+    out.push({ id: b.id, kind: r.kind, plot, name, by, colors: b.colors, day: story.day, def: r.def, no: r.def.special === "slot" ? no++ : undefined });
+  }
+  const plates: PlacedPlate[] = [];
+  for (const raw of story.plates ?? []) {
+    const p = typeof raw === "string" ? { handle: raw } : raw;
+    if (taken.handles.has(p.handle.toLowerCase())) { warnings.push(`plate ${p.handle} already has a house (an earlier day) — left out`); continue; }
+    const old = prev?.plates.find((x) => x.handle.toLowerCase() === p.handle.toLowerCase());
+    let slot = old && !usedSlots.has(old.slot) ? old.slot : undefined;
+    if (!slot) slot = SLOTS.find((s) => !usedSlots.has(s.id))?.id;
+    if (!slot) { errors.push(`plate ${p.handle}: all ${SLOTS.length} named-house slots are used`); continue; }
+    usedSlots.add(slot);
+    plates.push({ handle: p.handle, no: no++, slot, colors: (p as { colors?: Record<string, string> }).colors, day: story.day });
+  }
+  return { builds: out, plates, errors, warnings };
+};
+
+/** world.json after this episode: its day entry added or replaced (other days untouched). */
+export const commitDay = (w: SeriesWorld, story: Story, placed: Placed, citizens: WorldDay["citizens"]): SeriesWorld => {
+  const day: WorldDay = {
+    day: story.day, story: story.id, population: story.population,
+    builds: placed.builds.map(({ def: _def, ...b }) => b), plates: placed.plates, citizens,
+  };
+  const days = [...w.days.filter((d) => d.story !== story.id), day].sort((a, b) => a.day - b.day);
+  return { ...w, days };
+};
+
+==== 7843 project/src/negeri/types.ts
+// NEGERI director — data types. A Story is one episode (stories/<id>/story.json); a SeriesWorld is the country that
+// persists between episodes (series/<name>/world.json); a Plan is the compiled film (picture, sound and QA read it).
+// Pure TypeScript (node + browser).
+
+import type { V3 } from "../kits/negeri/math.ts";
+import type { ChibiSpec } from "../kits/negeri/chibi/spec.ts";
+import type { Expr } from "../kits/negeri/chibi/exprs.ts";
+import type { PoseName } from "../kits/negeri/chibi/rig.ts";
+import type { BuildingDef } from "./buildings.ts";
+
+export type { V3 };
+export type TimeOfDay = "sore" | "pagi" | "siang" | "malam";
+export type BeatKind = "host" | "establish" | "rules" | "counter" | "comment" | "build" | "reveal" | "plates" | "gag" | "night" | "cta" | "flyover";
+export type ShotKind = "wide" | "medium" | "close" | "low" | "aerial" | "insert" | "orbit" | "truck";
+export type Move = "push" | "pull" | "still" | "orbit" | "rise" | "track";
+export type GagKind = "sleep" | "sit" | "chat" | "eat" | "queue" | "argue" | "celebrate" | "watch";
+
+// ------------------------------------------------------------------ story (authored)
+export type CastEntry = {
+  preset?: string;
+  /** a saved character: tokoh/tokoh-<slug>.json (expanded to preset + look by make.mjs) */
+  tokoh?: string;
+  look?: Record<string, unknown>;
+  /** the commenter's handle, shown as a name tag in gags (only handles the buyer supplied) */
+  handle?: string;
+  name?: string;
+};
+export type CommentSpec = { id?: string; handle: string; text: string; likes?: number | string; ago?: string; avatar?: string };
+export type BuildSpec = {
+  id: string;
+  /** a library building (`--library`), an alias (dpr, masjid, alun-alun…) or one from buildings.json */
+  kind: string;
+  /** who asked: a comment id or a handle (shown on the build card / house plate) */
+  by?: string;
+  /** the name on the sign and build card (default: the building's own name) */
+  name?: string;
+  /** force a plot (S1…, N0…, see --library); default = the nearest free plot that fits */
+  plot?: string;
+  /** colour tokens: { "wall": "#…", "roof": "#…", "accent": "#…" } */
+  colors?: Record<string, string>;
+};
+export type ActorBeat = { place?: string; do?: string; expr?: string; to?: string; gone?: boolean };
+export type BeatSpec = {
+  /** the word the cut lands on (2nd and later beats of a line), "kata#2" = its 2nd occurrence, or seconds */
+  at?: string | number;
+  beat?: BeatKind;
+  shot?: ShotKind;
+  side?: "left" | "right";
+  move?: Move;
+  /** the host in this beat */
+  do?: string;
+  expr?: string;
+  place?: string;
+  to?: string;
+  /** change the host on a word inside the beat */
+  then?: { at: string | number; do?: string; expr?: string }[];
+  /** warga in this beat */
+  cast?: Record<string, ActorBeat>;
+  comment?: string | number | (string | number)[];
+  build?: string;
+  plates?: string[];
+  gag?: GagKind;
+  who?: string[];
+  /** extra crowd people for a gag (generated looks) */
+  n?: number;
+  /** counter target (default: the story's population) */
+  count?: number;
+  tag?: string;
+  time?: TimeOfDay;
+  dissolve?: boolean;
+  cta?: { line?: string; button?: string; sub?: string };
+  rules?: { small: string; big: string }[];
+};
+export type LineSpec = BeatSpec & { text: string; beats?: BeatSpec[] };
+export type Story = {
+  id: string;
+  title?: string;
+  /** series name → series/<name>/world.json (the country carries on from day to day); none = a one-off episode */
+  series?: string;
+  day: number;
+  country?: string;
+  flag?: [string, string];
+  /** the host's register for the rule cards: "aku" (kamu) or "gue" (lo) */
+  voice?: "aku" | "gue";
+  format?: "portrait" | "landscape";
+  time?: TimeOfDay;
+  /** citizens (followers) at the end of this episode */
+  population: number;
+  host?: CastEntry;
+  cast?: Record<string, CastEntry>;
+  comments?: CommentSpec[];
+  builds?: BuildSpec[];
+  /** new named houses (commenters who get a house + plate this episode) */
+  plates?: (string | { handle: string; colors?: Record<string, string> })[];
+  lines: LineSpec[];
+};
+
+// ------------------------------------------------------------------ series world (persistent)
+export type PlacedBuild = { id: string; kind: string; plot: string; name: string; by?: string; colors?: Record<string, string>; day: number; no?: number };
+export type PlacedPlate = { handle: string; no: number; slot: string; colors?: Record<string, string>; day: number };
+export type WorldDay = { day: number; story: string; population: number; builds: PlacedBuild[]; plates: PlacedPlate[]; citizens?: Record<string, CastEntry> };
+export type SeriesWorld = {
+  voynann: "negeri-world/1";
+  country: string;
+  flag: [string, string];
+  host: CastEntry;
+  voice?: "aku" | "gue";
+  /** buildings the buyer designed (kept here so later days can still draw them) */
+  custom: Record<string, BuildingDef>;
+  days: WorldDay[];
+};
+
+// ------------------------------------------------------------------ timing
+export type Word = { w: string; t: number };
+export type Timed = { text: string; t0: number; t1: number; words: Word[] };
+
+// ------------------------------------------------------------------ plan (compiled)
+export type AKey = {
+  t: number;
+  pos: V3;
+  yaw: number;
+  pose: PoseName;
+  expr: Expr;
+  /** pointing / presenting target in the actor's own frame */
+  target?: V3;
+  /** held prop */
+  prop?: "phone" | "bowl";
+  /** mouth flaps (gag chatter) */
+  chatter?: boolean;
+  /** left the scene */
+  gone?: boolean;
+};
+export type PActor = { id: string; spec: ChibiSpec; host?: boolean; label?: string; seed: number; keys: AKey[]; seatOn?: string };
+export type PCam = { pos: V3; target: V3; fov: number };
+export type PShot = {
+  i: number; t0: number; t1: number; line: number;
+  beat: BeatKind; kind: ShotKind;
+  a: PCam; b: PCam;
+  /** constant-speed move (truck) instead of eased */
+  linear?: boolean;
+  /** orbit around c (radius / height / azimuths) instead of a straight move */
+  orbit?: { c: V3; r: number; h: number; az0: number; az1: number; fov: number; target: V3 };
+  shadowAt: V3; shadowBox: number;
+  time: TimeOfDay; dissolve: boolean; vis: number;
+  /** subject ids */
+  on: string[];
+};
+export type PBuild = {
+  id: string; kind: string; name: string; by?: string; plot: string; pos: V3; yaw: number;
+  vars: Record<string, string>;
+  /** build window in film seconds; undefined = already standing at the start */
+  start?: number; end?: number;
+  day: number;
+};
+export type PPlate = { handle: string; no: number; slot: string; pos: V3; yaw: number; colors: Record<string, string>; appear: number; byBuild?: string };
+export type PProp = { id: string; kind: "tikar"; pos: V3; yaw: number; t0: number; t1: number };
+export type POverlay =
+  | { kind: "rules"; t0: number; t1: number; rules: { icon: "follow" | "comment"; small: string; big: string }[] }
+  | { kind: "comment"; t0: number; t1: number; comments: { handle: string; text: string; likes: string; ago: string; avatar: string }[] }
+  | { kind: "build"; t0: number; t1: number; build: string }
+  | { kind: "tag"; t0: number; t1: number; text: string }
+  | { kind: "cta"; t0: number; t1: number; line: string; button: string; sub: string }
+  | { kind: "title"; t0: number; t1: number; text: string; sub: string }
+  | { kind: "bigcounter"; t0: number; t1: number };
+export type Plan = {
+  id: string; title: string; day: number; country: string; flag: [string, string]; voice: "aku" | "gue";
+  duration: number; aspect: number;
+  pop: { from: number; to: number; t0: number; t1: number };
+  builds: PBuild[]; plates: PPlate[]; props: PProp[];
+  custom: Record<string, BuildingDef>;
+  actors: PActor[];
+  shots: PShot[];
+  overlays: POverlay[];
+  words: { w: string; t0: number; t1: number; line: number }[];
+  lines: Timed[];
+  audio?: string;
+  warnings: string[];
+};
+
+==== 2077 project/stories/desa-5/buildings.json
+{
+  "menara-pandang": {
+    "about": "menara pandang: bamboo lookout tower with a platform, railing and a roof",
+    "name": "MENARA PANDANG",
+    "size": [3.4, 3.4],
+    "h": 9.5,
+    "params": { "accent": "#8c3b2e" },
+    "front": [0, 2.6],
+    "steps": [
+      { "label": "KAKI BAMBU", "parts": [
+        { "shape": "rod", "a": [-1.4, 0, -1.4], "b": [-1.0, 7, -1.0], "r": 0.08, "color": "#c9b06a" },
+        { "shape": "rod", "a": [1.4, 0, -1.4], "b": [1.0, 7, -1.0], "r": 0.08, "color": "#c9b06a" },
+        { "shape": "rod", "a": [-1.4, 0, 1.4], "b": [-1.0, 7, 1.0], "r": 0.08, "color": "#c9b06a" },
+        { "shape": "rod", "a": [1.4, 0, 1.4], "b": [1.0, 7, 1.0], "r": 0.08, "color": "#c9b06a" },
+        { "shape": "rod", "a": [-1.3, 2.5, 1.3], "b": [1.3, 2.5, 1.3], "r": 0.05, "color": "#b59b55" },
+        { "shape": "rod", "a": [-1.2, 4.5, 1.2], "b": [1.2, 4.5, 1.2], "r": 0.05, "color": "#b59b55" },
+        { "shape": "rod", "a": [-1.3, 2.5, -1.3], "b": [1.3, 2.5, -1.3], "r": 0.05, "color": "#b59b55" },
+        { "shape": "rod", "a": [-1.2, 4.5, -1.2], "b": [1.2, 4.5, -1.2], "r": 0.05, "color": "#b59b55" }
+      ] },
+      { "label": "LANTAI", "parts": [ { "shape": "box", "size": [2.6, 0.14, 2.6], "pos": [0, 7, 0], "color": "#8c6542" } ] },
+      { "label": "PAGAR", "parts": [ { "macro": "fence", "w": 2.5, "d": 2.5, "h": 0.8, "y": 7.14, "color": "#b59b55" } ] },
+      { "label": "ATAP", "parts": [
+        { "macro": "posts", "w": 2.3, "d": 2.3, "h": 1.5, "y": 7.14, "r": 0.05, "color": "#7a5638" },
+        { "macro": "roof", "type": "pyramid", "w": 2.6, "d": 2.6, "y": 8.64, "rise": 0.9, "over": 0.3, "color": "{accent}" }
+      ] },
+      { "label": "PAPAN", "parts": [
+        { "shape": "box", "size": [0.08, 1.2, 0.08], "pos": [-0.8, 0, 2.2], "color": "#6e4a2e", "anim": "grow" },
+        { "shape": "box", "size": [0.08, 1.2, 0.08], "pos": [0.8, 0, 2.2], "color": "#6e4a2e", "anim": "grow" },
+        { "shape": "sign", "size": [2.0, 0.42, 0.06], "pos": [0, 0.75, 2.24], "text": "{name}", "bg": "#fffaf0", "ink": "{accent}" }
+      ] }
+    ]
+  }
+}
+
+==== 1905 project/stories/desa-5/story.json
+{
+  "id": "desa-5",
+  "title": "Hari 5: Desa Mager",
+  "day": 5,
+  "country": "Desa Mager",
+  "voice": "aku",
+  "time": "pagi",
+  "population": 4120,
+  "host": { "preset": "lurah", "name": "Pak Lurah" },
+  "cast": {
+    "pakde": { "preset": "pakde", "handle": "@pakde.joko" },
+    "nenek": { "preset": "nenek", "handle": "@mbah.sri" },
+    "tukang": { "preset": "tukang" }
+  },
+  "comments": [
+    { "id": "c1", "handle": "@mbah.sri", "text": "pak lurah, bikin puskesmas, lutut mbah sakit", "likes": 5400, "ago": "1 jam" },
+    { "id": "c2", "handle": "@pakde.joko", "text": "menara pandang biar bisa lihat sawah", "likes": 4210 }
+  ],
+  "builds": [
+    { "id": "pkm", "kind": "puskesmas", "by": "c1" },
+    { "id": "menara", "kind": "menara-pandang", "by": "c2" }
+  ],
+  "lines": [
+    { "text": "Hari kelima di Desa Mager, warganya sekarang empat ribu.", "beat": "establish", "do": "wave" },
+    { "text": "Dua komen paling banyak like, dua-duanya aku kabulin!", "beat": "comment", "comment": ["c1", "c2"] },
+    { "text": "Pertama, puskesmas buat Mbah Sri.", "beat": "build", "build": "pkm", "do": "point" },
+    { "text": "Dinding, atap, kanopi, papan nama. Jadi!", "beat": "build", "build": "pkm", "do": "proud", "expr": "proud" },
+    { "text": "Kedua, menara pandang buat Pakde Joko.", "beat": "build", "build": "menara", "do": "present" },
+    { "text": "Tinggi banget, sawahnya kelihatan semua.", "beat": "reveal", "build": "menara" },
+    { "text": "Warga langsung kumpul, tepuk tangan.", "beat": "gag", "gag": "celebrate", "who": ["pakde", "nenek", "tukang"], "n": 5, "place": "pkm" },
+    { "text": "Mbah Sri malah langsung duduk istirahat.", "beat": "gag", "gag": "sit", "who": ["nenek"], "place": "plaza" },
+    { "text": "Desa kecil, tapi warganya kompak.", "beat": "host", "do": "proud", "expr": "happy" },
+    { "text": "Besok bangun apa? Komen!", "beat": "cta", "do": "pointCam" }
+  ]
+}
+
+==== 1987 project/stories/hari-1/story.json
+{
+  "id": "hari-1",
+  "title": "Hari 1: Bikin Negara dari Nol",
+  "series": "republik-komen",
+  "day": 1,
+  "country": "Republik Komen",
+  "voice": "aku",
+  "population": 12480,
+  "host": { "preset": "presiden" },
+  "cast": {
+    "budi": { "preset": "ronda", "handle": "@budi.santuy" }
+  },
+  "comments": [
+    { "id": "c1", "handle": "@budi.santuy", "text": "bikin pos ronda dong pak pres", "likes": 4812, "ago": "2 jam" },
+    { "id": "c2", "handle": "@sari.kopi", "text": "warung kopi dulu lah", "likes": 2210 }
+  ],
+  "builds": [ { "id": "ronda", "kind": "pos-ronda", "by": "c1" } ],
+  "plates": ["@sari.kopi", "@dimas_07", "@uci.nyemil"],
+  "lines": [
+    { "text": "Hari pertama, aku bikin negara dari nol.", "beat": "establish", "do": "wave", "expr": "happy" },
+    { "text": "Warganya? Baru aku doang.", "beat": "host", "do": "shrug", "expr": "smug" },
+    { "text": "Aturannya gampang. Kamu follow, jadi warga. Komen teratas, aku bangun.", "beat": "rules" },
+    { "text": "Semalam aku tidur, eh warganya jadi dua belas ribu!", "beat": "counter" },
+    { "text": "Dua belas ribu?!", "beat": "host", "do": "shocked", "expr": "shocked", "shot": "close" },
+    { "text": "Oke, komen teratas: bikin pos ronda dong pak pres.", "beat": "comment", "comment": "c1" },
+    { "text": "Siap, dibangun sekarang juga!", "beat": "build", "build": "ronda", "do": "present", "expr": "happy" },
+    { "text": "Tiang, bale bambu, atap seng, kentongan. Jadi!", "beat": "build", "build": "ronda", "do": "proud", "expr": "proud" },
+    { "text": "Rumah warga pertama juga udah berdiri, lengkap sama papan namanya.", "beat": "plates" },
+    { "text": "Tapi baru jadi lima menit, udah dipakai tidur.", "beat": "gag", "gag": "sleep", "who": ["budi"], "place": "ronda" },
+    { "text": "Pak, ini pos ronda, bukan kamar.", "beat": "host", "do": "facepalm", "expr": "annoyed", "place": "ronda" },
+    { "text": "Besok bangun apa? Komen di bawah!", "beat": "cta", "do": "pointCam", "expr": "happy" }
+  ]
+}
+
+==== 2211 project/stories/hari-2/story.json
+{
+  "id": "hari-2",
+  "title": "Hari 2: Warung Pertama",
+  "series": "republik-komen",
+  "day": 2,
+  "population": 25310,
+  "cast": {
+    "sari": { "preset": "ibu", "handle": "@sari.kopi", "look": { "hat": { "kind": "kerudung", "color": "#d8412f" } } },
+    "dimas": { "preset": "mas", "handle": "@dimas_07" },
+    "uci": { "preset": "mbak", "handle": "@uci.nyemil" }
+  },
+  "comments": [
+    { "id": "c1", "handle": "@sari.kopi", "text": "pak pres warung dong, laper nih", "likes": 9120, "ago": "5 jam" },
+    { "id": "c2", "handle": "@rizal.ngopi", "text": "bandara!!", "likes": 3301 },
+    { "id": "c3", "handle": "@nina_ss", "text": "kolam renang plis", "likes": 2876 }
+  ],
+  "builds": [ { "id": "warung", "kind": "warung", "by": "c1", "name": "WARUNG BU SARI" } ],
+  "plates": ["@rizal.ngopi", "@nina_ss"],
+  "lines": [
+    { "text": "Hari kedua di Republik Komen.", "beat": "establish", "do": "wave" },
+    { "text": "Pagi ini aku cek, warganya udah dua puluh lima ribu.", "beat": "counter" },
+    { "text": "Dua kali lipat dalam semalam!", "beat": "host", "do": "cheer", "expr": "laugh" },
+    { "text": "Komen teratas hari ini dari Bu Sari: warung dong, laper nih.", "beat": "comment", "comment": ["c1", "c2", "c3"] },
+    { "text": "Bandara nanti dulu ya, duitnya belum ada.", "beat": "host", "do": "shrug", "expr": "smug" },
+    { "text": "Oke, warungnya aku bangun di sebelah pos ronda.", "beat": "build", "build": "warung", "do": "point" },
+    { "text": "Etalase, atap seng, jajanan digantung. Lengkap!", "beat": "build", "build": "warung", "do": "proud", "expr": "proud" },
+    { "text": "Ini dia, Warung Bu Sari.", "beat": "reveal", "build": "warung", "do": "present" },
+    { "text": "Baru buka, antreannya udah panjang banget.", "beat": "gag", "gag": "queue", "who": ["sari", "dimas", "uci"], "n": 2, "place": "warung" },
+    { "text": "Yang ngutang, catat di buku ya!", "beat": "host", "do": "pointCam", "expr": "annoyed" },
+    { "text": "Dua warga baru juga udah dapat rumah.", "beat": "plates" },
+    { "text": "Malamnya, negara kecil kita mulai kelihatan rame.", "beat": "night", "time": "malam" },
+    { "text": "Besok mau dibangun apa lagi? Komen!", "beat": "cta", "do": "wave" }
+  ]
+}
+
+==== 2018 project/stories/kerajaan-1/story.json
+{
+  "id": "kerajaan-1",
+  "title": "Hari 1: Kerajaan Rebahan",
+  "series": "kerajaan-rebahan",
+  "day": 1,
+  "country": "Kerajaan Rebahan",
+  "flag": ["#7a4aa8", "#f2c94c"],
+  "voice": "gue",
+  "time": "siang",
+  "population": 8650,
+  "host": { "preset": "raja", "name": "Raja Mager" },
+  "cast": {
+    "bocil1": { "preset": "bocil", "handle": "@bocil.gaming" },
+    "bocil2": { "preset": "bocil-cewek", "handle": "@ayu.kecil" }
+  },
+  "comments": [
+    { "id": "c1", "handle": "@bocil.gaming", "text": "raja bikinin lapangan bola dong", "likes": 6033, "ago": "3 jam" }
+  ],
+  "builds": [ { "id": "bola", "kind": "lapangan-bola", "by": "c1" } ],
+  "lines": [
+    { "text": "Gue raja, dan ini kerajaan gue. Isinya? Rumput doang.", "beat": "establish", "do": "proud", "expr": "proud" },
+    { "text": "Aturannya: lo follow, jadi rakyat. Komen teratas, gue bangun.", "beat": "rules", "rules": [{ "small": "LO FOLLOW", "big": "= jadi RAKYAT" }, { "small": "KOMEN TERATAS", "big": "= gue BANGUN" }] },
+    { "text": "Gue tinggal tidur siang, rakyatnya jadi delapan ribu.", "beat": "counter" },
+    { "text": "Rakyat sebanyak ini, mainnya di mana?", "beat": "host", "do": "think", "expr": "neutral" },
+    { "text": "Komen teratas dari bocil gaming: lapangan bola!", "beat": "comment", "comment": "c1" },
+    { "text": "Rumput, garis, gawang, pohon beringin. Gas!", "beat": "build", "build": "bola", "do": "present", "expr": "happy" },
+    { "text": "Lapangannya jadi, tapi yang dateng malah ribut.", "beat": "gag", "gag": "argue", "who": ["bocil1", "bocil2"], "place": "bola" },
+    { "text": "Rebutan siapa yang jadi kiper.", "beat": "gag", "gag": "argue", "who": ["bocil1", "bocil2"], "place": "bola", "shot": "close" },
+    { "text": "Udah, udah. Dua-duanya kiper.", "beat": "host", "do": "facepalm", "expr": "annoyed", "place": "bola" },
+    { "text": "Ini dia Kerajaan Rebahan hari pertama.", "beat": "flyover" },
+    { "text": "Besok bangun apa? Komen di bawah!", "beat": "cta", "do": "wave", "expr": "happy" }
+  ]
+}
+
+==== 484 project/tsconfig.json
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "Preserve",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "noEmit": true,
+    "lib": ["ES2022", "DOM"],
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "noUnusedLocals": true,
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true
+  },
+  "include": ["src", "scripts/*.ts"],
+  "exclude": ["remotion.config.ts"]
+}

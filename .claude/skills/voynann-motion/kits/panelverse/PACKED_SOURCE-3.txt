@@ -1,0 +1,450 @@
+VOYNANN Motion - packed source files of this folder. Do not edit by hand.
+The skill upload in the Claude app accepts at most 200 files, so the source files are packed here.
+`node <skill folder>/new-project.mjs <project folder> --kit=<style>` unpacks them into the project.
+Format: per file one line with four '=' signs, the byte length and the path, then exactly that many bytes.
+
+==== 2032 scripts/tts.mjs
+// Offline narration with the operating system's voice (only with the user's approval — it is a
+// stand-in for a real voice-over). macOS: `say` (Indonesian voice "Damayanti"). Writes an MP3 and,
+// because the text is known, the word timings too.
+//   node scripts/tts.mjs <script.txt> <public/audio/<id>.mp3> --words=stories/<id>/words.json [--voice=Damayanti] [--rate=170]
+
+import { spawnSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
+const [scriptFile, outMp3] = process.argv.slice(2).filter((a) => !a.startsWith("--"));
+const opt = (k, d) => (process.argv.find((a) => a.startsWith(`--${k}=`)) ?? `=${d ?? ""}`).split("=").slice(1).join("=");
+if (!scriptFile || !outMp3) {
+  console.error("usage: node scripts/tts.mjs <script.txt> <out.mp3> --words=stories/<id>/words.json [--voice=Damayanti] [--rate=170]");
+  process.exit(1);
+}
+if (process.platform !== "darwin") {
+  console.error("Built-in TTS is only wired for macOS (`say`). On other systems record or generate the voice-over elsewhere and use scripts/transcribe.mjs.");
+  process.exit(2);
+}
+const voice = opt("voice", "Damayanti"), rate = opt("rate", "170");
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "cf-tts-"));
+const aiff = path.join(tmp, "vo.aiff");
+const r = spawnSync("say", ["-v", voice, "-r", rate, "-o", aiff, "-f", scriptFile], { encoding: "utf8" });
+if (r.status !== 0) { console.error(r.stderr || `say failed (voice "${voice}" installed?)`); process.exit(3); }
+fs.mkdirSync(path.dirname(outMp3), { recursive: true });
+spawnSync("ffmpeg", ["-v", "error", "-y", "-i", aiff, "-af", "apad=pad_dur=0.2", "-ar", "44100", "-ac", "1", "-b:a", "160k", outMp3]);
+fs.rmSync(tmp, { recursive: true, force: true });
+console.log(`tts: ${outMp3} (${voice}, rate ${rate})`);
+const words = opt("words");
+if (words) {
+  const t = spawnSync("node", [path.join("scripts", "transcribe.mjs"), outMp3, `--out=${words}`, `--script=${scriptFile}`], { stdio: "inherit" });
+  process.exit(t.status ?? 0);
+}
+
+==== 513 src/kits/panelverse/engine/camera.ts
+// Camera state + keyframes (pure data; the 3D rig lives in three/ComicStage.tsx).
+import { sample, type Key } from "./keyframes.ts";
+import type { V3 } from "./types.ts";
+
+export type CamState = { pos: V3; target: V3; fov: number; roll: number };
+export type CamKey = Key<Partial<CamState>>;
+export const CAM0: CamState = { pos: [0, 1.6, 6], target: [0, 1.4, 0], fov: 35, roll: 0 };
+export const sampleCam = (keys: readonly CamKey[], f: number): CamState => ({ ...CAM0, ...sample<Partial<CamState>>(keys, f) });
+
+==== 850 src/kits/panelverse/engine/FontGate.tsx
+import React, { useEffect, useState } from "react";
+import { useDelayRender } from "remotion";
+import { ensureFonts } from "../theme/fonts.ts";
+
+/** Holds the render until the bundled comic fonts are ready, then mounts children (3D lettering needs them). */
+export const FontGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { delayRender, continueRender, cancelRender } = useDelayRender();
+  const [handle] = useState(() => delayRender("PANELVERSE comic fonts"));
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    ensureFonts()
+      .then(() => document.fonts.ready)
+      .then(() => setReady(true))
+      .catch((e) => cancelRender(e));
+  }, [cancelRender]);
+  useEffect(() => {
+    if (ready) continueRender(handle);
+  }, [ready, handle, continueRender]);
+  return ready ? <>{children}</> : null;
+};
+
+==== 1396 src/kits/panelverse/engine/fx/PaperTexture.tsx
+import React from "react";
+import { AbsoluteFill } from "remotion";
+
+/**
+ * Vintage newsprint feel over the whole frame: fine fibre grain (multiply) + faint warm tooth.
+ * Static seed → no "boiling" noise; the print sits still like real paper while the art moves.
+ */
+export const PaperTexture: React.FC<{ strength?: number; id?: string }> = ({ strength = 1, id = "paper" }) => (
+  <AbsoluteFill style={{ pointerEvents: "none", mixBlendMode: "multiply", opacity: 0.55 * strength }}>
+    <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
+      <filter id={`${id}-grain`} x="0" y="0" width="100%" height="100%">
+        <feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="2" seed="7" result="n" />
+        <feColorMatrix
+          in="n"
+          type="matrix"
+          values="0 0 0 0 0.93  0 0 0 0 0.86  0 0 0 0 0.72  0 0 0 -1.6 1.25"
+        />
+      </filter>
+      <filter id={`${id}-fibre`} x="0" y="0" width="100%" height="100%">
+        <feTurbulence type="fractalNoise" baseFrequency="0.012 0.06" numOctaves="3" seed="3" result="n" />
+        <feColorMatrix in="n" type="matrix" values="0 0 0 0 0.9  0 0 0 0 0.82  0 0 0 0 0.66  0 0 0 -2.2 1.35" />
+      </filter>
+      <rect width="100%" height="100%" filter={`url(#${id}-grain)`} />
+      <rect width="100%" height="100%" filter={`url(#${id}-fibre)`} opacity={0.5} />
+    </svg>
+  </AbsoluteFill>
+);
+
+==== 1345 src/kits/panelverse/engine/three/canvasTexture.ts
+import { useMemo } from "react";
+import { CanvasTexture, LinearFilter, SRGBColorSpace } from "three";
+
+/**
+ * A 2D-canvas texture redrawn synchronously whenever `key` changes. Fonts are guaranteed loaded by
+ * <FontGate> before any 3D stage mounts, so text drawn here is always the real comic lettering.
+ */
+export const useCanvasTexture = (w: number, h: number, key: string, draw: (ctx: CanvasRenderingContext2D, w: number, h: number) => void) => {
+  const { canvas, tex } = useMemo(() => {
+    const c = document.createElement("canvas");
+    c.width = w;
+    c.height = h;
+    const t = new CanvasTexture(c);
+    t.colorSpace = SRGBColorSpace;
+    t.minFilter = LinearFilter;
+    t.magFilter = LinearFilter;
+    t.anisotropy = 4;
+    return { canvas: c, tex: t };
+  }, [w, h]);
+  useMemo(() => {
+    const ctx = canvas.getContext("2d")!;
+    ctx.clearRect(0, 0, w, h);
+    draw(ctx, w, h);
+    tex.needsUpdate = true;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canvas, key]);
+  return tex;
+};
+
+export const roundRect = (ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) => {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+};
+
+==== 3309 src/kits/panelverse/engine/three/ComicStage.tsx
+import React, { useContext, useLayoutEffect, useMemo } from "react";
+import { ThreeCanvas } from "@remotion/three";
+import { QaProbe } from "../../../../core/qa/scene-qa.tsx";
+import { useThree } from "@react-three/fiber";
+import { PerspectiveCamera, Vector2, Vector3 } from "three";
+import { RenderScaleCtx, StageCtx, type V3 } from "./Toon.tsx";
+import { DEFAULT_CELL, DEFAULT_LIGHT } from "./materials.ts";
+import type { CamState } from "../camera.ts";
+export { sampleCam, CAM0, type CamKey, type CamState } from "../camera.ts";
+
+// ── ComicCamera ──
+
+/**
+ * Dolly-zoom helper: camera distance that keeps a subject of `size` world units filling the same
+ * fraction of frame height while the fov changes (Hitchcock "vertigo" move).
+ */
+export const dollyDistance = (size: number, fov: number, frac = 0.5) => size / frac / (2 * Math.tan((fov * Math.PI) / 360));
+
+const CameraRig: React.FC<{ cam: CamState; shake?: V3 }> = ({ cam, shake = [0, 0, 0] }) => {
+  const camera = useThree((s) => s.camera) as PerspectiveCamera;
+  useLayoutEffect(() => {
+    camera.position.set(cam.pos[0] + shake[0], cam.pos[1] + shake[1], cam.pos[2] + shake[2]);
+    const fwd = new Vector3(...cam.target).sub(camera.position).normalize();
+    const right = new Vector3().crossVectors(fwd, new Vector3(0, 1, 0)).normalize();
+    const up = new Vector3().crossVectors(right, fwd).normalize();
+    camera.up.copy(up.multiplyScalar(Math.cos(cam.roll)).addScaledVector(right, Math.sin(cam.roll)));
+    camera.lookAt(cam.target[0] + shake[0], cam.target[1] + shake[1], cam.target[2] + shake[2]);
+    camera.fov = cam.fov;
+    camera.near = 0.05;
+    camera.far = 200;
+    camera.updateProjectionMatrix();
+    camera.updateMatrixWorld();
+  });
+  return null;
+};
+
+// ── ComicStage: one WebGL canvas with comic stage context ─────────────────────────────────────
+export type ComicStageProps = {
+  width: number;
+  height: number;
+  frame: number;
+  cam: CamState;
+  shake?: V3;
+  light?: V3;
+  bg?: string;
+  cell?: number;
+  ink?: number;
+  style?: React.CSSProperties;
+  children: React.ReactNode;
+};
+
+export const ComicStage: React.FC<ComicStageProps> = ({
+  width,
+  height,
+  frame,
+  cam,
+  shake,
+  light = DEFAULT_LIGHT,
+  bg = "#F6E8C8",
+  cell = DEFAULT_CELL,
+  ink = 1,
+  style,
+  children,
+}) => {
+  // previews draw the same 1080-space layout at a lower device-pixel ratio: ink widths stay in layout
+  // pixels (uRes = layout size) and the halftone cell scales with the device pixels, so the look is identical
+  const scale = useContext(RenderScaleCtx);
+  const res = useMemo(() => new Vector2(width, height), [width, height]);
+  const ctx = useMemo(() => ({ light, res, cell: cell * scale, frame, ink }), [light, res, cell, scale, frame, ink]);
+  return (
+    <ThreeCanvas
+      width={width}
+      height={height}
+      dpr={scale}
+      flat
+      gl={{ antialias: true, preserveDrawingBuffer: true, powerPreference: "high-performance" }}
+      style={{ position: "absolute", left: 0, top: 0, ...style }}
+    >
+      <color attach="background" args={[bg]} />
+      <StageCtx.Provider value={ctx}>
+        <CameraRig cam={cam} shake={shake} />
+        {children}
+      </StageCtx.Provider>
+      <QaProbe />
+    </ThreeCanvas>
+  );
+};
+
+==== 1379 src/kits/panelverse/engine/three/setTypes.ts
+// Set (environment) specs — pure data so stories can build and remix them from Node and the browser.
+import type { Key } from "../keyframes.ts";
+import type { V3 } from "../types.ts";
+import type { SwatchKey } from "../../theme/palette.ts";
+
+export type ItemSpec = {
+  type: string; // a library item (see references/panelverse/elements.md) or a story's own element
+  pos: V3;
+  rot?: number | V3; // number = yaw (radians)
+  scale?: number | V3;
+  sw?: SwatchKey;
+  sw2?: SwatchKey;
+  text?: string;
+  sub?: string;
+  on?: boolean;
+  n?: number;
+  t?: number;
+  /** animate any of the fields above over shot-local frames */
+  keys?: Key<Partial<Omit<ItemSpec, "keys" | "type">>>[];
+};
+
+export type StageLook = "burst" | "spotlight" | "void" | "split" | "tunnel" | "paper" | "dots" | "cliff";
+export type SetSpec = {
+  kind: "interior" | "exterior" | "stage";
+  // interior
+  floor?: SwatchKey;
+  floorDots?: number;
+  wall?: SwatchKey;
+  wallDots?: number;
+  wainscot?: SwatchKey | null;
+  sideWall?: "left" | "right" | "both" | "none";
+  // exterior
+  time?: "day" | "sunset" | "night";
+  ground?: SwatchKey;
+  road?: boolean;
+  // stage
+  look?: StageLook;
+  a?: SwatchKey;
+  b?: SwatchKey;
+  spin?: number; // burst rotation speed
+  gap?: number; // cliff: split width
+  tilt?: number; // cliff: halves tilt
+  drop?: number; // cliff: halves sink
+  items?: ItemSpec[];
+};
+
+==== 3355 src/kits/panelverse/engine/three/Toon.tsx
+import React, { createContext, useContext, useMemo } from "react";
+import { BufferGeometry, Vector2, type Euler, type Quaternion } from "three";
+import { createComicMaterial, createInkMaterial, DEFAULT_CELL, DEFAULT_LIGHT, type ComicMatOpts } from "./materials.ts";
+import { hullOf } from "./geometries.ts";
+import type { Swatch, SwatchKey } from "../../theme/palette.ts";
+
+import type { V3 } from "../types.ts";
+import { PORTRAIT, type Canvas } from "../panels/geometry.ts";
+export type { V3 };
+
+/** Render scale of the whole film (1 = final 1080×1920, 0.5 = preview 540×960). */
+export const RenderScaleCtx = createContext(1);
+/** Layout canvas of the whole film: the 1080×1920 page, or the 1920×1080 page of a `--wide` film. */
+export const CanvasCtx = createContext<Canvas>(PORTRAIT);
+
+/** Per-canvas stage info shared by every comic mesh: key light, ink resolution, halftone cell, shot clock. */
+export type StageInfo = {
+  light: V3;
+  res: Vector2;
+  cell: number;
+  /** shot-local frame (already frozen / remapped by the shot) */
+  frame: number;
+  /** global ink width multiplier (e.g. wider for close-ups) */
+  ink: number;
+};
+export const StageCtx = createContext<StageInfo>({
+  light: DEFAULT_LIGHT,
+  res: new Vector2(1080, 1920),
+  cell: DEFAULT_CELL,
+  frame: 0,
+  ink: 1,
+});
+export const useStage = () => useContext(StageCtx);
+export const useShotFrame = () => useContext(StageCtx).frame;
+
+export type ToonProps = {
+  geo: BufferGeometry;
+  sw?: SwatchKey | Swatch;
+  mat?: Omit<ComicMatOpts, "sw" | "light" | "cell">;
+  /** ink width in px; 0 disables the contour */
+  outline?: number;
+  inkColor?: string;
+  position?: V3;
+  rotation?: V3 | Euler;
+  quaternion?: Quaternion;
+  scale?: V3 | number;
+  visible?: boolean;
+  opacity?: number;
+  renderOrder?: number;
+  children?: React.ReactNode;
+};
+
+/** A cel-shaded, halftone-printed mesh with its own inverted-hull ink contour. */
+export const Toon: React.FC<ToonProps> = ({
+  geo,
+  sw = "paper",
+  mat,
+  outline = 4,
+  inkColor,
+  position,
+  rotation,
+  quaternion,
+  scale,
+  visible = true,
+  opacity = 1,
+  renderOrder,
+  children,
+}) => {
+  const st = useStage();
+  const key = JSON.stringify([sw, mat, st.light, st.cell, opacity < 1]);
+  const material = useMemo(
+    () => createComicMaterial({ ...mat, sw, light: st.light, cell: st.cell, opacity: opacity < 1 ? opacity : 1 }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [key],
+  );
+  material.uniforms.uOpacity.value = opacity;
+  const ink = useMemo(
+    () => (outline > 0 ? createInkMaterial(outline * st.ink, st.res, inkColor, opacity < 1 ? opacity : 1) : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [outline, st.ink, st.res, inkColor, opacity < 1],
+  );
+  if (ink) ink.uniforms.uOpacity.value = opacity;
+  const hull = useMemo(() => (outline > 0 ? hullOf(geo) : null), [geo, outline]);
+  const s: V3 | undefined = typeof scale === "number" ? [scale, scale, scale] : scale;
+  return (
+    <group
+      position={position}
+      rotation={rotation as V3 | undefined}
+      quaternion={quaternion}
+      scale={s}
+      visible={visible && opacity > 0.001}
+    >
+      <mesh geometry={geo} material={material} renderOrder={renderOrder} />
+      {ink && hull ? <mesh geometry={hull} material={ink} renderOrder={renderOrder} /> : null}
+      {children}
+    </group>
+  );
+};
+
+==== 3068 src/kits/panelverse/Films.tsx
+import React from "react";
+import { Composition } from "remotion";
+import { StoryPlayer } from "./director/StoryPlayer.tsx";
+import { Catalog, CatalogWide, CATALOG_PAGES, CATALOG_WIDE_PAGES } from "./catalog/Catalog.tsx";
+import { wideStory } from "./director/kit.ts";
+import type { StoryDef } from "./director/types.ts";
+import { PV_STORIES } from "../../pv-stories/registry.ts";
+
+const byId = (id: string) => {
+  const s = PV_STORIES.find((x) => x.id === id);
+  if (!s) throw new Error(`PANELVERSE story "${id}" is not registered (run scripts/pv-make.mjs)`);
+  return s;
+};
+// the same story on the 16:9 page (`pv-make.mjs --wide`): re-laid once per story, see wideStory()
+const wides = new Map<string, StoryDef>();
+const film = (id: string, wide?: boolean) => (wide ? wides.get(id) ?? wides.set(id, wideStory(byId(id))).get(id)! : byId(id));
+type FilmProps = { id: string; wide?: boolean };
+const Preview: React.FC<FilmProps> = ({ id, wide }) => <StoryPlayer story={film(id, wide)} step={2} scale={0.5} audio={`audio/${id}-mix.wav`} />;
+const Final: React.FC<FilmProps> = ({ id, wide }) => <StoryPlayer story={film(id, wide)} />;
+/** silent preview for stills (no audio file needed) */
+const Stills: React.FC<FilmProps> = ({ id, wide }) => <StoryPlayer story={film(id, wide)} step={2} scale={0.5} />;
+
+/**
+ * Every PANELVERSE story as `<id>-preview` (540×960 @ 30), `<id>-final` (1080×1920 @ 60), `<id>-stills`, and the
+ * same three on the wide page as `…Wide` (960×540 @ 30, 1920×1080 @ 60); plus the element catalog.
+ */
+export const PanelverseFilms: React.FC = () => (
+  <>
+    {PV_STORIES.map((s) => (
+      <React.Fragment key={s.id}>
+        <Composition id={`${s.id}-preview`} component={Preview} defaultProps={{ id: s.id }} durationInFrames={Math.ceil(s.durationInFrames / 2)} fps={30} width={540} height={960} />
+        <Composition id={`${s.id}-stills`} component={Stills} defaultProps={{ id: s.id }} durationInFrames={Math.ceil(s.durationInFrames / 2)} fps={30} width={540} height={960} />
+        <Composition id={`${s.id}-final`} component={Final} defaultProps={{ id: s.id }} durationInFrames={s.durationInFrames} fps={60} width={1080} height={1920} />
+        <Composition id={`${s.id}-previewWide`} component={Preview} defaultProps={{ id: s.id, wide: true }} durationInFrames={Math.ceil(s.durationInFrames / 2)} fps={30} width={960} height={540} />
+        <Composition id={`${s.id}-stillsWide`} component={Stills} defaultProps={{ id: s.id, wide: true }} durationInFrames={Math.ceil(s.durationInFrames / 2)} fps={30} width={960} height={540} />
+        <Composition id={`${s.id}-finalWide`} component={Final} defaultProps={{ id: s.id, wide: true }} durationInFrames={s.durationInFrames} fps={60} width={1920} height={1080} />
+      </React.Fragment>
+    ))}
+    <Composition id="PanelverseCatalog" component={Catalog} durationInFrames={CATALOG_PAGES} fps={1} width={1080} height={1920} />
+    <Composition id="PanelverseCatalogWide" component={CatalogWide} durationInFrames={CATALOG_WIDE_PAGES} fps={1} width={1920} height={1080} />
+  </>
+);
+
+==== 1092 src/kits/panelverse/theme/fonts.ts
+import { staticFile } from "remotion";
+
+// All fonts are OFL-1.1 (Bangers, Luckiest Guy, Comic Neue), bundled in public/fonts — no network at render time.
+export const FONT_IMPACT = "PV Bangers"; // classic comic display lettering
+export const FONT_TITLE = "PV Luckiest Guy"; // chunky payoff titles
+export const FONT_LETTER = "PV Comic Neue"; // speech / chat / caption lettering
+
+const FILES: [string, string, string][] = [
+  [FONT_IMPACT, "fonts/pv-Bangers.woff2", "400"],
+  [FONT_TITLE, "fonts/pv-LuckiestGuy.woff2", "400"],
+  [FONT_LETTER, "fonts/pv-ComicNeue-Bold.woff2", "700"],
+];
+
+let loaded: Promise<unknown> | null = null;
+/** Loads the comic fonts once per page (FontFace API, no extra packages). */
+export const ensureFonts = () => {
+  if (!loaded) {
+    loaded = Promise.all(
+      FILES.map(async ([family, file, weight]) => {
+        const face = new FontFace(family, `url(${staticFile(file)}) format("woff2")`, { weight });
+        await face.load();
+        (document.fonts as unknown as { add: (x: FontFace) => void }).add(face);
+      }),
+    );
+  }
+  return loaded;
+};

@@ -1,0 +1,981 @@
+VOYNANN Motion - packed source files of this folder. Do not edit by hand.
+The skill upload in the Claude app accepts at most 200 files, so the source files are packed here.
+`node <skill folder>/new-project.mjs <project folder> --kit=<style>` unpacks them into the project.
+Format: per file one line with four '=' signs, the byte length and the path, then exactly that many bytes.
+
+==== 1202 project/package.json
+{
+  "name": "voynann-tipikal-project",
+  "version": "1.0.0",
+  "private": true,
+  "description": "VOYNANN Motion TIPIKAL project (Remotion + React Three Fiber): story.json (+ optional voice-over) -> 'Tipe-tipe …' relatable 3D comedy sketch, 9:16 (16:9 on request).",
+  "type": "module",
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "scripts": {
+    "dev": "remotion studio",
+    "typecheck": "tsc --noEmit",
+    "check-env": "node scripts/check-env.mjs",
+    "make": "node scripts/make.mjs",
+    "library": "node scripts/make.mjs --library",
+    "menu": "node scripts/make.mjs --menu",
+    "smoke": "node scripts/make.mjs motor --stills 2s,7.6s,11.8s,19s --silent"
+  },
+  "dependencies": {
+    "@react-three/fiber": "9.8.2",
+    "@remotion/cli": "4.0.539",
+    "@remotion/google-fonts": "4.0.539",
+    "@remotion/three": "4.0.539",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "remotion": "4.0.539",
+    "three": "0.186.1",
+    "three-mesh-bvh": "0.9.16"
+  },
+  "devDependencies": {
+    "@remotion/bundler": "4.0.539",
+    "@remotion/renderer": "4.0.539",
+    "@types/react": "19.2.7",
+    "@types/three": "0.186.0",
+    "typescript": "5.9.3"
+  },
+  "overrides": {
+    "zod": "4.6.7"
+  }
+}
+
+==== 4384 project/public/tipikal/OFL-baloo2.txt
+﻿Copyright 2019 The Baloo 2 Project Authors (https://github.com/EkType/Baloo2)
+
+This Font Software is licensed under the SIL Open Font License, Version 1.1.
+This license is copied below, and is also available with a FAQ at:
+http://scripts.sil.org/OFL
+
+
+-----------------------------------------------------------
+SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007
+-----------------------------------------------------------
+
+PREAMBLE
+The goals of the Open Font License (OFL) are to stimulate worldwide
+development of collaborative font projects, to support the font creation
+efforts of academic and linguistic communities, and to provide a free and
+open framework in which fonts may be shared and improved in partnership
+with others.
+
+The OFL allows the licensed fonts to be used, studied, modified and
+redistributed freely as long as they are not sold by themselves. The
+fonts, including any derivative works, can be bundled, embedded, 
+redistributed and/or sold with any software provided that any reserved
+names are not used by derivative works. The fonts and derivatives,
+however, cannot be released under any other type of license. The
+requirement for fonts to remain under this license does not apply
+to any document created using the fonts or their derivatives.
+
+DEFINITIONS
+"Font Software" refers to the set of files released by the Copyright
+Holder(s) under this license and clearly marked as such. This may
+include source files, build scripts and documentation.
+
+"Reserved Font Name" refers to any names specified as such after the
+copyright statement(s).
+
+"Original Version" refers to the collection of Font Software components as
+distributed by the Copyright Holder(s).
+
+"Modified Version" refers to any derivative made by adding to, deleting,
+or substituting -- in part or in whole -- any of the components of the
+Original Version, by changing formats or by porting the Font Software to a
+new environment.
+
+"Author" refers to any designer, engineer, programmer, technical
+writer or other person who contributed to the Font Software.
+
+PERMISSION & CONDITIONS
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of the Font Software, to use, study, copy, merge, embed, modify,
+redistribute, and sell modified and unmodified copies of the Font
+Software, subject to the following conditions:
+
+1) Neither the Font Software nor any of its individual components,
+in Original or Modified Versions, may be sold by itself.
+
+2) Original or Modified Versions of the Font Software may be bundled,
+redistributed and/or sold with any software, provided that each copy
+contains the above copyright notice and this license. These can be
+included either as stand-alone text files, human-readable headers or
+in the appropriate machine-readable metadata fields within text or
+binary files as long as those fields can be easily viewed by the user.
+
+3) No Modified Version of the Font Software may use the Reserved Font
+Name(s) unless explicit written permission is granted by the corresponding
+Copyright Holder. This restriction only applies to the primary font name as
+presented to the users.
+
+4) The name(s) of the Copyright Holder(s) or the Author(s) of the Font
+Software shall not be used to promote, endorse or advertise any
+Modified Version, except to acknowledge the contribution(s) of the
+Copyright Holder(s) and the Author(s) or with their explicit written
+permission.
+
+5) The Font Software, modified or unmodified, in part or in whole,
+must be distributed entirely under this license, and must not be
+distributed under any other license. The requirement for fonts to
+remain under this license does not apply to any document created
+using the Font Software.
+
+TERMINATION
+This license becomes null and void if any of the above conditions are
+not met.
+
+DISCLAIMER
+THE FONT SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT
+OF COPYRIGHT, PATENT, TRADEMARK, OR OTHER RIGHT. IN NO EVENT SHALL THE
+COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+INCLUDING ANY GENERAL, SPECIAL, INDIRECT, INCIDENTAL, OR CONSEQUENTIAL
+DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
+OTHER DEALINGS IN THE FONT SOFTWARE.
+
+==== 4377 project/public/tipikal/OFL-barlow-condensed.txt
+Copyright 2017 The Barlow Project Authors (https://github.com/jpt/barlow)
+
+This Font Software is licensed under the SIL Open Font License, Version 1.1.
+This license is copied below, and is also available with a FAQ at:
+http://scripts.sil.org/OFL
+
+
+-----------------------------------------------------------
+SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007
+-----------------------------------------------------------
+
+PREAMBLE
+The goals of the Open Font License (OFL) are to stimulate worldwide
+development of collaborative font projects, to support the font creation
+efforts of academic and linguistic communities, and to provide a free and
+open framework in which fonts may be shared and improved in partnership
+with others.
+
+The OFL allows the licensed fonts to be used, studied, modified and
+redistributed freely as long as they are not sold by themselves. The
+fonts, including any derivative works, can be bundled, embedded, 
+redistributed and/or sold with any software provided that any reserved
+names are not used by derivative works. The fonts and derivatives,
+however, cannot be released under any other type of license. The
+requirement for fonts to remain under this license does not apply
+to any document created using the fonts or their derivatives.
+
+DEFINITIONS
+"Font Software" refers to the set of files released by the Copyright
+Holder(s) under this license and clearly marked as such. This may
+include source files, build scripts and documentation.
+
+"Reserved Font Name" refers to any names specified as such after the
+copyright statement(s).
+
+"Original Version" refers to the collection of Font Software components as
+distributed by the Copyright Holder(s).
+
+"Modified Version" refers to any derivative made by adding to, deleting,
+or substituting -- in part or in whole -- any of the components of the
+Original Version, by changing formats or by porting the Font Software to a
+new environment.
+
+"Author" refers to any designer, engineer, programmer, technical
+writer or other person who contributed to the Font Software.
+
+PERMISSION & CONDITIONS
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of the Font Software, to use, study, copy, merge, embed, modify,
+redistribute, and sell modified and unmodified copies of the Font
+Software, subject to the following conditions:
+
+1) Neither the Font Software nor any of its individual components,
+in Original or Modified Versions, may be sold by itself.
+
+2) Original or Modified Versions of the Font Software may be bundled,
+redistributed and/or sold with any software, provided that each copy
+contains the above copyright notice and this license. These can be
+included either as stand-alone text files, human-readable headers or
+in the appropriate machine-readable metadata fields within text or
+binary files as long as those fields can be easily viewed by the user.
+
+3) No Modified Version of the Font Software may use the Reserved Font
+Name(s) unless explicit written permission is granted by the corresponding
+Copyright Holder. This restriction only applies to the primary font name as
+presented to the users.
+
+4) The name(s) of the Copyright Holder(s) or the Author(s) of the Font
+Software shall not be used to promote, endorse or advertise any
+Modified Version, except to acknowledge the contribution(s) of the
+Copyright Holder(s) and the Author(s) or with their explicit written
+permission.
+
+5) The Font Software, modified or unmodified, in part or in whole,
+must be distributed entirely under this license, and must not be
+distributed under any other license. The requirement for fonts to
+remain under this license does not apply to any document created
+using the Font Software.
+
+TERMINATION
+This license becomes null and void if any of the above conditions are
+not met.
+
+DISCLAIMER
+THE FONT SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT
+OF COPYRIGHT, PATENT, TRADEMARK, OR OTHER RIGHT. IN NO EVENT SHALL THE
+COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+INCLUDING ANY GENERAL, SPECIAL, INDIRECT, INCIDENTAL, OR CONSEQUENTIAL
+DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
+OTHER DEALINGS IN THE FONT SOFTWARE.
+
+==== 1491 project/src/kits/tipikal/fonts.ts
+// TIPIKAL type (all SIL OFL, licences next to the files in public/tipikal):
+//   Baloo 2 (variable 400–800) — type names, stickers, bubbles
+//   Barlow Condensed ExtraBold — the road-sign header, plates, shop signs
+import { useEffect, useState } from "react";
+import { continueRender, delayRender, staticFile } from "remotion";
+
+export const F_ROUND = "TipikalBaloo";
+export const F_SIGN = "TipikalBarlow";
+
+let ready: Promise<void> | null = null;
+export const fontsReady = (): Promise<void> => {
+  if (ready) return ready;
+  if (typeof document === "undefined") return (ready = Promise.resolve());
+  const faces = [
+    new FontFace(F_ROUND, `url(${staticFile("tipikal/Baloo2-Var.ttf")}) format("truetype")`, { weight: "400 800" }),
+    new FontFace(F_SIGN, `url(${staticFile("tipikal/BarlowCondensed-ExtraBold.ttf")}) format("truetype")`, { weight: "800" }),
+  ];
+  ready = Promise.all(
+    faces.map(async (f) => {
+      await f.load();
+      (document.fonts as unknown as { add(f: FontFace): void }).add(f);
+    }),
+  ).then(() => undefined);
+  return ready;
+};
+
+/** Holds the render until the fonts are in (canvas textures draw text with them). */
+export const useFontsReady = () => {
+  const [ok, setOk] = useState(false);
+  const [handle] = useState(() => delayRender("tipikal fonts"));
+  useEffect(() => {
+    fontsReady().then(
+      () => { setOk(true); continueRender(handle); },
+      () => { setOk(true); continueRender(handle); },
+    );
+  }, [handle]);
+  return ok;
+};
+
+==== 4649 project/src/kits/tipikal/math.ts
+// TIPIKAL maths: vectors, easing, C1 keyframe tracks and camera keys (pure, no React).
+// Track sampler forked from src/core/motion/track.ts (Catmull-Rom tangents, monotone clamp, hold keys).
+import { PerspectiveCamera, Vector3 } from "three";
+
+export type V3 = [number, number, number];
+export type V2 = [number, number];
+
+export const clamp01 = (x: number) => (x < 0 ? 0 : x > 1 ? 1 : x);
+export const lin = (s: number, a: number, b: number) => clamp01((s - a) / (b - a));
+export const sm = (t: number) => {
+  const x = clamp01(t);
+  return x * x * (3 - 2 * x);
+};
+export const smoother = (t: number) => {
+  const x = clamp01(t);
+  return x * x * x * (x * (x * 6 - 15) + 10);
+};
+/** ease-out with a small overshoot (labels landing) */
+export const backOut = (t: number, k = 1.6) => {
+  const x = clamp01(t) - 1;
+  return 1 + (k + 1) * x * x * x + k * x * x;
+};
+export const easeOut = (t: number) => 1 - Math.pow(1 - clamp01(t), 3);
+export const easeIn = (t: number) => Math.pow(clamp01(t), 3);
+export const mix = (a: number, b: number, t: number) => a + (b - a) * t;
+export const mix3 = (a: V3, b: V3, t: number): V3 => [mix(a[0], b[0], t), mix(a[1], b[1], t), mix(a[2], b[2], t)];
+export const add = (a: V3, b: V3, s = 1): V3 => [a[0] + b[0] * s, a[1] + b[1] * s, a[2] + b[2] * s];
+export const sub = (a: V3, b: V3): V3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+export const mul = (a: V3, s: number): V3 => [a[0] * s, a[1] * s, a[2] * s];
+export const dot = (a: V3, b: V3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+export const cross = (a: V3, b: V3): V3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+export const len = (a: V3) => Math.hypot(a[0], a[1], a[2]);
+export const nrm = (a: V3): V3 => {
+  const l = len(a) || 1;
+  return [a[0] / l, a[1] / l, a[2] / l];
+};
+export const rotY = (v: V3, a: number): V3 => [v[0] * Math.cos(a) + v[2] * Math.sin(a), v[1], -v[0] * Math.sin(a) + v[2] * Math.cos(a)];
+export const wrapA = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
+
+/** deterministic hash 0..1 */
+export const hash = (n: number) => {
+  const x = Math.sin(n * 127.1 + 311.7) * 43758.5453;
+  return x - Math.floor(x);
+};
+
+// ------------------------------------------------------------------ keyframe tracks
+export type Key = { f: number; v: number[]; hold?: boolean };
+const hermite = (p0: number, p1: number, m0: number, m1: number, t: number, h: number) => {
+  const t2 = t * t, t3 = t2 * t;
+  return (2 * t3 - 3 * t2 + 1) * p0 + (t3 - 2 * t2 + t) * h * m0 + (-2 * t3 + 3 * t2) * p1 + (t3 - t2) * h * m1;
+};
+const tangent = (keys: Key[], i: number, c: number) => {
+  const k = keys[i];
+  if (k.hold || i === 0 || i === keys.length - 1) return 0;
+  const a = keys[i - 1], b = keys[i + 1];
+  const m = (b.v[c] - a.v[c]) / (b.f - a.f);
+  const d0 = (k.v[c] - a.v[c]) / (k.f - a.f);
+  const d1 = (b.v[c] - k.v[c]) / (b.f - k.f);
+  if (d0 * d1 <= 0) return 0;
+  const lim = 3 * Math.min(Math.abs(d0), Math.abs(d1));
+  return Math.sign(m) * Math.min(Math.abs(m), lim);
+};
+export const sample = (keys: Key[], f: number): number[] => {
+  if (f <= keys[0].f) return keys[0].v.slice();
+  const last = keys[keys.length - 1];
+  if (f >= last.f) return last.v.slice();
+  let i = 0;
+  while (i < keys.length - 2 && f >= keys[i + 1].f) i++;
+  const a = keys[i], b = keys[i + 1];
+  const h = b.f - a.f;
+  const t = (f - a.f) / h;
+  return a.v.map((_, c) => hermite(a.v[c], b.v[c], tangent(keys, i, c), tangent(keys, i + 1, c), t, h));
+};
+
+// ------------------------------------------------------------------ camera
+export type Shot = { pos: V3; target: V3; fov: number; roll?: number; shadowAt?: V3; shadowBox?: number };
+export type CamKey = { t: number; pos: V3; target: V3; fov?: number; roll?: number; hold?: boolean };
+export const camAt = (keys: CamKey[], s: number): Shot => {
+  const k: Key[] = keys.map((c) => ({ f: c.t, v: [...c.pos, ...c.target, c.fov ?? 40, c.roll ?? 0], hold: c.hold }));
+  const v = sample(k, s);
+  return { pos: [v[0], v[1], v[2]], target: [v[3], v[4], v[5]], fov: v[6], roll: v[7] };
+};
+
+const tmpCam = new PerspectiveCamera();
+/** World point → overlay space (0..1, y down). */
+export const project = (shot: Shot, aspect: number, p: V3) => {
+  tmpCam.fov = shot.fov;
+  tmpCam.aspect = aspect;
+  tmpCam.near = 0.08;
+  tmpCam.far = 1500;
+  tmpCam.position.set(...shot.pos);
+  tmpCam.up.set(Math.sin(shot.roll ?? 0), Math.cos(shot.roll ?? 0), 0);
+  tmpCam.lookAt(...shot.target);
+  tmpCam.updateProjectionMatrix();
+  tmpCam.updateMatrixWorld();
+  const v = new Vector3(...p).project(tmpCam);
+  return { x: (v.x + 1) / 2, y: (1 - v.y) / 2, vis: v.z < 1 && v.z > -1 };
+};
+
+==== 4046 project/src/kits/tipikal/mats.ts
+// TIPIKAL materials: flat cel-shaded toon colours (3 light steps, no gradients), low-poly set materials, ink hulls.
+import React from "react";
+import {
+  BackSide, BufferGeometry, DataTexture, Matrix4, MeshBasicMaterial, MeshStandardMaterial, MeshToonMaterial, NearestFilter,
+  RedFormat, Vector3, type Material,
+} from "three";
+import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import type { V3 } from "./math.ts";
+
+export const INK = "#1b1512";
+
+const mkRamp = (v: number[]) => {
+  const d = new Uint8Array(v);
+  const t = new DataTexture(d, 3, 1, RedFormat);
+  t.minFilter = NearestFilter;
+  t.magFilter = NearestFilter;
+  t.generateMipmaps = false;
+  t.needsUpdate = true;
+  return t;
+};
+const ramp = mkRamp([120, 200, 255]);
+const softRamp = mkRamp([185, 228, 255]);
+export const SOFT_RAMP = softRamp;
+
+const toonCache = new Map<string, MeshToonMaterial>();
+/** cel-shaded colour for characters and vehicles (soft = skin: a gentle shadow step so faces stay readable) */
+export const toon = (c: string, soft = false) => {
+  const k = c + (soft ? "s" : "");
+  let m = toonCache.get(k);
+  if (!m) toonCache.set(k, (m = new MeshToonMaterial({ color: c, gradientMap: soft ? softRamp : ramp })));
+  return m;
+};
+const flatCache = new Map<string, MeshStandardMaterial>();
+/** low-poly set colour (faceted, matte) */
+export const flat = (c: string, rough = 0.85, faceted = true) => {
+  const k = `${c}|${rough}|${faceted}`;
+  let m = flatCache.get(k);
+  if (!m) flatCache.set(k, (m = new MeshStandardMaterial({ color: c, roughness: rough, metalness: 0, flatShading: faceted })));
+  return m;
+};
+const glowCache = new Map<string, MeshBasicMaterial>();
+/** lamps that are ON: unlit flat colour (no bloom, no glow) */
+export const lamp = (c: string) => {
+  let m = glowCache.get(c);
+  if (!m) glowCache.set(c, (m = new MeshBasicMaterial({ color: c, toneMapped: false })));
+  return m;
+};
+export const inkHull = new MeshBasicMaterial({ color: INK, side: BackSide });
+
+/** Outline hull for any closed geometry: welded copy pushed out along smooth vertex normals. */
+export const hullOf = (g: BufferGeometry, thick: number) => {
+  const c = g.clone();
+  c.deleteAttribute("normal");
+  if (c.getAttribute("uv")) c.deleteAttribute("uv");
+  if (c.getAttribute("uv1")) c.deleteAttribute("uv1");
+  const w = mergeVertices(c, 1e-4);
+  w.computeVertexNormals();
+  const p = w.getAttribute("position"), n = w.getAttribute("normal");
+  for (let i = 0; i < p.count; i++) p.setXYZ(i, p.getX(i) + n.getX(i) * thick, p.getY(i) + n.getY(i) * thick, p.getZ(i) + n.getZ(i) * thick);
+  p.needsUpdate = true;
+  w.computeBoundingSphere();
+  c.dispose();
+  return w;
+};
+
+// ------------------------------------------------------------------ matrix helpers
+/** unit +Y cylinder (base at 0, top at 1) from a to b with radius r */
+export const stick = (a: V3, b: V3, r: number) => {
+  const A = new Vector3(...a), B = new Vector3(...b);
+  const d = B.clone().sub(A);
+  const L = d.length() || 1e-6;
+  const m = new Matrix4();
+  const dir = d.clone().normalize();
+  // basis with y = dir
+  const x = Math.abs(dir.y) < 0.95 ? new Vector3(0, 1, 0).cross(dir).normalize() : new Vector3(1, 0, 0).cross(dir).normalize();
+  const z = x.clone().cross(dir).normalize();
+  m.makeBasis(x.multiplyScalar(r), dir.multiplyScalar(L), z.multiplyScalar(r));
+  m.setPosition(A);
+  return m;
+};
+export const basis = (p: V3, x: V3, y: V3, z: V3, s: V3 = [1, 1, 1]) => {
+  const m = new Matrix4().makeBasis(new Vector3(...x), new Vector3(...y), new Vector3(...z));
+  m.scale(new Vector3(...s));
+  m.setPosition(...p);
+  return m;
+};
+export const at = (p: V3, s: V3 = [1, 1, 1]) => basis(p, [1, 0, 0], [0, 1, 0], [0, 0, 1], s);
+
+export const M: React.FC<{ g: BufferGeometry; m: Matrix4; material: Material; shadow?: boolean; receive?: boolean; name?: string }> = ({ g, m, material, shadow = true, receive = true, name }) =>
+  React.createElement("mesh", { name, geometry: g, material, matrix: m, matrixAutoUpdate: false, castShadow: shadow, receiveShadow: receive });
+
+==== 2406 project/src/kits/tipikal/spec.ts
+// TIPIKAL look specs — pure data. A buyer changes a character by changing one of these objects (cast.ts presets,
+// story.json "look" overrides, saved tokoh files). Everything a person wears is a flat colour; no logos, no text.
+
+export type HairStyle = "short" | "spiky" | "kid" | "neat" | "bob" | "long" | "bun" | "ponytail" | "curly" | "bald-ring" | "bald";
+export type HatKind = "none" | "helmet" | "half-helmet" | "peci" | "kerudung" | "cap" | "headband";
+export type TopKind = "tee" | "shirt" | "jacket" | "hoodie" | "koko" | "blouse";
+export type BottomKind = "long" | "shorts" | "skirt" | "long-skirt";
+export type FeetKind = "sandal" | "shoe" | "bare";
+
+export type PersonSpec = {
+  name?: string;
+  /** s: overall size (1 = adult, 0.55–0.7 = kids); wide: belly / width; head: head size */
+  build?: { s?: number; wide?: number; head?: number };
+  skin: string;
+  hair?: { color: string; style: HairStyle };
+  /** headwear: helmet (open face), half-helmet, peci, kerudung (headscarf), cap, headband */
+  hat?: { kind: HatKind; color?: string; color2?: string };
+  top: {
+    kind: TopKind; color: string;
+    /** zip / placket / stripe down the front */
+    accent?: string;
+    /** collar colour (shirts, koko, jackets) */
+    collar?: string;
+    tie?: string;
+    vest?: string;
+    apron?: string;
+    /** ID card on a lanyard */
+    lanyard?: string;
+    /** reflective band round the chest and arms (rider jackets) */
+    band?: string;
+    /** sleeves: tee / blouse default short, others long */
+    short?: boolean;
+  };
+  bottom: { kind: BottomKind; color: string };
+  feet: { kind: FeetKind; color: string };
+  face?: FaceSpec;
+  /** backpack colour */
+  bag?: string;
+  /** towel over the shoulder */
+  towel?: string;
+};
+
+export type FaceSpec = {
+  brows?: "thin" | "thick" | "bushy";
+  mustache?: boolean;
+  beard?: boolean;
+  glasses?: boolean;
+  lashes?: boolean;
+  blush?: boolean;
+  /** smile lines and eye bags (grandparents) */
+  old?: boolean;
+  pupil?: string;
+};
+
+export type MotorSpec = {
+  /** main panel colour, second colour (stripe / front), seat, dark plastic trim, rims */
+  body: string;
+  accent?: string;
+  seat: string;
+  trim?: string;
+  rim?: string;
+  /** made-up plate text ("" = blank plate). Never a real plate. */
+  plate?: string;
+  /** rear cargo rack */
+  rack?: boolean;
+};
+
+export type AngkotSpec = { body: string; stripe: string; roof?: string };
+
+==== 3173 project/src/Root.tsx
+import React from "react";
+import { Composition } from "remotion";
+import { TipikalFilm, tipikalMetadata, tipikalMetadata30, tipikalStillsMetadata, type FilmProps } from "./tipikal/Film.tsx";
+import { CastSheet, SetLook, TipikalCard, VehLook, cardMetadata, type CardProps } from "./tipikal/Lookdev.tsx";
+import type { Plan } from "./tipikal/types.ts";
+
+const EMPTY: FilmProps = { plan: { id: "-", title: "-", header: { small: "TIPE-TIPE", big: "-" }, theme: "jalan", duration: 1, aspect: 9 / 16, shots: [], types: [], tracks: {}, words: [], lines: [], voice: false, warnings: [] } as Plan };
+
+// VOYNANN Motion — TIPIKAL ("Tipe-tipe …" relatable 3D comedy sketches). Films are rendered by scripts/make.mjs with the
+// compiled plan as props (out/<id>/props.json): TipikalPreview (540 × 960, stills + QA), TipikalPreviewSS (rendered at 2×
+// and downscaled for the preview MP4), TipikalFinal (1080 × 1920 @ 60). …Wide = the same film in 16:9 (make.mjs --wide).
+// TipikalCard = the kartu tokoh strips (make.mjs --menu / --cast), SetLook = a set from every place, CastSheet = presets.
+export const RemotionRoot: React.FC = () => (
+  <>
+    <Composition id="TipikalPreview" component={TipikalFilm} defaultProps={EMPTY} calculateMetadata={tipikalMetadata30} durationInFrames={30} fps={30} width={540} height={960} />
+    <Composition id="TipikalPreviewSS" component={TipikalFilm} defaultProps={EMPTY} calculateMetadata={tipikalMetadata30} durationInFrames={30} fps={30} width={1080} height={1920} />
+    <Composition id="TipikalFinal" component={TipikalFilm} defaultProps={EMPTY} calculateMetadata={tipikalMetadata} durationInFrames={60} fps={60} width={1080} height={1920} />
+    <Composition id="TipikalPreviewWide" component={TipikalFilm} defaultProps={EMPTY} calculateMetadata={tipikalMetadata30} durationInFrames={30} fps={30} width={960} height={540} />
+    <Composition id="TipikalPreviewSSWide" component={TipikalFilm} defaultProps={EMPTY} calculateMetadata={tipikalMetadata30} durationInFrames={30} fps={30} width={1920} height={1080} />
+    <Composition id="TipikalFinalWide" component={TipikalFilm} defaultProps={EMPTY} calculateMetadata={tipikalMetadata} durationInFrames={60} fps={60} width={1920} height={1080} />
+    <Composition id="TipikalStills" component={TipikalFilm} defaultProps={EMPTY} calculateMetadata={tipikalStillsMetadata} durationInFrames={1} fps={30} width={540} height={960} />
+    <Composition id="TipikalStillsWide" component={TipikalFilm} defaultProps={EMPTY} calculateMetadata={tipikalStillsMetadata} durationInFrames={1} fps={30} width={960} height={540} />
+    <Composition id="TipikalCard" component={TipikalCard} defaultProps={{ strips: [], h: 400 } as CardProps} calculateMetadata={cardMetadata} durationInFrames={1} fps={30} width={1080} height={400} />
+    <Composition id="SetLook" component={SetLook} defaultProps={{ set: "jalan" }} durationInFrames={60} fps={30} width={540} height={960} />
+    <Composition id="CastSheet" component={CastSheet} durationInFrames={3} fps={30} width={1080} height={540} />
+    <Composition id="VehLook" component={VehLook} durationInFrames={6} fps={30} width={1080} height={1080} />
+  </>
+);
+
+==== 3102 project/src/tipikal/props/Prop.tsx
+// TIPIKAL prop renderer: builds a PropDef's parts (box / cyl / cone / sphere / torus / lathe) with cel-shaded flat
+// colours and a thin ink outline, like the people. Geometries are cached by their parameters.
+import React from "react";
+import { BoxGeometry, BufferGeometry, CylinderGeometry, Euler, LatheGeometry, Matrix4, MeshStandardMaterial, Quaternion, SphereGeometry, TorusGeometry, Vector2, Vector3 } from "three";
+import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
+import { flat, inkHull, lamp, M, toon } from "../../kits/tipikal/mats.ts";
+import type { Part, PropDef } from "./lib.ts";
+
+const geoCache = new Map<string, BufferGeometry>();
+const geo = (p: Part, grow = 0): BufferGeometry => {
+  const key = JSON.stringify({ ...p, pos: 0, rot: 0, color: 0, mat: 0, grow });
+  let g = geoCache.get(key);
+  if (g) return g;
+  switch (p.shape) {
+    case "box": g = p.round ? new RoundedBoxGeometry(p.size[0] + grow * 2, p.size[1] + grow * 2, p.size[2] + grow * 2, 2, Math.min(...p.size) * p.round) : new BoxGeometry(p.size[0] + grow * 2, p.size[1] + grow * 2, p.size[2] + grow * 2); g.translate(0, p.size[1] / 2, 0); break;
+    case "cyl": g = new CylinderGeometry((p.r2 ?? p.r) + grow, p.r + grow, p.h + grow * 2, p.seg ?? 18, 1); g.translate(0, p.h / 2, 0); break;
+    case "cone": g = new CylinderGeometry(0, p.r + grow, p.h + grow, p.seg ?? 18, 1); g.translate(0, p.h / 2, 0); break;
+    case "sphere": g = new SphereGeometry(p.r + grow, 18, 12); break;
+    case "torus": g = new TorusGeometry(p.r, p.tube + grow, 8, 24, ((p.arc ?? 360) * Math.PI) / 180); break;
+    case "lathe": g = new LatheGeometry(p.profile.map(([r, y]) => new Vector2(r + grow, y)), 24); break;
+  }
+  geoCache.set(key, g!);
+  return g!;
+};
+const shiny = new Map<string, MeshStandardMaterial>();
+const matOf = (p: Part) => {
+  const m = p.mat ?? "toon";
+  if (m === "flat") return flat(p.color, 0.85, false);
+  if (m === "screen") return lamp(p.color);
+  if (m === "shiny") { let s = shiny.get(p.color); if (!s) shiny.set(p.color, (s = new MeshStandardMaterial({ color: p.color, roughness: 0.35, metalness: 0.4 }))); return s; }
+  return toon(p.color);
+};
+const D = Math.PI / 180;
+const partMatrix = (p: Part) => {
+  const pos = p.pos ?? [0, 0, 0];
+  const rot = "rot" in p && p.rot ? p.rot : [0, 0, 0];
+  const sc = p.shape === "sphere" && p.scale ? p.scale : [1, 1, 1];
+  return new Matrix4().compose(new Vector3(...pos), new Quaternion().setFromEuler(new Euler(rot[0] * D, rot[1] * D, rot[2] * D)), new Vector3(...sc));
+};
+
+/** A prop at the origin of its group (bottom centre); the caller positions / rotates the group. */
+export const PropModel: React.FC<{ def: PropDef }> = ({ def }) => (
+  <group>
+    {def.parts.map((p, i) => {
+      const m = partMatrix(p);
+      const ink = !def.noInk && (p.mat ?? "toon") === "toon" && p.shape !== "torus";
+      return (
+        <group key={i}>
+          <M g={geo(p)} m={m} material={matOf(p)} />
+          {ink ? <M g={geo(p, 0.006)} m={m} material={inkHull} shadow={false} /> : null}
+        </group>
+      );
+    })}
+  </group>
+);
+
+==== 1255 project/src/tipikal/sets/index.ts
+// TIPIKAL sets registry (pure data, node + browser): every set's meta by id, and the floor height at a point.
+// Pictures live in scenes.tsx. To add a set: write <name>.ts (layout + SetMeta) and <Name>.tsx (picture), then
+// register both here and in scenes.tsx (see KIT.md › Adding a set).
+import type { SetMeta } from "../types.ts";
+import { JALAN } from "./jalan.ts";
+import { GANG_META } from "./gang.ts";
+import { KELAS_META } from "./kelas.ts";
+import { KANTOR_META } from "./kantor.ts";
+import { KONDANGAN_META } from "./kondangan.ts";
+import { RUMAH_META } from "./rumah.ts";
+
+export const SETS: Record<string, SetMeta> = {
+  jalan: JALAN, gang: GANG_META, kelas: KELAS_META, kantor: KANTOR_META, kondangan: KONDANGAN_META, rumah: RUMAH_META,
+};
+
+/** Ground height at (x, z): raised floors (sidewalks, stages, terraces) and speed bumps. */
+export const floorAt = (S: SetMeta, x: number, z: number) => {
+  let y = 0;
+  for (const f of S.floor ?? []) if (x >= f.box.min[0] && x <= f.box.max[0] && z >= f.box.min[2] && z <= f.box.max[2]) y = Math.max(y, f.y);
+  for (const b of S.bumps ?? []) {
+    const u = (x - b.x) / (b.w / 2);
+    if (Math.abs(u) < 1 && z >= b.z0 && z <= b.z1) y = Math.max(y, b.h * Math.sqrt(1 - u * u));
+  }
+  return y;
+};
+
+==== 4330 project/src/tipikal/sets/kelas.ts
+// SET "kelas" — an Indonesian classroom: chalkboard, teacher's desk, 3 × 3 double desks (18 seats), windows on the left,
+// door on the right, clock, fan, cabinet. Pure data: the layout (drawn by Kelas.tsx) and the director's meta.
+// Students face −z (the board); the teacher faces +z.
+import type { Box, SetMeta, Spot, V3 } from "../types.ts";
+
+export const KELAS = {
+  W: 4.6, D: 4.6, H: 3.2,
+  cols: [-2.6, 0, 2.6], rows: [-1.3, 0.5, 2.3],
+  desk: { w: 1.15, d: 0.5, top: 0.64 }, chairBack: 0.52, seatH: 0.38, seatX: 0.29,
+  tDesk: { x: -2.4, z: -3.1, w: 1.3, d: 0.65, top: 0.7 }, tChairZ: -3.75,
+  board: { x0: -2.3, x1: 2.3, y0: 0.95, y1: 2.25, z: -4.38 },
+  door: { z0: -3.7, z1: -2.6 },
+  windows: [[-3.0, -1.4], [0.0, 1.6], [2.4, 3.9]] as [number, number][],
+  cabinet: { x: 3.4, z: 4.15, w: 1.5, d: 0.5, h: 1.8 },
+};
+const K = KELAS;
+const box = (x0: number, y0: number, z0: number, x1: number, y1: number, z1: number): Box => ({ min: [Math.min(x0, x1), y0, Math.min(z0, z1)], max: [Math.max(x0, x1), y1, Math.max(z0, z1)] });
+const spots: Record<string, Spot> = {};
+const ROW = ["depan", "tengah", "belakang"];
+export const KELAS_SEATS: { name: string; pos: V3; desk: number }[] = [];
+K.rows.forEach((rz, r) => K.cols.forEach((cx, c) => [0, 1].forEach((sd) => {
+  const i = c * 2 + sd + 1;
+  const pos: V3 = [cx + (sd ? K.seatX : -K.seatX), 0, rz + K.chairBack];
+  const name = `${ROW[r]}-${i}`;
+  KELAS_SEATS.push({ name, pos, desk: r * 3 + c });
+  spots[name] = { pos, face: Math.PI, seat: K.seatH, surface: { y: K.desk.top, ahead: K.chairBack - K.desk.d / 2 }, about: `student seat, ${ROW[r]} row, ${i} of 6 from the left` };
+})));
+Object.assign(spots, {
+  "papan-tulis": { pos: [0.4, 0, -3.55], face: 0, about: "in front of the board, facing the class (teacher)" },
+  "nulis-papan": { pos: [0.5, 0, -3.88], face: Math.PI, about: "facing the board, writing on it" },
+  "meja-guru": { pos: [K.tDesk.x, 0, K.tChairZ], face: 0, seat: 0.4, surface: { y: K.tDesk.top, ahead: K.tDesk.z - K.tDesk.d / 2 - K.tChairZ }, about: "teacher's chair behind the desk" },
+  "depan-meja-guru": { pos: [K.tDesk.x + 0.1, 0, -2.3], face: Math.PI, about: "standing in front of the teacher's desk" },
+  "depan-kelas": { pos: [1.7, 0, -3.15], face: 0, about: "front of the class, facing the students (presenting)" },
+  pintu: { pos: [3.95, 0, (K.door.z0 + K.door.z1) / 2], face: -Math.PI / 2, about: "just inside the door" },
+  "lorong-1": { pos: [-1.3, 0, 0.0], face: Math.PI, about: "aisle between the desks (left)" },
+  "lorong-2": { pos: [1.3, 0, 0.9], face: Math.PI, about: "aisle between the desks (right)" },
+  "belakang-kelas": { pos: [0, 0, 3.75], face: Math.PI, about: "back of the class" },
+  jendela: { pos: [-3.95, 0, 0.8], face: -Math.PI / 2, about: "by the window, looking out" },
+} as Record<string, Spot>);
+
+const colliders: Box[] = [];
+K.rows.forEach((rz) => K.cols.forEach((cx) => {
+  colliders.push(box(cx - K.desk.w / 2, 0, rz - K.desk.d / 2, cx + K.desk.w / 2, K.desk.top - 0.06, rz + K.desk.d / 2));
+  for (const sd of [-1, 1]) colliders.push(box(cx + sd * K.seatX - 0.21, 0, rz + K.chairBack - 0.2, cx + sd * K.seatX + 0.21, K.seatH - 0.04, rz + K.chairBack + 0.21));
+}));
+colliders.push(box(K.tDesk.x - K.tDesk.w / 2, 0, K.tDesk.z - K.tDesk.d / 2, K.tDesk.x + K.tDesk.w / 2, K.tDesk.top - 0.06, K.tDesk.z + K.tDesk.d / 2));
+colliders.push(box(K.cabinet.x - K.cabinet.w / 2, 0, K.cabinet.z - K.cabinet.d / 2, K.cabinet.x + K.cabinet.w / 2, K.cabinet.h, K.cabinet.z + K.cabinet.d / 2));
+colliders.push(box(-K.W - 1, 0, -K.D - 1, K.W + 1, K.H + 1, -K.D + 0.05));
+colliders.push(box(-K.W - 1, 0, K.D - 0.05, K.W + 1, K.H + 1, K.D + 1));
+colliders.push(box(-K.W - 1, 0, -K.D, -K.W + 0.05, K.H + 1, K.D));
+colliders.push(box(K.W - 0.05, 0, -K.D, K.W + 1, K.H + 1, K.D));
+
+export const KELAS_META: SetMeta = {
+  id: "kelas", theme: "kelas", indoor: true,
+  about: "a classroom: chalkboard, teacher's desk, 18 student seats in 3 rows (depan / tengah / belakang, 1–6 from the left), windows, door",
+  spots,
+  colliders,
+  bounds: { min: [-K.W + 0.3, 0.2, -K.D + 0.3], max: [K.W - 0.3, K.H - 0.2, K.D - 0.3] },
+  views: { establish: { a: { pos: [3.9, 2.75, 4.15], target: [-0.6, 0.85, -1.6], fov: 50 }, b: { pos: [3.6, 2.6, 3.9], target: [-0.6, 0.9, -1.8], fov: 49 } } },
+  crowd: KELAS_SEATS.map((s) => s.name),
+};
+
+==== 917 project/src/tipikal/sets/scenes.tsx
+// TIPIKAL set pictures by id (browser). `range` = the x span near the camera (the long street culls far buildings).
+import React from "react";
+import { Street } from "./Jalan.tsx";
+import { STREET } from "./jalan.ts";
+import { Gang } from "./Gang.tsx";
+import { Kelas } from "./Kelas.tsx";
+import { Kantor } from "./Kantor.tsx";
+import { Kondangan } from "./Kondangan.tsx";
+import { Rumah } from "./Rumah.tsx";
+
+export type SceneProps = { t: number; range: [number, number]; light?: "red" | "yellow" | "green"; count?: number | null };
+export const SCENES: Record<string, React.FC<SceneProps>> = {
+  jalan: ({ range, light, count }) => <Street L={STREET} range={range} light={light ?? "green"} count={count ?? null} />,
+  gang: ({ t }) => <Gang t={t} />,
+  kelas: ({ t }) => <Kelas t={t} />,
+  kantor: ({ t }) => <Kantor t={t} />,
+  kondangan: ({ t }) => <Kondangan t={t} />,
+  rumah: ({ t }) => <Rumah t={t} />,
+};
+
+==== 3662 project/src/tipikal/textfit.ts
+// Text fitting for the pops (sticker, bubble, tag, sfx, stamp) — pure TypeScript, shared by the renderer (Overlay /
+// Film: box sizes, font sizes, keeping a pop inside the frame) and the compiler (a plain-language warning when a text
+// is too long to stay big). Widths are estimates of the two OFL display fonts per character class, a little generous
+// so a pop never spills out of its badge.
+
+type FontKey = "round" | "sign";
+// advance widths in em: [uppercase, lowercase, digit, space, narrow punctuation, other]
+const EM: Record<FontKey, { up: number; low: number; dig: number; sp: number; nar: number; oth: number; wide: number; thin: number }> = {
+  round: { up: 0.66, low: 0.56, dig: 0.6, sp: 0.26, nar: 0.3, oth: 0.62, wide: 0.92, thin: 0.32 },
+  sign: { up: 0.5, low: 0.45, dig: 0.5, sp: 0.2, nar: 0.24, oth: 0.52, wide: 0.72, thin: 0.25 },
+};
+const charW = (c: string, f: FontKey) => {
+  const e = EM[f];
+  if (c === " ") return e.sp;
+  if (".,:;'!|".includes(c)) return e.nar;
+  if ("MWmw%@".includes(c)) return e.wide;
+  if ("IJiljrt1()[]".includes(c)) return e.thin;
+  if (/[0-9]/.test(c)) return e.dig;
+  if (/[A-Z]/.test(c)) return e.up;
+  if (/[a-z]/.test(c)) return e.low;
+  return e.oth;
+};
+/** estimated width (px) of a single line at font size fs (px), with letter spacing ls (px) */
+export const textW = (text: string, fs: number, font: FontKey = "round", ls = 0) => [...text].reduce((w, c) => w + charW(c, font) * fs + ls, 0);
+
+export type PopFit = { w: number; h: number; fs: number; nominal: number; pill?: boolean };
+const MARGIN = 28;
+
+/** Box size (layout px) and font size of a pop with this text in a frame `LW` wide. */
+export const popFit = (kind: string, text: string, LW = 1080): PopFit => {
+  const maxW = LW - 2 * MARGIN;
+  const fit = (nominal: number, pad: number, font: FontKey, ls: number, h: number, cap = maxW): PopFit => {
+    const w0 = textW(text, nominal, font, ls);
+    const fs = w0 + pad > cap ? nominal * Math.max(0.2, (cap - pad) / w0) : nominal;
+    return { w: Math.min(cap, textW(text, fs, font, ls) + pad), h, fs, nominal };
+  };
+  switch (kind) {
+    case "bubble": return fit(text.length > 18 ? 51 : 64, 64 + 14, "round", 0, 100);
+    case "tag": return fit(58, 60 + 12, "round", 0, 84);
+    case "sfx": return fit(124, 0.24 * 124, "round", 2, 150);
+    case "stamp": {
+      // rotated −12°: the box's footprint grows by its height × sin 12°
+      const f = fit(92, 56 + 36, "sign", 4, 120, (maxW - 120 * 0.21) / 0.98);
+      return { ...f, w: f.w * 0.98 + 120 * 0.21 };
+    }
+    default: {
+      // sticker: a round badge, or a pill when the text is wider than the badge (e.g. "100.000")
+      const size = 132;
+      const nominal = text.length > 2 ? size * 0.42 : text.length > 1 ? size * 0.56 : size * 0.7;
+      const w0 = textW(text, nominal);
+      if (w0 <= size * 0.78) return { w: size, h: size, fs: nominal, nominal };
+      const cap = Math.min(maxW, 620), pad = size * 0.5;
+      const fs = w0 + pad > cap ? nominal * Math.max(0.2, (cap - pad) / w0) : nominal;
+      return { w: Math.min(cap, textW(text, fs) + pad), h: size, fs, nominal, pill: true };
+    }
+  }
+};
+
+/** letters that still fit at full size (for the warning text) */
+export const popMaxLetters = (kind: string, LW = 1080) => {
+  let n = 4;
+  while (n < 80 && popFit(kind, "A".repeat(n + 1), LW).fs >= popFit(kind, "A".repeat(n + 1), LW).nominal * 0.999) n++;
+  return n;
+};
+
+/** Centre x for a box `w` wide anchored near `x`, kept fully inside the frame. */
+export const clampBox = (x: number, w: number, LW: number) => Math.max(MARGIN + w / 2, Math.min(LW - MARGIN - w / 2, x));
+export const POP_MARGIN = MARGIN;
+
+==== 870 project/src/tipikal/vehicles/plate.ts
+// Made-up number plates (never a real plate): white plate, black border and text.
+import { CanvasTexture, SRGBColorSpace } from "three";
+import { F_SIGN } from "../../kits/tipikal/fonts.ts";
+
+const cache = new Map<string, CanvasTexture>();
+export const plateTex = (text: string) => {
+  const hit = cache.get(text);
+  if (hit) return hit;
+  const cv = document.createElement("canvas");
+  cv.width = 256; cv.height = 96;
+  const g = cv.getContext("2d")!;
+  g.fillStyle = "#f4f4ee"; g.fillRect(0, 0, 256, 96);
+  g.strokeStyle = "#151515"; g.lineWidth = 8; g.strokeRect(6, 6, 244, 84);
+  if (text) { g.fillStyle = "#151515"; g.font = `800 62px ${F_SIGN}, sans-serif`; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText(text, 128, 52); }
+  const t = new CanvasTexture(cv);
+  t.colorSpace = SRGBColorSpace;
+  t.anisotropy = 4;
+  cache.set(text, t);
+  return t;
+};
+
+==== 2891 project/stories/kantor/story.json
+{
+  "id": "kantor",
+  "title": "Tipe-tipe Orang di Kantor",
+  "header": "ORANG DI KANTOR",
+  "set": "kantor",
+  "cast": {
+    "bos": { "preset": "bos", "name": "Pak Bos" },
+    "rudi": { "preset": "pegawai", "name": "Rudi" },
+    "sari": { "preset": "mbak", "name": "Sari", "look": { "top": { "kind": "blouse", "color": "#f6f5f0", "short": false, "lanyard": "#2f6fd0" }, "bottom": { "kind": "skirt", "color": "#2c3e63" }, "hair": { "color": "#2a1a12", "style": "bob" } } },
+    "dodi": { "preset": "pegawai", "name": "Dodi", "look": { "top": { "kind": "shirt", "color": "#f2c94c", "tie": "#8e2a32", "lanyard": "#d63b30" }, "face": { "brows": "thick", "glasses": false }, "hair": { "color": "#1d1712", "style": "curly" } } }
+  },
+  "props": {
+    "lap1": { "kind": "laptop", "at": "meja-1", "on": "surface" },
+    "lap2": { "kind": "laptop", "at": "meja-4", "on": "surface" }
+  },
+  "extras": [{ "at": "meja-2", "n": 3, "mode": "sit" }],
+  "types": [
+    {
+      "text": "Yang rapat tapi *ketiduran*",
+      "cast": {
+        "dodi": { "at": "rapat-2", "do": "sleep", "expr": "sleep" },
+        "bos": { "at": "papan-tulis", "do": "talk", "expr": "happy", "says": true },
+        "sari": { "at": "rapat-5", "do": "write", "expr": "focus" }
+      },
+      "beats": [
+        { "shot": "wide", "on": ["bos", "dodi"] },
+        { "at": 1.4, "shot": "close", "on": "dodi", "pop": [{ "kind": "zzz", "on": "dodi", "at": 0.2 }] },
+        { "at": 2.9, "shot": "reaction", "on": "bos", "cast": { "bos": { "do": "akimbo", "expr": "angry", "to": "dodi", "says": false } }, "pop": [{ "kind": "!", "on": "bos" }] }
+      ]
+    },
+    {
+      "text": "Yang ke dispenser *tiap 5 menit*",
+      "cast": {
+        "rudi": { "at": "meja-4", "do": "type", "expr": "bored" },
+        "sari": { "at": "meja-5", "do": "type", "expr": "focus" }
+      },
+      "beats": [
+        { "shot": "medium", "on": "rudi" },
+        { "at": 1.2, "shot": "wide", "on": "rudi", "cast": { "rudi": { "go": "dispenser", "do": "stand", "expr": "happy" } }, "pop": [{ "kind": "tag", "text": "KE-12 KALI", "on": "rudi", "at": 1.0 }] },
+        { "at": 3.0, "shot": "reaction", "on": "sari", "cast": { "sari": { "do": "facepalm", "expr": "annoyed" } }, "pop": [{ "kind": "...", "on": "sari" }] }
+      ]
+    },
+    {
+      "text": "Yang langsung *rajin* pas bos lewat",
+      "cast": {
+        "dodi": { "at": "meja-1", "do": "phone", "expr": "grin" },
+        "bos": { "at": "pintu", "do": "stand", "expr": "neutral" }
+      },
+      "beats": [
+        { "shot": "medium", "on": "dodi" },
+        { "at": 1.3, "shot": "wide", "on": "bos", "cast": { "bos": { "go": "lorong", "do": "stand", "expr": "smug" } } },
+        { "at": 2.8, "shot": "close", "on": "dodi", "cast": { "dodi": { "do": "type", "expr": "focus" } }, "pop": [{ "kind": "sfx", "text": "TAK TIK TUK!", "on": "dodi", "at": 0.1 }], "freeze": true }
+      ]
+    }
+  ]
+}
+
+==== 4002 project/stories/ujian/story.json
+{
+  "id": "ujian",
+  "title": "Tipe-tipe Murid Pas Ujian",
+  "header": "MURID PAS UJIAN",
+  "set": "kelas",
+  "cast": {
+    "bu": { "preset": "guru", "name": "Bu Guru", "look": { "hat": { "kind": "kerudung", "color": "#8e2a32" }, "top": { "kind": "shirt", "color": "#c46a2c", "short": false }, "bottom": { "kind": "long-skirt", "color": "#2c3e63" }, "face": { "brows": "thin", "glasses": true, "lashes": true } } },
+    "andi": { "preset": "murid", "name": "Andi" },
+    "bayu": { "preset": "murid", "name": "Bayu", "look": { "skin": "#b97a4c", "hair": { "color": "#1d1712", "style": "spiky" }, "bag": "#3fa45b" } },
+    "dewi": { "preset": "murid-cewek", "name": "Dewi" },
+    "sinta": { "preset": "murid-cewek", "name": "Sinta", "look": { "hat": { "kind": "none" }, "hair": { "color": "#2a1a12", "style": "ponytail" }, "skin": "#f0c8a0" } }
+  },
+  "props": {
+    "k1": { "kind": "kertas", "at": "depan-2", "on": "surface" },
+    "k2": { "kind": "kertas", "at": "tengah-3", "on": "surface" },
+    "k3": { "kind": "kertas", "at": "belakang-3", "on": "surface" }
+  },
+  "extras": [{ "at": "tengah-2", "n": 9, "mode": "sit" }],
+  "types": [
+    {
+      "text": "Yang *tidur* waktu ujian",
+      "cast": {
+        "andi": { "at": "tengah-3", "do": "sleep", "expr": "sleep" },
+        "bu": { "at": "papan-tulis", "do": "cross", "expr": "neutral" }
+      },
+      "beats": [
+        { "shot": "wide", "on": "andi" },
+        { "at": 1.4, "shot": "close", "on": "andi", "pop": [{ "kind": "zzz", "on": "andi", "at": 0.2 }] },
+        { "at": 2.8, "shot": "reaction", "on": "bu", "cast": { "bu": { "do": "facepalm", "expr": "annoyed" } }, "pop": [{ "kind": "...", "on": "bu", "at": 0.3 }] }
+      ]
+    },
+    {
+      "text": "Yang nyontek pakai *bisik-bisik*",
+      "cast": {
+        "bayu": { "at": "belakang-3", "do": "look", "expr": "scared" },
+        "dewi": { "at": "belakang-4", "do": "write", "expr": "focus" },
+        "bu": { "at": "meja-guru", "do": "sit", "expr": "neutral" }
+      },
+      "beats": [
+        { "shot": "medium", "on": "bayu" },
+        { "at": 1.3, "shot": "medium", "on": ["bayu", "dewi"], "cast": { "bayu": { "do": "whisper", "to": "dewi", "expr": "innocent" }, "dewi": { "do": "write", "expr": "annoyed" } }, "pop": [{ "kind": "bubble", "text": "Nomor 2 apa?", "on": "bayu", "at": 0.15 }] },
+        { "at": 2.9, "shot": "reaction", "on": "bu", "cast": { "bu": { "do": "point", "to": "bayu", "expr": "angry" } }, "pop": [{ "kind": "stamp", "text": "KETAHUAN!", "at": 0.25 }] }
+      ]
+    },
+    {
+      "text": "Yang selesai paling *duluan*",
+      "cast": {
+        "sinta": { "at": "depan-2", "do": "write", "expr": "focus" },
+        "bayu": { "at": "depan-4", "do": "write", "expr": "panic" },
+        "bu": { "at": "meja-guru", "do": "sit", "expr": "neutral" }
+      },
+      "beats": [
+        { "shot": "close", "on": "sinta" },
+        { "at": 1.2, "shot": "wide", "on": "sinta", "cast": { "sinta": { "go": "depan-meja-guru", "hold": "k1", "expr": "proud", "do": "hold" } } },
+        { "at": 2.9, "shot": "reaction", "on": "bayu", "cast": { "bayu": { "do": "shock", "expr": "shock", "to": "sinta" } }, "pop": [{ "kind": "?!", "on": "bayu" }] }
+      ]
+    },
+    {
+      "text": "Yang nanya terus ke *guru*",
+      "cast": {
+        "dewi": { "at": "depan-5", "do": "raise", "expr": "happy" },
+        "bu": { "at": "papan-tulis", "do": "stand", "expr": "neutral" }
+      },
+      "beats": [
+        { "shot": "medium", "on": "dewi", "pop": [{ "kind": "bubble", "text": "Bu, ini gimana?", "on": "dewi", "at": 0.25 }] },
+        { "at": 1.6, "shot": "reaction", "on": "bu", "cast": { "bu": { "do": "nod", "expr": "relief" } } },
+        { "at": 2.7, "shot": "close", "on": "dewi", "cast": { "dewi": { "do": "raise", "expr": "grin" } }, "pop": [{ "kind": "bubble", "text": "Bu, kalau ini?", "on": "dewi", "at": 0.1 }] },
+        { "at": 3.5, "shot": "reaction", "on": "bu", "cast": { "bu": { "do": "facepalm", "expr": "cry" } }, "freeze": true }
+      ]
+    }
+  ]
+}
+
+==== 484 project/tsconfig.json
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "Preserve",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "noEmit": true,
+    "lib": ["ES2022", "DOM"],
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "noUnusedLocals": true,
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true
+  },
+  "include": ["src", "scripts/*.ts"],
+  "exclude": ["remotion.config.ts"]
+}

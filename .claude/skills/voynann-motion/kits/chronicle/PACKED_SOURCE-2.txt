@@ -1,0 +1,1109 @@
+VOYNANN Motion - packed source files of this folder. Do not edit by hand.
+The skill upload in the Claude app accepts at most 200 files, so the source files are packed here.
+`node <skill folder>/new-project.mjs <project folder> --kit=<style>` unpacks them into the project.
+Format: per file one line with four '=' signs, the byte length and the path, then exactly that many bytes.
+
+==== 23028 project/scripts/make.mjs
+#!/usr/bin/env node
+// CHRONICLE auto-director: naskah → plan → (voice) → render.
+//
+//   node scripts/make.mjs <story-id> [--plan|--stills 2s,9s|--preview|--final] [--wide] [--tts|--silent] [--no-music]
+//
+//   stories/<id>/naskah.txt   the script (FORMAT-NASKAH.md)
+//   stories/<id>/vo.mp3|wav|m4a  the voice-over: captions, scene cuts and beats follow it word by word.
+//                             Word timings come from whisper.cpp when it is installed (exact); without it the script
+//                             lines are laid onto the VO's speech runs found by ffmpeg (line starts ≈ exact, words paced).
+//   --tts                     no VO yet: a temporary narration with macOS `say` (voice Damayanti) on the paced timing
+//   --silent                  preview / final without any voice (music + SFX only) — only when the buyer asks for it
+//   --plan / --stills         need no voice: without a VO the script is paced at ~2.5 words per second
+//
+// Writes out/<id>/plan.json (+ src/generated/plan.json for the Studio), the mix public/stories/<id>/mix.wav, and
+// out/<id>/<id>_preview_540x960.mp4 or out/<id>/<id>_1080x1920_60fps.mp4 (+ QA in out/<id>/qa/ after --final).
+
+import fs from "node:fs";
+import path from "node:path";
+import os from "node:os";
+import { execFileSync, spawnSync } from "node:child_process";
+import { deliveryScan, sceneGate } from "./qa-gate.mjs";
+import { planStory } from "../src/director/plan.ts";
+import { parseNaskah } from "../src/director/parse.ts";
+
+const args = process.argv.slice(2);
+const flag = (f) => args.includes(f);
+const opt = (f) => { const i = args.indexOf(f); return i >= 0 ? args[i + 1] : undefined; };
+const id = args.find((a, i) => !a.startsWith("--") && args[i - 1] !== "--stills");
+if (!id) { console.error("usage: node scripts/make.mjs <story-id> [--plan|--stills 2s,9s|--preview|--final] [--wide] [--tts|--silent] [--no-music]"); process.exit(2); }
+const dir = path.resolve("stories", id);
+if (!fs.existsSync(path.join(dir, "naskah.txt"))) {
+  console.error(`stories/${id}/naskah.txt tidak ada / not found — write the script there first (format: FORMAT-NASKAH.md)`);
+  process.exit(2);
+}
+const out = path.resolve("out", id);
+fs.mkdirSync(out, { recursive: true });
+const src = fs.readFileSync(path.join(dir, "naskah.txt"), "utf8");
+const rendering = !flag("--plan") && !opt("--stills");
+const pub = path.resolve("public", "stories", id);
+fs.mkdirSync(pub, { recursive: true });
+
+const sh = (cmd, a, o = {}) => execFileSync(cmd, a, { stdio: ["ignore", "pipe", "pipe"], ...o }).toString();
+
+// whisper.cpp (optional): WHISPER_CLI / WHISPER_MODEL, `whisper-cli` on PATH, Homebrew, common build folders
+const exists = (f) => !!f && fs.existsSync(f);
+const onPath = (cmd) => { try { return execFileSync("sh", ["-c", `command -v ${cmd}`], { stdio: ["ignore", "pipe", "ignore"] }).toString().trim(); } catch { return ""; } };
+const findWhisper = () => {
+  if (process.env.NO_WHISPER) return null; // test switch: force the speech-run alignment
+  const home = os.homedir();
+  const cli = [process.env.WHISPER_CLI, onPath("whisper-cli"), "/opt/homebrew/bin/whisper-cli", "/usr/local/bin/whisper-cli",
+    path.join(home, "whisper.cpp/build/bin/whisper-cli")].find(exists);
+  const dirs = [path.join(home, ".cache/whisper.cpp"), "models", "/opt/homebrew/share/whisper-cpp", path.join(home, "whisper.cpp/models")];
+  const prefer = ["large-v3-turbo", "large-v3", "medium", "small"];
+  const models = dirs.flatMap((d) => (fs.existsSync(d) ? fs.readdirSync(d).filter((f) => /^ggml-.*\.bin$/.test(f)).map((f) => path.join(d, f)) : []));
+  const model = [process.env.WHISPER_MODEL].find(exists) ?? prefer.map((p) => models.find((m) => m.includes(p))).find(Boolean) ?? models[0];
+  return cli && model ? { cli, model } : null;
+};
+
+// ---------------------------------------------------------------- voice
+let times;
+let audio;
+const vo = ["vo.wav", "vo.mp3", "vo.m4a"].map((f) => path.join(dir, f)).find((f) => fs.existsSync(f));
+const norm = (w) => w.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]/g, "");
+
+if (vo) {
+  console.log("VO:", vo);
+  const story = parseNaskah(src);
+  const W = findWhisper();
+  if (W) {
+    const wav = path.join(out, "vo16k.wav");
+    sh("ffmpeg", ["-y", "-v", "error", "-i", vo, "-ar", "16000", "-ac", "1", wav]);
+    sh(W.cli, ["-m", W.model, "-f", wav, "-l", "id", "-ml", "1", "-sow", "-ojf", "-of", path.join(out, "vo_words")]);
+    const j = JSON.parse(fs.readFileSync(path.join(out, "vo_words.json"), "utf8"));
+    const heard = j.transcription.map((x) => ({ w: norm(x.text), a: x.offsets.from / 1000, b: x.offsets.to / 1000 })).filter((x) => x.w);
+    // align script words to heard words, in order (greedy with a look-ahead)
+    let h = 0;
+    times = story.scenes.map((sc) => sc.lines.map((l) => {
+      const ws = l.words.map((w) => {
+        const n = norm(w.w);
+        for (let k = h; k < Math.min(heard.length, h + 12); k++) {
+          if (heard[k].w === n || (n.length > 3 && heard[k].w.startsWith(n.slice(0, 4)))) { h = k + 1; return { w: w.w, t: heard[k].a, e: heard[k].b }; }
+          // whisper sometimes splits a name ("di ponegoro", "tegal rejo") or spells a number ("200 ribu")
+          const two = k + 1 < heard.length ? heard[k].w + heard[k + 1].w : "";
+          if (two && (two === n || (n.length > 5 && two.startsWith(n.slice(0, 6))))) { h = k + 2; return { w: w.w, t: heard[k].a, e: heard[k + 1].b }; }
+        }
+        return { w: w.w, t: null, e: null };
+      });
+      // fill gaps by interpolation
+      for (let i = 0; i < ws.length; i++) if (ws[i].t === null) {
+        const prev = ws.slice(0, i).reverse().find((x) => x.t !== null), next = ws.slice(i + 1).find((x) => x.t !== null);
+        ws[i].t = prev && next ? (prev.e + next.t) / 2 : prev ? prev.e + 0.05 : next ? next.t - 0.25 : heard[Math.min(h, heard.length - 1)]?.a ?? 0;
+        ws[i].e = ws[i].t + 0.25;
+      }
+      return { a: ws[0].t, b: ws[ws.length - 1].e, e0: ws[0].e, words: ws.map((x) => ({ w: x.w, t: x.t })) };
+    }));
+    // whisper's word starts run early (~0.3–0.6 s); a line that starts after a pause starts at that pause's end
+    const sil = silences(vo);
+    for (const sc of times) for (const T of sc) {
+      // only when whisper put the line start inside a pause: move it to where the voice comes back
+      // (unless whisper heard the first word end before that pause: then it was said before it)
+      const o = sil.find(([a, b]) => T.a >= a - 0.15 && T.a < b && b - T.a < 2.5 && !(T.e0 <= a + 0.05 && T.e0 - T.a > 0.15))?.[1];
+      if (o !== undefined && o > T.a) {
+        const d = o - T.a;
+        T.a += d;
+        T.words = T.words.map((w, k) => ({ ...w, t: Math.max(w.t + d * Math.max(0, 1 - k / Math.max(3, T.words.length)), o + k * 0.05) }));
+      }
+      delete T.e0;
+    }
+    // keep every word after the one before it
+    let last = -1;
+    for (const sc of times) for (const T of sc) for (const w of T.words) { if (w.t < last + 0.04) w.t = last + 0.04; last = w.t; }
+    for (const sc of times) for (const T of sc) T.a = Math.min(T.a, T.words[0].t);
+    // whisper also squeezes pauses inside a line (an expressive VO: "April 1815, … Tambora … meledak"): words land up
+    // to ~1 s early. Re-seat every word on the VO's speech runs; whisper's time is only a hint for which run.
+    const moved = wordsOntoRuns(vo, times);
+    console.log(`word timings: whisper.cpp (${path.basename(W.model)}), words seated on the VO's speech runs (${moved} moved > 0.25 s)`);
+  } else {
+    times = alignBySpeech(vo, story);
+    console.log("word timings: whisper.cpp not found — script lines laid onto the VO's speech runs (line starts ≈ exact, words paced)");
+  }
+  const ext = path.extname(vo);
+  fs.copyFileSync(vo, path.join(pub, "vo" + ext));
+  audio = `stories/${id}/vo${ext}`;
+} else if (flag("--tts")) {
+  if (process.platform !== "darwin" || !onPath("say") || !sh("say", ["-v", "?"]).includes("Damayanti")) {
+    console.error("--tts needs macOS with the Indonesian voice Damayanti (System Settings → Accessibility → Spoken Content). /\n" +
+      "Narasi sementara (--tts) hanya bisa di macOS dengan suara Damayanti. Tanpa itu: rekam/buat VO (mis. ElevenLabs) dan simpan sebagai stories/" + id + "/vo.mp3.");
+    process.exit(2);
+  }
+  // temporary narration: one `say` clip per line, placed on the paced timeline
+  const plan0 = planStory(src, { id });
+  const story = parseNaskah(src);
+  const lines = story.scenes.flatMap((sc) => sc.lines.map((l) => l.text.replace(/\*/g, "")));
+  const starts = [];
+  { let wi = 0; for (const sc of story.scenes) for (const l of sc.lines) { starts.push(plan0.words[wi].t); wi += l.words.length; } }
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "chron-tts-"));
+  const parts = [];
+  lines.forEach((t, i) => {
+    const aiff = path.join(tmp, `l${i}.aiff`);
+    sh("say", ["-v", "Damayanti", "-r", "175", "-o", aiff, t]);
+    parts.push({ file: aiff, at: starts[i] });
+  });
+  // re-time: measure each clip, then lay lines out back to back with the planner's pauses
+  const durs = parts.map((p) => parseFloat(sh("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", p.file])));
+  let t = 0.5;
+  let li = 0;
+  times = story.scenes.map((sc, si) => {
+    if (si > 0) t += 0.35;
+    const start = t;
+    const res = sc.lines.map((l) => {
+      const d = durs[li];
+      parts[li].at = t;
+      li++;
+      const r = { a: t, b: t + d };
+      t += d + (/[.?!]$/.test(l.text) ? 0.38 : 0.15);
+      return r;
+    });
+    const min = sc.kind === "RUTE" ? 4.4 : sc.kind === "PETA" ? 3.0 : sc.kind === "PENUTUP" ? 0 : 0;
+    if (t - start < min) t = start + min;
+    return res;
+  });
+  const total = t + 5;
+  const inputs = parts.flatMap((p) => ["-i", p.file]);
+  const filt = parts.map((p, i) => `[${i}]adelay=${Math.round(p.at * 1000)}:all=1,aresample=48000[a${i}]`).join(";") + ";" + parts.map((_, i) => `[a${i}]`).join("") + `amix=inputs=${parts.length}:normalize=0,apad=whole_dur=${total.toFixed(2)},loudnorm=I=-16:TP=-1.5[out]`;
+  const wav = path.join(pub, "vo_tts.wav");
+  sh("ffmpeg", ["-y", "-v", "error", ...inputs, "-filter_complex", filt, "-map", "[out]", "-ar", "48000", "-ac", "2", wav]);
+  audio = `stories/${id}/vo_tts.wav`;
+  console.log("TTS narration:", wav);
+} else if (rendering && !flag("--silent")) {
+  console.error(`Belum ada suara: simpan VO sebagai stories/${id}/vo.mp3 (atau .wav/.m4a), atau tambah --tts untuk narasi sementara (macOS), atau --silent untuk video tanpa narasi.\n` +
+    `No voice yet: put the voice-over at stories/${id}/vo.mp3 (or .wav/.m4a), or add --tts for a temporary macOS narration, or --silent for a film without narration.`);
+  process.exit(2);
+}
+
+// ---------------------------------------------------------------- plan
+const plan = planStory(src, { id, times, audio });
+fs.writeFileSync(path.join(out, "plan.json"), JSON.stringify(plan, null, 1));
+// ---------------------------------------------------------------- sound: original score + SFX + voice → mix.wav
+if (rendering && !flag("--no-music")) {
+  const voPath = audio ? path.resolve("public", audio) : "";
+  execFileSync("node", ["scripts/sound.mjs", path.join(out, "plan.json"), path.join(pub, "mix.wav"), ...(voPath ? [voPath] : [])], { stdio: "inherit" });
+  plan.audio = `stories/${id}/mix.wav`;
+  fs.writeFileSync(path.join(out, "plan.json"), JSON.stringify(plan, null, 1));
+}
+fs.mkdirSync("src/generated", { recursive: true });
+fs.writeFileSync("src/generated/plan.json", JSON.stringify(plan));
+console.log(`plan: "${plan.title}" ${plan.duration}s, ${plan.scenes.length} adegan`);
+for (const s of plan.scenes) console.log(`  ${s.a.toFixed(1).padStart(5)}–${s.b.toFixed(1).padEnd(5)} ${s.kind.padEnd(5)} ${s.map ? s.map.mode + " " + s.map.points.map((p) => p.name).join(" → ") : s.place ? s.place.set + "/" + s.place.mood + " · " + s.place.groups.map((g) => `${g.count}×${g.name}(${g.action})`).join(", ") : ""}`);
+for (const w of plan.warnings) console.log("  ! " + w);
+if (flag("--plan")) process.exit(0);
+
+// ---------------------------------------------------------------- render
+const props = path.join(out, "props.json");
+fs.writeFileSync(props, JSON.stringify({ plan }));
+const planFile = path.join(out, "plan.json");
+const wide = flag("--wide"); // 16:9 (1920 × 1080) instead of 9:16
+const gl = fs.existsSync(".gl-mode") ? fs.readFileSync(".gl-mode", "utf8").trim() : "angle";
+if (opt("--stills")) {
+  execFileSync("node", ["scripts/stills.mjs", path.join(out, wide ? "stills-wide" : "stills"), opt("--stills"), wide ? "ChroniclePreviewWide" : "ChroniclePreview", "1", planFile], { stdio: "inherit" });
+  process.exit(0);
+}
+const final = flag("--final");
+// QA gate (scripts/qa-gate.mjs): planned cuts = scene starts + camera beats (as in qa.mjs)
+const cuts = [...new Set(plan.scenes.flatMap((sc) => [sc.a, ...(sc.place?.beats ?? []).map((b) => b.a)]))].filter((t) => t > 0).sort((a, b) => a - b);
+const gateDir = path.join(out, wide ? "qa-gate-wide" : "qa-gate");
+const gate = { comp: "ChroniclePreview" + (wide ? "Wide" : ""), cuts, out: gateDir, props };
+if (final && !flag("--no-qa")) sceneGate({ ...gate, force: flag("--force-qa") });
+const file = path.join(out, wide ? (final ? `${id}_1920x1080_60fps.mp4` : `${id}_preview_960x540.mp4`) : final ? `${id}_1080x1920_60fps.mp4` : `${id}_preview_540x960.mp4`);
+execFileSync("npx", ["remotion", "render", (final ? "ChronicleFinal" : "ChroniclePreview") + (wide ? "Wide" : ""), file, `--props=${props}`, "--codec=h264", "--crf=18", `--concurrency=${final ? 3 : 2}`, `--gl=${gl}`, "--log=error"], { stdio: "inherit" });
+console.log("→", file);
+if (!final && !flag("--no-qa")) sceneGate({ ...gate, force: true }); // a report: fix every FAIL before the preview is shown
+if (final && !flag("--no-qa")) {
+  try { execFileSync("node", ["scripts/qa.mjs", id, file], { stdio: "inherit" }); }
+  catch { console.log("QA: some checks failed — read out/" + id + "/qa/report.json, fix, run --final again"); process.exitCode = 1; }
+  if (deliveryScan({ file, cuts, out: path.join(gateDir, "delivered") }) === "FAIL") {
+    console.error(`✗ the delivered film has a hard glitch (see ${path.join(gateDir, "delivered")}) — fix it before delivery`);
+    process.exitCode = 1;
+  }
+}
+
+// ---------------------------------------------------------------- helpers
+/** Indonesian number words, for estimating how long a line takes to say. */
+function terbilang(n) {
+  const S = ["", "satu", "dua", "tiga", "empat", "lima", "enam", "tujuh", "delapan", "sembilan", "sepuluh", "sebelas"];
+  if (n < 12) return S[n];
+  if (n < 20) return terbilang(n - 10) + " belas";
+  if (n < 100) return terbilang(Math.floor(n / 10)) + " puluh " + terbilang(n % 10);
+  if (n < 200) return "seratus " + terbilang(n - 100);
+  if (n < 1000) return terbilang(Math.floor(n / 100)) + " ratus " + terbilang(n % 100);
+  if (n < 2000) return "seribu " + terbilang(n - 1000);
+  if (n < 1e6) return terbilang(Math.floor(n / 1000)) + " ribu " + terbilang(n % 1000);
+  if (n < 1e9) return terbilang(Math.floor(n / 1e6)) + " juta " + terbilang(n % 1e6);
+  return String(n);
+}
+function spoken(text) {
+  return text.replace(/\*/g, "").replace(/\d[\d.]*/g, (m) => { const n = parseInt(m.replace(/\./g, ""), 10); return Number.isFinite(n) ? terbilang(n) : m; });
+}
+/** Silences [start, end] in a voice file. */
+function silences(file) {
+  const txt = spawnSync("ffmpeg", ["-v", "info", "-i", file, "-af", "silencedetect=noise=-45dB:d=0.22", "-f", "null", "-"], { encoding: "utf8" }).stderr ?? "";
+  const st = [...txt.matchAll(/silence_start: ([\d.]+)/g)].map((m) => +m[1]);
+  const en = [...txt.matchAll(/silence_end: ([\d.]+)/g)].map((m) => +m[1]);
+  return st.map((a, i) => [a, en[i] ?? Infinity]);
+}
+
+/** Speech runs [start, end] of a voice file (the gaps between silences ≥ 0.15 s: an expressive VO breathes short). */
+function speechRuns(file, db = -45, minSil = 0.15) {
+  const dur = parseFloat(sh("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", file]));
+  const txt = spawnSync("ffmpeg", ["-v", "info", "-i", file, "-af", `silencedetect=noise=${db}dB:d=${minSil}`, "-f", "null", "-"], { encoding: "utf8" }).stderr ?? "";
+  const starts = [...txt.matchAll(/silence_start: ([\d.]+)/g)].map((m) => +m[1]);
+  const ends = [...txt.matchAll(/silence_end: ([\d.]+)/g)].map((m) => +m[1]);
+  const runs = [];
+  let cur = 0;
+  starts.forEach((s0, i) => { if (s0 - cur > 0.08) runs.push([cur, s0]); cur = ends[i] ?? dur; });
+  if (dur - cur > 0.08) runs.push([cur, dur]);
+  return runs;
+}
+
+/**
+ * Re-seats whisper-timed words on the VO's speech runs (in place). Every run takes a block of consecutive words (or
+ * none: a breath); a block's spoken length should fill its run, its first word should be near whisper's time (whisper
+ * runs early, so early is cheap), and blocks like to start after punctuation. Inside a run, words are paced by
+ * spoken length. Returns how many words moved more than 0.25 s.
+ */
+function wordsOntoRuns(file, times) {
+  const runs = speechRuns(file);
+  const lines = times.flat();
+  const W = lines.flatMap((T, li) => T.words.map((w, k) => ({ ref: w, li, first: k === 0, t: w.t, c: spoken(w.w).replace(/[^\p{L}\p{N}]/gu, "").length + 2, punct: /[.,;:!?—–-]["”']?$/.test(w.w) || k === T.words.length - 1 })));
+  const n = W.length, m = runs.length;
+  if (!n || m < 2) return 0;
+  const C = [0];
+  for (const w of W) C.push(C[C.length - 1] + w.c);
+  const speech = runs.reduce((s, [a, b]) => s + b - a, 0);
+  const rho = speech / C[n]; // seconds per spoken char
+  const INF = 1e18;
+  const f = Array.from({ length: m + 1 }, () => new Float64Array(n + 1).fill(INF));
+  const from = Array.from({ length: m + 1 }, () => new Int32Array(n + 1).fill(-2));
+  f[0][0] = 0;
+  for (let r = 1; r <= m; r++) {
+    const [s, e] = runs[r - 1], d = e - s;
+    for (let j = 0; j <= n; j++) {
+      // skip run r (a breath or a noise): cheap when short
+      if (f[r - 1][j] < INF) { const c = f[r - 1][j] + 0.4 + 6 * d * d; if (c < f[r][j]) { f[r][j] = c; from[r][j] = -1; } }
+    }
+    for (let k = 0; k < n; k++) {
+      if (f[r - 1][k] >= INF) continue;
+      const lead = W[k].t - s; // whisper start of the block's first word vs the run start
+      const hint = lead < -1.6 ? 1 + 2 * (-1.6 - lead) : lead < 0 ? 0.12 * -lead : lead < 0.35 ? 0.3 * lead : 0.1 + 2 * (lead - 0.35);
+      const brk = k === 0 || W[k - 1].punct ? 0 : 0.35;
+      for (let j = k + 1; j <= n; j++) {
+        const exp = (C[j] - C[k]) * rho;
+        const err = (d - exp) / Math.max(0.6, exp);
+        const c = f[r - 1][k] + 3 * err * err + hint + brk;
+        if (c < f[r][j]) { f[r][j] = c; from[r][j] = k; }
+        if (exp > d * 3 + 1) break;
+      }
+    }
+  }
+  if (f[m][n] >= INF) return 0;
+  const blocks = [];
+  for (let r = m, j = n; r > 0; r--) { const k = from[r][j]; if (k >= 0) { blocks.unshift({ r: r - 1, k, j }); j = k; } }
+  let moved = 0;
+  for (const { r, k, j } of blocks) {
+    const [s, e] = runs[r];
+    const tot = C[j] - C[k];
+    for (let i = k; i < j; i++) {
+      const t = s + ((e - s) * (C[i] - C[k])) / tot;
+      if (Math.abs(t - W[i].ref.t) > 0.25) moved++;
+      W[i].ref.t = +t.toFixed(3);
+    }
+    lines[W[j - 1].li].b = e; // a line ends where its last word's run ends (or later, if the line goes on)
+  }
+  for (const T of lines) { T.a = T.words[0].t; T.b = Math.max(T.b, T.words[T.words.length - 1].t + 0.2); }
+  return moved;
+}
+
+// ---------------------------------------------------------------- no whisper: lines onto speech runs
+function alignBySpeech(file, story) {
+  const dur = parseFloat(sh("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", file]));
+  // silencedetect reports on stderr
+  const txt = spawnSync("ffmpeg", ["-v", "info", "-i", file, "-af", "silencedetect=noise=-55dB:d=0.22", "-f", "null", "-"], { encoding: "utf8" }).stderr ?? "";
+  const starts = [...txt.matchAll(/silence_start: ([\d.]+)/g)].map((m) => +m[1]);
+  const ends = [...txt.matchAll(/silence_end: ([\d.]+)/g)].map((m) => +m[1]);
+  // speech runs = the gaps between silences
+  const runs = [];
+  let cur = 0;
+  starts.forEach((s0, i) => { if (s0 - cur > 0.08) runs.push([cur, s0]); cur = ends[i] ?? dur; });
+  if (dur - cur > 0.08) runs.push([cur, dur]);
+  if (!runs.length) runs.push([0, dur]);
+  // cumulative speech time at the end of each run; candidate line boundaries = every pause between runs
+  const cum = [0];
+  for (const [a, b] of runs) cum.push(cum[cum.length - 1] + (b - a));
+  const total = cum[cum.length - 1];
+  const gapAfter = runs.map((r, k) => (k < runs.length - 1 ? runs[k + 1][0] - r[1] : 9));
+  const lines = story.scenes.flatMap((sc) => sc.lines);
+  const L = lines.length, M = runs.length;
+  // spoken length: numbers are read as words ("1815" → "seribu delapan ratus lima belas")
+  const chars = lines.map((l) => spoken(l.text).length + 4);
+  const rate = total / chars.reduce((a, b) => a + b, 0);
+  // DP: line i covers runs [j, k); boundaries sit on pauses, durations follow the text length, long pauses preferred
+  const INF = 1e18;
+  const f = Array.from({ length: L + 1 }, () => new Float64Array(M + 1).fill(INF));
+  const from = Array.from({ length: L + 1 }, () => new Int32Array(M + 1).fill(-1));
+  f[0][0] = 0;
+  for (let i = 0; i < L; i++) {
+    const exp = chars[i] * rate;
+    const endWeight = /[.!?]["”']?$/.test(lines[i].text) ? 1 : 0.5;
+    for (let j = 0; j < M; j++) {
+      if (f[i][j] >= INF) continue;
+      for (let k = j + 1; k <= M; k++) {
+        if (L - i - 1 > M - k) break; // leave a run for every remaining line
+        const d = cum[k] - cum[j];
+        const err = (d - exp) / exp;
+        const pause = k === M ? 0 : endWeight * 0.22 / (gapAfter[k - 1] + 0.05);
+        const c = f[i][j] + err * err * 3 + pause;
+        if (c < f[i + 1][k]) { f[i + 1][k] = c; from[i + 1][k] = j; }
+        if (d > exp * 3) break;
+      }
+    }
+  }
+  const spans = [];
+  if (f[L][M] < INF) {
+    let k = M;
+    for (let i = L; i > 0; i--) { const j = from[i][k]; spans.unshift([j, k]); k = j; }
+  } else {
+    // fewer runs than lines: split the speech by text length
+    let acc = 0;
+    for (let i = 0; i < L; i++) { spans.push([acc, acc + chars[i] * rate]); acc += chars[i] * rate; }
+  }
+  const toReal = (st) => { let acc = 0; for (const [a, b] of runs) { if (acc + (b - a) >= st - 1e-9) return a + (st - acc); acc += b - a; } return runs[M - 1][1]; };
+  let li = 0;
+  return story.scenes.map((sc) => sc.lines.map((l) => {
+    const sp = spans[li++];
+    const s0 = f[L][M] < INF ? cum[sp[0]] : sp[0], s1 = f[L][M] < INF ? cum[sp[1]] : sp[1];
+    // words paced in speech time, so pauses inside the line stay pauses
+    const w = l.words.map((x) => 0.6 + x.w.length * 0.08), tw = w.reduce((x, y) => x + y, 0);
+    let k = 0;
+    const words = l.words.map((x, q) => { const t = toReal(s0 + ((s1 - s0) * k) / tw + 1e-6); k += w[q]; return { w: x.w, t }; });
+    return { a: toReal(s0 + 1e-6), b: toReal(s1), words };
+  }));
+}
+
+==== 99134 project/src/data/map-nusantara.json
+{"w":3200,"h":4745,"bbox":[86,160,-48,48],"land":"M1789.1 2338.1L1786.2 2339.0L1785.6 2335.8L1788.3 2335.6ZM2472.6 2893.0L2469.4 2902.5L2469.6 2908.5L2475.9 2912.6L2482.2 2923.4L2490.2 2959.0L2488.6 2972.3L2497.6 2999.4L2506.5 3004.4L2517.2 2997.3L2528.6 2994.1L2536.1 3005.8L2563.8 3025.9L2562.2 3032.8L2563.1 3049.8L2571.2 3075.9L2569.8 3091.6L2584.0 3113.0L2590.8 3114.5L2590.4 3121.6L2600.0 3147.2L2596.0 3176.2L2604.2 3187.0L2609.0 3189.0L2607.4 3202.1L2611.2 3208.3L2624.5 3218.0L2638.0 3221.1L2643.8 3227.4L2649.9 3228.3L2655.9 3226.7L2669.9 3244.7L2674.7 3245.8L2677.4 3249.2L2684.6 3250.6L2696.9 3259.3L2707.0 3261.9L2713.9 3268.6L2719.3 3277.4L2712.6 3276.8L2710.6 3282.0L2715.2 3289.2L2733.2 3307.2L2738.6 3323.5L2744.0 3328.3L2747.0 3349.0L2754.8 3368.5L2759.9 3366.1L2766.5 3373.6L2767.8 3372.3L2765.1 3362.3L2766.8 3356.5L2770.9 3355.6L2777.7 3365.3L2791.0 3374.0L2792.6 3373.9L2792.2 3365.8L2794.5 3365.1L2796.6 3367.4L2800.6 3374.8L2801.4 3403.0L2804.0 3416.3L2817.5 3431.7L2832.5 3442.5L2840.7 3443.7L2846.8 3447.7L2859.7 3470.2L2873.8 3480.0L2875.8 3487.7L2882.3 3499.0L2888.2 3502.5L2893.6 3510.0L2893.9 3522.3L2898.5 3531.1L2904.4 3535.6L2900.9 3551.9L2904.3 3584.8L2902.3 3595.1L2914.0 3623.0L2917.0 3636.7L2922.2 3646.2L2921.9 3660.6L2924.0 3667.4L2923.4 3676.4L2912.3 3698.0L2909.1 3727.9L2898.6 3761.5L2899.4 3778.8L2894.9 3805.4L2888.0 3823.3L2878.2 3836.5L2874.4 3856.6L2864.8 3865.3L2863.4 3868.9L2860.0 3868.9L2862.2 3871.1L2861.2 3873.0L2846.0 3880.3L2831.7 3903.4L2829.5 3912.4L2823.4 3915.5L2824.8 3921.6L2822.9 3933.5L2821.4 3936.5L2819.5 3935.4L2816.2 3937.6L2820.8 3938.9L2809.1 3952.8L2805.2 3963.4L2801.3 3984.1L2802.4 3990.5L2797.7 3992.0L2797.4 3999.2L2792.1 4001.1L2776.0 4034.0L2770.3 4072.4L2765.8 4088.3L2767.0 4110.7L2764.7 4125.4L2759.3 4126.5L2745.1 4138.7L2692.4 4141.9L2675.8 4147.6L2654.9 4163.2L2631.6 4187.8L2604.0 4191.3L2603.9 4194.4L2609.2 4200.6L2613.1 4196.4L2614.8 4197.6L2615.5 4210.1L2611.9 4214.6L2609.3 4213.4L2601.4 4199.0L2597.6 4197.2L2591.8 4201.0L2585.5 4188.0L2577.6 4187.4L2568.5 4180.7L2571.4 4174.1L2574.8 4172.9L2571.9 4164.6L2564.0 4164.3L2559.6 4172.3L2549.6 4178.8L2539.1 4169.9L2547.5 4170.1L2554.2 4162.5L2556.5 4156.2L2546.7 4145.7L2525.2 4158.7L2533.6 4159.9L2536.9 4162.7L2512.5 4176.6L2500.0 4189.7L2488.2 4196.5L2474.7 4192.2L2468.4 4186.8L2458.0 4183.2L2441.3 4172.5L2429.7 4173.2L2418.4 4166.8L2409.7 4166.1L2404.1 4172.5L2396.7 4171.2L2387.6 4160.6L2378.9 4155.4L2362.3 4152.8L2352.0 4145.5L2344.3 4131.6L2325.8 4110.0L2323.8 4099.9L2329.0 4078.4L2323.4 4062.8L2312.0 4043.4L2293.5 4026.3L2290.5 4020.5L2294.8 4021.5L2299.6 4017.5L2304.4 4022.2L2306.0 4012.4L2304.1 4009.6L2300.2 4008.1L2286.5 4018.2L2282.0 4018.3L2271.2 4023.8L2256.6 4022.2L2265.9 4007.0L2270.8 3991.1L2269.8 3977.3L2252.5 3946.2L2245.2 3961.2L2243.2 3975.4L2235.3 3997.3L2225.3 3996.7L2211.7 4002.3L2200.4 4002.5L2206.0 3985.3L2222.3 3985.2L2226.7 3968.6L2225.3 3957.1L2226.8 3945.7L2233.5 3930.0L2245.7 3915.4L2242.3 3895.8L2248.3 3890.3L2244.9 3873.6L2239.3 3863.7L2239.6 3876.3L2224.5 3895.4L2215.7 3918.0L2189.6 3931.9L2180.8 3938.9L2157.4 3971.9L2162.1 3986.8L2160.9 3988.8L2153.2 3982.6L2146.9 3986.6L2132.9 3971.0L2128.9 3967.7L2124.2 3968.0L2124.5 3965.4L2128.3 3962.8L2135.3 3968.6L2138.4 3967.7L2128.4 3935.2L2114.1 3917.9L2112.3 3908.4L2106.8 3898.6L2102.0 3895.3L2088.7 3894.0L2083.2 3884.4L2080.0 3872.5L2085.5 3871.6L2085.8 3862.2L2072.7 3855.2L2061.2 3844.7L2041.6 3843.6L2021.9 3831.9L1998.5 3834.5L1977.1 3818.7L1962.9 3811.2L1952.2 3808.5L1936.6 3814.0L1908.3 3812.8L1857.1 3819.0L1819.1 3837.6L1786.8 3847.7L1763.4 3850.1L1735.6 3847.3L1726.1 3849.3L1711.0 3860.0L1698.0 3865.6L1676.1 3879.4L1653.8 3886.2L1648.7 3892.1L1637.6 3916.3L1628.1 3928.8L1621.9 3932.9L1615.8 3932.4L1609.0 3936.7L1602.9 3932.1L1590.4 3931.6L1563.3 3936.9L1559.4 3930.8L1531.0 3928.3L1505.5 3930.6L1488.4 3935.4L1479.3 3933.9L1464.0 3936.0L1454.5 3942.6L1446.5 3956.6L1437.7 3961.2L1422.5 3962.4L1389.6 3989.1L1377.9 3992.7L1365.7 3994.9L1319.7 3989.1L1296.7 3979.0L1285.5 3964.8L1278.5 3959.6L1266.1 3953.2L1259.6 3955.2L1254.4 3950.7L1252.9 3940.0L1253.8 3912.1L1261.9 3918.7L1269.6 3918.6L1276.3 3912.9L1283.6 3895.4L1280.8 3868.3L1284.7 3863.2L1285.4 3854.7L1286.0 3828.5L1284.3 3818.6L1261.7 3773.8L1257.4 3761.3L1252.7 3735.4L1252.3 3705.1L1247.9 3690.7L1238.0 3677.2L1234.0 3661.0L1218.0 3638.3L1215.1 3612.1L1212.0 3602.5L1198.2 3578.2L1175.6 3546.1L1181.5 3549.0L1183.0 3541.2L1192.7 3564.2L1199.3 3566.0L1203.7 3561.4L1204.4 3553.3L1193.0 3542.0L1184.7 3523.5L1187.1 3518.0L1190.9 3519.3L1198.4 3529.2L1197.1 3539.8L1198.9 3543.5L1200.7 3545.0L1204.5 3538.0L1210.5 3552.8L1214.7 3556.3L1220.1 3551.2L1220.1 3530.2L1196.6 3488.3L1185.6 3462.5L1185.8 3448.1L1188.8 3435.7L1200.3 3414.4L1202.0 3390.7L1197.1 3377.7L1209.0 3345.1L1211.8 3342.4L1216.2 3339.9L1217.0 3343.7L1214.8 3356.4L1217.9 3363.0L1216.9 3370.5L1223.9 3367.8L1227.1 3363.8L1241.5 3339.7L1273.8 3324.2L1297.8 3302.8L1327.9 3285.4L1346.6 3284.8L1358.1 3288.5L1370.1 3284.9L1392.4 3272.5L1416.3 3267.3L1431.5 3255.0L1452.4 3257.0L1460.2 3253.3L1489.0 3248.0L1513.4 3237.1L1528.1 3224.0L1549.6 3185.5L1557.0 3181.7L1571.7 3168.9L1572.4 3165.5L1567.0 3162.4L1563.1 3143.3L1563.7 3132.6L1568.0 3124.6L1587.9 3108.8L1596.4 3092.8L1598.7 3093.0L1606.1 3112.2L1624.3 3142.0L1625.7 3119.8L1628.7 3119.5L1635.9 3123.9L1637.8 3114.8L1637.0 3112.3L1633.6 3112.5L1621.2 3095.4L1627.1 3092.1L1626.2 3083.4L1628.0 3081.4L1631.5 3082.0L1637.2 3090.6L1645.2 3085.3L1656.2 3090.8L1676.6 3091.5L1672.2 3088.6L1660.8 3086.8L1661.2 3079.3L1668.2 3078.5L1671.3 3067.5L1671.3 3064.6L1669.5 3065.4L1665.1 3072.1L1659.7 3062.5L1662.3 3050.6L1667.5 3050.7L1673.1 3044.6L1673.2 3040.7L1685.3 3046.6L1687.2 3049.4L1689.2 3048.3L1689.6 3042.2L1682.6 3042.4L1679.5 3035.7L1687.5 3031.7L1688.1 3028.6L1701.9 3033.8L1703.1 3029.2L1697.0 3026.0L1694.2 3015.7L1698.8 3009.9L1711.6 3005.4L1713.6 2995.2L1717.0 2996.8L1715.1 3007.4L1718.4 3003.6L1721.9 3004.7L1725.0 3011.4L1727.4 3007.0L1730.6 3005.9L1730.4 3000.4L1734.5 2988.9L1732.1 2982.8L1734.9 2981.9L1737.7 2983.9L1740.9 2991.1L1747.2 2984.6L1754.4 2991.0L1763.5 2981.8L1763.3 2974.4L1768.8 2972.4L1792.8 2985.2L1802.1 2992.5L1811.4 3005.4L1824.8 3017.4L1819.7 3032.4L1819.2 3043.2L1822.9 3038.6L1827.2 3041.8L1823.8 3030.4L1833.9 3020.8L1841.1 3018.4L1862.0 3023.3L1866.6 3027.9L1868.8 3035.6L1871.0 3022.7L1879.3 3025.5L1886.9 3034.7L1887.0 3021.8L1896.2 3020.8L1885.6 3012.7L1889.6 3008.7L1885.7 3008.8L1875.8 3001.3L1879.3 2993.3L1890.2 2982.9L1895.7 2964.8L1908.6 2959.2L1913.9 2952.7L1908.5 2945.8L1910.0 2937.4L1916.5 2934.1L1920.0 2925.5L1929.4 2923.7L1929.6 2914.1L1934.5 2914.0L1940.2 2919.7L1940.5 2911.3L1947.0 2910.2L1946.8 2904.5L1955.5 2902.9L1958.6 2898.0L1960.7 2904.3L1964.9 2907.3L1977.4 2907.3L1984.3 2905.3L1992.0 2907.4L2000.1 2903.3L2007.0 2908.1L2008.3 2902.8L2011.3 2901.0L2020.0 2900.5L2016.5 2896.6L2018.3 2879.5L2009.7 2872.6L1992.3 2871.8L1986.8 2866.3L1981.5 2864.2L1981.1 2862.9L1987.5 2858.9L1995.9 2864.6L2000.5 2859.9L2003.6 2860.7L2018.7 2873.2L2026.3 2868.1L2030.7 2868.9L2040.4 2882.0L2047.8 2883.0L2055.5 2886.9L2071.5 2887.6L2085.9 2895.4L2093.7 2897.4L2098.9 2897.7L2107.3 2894.3L2120.2 2903.6L2128.3 2904.8L2158.8 2887.3L2155.0 2892.8L2157.4 2894.7L2149.3 2901.7L2149.4 2904.3L2151.1 2905.7L2159.5 2901.8L2162.5 2903.5L2165.7 2913.7L2173.4 2914.2L2176.4 2908.5L2173.0 2902.7L2173.8 2900.8L2181.3 2892.9L2185.5 2893.2L2188.5 2900.9L2193.3 2905.0L2201.0 2905.8L2203.1 2910.5L2185.4 2929.8L2184.6 2931.9L2187.9 2939.5L2182.1 2949.3L2180.0 2949.8L2174.9 2945.4L2159.0 2952.8L2159.1 2966.9L2161.7 2975.3L2160.2 2980.9L2157.1 2990.6L2136.4 3017.6L2138.5 3025.0L2171.0 3046.5L2174.8 3054.0L2187.4 3060.1L2192.6 3059.2L2192.4 3065.9L2196.1 3068.6L2205.5 3067.9L2218.3 3076.3L2235.8 3083.8L2244.9 3094.8L2259.2 3105.7L2270.5 3108.9L2275.7 3108.4L2292.3 3113.9L2296.7 3119.1L2302.6 3133.3L2310.9 3135.7L2336.7 3150.3L2344.2 3150.4L2357.2 3146.7L2371.0 3137.2L2376.9 3119.1L2387.9 3102.5L2396.2 3076.5L2395.4 3069.1L2397.9 3055.6L2405.4 3031.0L2401.0 3004.8L2404.1 2990.6L2399.2 2980.5L2398.8 2974.8L2406.3 2950.8L2404.9 2936.8L2412.2 2929.5L2418.2 2930.6L2415.2 2920.6L2407.7 2916.8L2408.2 2910.6L2416.0 2893.9L2419.9 2897.4L2419.5 2890.4L2427.6 2862.9L2428.9 2848.5L2435.7 2845.8L2441.4 2838.0L2447.8 2839.8L2445.5 2845.4L2452.9 2851.4L2457.8 2864.4L2459.4 2887.1L2464.4 2891.4ZM1804.7 2335.6L1811.1 2336.3L1814.8 2327.2L1823.2 2322.2L1823.0 2315.3L1825.8 2311.7L1834.6 2306.6L1846.0 2304.3L1846.6 2324.4L1829.1 2334.4L1827.5 2340.5L1842.6 2348.5L1846.1 2356.7L1855.1 2362.9L1835.5 2355.3L1815.5 2351.9L1812.9 2353.3L1811.3 2359.4L1811.4 2370.1L1815.3 2383.0L1827.2 2403.9L1834.6 2410.9L1828.2 2409.9L1826.3 2406.3L1818.2 2402.8L1811.4 2390.6L1802.9 2382.7L1803.6 2359.8L1797.0 2351.1L1796.2 2345.9L1799.3 2335.6L1795.5 2332.3L1791.5 2323.0L1791.1 2318.1L1796.2 2308.8L1800.3 2292.5L1811.9 2279.8L1817.8 2277.2L1811.3 2293.0L1816.7 2298.7L1816.7 2314.7L1811.3 2322.0L1801.2 2328.4L1800.4 2331.8ZM3189.2 2775.0L3198.7 2782.1L3215.3 2781.5L3227.0 2788.9L3234.3 2796.7L3235.4 2800.9L3228.1 2803.8L3213.9 2799.1L3191.5 2796.5L3186.2 2791.0L3183.2 2783.7L3183.8 2776.7ZM1354.0 2006.0L1350.0 2009.2L1350.4 2005.2L1355.7 1994.0L1378.8 1970.9L1384.8 1969.7L1388.8 1966.3L1428.1 1922.1L1436.7 1916.7L1440.5 1907.4L1438.3 1900.5L1440.2 1894.8L1448.7 1878.4L1451.0 1879.8L1449.8 1895.7L1456.7 1915.6L1452.8 1919.7L1443.0 1923.2L1435.3 1934.9L1417.6 1941.3L1417.2 1947.9L1402.6 1970.3L1389.6 1977.0L1383.3 1986.9ZM1578.2 1866.5L1583.3 1868.8L1593.0 1867.4L1597.0 1870.3L1595.4 1874.2L1606.8 1870.0L1605.2 1881.0L1600.7 1888.5L1591.5 1894.1L1590.1 1901.4L1579.3 1907.2L1565.3 1910.2L1554.8 1918.1L1555.2 1899.3L1559.0 1889.4L1561.2 1865.3L1559.7 1861.7L1552.1 1858.8L1553.1 1856.0L1558.0 1854.1ZM1605.7 1978.7L1599.8 1978.9L1594.2 1967.5L1581.1 1960.3L1574.5 1951.1L1574.0 1945.4L1577.1 1939.3L1587.6 1938.1L1593.8 1933.8L1592.1 1915.5L1598.2 1906.9L1599.3 1898.6L1611.1 1893.9L1622.1 1897.0L1624.5 1903.3L1607.0 1943.6L1606.5 1954.9L1613.9 1969.5L1609.9 1976.2ZM1668.1 1878.5L1671.1 1880.1L1678.8 1876.0L1683.5 1877.2L1687.6 1884.3L1687.1 1903.1L1693.6 1909.6L1698.1 1924.1L1697.4 1926.0L1692.9 1925.7L1692.7 1929.3L1685.9 1921.5L1687.6 1936.2L1677.0 1930.2L1677.4 1923.2L1675.1 1918.3L1677.7 1905.5L1675.2 1898.9L1671.9 1895.3L1662.5 1897.0L1656.6 1872.2L1657.5 1870.0L1659.4 1870.9ZM1696.8 1826.2L1699.9 1829.8L1700.3 1835.3L1709.6 1841.1L1706.2 1851.6L1707.8 1867.4L1712.8 1879.4L1711.3 1883.1L1716.9 1886.4L1718.3 1891.5L1713.6 1887.8L1696.6 1887.3L1684.1 1872.5L1682.9 1869.0L1686.3 1859.9L1681.5 1859.4L1672.5 1848.6L1662.5 1842.8L1657.3 1831.7L1656.0 1824.3L1667.7 1826.2L1693.0 1824.2ZM1500.7 1783.9L1512.7 1783.6L1518.8 1788.3L1522.3 1786.0L1536.1 1799.4L1534.0 1808.3L1536.9 1821.3L1531.3 1830.8L1530.6 1836.2L1527.5 1836.1L1523.8 1839.8L1518.6 1838.3L1510.1 1826.9L1509.2 1820.9L1504.7 1816.4L1503.3 1806.6L1498.4 1797.7L1492.3 1793.7L1490.0 1787.7L1484.9 1786.9L1487.6 1782.3ZM3025.2 2662.1L3023.3 2666.9L3022.4 2665.3L3014.9 2669.8L3006.3 2668.3L2998.7 2663.6L2992.8 2655.1L2992.5 2645.6L2984.2 2641.3L2973.4 2629.2L2971.2 2621.2L2972.1 2608.1L2983.7 2612.2L2987.8 2615.7L2992.3 2624.7L2999.9 2631.1L3004.0 2638.5L3011.4 2641.8L3019.4 2648.8ZM2895.8 2578.2L2892.6 2581.5L2886.1 2573.0L2883.5 2567.0L2882.9 2551.1L2866.1 2527.3L2862.4 2524.0L2848.9 2519.4L2813.7 2494.7L2799.8 2490.8L2803.3 2489.6L2803.3 2483.6L2818.4 2492.9L2820.6 2496.4L2831.4 2499.6L2845.7 2509.5L2855.5 2512.9L2898.0 2550.0L2902.7 2556.3L2903.0 2560.7L2899.2 2566.0L2898.3 2574.3ZM2271.8 2731.3L2261.5 2737.1L2233.5 2736.2L2241.4 2716.4L2252.2 2700.4L2261.4 2694.8L2272.2 2692.3L2281.9 2692.7L2290.3 2701.4L2291.4 2706.1L2282.6 2721.9ZM1892.1 2496.3L1902.0 2501.1L1919.1 2501.6L1927.3 2507.7L1931.7 2519.0L1936.1 2520.2L1939.9 2526.8L1937.5 2539.2L1903.5 2522.6L1896.0 2516.2L1881.6 2516.3L1882.0 2520.8L1879.7 2521.7L1858.1 2516.2L1857.6 2512.5L1853.5 2512.2L1843.8 2520.8L1838.6 2521.5L1834.3 2520.1L1828.3 2512.5L1821.9 2508.9L1812.0 2523.6L1813.1 2516.8L1810.9 2511.7L1824.8 2496.3L1859.1 2494.6L1862.0 2495.1L1864.5 2499.3L1867.0 2499.2L1880.4 2492.8ZM1767.0 2505.9L1774.1 2509.3L1782.8 2519.0L1783.5 2522.5L1782.9 2529.5L1770.4 2535.2L1759.4 2537.7L1753.4 2535.5L1737.4 2527.2L1732.2 2520.3L1730.9 2509.4L1733.5 2506.6L1739.2 2508.5L1753.7 2504.9ZM1590.6 2746.1L1577.1 2751.1L1560.8 2751.9L1541.7 2758.6L1538.8 2755.2L1531.4 2755.0L1527.7 2759.4L1521.8 2758.5L1515.0 2760.2L1494.1 2754.4L1484.1 2755.2L1475.5 2753.3L1466.4 2756.8L1462.0 2749.8L1464.9 2737.7L1468.7 2738.4L1485.6 2730.6L1496.7 2729.9L1502.8 2733.4L1513.9 2735.3L1532.7 2744.6L1555.3 2739.2L1570.7 2746.8L1575.5 2745.6L1580.8 2738.2L1593.5 2732.6L1596.5 2729.0L1589.6 2727.5L1593.3 2723.4L1599.1 2726.0L1600.3 2733.7L1591.8 2740.4L1593.4 2743.9ZM1470.8 2779.5L1479.8 2785.3L1482.9 2791.5L1492.1 2792.6L1504.2 2805.0L1506.3 2808.6L1500.5 2816.0L1489.3 2819.8L1481.3 2817.6L1472.5 2812.3L1467.3 2805.4L1453.0 2797.0L1442.7 2796.9L1428.9 2792.4L1425.2 2785.8L1428.4 2782.4L1435.1 2779.9L1461.4 2779.7L1467.8 2776.3ZM1394.3 2733.2L1398.4 2734.8L1405.0 2731.2L1410.2 2731.6L1414.7 2737.5L1416.1 2733.8L1423.8 2732.4L1426.5 2734.1L1428.8 2743.9L1432.6 2748.6L1430.4 2751.3L1419.3 2750.5L1416.0 2751.5L1419.8 2755.8L1415.3 2754.5L1402.2 2756.7L1400.2 2748.8L1392.0 2756.1L1377.8 2760.1L1372.2 2759.6L1362.5 2763.4L1349.6 2764.6L1343.2 2767.4L1331.4 2763.4L1331.2 2748.4L1333.4 2742.6L1347.7 2735.4L1356.0 2738.1L1365.1 2738.0L1375.4 2750.4L1382.5 2751.2L1388.3 2747.8L1392.7 2747.8L1393.9 2745.2L1388.1 2740.1L1382.9 2739.4L1375.8 2734.3L1372.5 2728.3L1373.2 2725.9L1380.4 2723.2L1388.9 2724.7ZM1325.0 2746.2L1319.5 2755.2L1322.7 2758.1L1307.6 2759.2L1291.9 2755.4L1291.1 2753.8L1291.6 2751.8L1300.6 2751.9L1299.9 2738.5L1314.7 2728.3L1328.4 2734.0ZM1273.4 2726.1L1277.8 2728.4L1284.5 2737.1L1268.5 2746.3L1263.6 2755.2L1260.3 2756.5L1258.0 2755.6L1260.2 2749.8L1256.4 2744.4L1247.2 2738.1L1237.3 2735.9L1231.0 2726.6L1232.6 2724.4L1251.4 2727.5L1260.7 2722.2ZM866.8 2444.5L871.9 2453.0L873.9 2466.9L880.7 2478.9L900.3 2483.6L895.4 2487.3L891.3 2497.5L893.7 2505.2L864.8 2494.5L860.9 2486.6L862.2 2480.1L856.5 2472.1L855.6 2466.6L845.5 2462.2L836.4 2464.2L827.4 2460.6L829.9 2455.2L837.8 2450.7L837.8 2444.0L841.5 2440.4L846.9 2438.3L851.9 2447.1L854.2 2444.0L852.8 2438.6L861.0 2437.4L866.0 2441.2ZM2850.4 2558.3L2852.7 2559.1L2859.1 2554.6L2862.6 2557.7L2871.6 2560.2L2869.8 2566.7L2871.4 2577.1L2869.2 2581.0L2865.2 2586.8L2854.6 2588.9L2853.3 2592.0L2860.2 2604.3L2857.4 2608.7L2848.2 2613.3L2833.1 2612.8L2829.1 2621.2L2820.7 2628.7L2802.6 2635.3L2788.0 2643.7L2752.5 2644.8L2740.9 2635.6L2728.6 2637.3L2712.2 2626.4L2698.4 2622.0L2695.7 2617.8L2696.0 2612.4L2699.8 2609.3L2705.5 2610.8L2724.3 2609.8L2739.8 2614.1L2751.6 2611.2L2760.3 2611.5L2766.0 2608.2L2768.1 2594.8L2771.5 2589.3L2774.9 2591.8L2771.1 2596.9L2770.7 2602.2L2775.5 2611.5L2780.5 2612.0L2790.0 2608.8L2794.6 2611.4L2799.3 2610.9L2806.5 2608.2L2816.8 2593.7L2824.9 2587.0L2835.6 2586.1L2839.8 2583.7L2839.6 2573.0L2834.3 2558.4L2836.5 2554.1L2846.2 2554.8ZM1785.8 2737.9L1769.3 2750.6L1758.5 2753.5L1750.8 2759.3L1704.1 2775.2L1686.4 2787.8L1684.9 2792.2L1661.7 2813.4L1650.9 2815.0L1637.1 2822.0L1632.3 2822.2L1626.2 2818.8L1631.0 2810.4L1625.5 2805.5L1630.7 2790.0L1642.3 2779.4L1651.8 2774.3L1668.1 2769.9L1681.7 2761.7L1694.2 2747.7L1721.3 2740.9L1756.5 2739.4L1771.5 2733.1ZM2553.2 4307.2L2563.6 4306.2L2586.9 4320.8L2608.3 4328.7L2619.4 4327.5L2625.9 4323.8L2631.3 4329.0L2631.6 4322.7L2637.4 4318.9L2651.7 4316.9L2657.5 4319.5L2664.7 4310.5L2675.6 4312.1L2679.7 4306.8L2690.4 4311.1L2693.7 4316.3L2693.5 4366.4L2695.9 4389.7L2695.4 4392.4L2693.6 4392.0L2693.1 4385.1L2689.0 4380.9L2691.5 4378.4L2690.3 4375.4L2682.1 4392.2L2681.5 4402.6L2677.3 4415.6L2680.3 4445.1L2678.7 4446.5L2671.8 4448.8L2668.1 4443.0L2665.9 4437.0L2667.6 4434.6L2671.3 4436.0L2672.4 4431.5L2662.7 4426.7L2661.0 4435.6L2657.4 4437.7L2655.5 4429.5L2650.7 4423.4L2652.9 4431.4L2649.1 4440.0L2648.4 4448.6L2645.3 4450.9L2637.7 4445.0L2637.3 4448.7L2641.2 4452.1L2632.4 4472.2L2624.8 4471.5L2618.3 4466.0L2602.7 4466.2L2596.5 4468.3L2594.4 4458.1L2604.4 4456.8L2603.6 4454.5L2593.5 4452.2L2589.1 4453.1L2577.7 4435.7L2572.4 4431.4L2562.9 4408.9L2559.9 4390.6L2567.5 4396.9L2571.6 4405.9L2573.7 4397.8L2566.9 4390.4L2565.7 4385.7L2561.5 4388.6L2561.7 4378.3L2547.7 4356.5L2541.2 4341.8L2536.0 4318.3L2539.2 4300.6ZM1730.0 1967.4L1733.5 1970.1L1738.1 1969.4L1738.0 1976.0L1742.9 1983.6L1743.5 1988.3L1735.8 1999.2L1745.5 2004.1L1746.2 2010.9L1749.6 2016.3L1748.6 2032.5L1754.4 2039.3L1754.9 2058.0L1748.7 2068.3L1742.4 2073.9L1739.1 2073.6L1738.0 2075.2L1740.1 2080.4L1737.9 2098.9L1731.6 2075.6L1722.1 2054.3L1716.3 2057.4L1714.2 2064.2L1703.8 2077.7L1702.9 2082.3L1711.9 2092.1L1715.5 2102.6L1715.4 2113.3L1706.2 2126.9L1701.5 2129.8L1698.9 2128.3L1696.9 2122.9L1698.1 2110.9L1696.5 2109.3L1688.0 2118.0L1683.3 2117.8L1652.4 2102.2L1646.6 2094.7L1642.6 2069.1L1651.5 2057.2L1652.2 2051.5L1641.9 2039.8L1628.8 2033.2L1621.3 2033.6L1616.9 2051.1L1607.7 2045.7L1604.2 2038.3L1599.5 2045.0L1593.2 2045.7L1591.0 2037.3L1587.6 2035.1L1583.4 2035.5L1577.3 2041.0L1562.9 2071.0L1561.0 2072.6L1555.2 2070.2L1552.6 2065.5L1553.5 2060.1L1558.8 2053.0L1562.5 2033.5L1567.3 2027.6L1573.5 2023.2L1596.2 2018.4L1599.8 2015.6L1599.9 2009.6L1602.2 2006.2L1606.4 2002.6L1614.8 2000.3L1618.8 1994.5L1629.4 1998.1L1636.7 2006.3L1637.9 2017.0L1632.6 2022.7L1634.6 2023.1L1651.8 2015.2L1660.8 1999.0L1670.1 2002.4L1674.9 2000.6L1677.3 1987.0L1680.8 1982.7L1692.6 1987.2L1695.6 1980.3L1708.1 1980.8L1709.6 1975.3L1704.4 1952.1L1706.9 1948.3L1724.4 1959.0ZM1517.9 1552.7L1550.1 1567.3L1558.4 1565.8L1563.1 1558.6L1566.3 1558.0L1568.2 1559.9L1570.4 1566.2L1564.5 1577.8L1563.3 1596.0L1567.0 1606.4L1573.5 1612.2L1574.4 1618.0L1579.2 1620.5L1562.6 1662.9L1547.6 1667.7L1539.3 1674.2L1537.8 1679.0L1539.8 1686.1L1530.5 1701.6L1543.6 1727.8L1540.6 1730.3L1540.7 1734.8L1546.7 1753.3L1552.9 1759.8L1565.9 1763.9L1569.2 1760.9L1565.4 1754.2L1578.0 1746.4L1583.9 1746.6L1597.2 1752.4L1603.1 1762.5L1602.6 1770.2L1604.4 1771.9L1610.0 1772.0L1612.8 1768.0L1613.2 1763.6L1611.2 1761.8L1613.9 1758.0L1618.7 1762.3L1635.3 1768.0L1637.1 1769.7L1634.9 1773.1L1626.3 1773.9L1623.8 1776.5L1635.4 1793.3L1634.0 1800.3L1649.4 1803.6L1649.2 1814.5L1645.8 1824.4L1641.6 1823.2L1638.0 1819.0L1641.0 1808.9L1627.1 1809.1L1613.4 1803.3L1612.8 1795.7L1607.1 1785.6L1594.1 1777.8L1582.5 1764.9L1577.8 1763.9L1577.0 1765.8L1578.7 1776.0L1585.6 1787.7L1586.0 1794.0L1582.7 1796.6L1579.0 1793.7L1578.3 1789.1L1573.0 1782.1L1559.9 1770.2L1547.2 1763.5L1535.2 1767.8L1532.8 1773.6L1528.4 1776.4L1517.6 1775.0L1513.8 1771.5L1510.6 1771.4L1506.6 1765.9L1501.8 1765.2L1497.8 1769.5L1496.9 1752.4L1510.1 1738.8L1511.0 1732.0L1508.7 1728.8L1500.9 1726.1L1495.5 1721.4L1493.9 1726.6L1495.7 1739.2L1494.3 1741.1L1489.2 1740.5L1481.1 1725.3L1476.2 1725.0L1473.8 1722.7L1467.4 1696.8L1465.6 1678.5L1460.3 1670.8L1460.4 1659.7L1463.0 1656.5L1477.2 1669.1L1484.8 1668.2L1486.2 1666.3L1487.1 1661.2L1483.4 1642.1L1488.0 1628.1L1488.7 1609.0L1485.8 1597.2L1496.2 1557.6L1505.5 1553.3ZM2052.9 2403.7L2074.6 2404.5L2080.5 2408.9L2078.8 2415.6L2086.9 2431.2L2080.3 2446.7L2084.1 2472.2L2095.6 2494.8L2096.6 2484.0L2100.2 2480.9L2102.8 2482.0L2106.0 2499.2L2112.1 2498.1L2114.0 2511.2L2122.9 2517.2L2140.0 2517.0L2156.1 2501.9L2162.7 2490.6L2172.7 2484.0L2179.0 2470.6L2198.6 2467.3L2208.5 2463.3L2212.8 2459.9L2210.7 2451.9L2232.1 2440.0L2244.8 2436.4L2253.4 2442.2L2276.7 2449.7L2283.7 2455.2L2326.0 2473.8L2341.8 2473.9L2346.0 2476.6L2362.1 2478.1L2366.3 2480.8L2367.5 2485.1L2386.4 2485.9L2445.4 2510.9L2460.8 2516.0L2486.9 2520.7L2511.0 2536.9L2528.8 2537.8L2535.2 2545.1L2544.6 2549.8L2555.1 2560.5L2565.8 2562.1L2584.5 2581.1L2585.6 2596.5L2583.6 2606.2L2588.2 2609.2L2612.0 2615.5L2639.3 2628.7L2656.1 2630.7L2662.3 2634.7L2672.5 2645.9L2674.8 2656.2L2672.9 2662.8L2643.0 2663.6L2635.8 2668.5L2636.1 2672.6L2649.1 2696.0L2669.2 2713.9L2686.6 2723.9L2691.8 2743.6L2700.6 2749.7L2706.3 2765.3L2715.3 2767.0L2732.9 2764.4L2735.7 2771.0L2733.1 2780.9L2735.7 2784.9L2744.9 2788.9L2761.8 2790.7L2768.0 2793.2L2766.9 2795.4L2757.2 2798.4L2762.1 2807.5L2783.3 2815.2L2796.4 2818.2L2804.3 2817.3L2795.1 2821.8L2786.9 2820.4L2785.3 2821.8L2788.7 2825.6L2795.6 2829.7L2788.4 2834.9L2781.4 2835.7L2768.3 2832.3L2756.9 2822.4L2721.6 2818.1L2709.4 2813.8L2699.7 2815.3L2692.7 2812.5L2671.1 2810.0L2661.8 2803.1L2655.5 2792.6L2638.6 2780.1L2634.6 2773.9L2636.3 2765.7L2631.6 2766.9L2621.9 2760.9L2596.0 2722.7L2582.9 2717.3L2550.2 2710.7L2546.4 2707.7L2545.5 2703.3L2530.2 2700.5L2527.6 2701.8L2526.8 2705.4L2523.3 2704.8L2517.9 2709.1L2514.3 2708.8L2503.7 2705.1L2493.2 2695.8L2505.6 2716.9L2501.2 2716.8L2503.3 2720.1L2500.9 2720.6L2487.3 2719.4L2491.4 2728.1L2469.0 2732.9L2452.3 2731.2L2444.3 2733.4L2441.0 2733.2L2436.6 2726.7L2430.6 2727.9L2435.7 2728.0L2442.2 2735.5L2456.1 2734.4L2469.7 2740.1L2481.2 2752.7L2480.7 2761.4L2449.6 2777.4L2431.5 2770.5L2405.3 2772.3L2395.9 2769.7L2384.1 2772.8L2369.1 2761.9L2356.3 2746.5L2335.3 2727.9L2334.8 2725.4L2340.2 2716.0L2332.3 2723.8L2308.6 2727.6L2304.0 2724.0L2302.7 2718.6L2300.2 2723.1L2289.0 2730.8L2285.7 2725.7L2295.7 2701.3L2281.0 2686.7L2286.0 2684.5L2294.6 2685.6L2299.5 2684.0L2294.0 2684.5L2285.2 2681.7L2274.7 2673.0L2286.0 2669.6L2267.6 2647.1L2261.5 2630.0L2264.8 2625.4L2257.3 2623.8L2259.2 2620.2L2263.3 2618.1L2252.4 2619.6L2251.3 2609.0L2218.7 2589.4L2217.5 2586.4L2213.9 2588.3L2209.3 2585.5L2188.9 2580.9L2161.3 2568.4L2138.4 2564.6L2127.4 2564.9L2108.3 2553.9L2105.1 2548.8L2106.2 2543.4L2114.0 2542.7L2108.5 2542.0L2099.3 2544.5L2092.6 2541.5L2087.2 2543.0L2082.0 2536.6L2074.5 2537.5L2063.7 2527.1L2061.8 2522.8L2062.6 2512.8L2068.8 2504.4L2062.7 2505.9L2060.7 2517.8L2058.4 2520.1L2054.8 2519.9L2055.9 2524.4L2050.4 2533.8L2049.8 2541.0L2043.2 2548.1L2031.1 2549.5L2025.4 2543.2L2021.8 2532.5L2026.8 2525.9L2021.7 2514.8L2004.2 2501.0L1991.5 2498.4L1989.5 2495.8L1987.9 2492.9L1999.2 2488.2L2020.5 2492.9L2033.9 2479.9L2040.7 2477.7L2058.8 2482.5L2062.7 2485.8L2065.0 2478.3L2071.6 2475.7L2071.3 2472.0L2066.6 2471.5L2071.5 2466.7L2072.3 2463.2L2063.2 2467.0L2030.8 2470.6L2010.9 2468.2L2002.5 2469.3L1990.2 2458.4L1986.2 2439.7L1977.6 2438.9L1958.6 2432.5L1951.0 2435.2L1945.8 2433.9L1947.9 2427.8L1954.2 2422.7L1957.1 2409.3L1980.7 2402.7L1994.7 2391.9L2011.2 2387.3L2026.2 2390.3ZM1681.7 2329.2L1673.4 2336.6L1661.7 2351.9L1652.6 2355.8L1632.6 2359.1L1611.5 2358.1L1603.6 2351.3L1599.9 2350.9L1549.9 2353.4L1535.8 2350.7L1514.1 2353.2L1495.3 2349.4L1485.4 2352.8L1478.6 2360.7L1470.8 2380.8L1473.0 2396.3L1480.7 2409.8L1492.7 2417.2L1499.1 2431.5L1515.0 2433.1L1519.9 2430.2L1525.5 2420.6L1538.4 2408.1L1545.4 2412.3L1555.4 2412.6L1568.9 2405.0L1595.2 2404.9L1592.6 2400.8L1607.4 2397.0L1616.4 2400.3L1618.8 2405.9L1616.3 2415.7L1609.8 2415.6L1606.6 2411.5L1602.1 2410.0L1595.8 2411.2L1578.7 2430.6L1567.6 2439.5L1550.6 2445.5L1541.7 2454.3L1530.6 2451.6L1528.9 2453.5L1528.6 2456.4L1538.4 2465.3L1546.8 2469.2L1560.3 2491.2L1569.4 2498.1L1570.0 2504.3L1574.0 2510.8L1570.5 2514.0L1567.7 2528.9L1581.8 2540.3L1586.6 2549.0L1593.4 2548.2L1595.7 2555.3L1594.5 2562.4L1587.9 2560.2L1588.0 2563.2L1577.1 2563.7L1561.7 2568.8L1559.1 2572.3L1559.9 2579.7L1558.4 2581.5L1553.2 2582.2L1539.0 2578.3L1534.6 2570.6L1540.2 2549.4L1527.0 2541.9L1508.8 2524.6L1509.5 2519.6L1515.9 2509.3L1515.8 2491.3L1513.1 2487.8L1508.3 2486.7L1498.5 2487.7L1481.6 2499.9L1481.3 2504.3L1487.2 2517.1L1489.2 2532.7L1485.9 2549.1L1488.4 2572.2L1482.3 2595.1L1488.9 2614.4L1483.7 2612.3L1468.2 2613.8L1458.0 2618.9L1451.1 2615.3L1443.3 2607.2L1442.6 2602.4L1452.7 2568.1L1454.0 2546.9L1447.8 2533.7L1447.2 2524.3L1442.7 2521.9L1426.8 2525.3L1421.3 2519.3L1418.9 2508.8L1420.9 2499.0L1417.7 2490.0L1431.0 2479.7L1434.5 2464.8L1440.9 2455.7L1440.4 2433.2L1449.0 2411.5L1457.8 2401.7L1463.5 2409.5L1458.2 2376.1L1464.5 2370.5L1462.0 2362.0L1466.5 2353.0L1471.8 2347.8L1472.7 2342.3L1480.2 2335.0L1481.9 2330.3L1484.2 2329.8L1488.3 2335.6L1492.6 2336.9L1496.3 2335.3L1507.8 2318.1L1517.0 2314.9L1522.5 2317.7L1531.0 2318.5L1539.1 2326.1L1551.0 2325.2L1575.6 2328.2L1593.0 2335.7L1602.9 2331.5L1640.2 2335.5L1655.1 2328.1L1661.0 2321.0L1666.3 2319.1L1669.2 2312.1L1677.3 2308.8L1686.0 2298.7L1693.6 2301.2L1696.6 2307.3ZM924.3 2632.5L928.6 2637.5L936.9 2641.6L957.3 2645.1L965.6 2644.6L973.7 2652.7L977.5 2663.9L980.7 2666.6L1007.3 2669.9L1016.2 2667.5L1030.1 2671.5L1046.4 2671.2L1056.3 2673.4L1063.1 2667.3L1068.1 2654.7L1073.9 2650.7L1079.9 2651.2L1088.9 2662.1L1104.4 2660.4L1113.0 2665.9L1123.9 2667.3L1128.1 2671.1L1147.6 2672.5L1152.4 2685.4L1158.7 2689.0L1158.7 2699.8L1168.2 2704.4L1189.1 2707.3L1213.9 2703.3L1228.5 2710.3L1230.0 2719.5L1227.5 2737.1L1231.6 2745.7L1236.5 2749.3L1236.1 2753.0L1227.4 2750.2L1222.8 2746.2L1208.2 2744.2L1178.5 2731.9L1153.7 2737.2L1129.3 2733.5L1103.1 2732.7L1064.1 2725.9L1039.5 2714.6L1006.8 2706.5L983.4 2704.8L976.0 2706.6L970.9 2710.5L960.9 2709.8L942.9 2705.7L931.8 2699.4L920.4 2696.3L884.6 2691.8L882.9 2686.2L887.3 2678.1L862.5 2669.6L832.7 2668.6L833.4 2663.9L837.7 2661.1L838.4 2664.9L842.5 2666.2L846.7 2661.4L849.9 2652.6L852.2 2653.9L855.7 2652.1L859.2 2637.3L868.1 2628.5L900.5 2636.5L908.6 2632.6L910.1 2628.0ZM453.7 2145.8L468.9 2143.9L483.9 2146.8L499.3 2146.8L515.0 2161.0L518.9 2170.4L529.7 2181.2L529.3 2190.7L532.2 2195.1L547.4 2202.3L552.6 2209.6L568.7 2217.3L593.8 2234.6L628.1 2277.6L635.0 2280.6L643.8 2288.0L640.7 2279.7L641.2 2275.3L645.9 2273.0L650.6 2274.6L661.7 2285.3L666.2 2296.3L669.3 2299.0L682.6 2302.1L692.8 2309.9L698.7 2317.8L702.2 2329.4L708.8 2335.9L712.2 2338.6L732.9 2343.5L738.0 2351.0L735.5 2354.3L715.7 2362.9L730.6 2360.2L749.8 2350.1L755.8 2351.5L764.2 2359.8L769.2 2370.2L753.7 2380.6L752.7 2387.9L757.2 2392.4L754.1 2397.2L758.2 2404.9L766.3 2410.6L787.0 2417.9L794.0 2417.2L800.7 2451.0L803.0 2455.4L814.9 2462.8L814.1 2468.9L806.4 2477.4L806.5 2484.5L820.4 2474.8L838.8 2475.2L846.8 2480.1L866.8 2506.7L867.4 2511.5L860.6 2519.8L858.1 2528.6L858.4 2533.7L861.9 2538.1L857.6 2552.4L860.0 2589.2L856.9 2618.1L854.0 2624.3L848.4 2623.5L836.7 2612.6L825.1 2621.1L806.0 2611.4L805.1 2616.6L808.0 2627.5L804.4 2628.1L781.3 2605.5L771.1 2592.2L731.6 2565.8L715.1 2552.0L697.4 2528.0L673.7 2509.3L664.5 2493.8L653.8 2484.2L643.9 2469.5L642.4 2455.9L626.4 2428.5L618.7 2408.0L599.4 2385.8L591.1 2370.3L576.6 2363.3L569.0 2357.1L553.4 2307.6L544.7 2291.6L522.7 2277.3L510.1 2273.5L506.0 2270.3L501.2 2249.1L492.6 2243.6L474.3 2217.6L467.1 2211.8L451.7 2207.1L442.4 2196.0L410.6 2166.1L398.1 2143.4L399.9 2137.9L399.0 2131.3L401.3 2130.0L406.3 2128.5L421.1 2130.6L438.2 2143.0ZM1332.2 2082.3L1331.4 2086.0L1336.8 2083.6L1346.1 2070.2L1350.5 2071.4L1353.3 2082.9L1366.9 2090.0L1370.5 2097.1L1370.6 2100.5L1367.2 2103.8L1368.4 2112.3L1367.2 2114.9L1362.2 2117.4L1375.9 2114.9L1383.9 2110.0L1388.8 2118.3L1381.0 2121.6L1382.6 2125.1L1394.6 2120.1L1399.1 2120.8L1406.0 2124.1L1409.5 2130.1L1425.2 2137.2L1434.7 2137.1L1438.1 2139.9L1437.8 2147.2L1432.7 2151.4L1412.8 2157.3L1400.3 2155.0L1395.1 2156.3L1391.8 2163.2L1408.1 2177.4L1409.5 2179.2L1407.5 2182.7L1384.1 2188.3L1370.7 2184.3L1366.7 2190.5L1362.1 2193.4L1360.7 2195.9L1374.2 2212.6L1367.8 2214.9L1362.6 2210.8L1360.0 2215.3L1343.0 2215.5L1347.7 2216.8L1355.5 2224.0L1357.2 2226.7L1354.5 2231.9L1355.8 2234.1L1366.9 2239.7L1368.1 2244.6L1365.2 2245.5L1370.7 2247.4L1368.2 2250.0L1374.5 2253.4L1386.7 2272.0L1385.6 2276.4L1374.7 2284.6L1387.3 2298.7L1411.4 2315.2L1426.4 2329.8L1422.4 2333.9L1406.9 2337.1L1392.3 2334.5L1380.0 2324.8L1382.8 2330.6L1382.2 2333.8L1372.8 2340.7L1363.1 2362.1L1360.6 2386.3L1364.3 2396.2L1364.9 2405.6L1351.0 2412.3L1340.7 2423.6L1336.8 2425.2L1331.8 2423.5L1329.3 2417.4L1329.9 2429.7L1321.3 2436.0L1319.7 2441.4L1309.2 2449.5L1315.6 2449.5L1315.6 2461.1L1310.9 2464.8L1320.1 2467.8L1321.0 2476.6L1320.2 2480.9L1311.0 2482.7L1310.6 2484.9L1313.5 2483.8L1311.6 2497.8L1307.1 2501.1L1304.5 2499.2L1304.0 2501.4L1308.4 2507.5L1299.8 2517.1L1295.4 2527.8L1240.8 2552.7L1237.9 2550.2L1237.0 2532.5L1233.5 2518.4L1230.1 2522.9L1225.7 2521.3L1223.9 2517.9L1225.7 2512.2L1221.0 2517.7L1214.4 2514.1L1209.0 2519.1L1198.1 2521.8L1195.0 2520.2L1193.9 2510.5L1182.4 2512.7L1169.0 2499.2L1166.3 2510.2L1157.1 2516.0L1150.3 2519.4L1136.6 2516.0L1118.2 2526.0L1116.6 2525.1L1116.7 2504.5L1111.1 2497.3L1108.1 2501.0L1097.0 2499.2L1078.1 2505.1L1073.7 2501.9L1076.7 2498.1L1068.2 2503.0L1062.7 2497.4L1048.9 2500.6L1042.0 2458.8L1036.1 2452.8L1039.4 2438.3L1037.1 2427.4L1032.4 2419.9L1024.1 2413.1L1007.1 2408.8L1006.3 2403.9L1010.7 2399.9L1000.2 2391.5L999.9 2383.7L1003.0 2372.7L1005.7 2370.9L992.2 2356.9L990.5 2337.9L992.8 2323.2L1000.3 2318.0L995.0 2318.7L997.9 2307.6L1006.4 2298.5L1011.0 2289.1L1021.8 2284.6L1025.7 2291.9L1032.0 2296.0L1042.8 2298.8L1052.9 2297.9L1067.0 2305.3L1076.5 2306.0L1085.3 2311.7L1090.7 2311.9L1083.6 2308.0L1082.3 2304.9L1087.7 2297.1L1092.7 2279.7L1090.1 2277.2L1090.1 2269.3L1091.6 2266.9L1096.3 2270.0L1100.3 2269.3L1100.2 2258.3L1103.2 2253.6L1112.6 2248.8L1129.5 2246.2L1167.0 2235.5L1186.9 2210.4L1207.5 2188.6L1211.4 2174.2L1229.2 2170.5L1253.9 2154.8L1256.1 2155.1L1255.2 2160.1L1272.5 2157.1L1278.0 2151.7L1279.2 2147.4L1274.2 2144.7L1272.2 2137.8L1280.2 2129.6L1281.1 2131.9L1286.1 2132.6L1292.0 2129.1L1299.9 2117.5L1303.3 2106.7L1318.7 2089.6L1329.7 2069.8L1333.3 2070.9ZM2521.9 -80.0L2526.8 -68.6L2537.8 -56.8L2539.0 -41.6L2535.0 -53.1L2512.3 -80.0L2471.6 -80.0L2466.0 -72.2L2446.5 -4.7L2445.7 16.9L2450.6 29.8L2462.3 43.5L2474.3 77.0L2481.5 76.3L2485.9 79.7L2490.0 104.3L2484.9 122.5L2483.5 125.0L2480.1 97.1L2477.1 91.9L2457.5 88.9L2449.1 82.0L2442.3 86.5L2439.2 92.1L2430.6 121.3L2425.0 132.0L2420.0 126.0L2414.3 98.6L2415.8 83.3L2423.3 55.1L2420.1 26.6L2429.5 -0.9L2427.5 -18.8L2415.8 -48.8L2423.7 -80.0ZM2500.5 242.1L2512.5 243.1L2528.9 252.2L2539.0 253.5L2545.8 250.2L2567.3 229.4L2566.6 235.3L2556.8 257.0L2555.7 263.3L2557.4 269.4L2566.1 290.8L2572.4 292.2L2580.5 285.7L2587.4 285.9L2578.3 291.5L2573.2 298.5L2566.4 298.3L2548.0 308.7L2535.4 311.9L2516.6 310.3L2506.8 315.8L2490.0 332.4L2483.4 343.0L2478.4 362.5L2475.1 367.4L2443.6 352.4L2415.2 333.6L2396.0 335.5L2377.8 347.5L2365.8 335.0L2355.9 334.7L2350.3 342.0L2349.3 350.3L2357.9 359.8L2366.9 360.7L2384.9 378.8L2378.4 382.7L2363.7 378.2L2356.3 386.5L2351.8 395.3L2346.8 399.0L2338.8 400.2L2334.9 392.0L2339.8 372.5L2337.6 363.5L2328.0 351.2L2329.1 333.4L2330.4 329.5L2340.1 324.5L2353.8 311.5L2356.2 305.8L2352.3 298.9L2352.1 290.8L2356.2 288.7L2370.6 296.6L2384.4 298.1L2391.2 297.0L2394.6 292.2L2396.2 286.2L2395.6 270.6L2406.3 248.0L2407.0 233.3L2411.3 220.0L2412.2 205.8L2409.5 192.1L2403.6 179.0L2407.3 163.9L2414.2 161.6L2418.9 157.2L2439.6 180.9L2459.9 208.6L2477.3 225.2ZM2388.3 403.8L2390.0 404.8L2398.1 401.9L2395.7 419.7L2397.0 441.0L2398.4 447.4L2406.3 455.2L2412.8 465.6L2421.2 493.8L2420.6 514.2L2417.3 531.9L2406.9 539.5L2402.0 551.3L2398.6 571.1L2383.1 574.8L2376.7 585.2L2375.3 596.1L2379.9 622.5L2378.5 641.6L2377.0 647.7L2369.4 656.1L2366.7 662.3L2359.9 689.3L2362.0 698.5L2372.9 716.3L2362.8 719.7L2354.9 727.7L2353.1 740.7L2350.5 745.2L2337.7 752.7L2331.7 760.1L2326.5 757.0L2328.4 754.2L2327.6 739.1L2339.3 723.8L2334.6 719.3L2331.2 719.3L2325.9 722.3L2325.1 728.6L2320.0 733.1L2320.7 737.9L2324.1 741.4L2321.1 746.9L2319.4 747.3L2312.4 739.0L2302.7 740.1L2298.9 743.6L2295.6 763.3L2287.4 774.3L2284.9 774.8L2281.6 770.6L2283.4 756.1L2287.7 753.4L2279.8 748.2L2273.6 750.2L2259.6 768.9L2256.8 776.0L2228.9 772.5L2208.1 776.7L2208.7 774.7L2217.9 770.4L2217.3 766.8L2206.8 767.1L2203.8 763.5L2203.0 769.4L2199.8 768.8L2199.0 755.9L2201.0 752.9L2196.9 752.1L2192.0 755.6L2185.2 771.7L2200.2 784.6L2199.1 790.3L2176.4 798.0L2158.5 830.0L2149.0 833.9L2138.5 830.5L2124.5 806.9L2123.2 792.2L2132.3 785.4L2136.7 778.6L2136.9 774.9L2134.3 773.0L2120.7 774.2L2107.7 767.1L2086.4 769.8L2074.3 779.7L2051.7 784.6L2038.6 791.4L2033.3 790.0L2017.6 794.4L2007.4 788.8L2002.7 790.3L1999.5 795.4L1995.5 815.6L1978.0 804.5L1956.0 810.0L1949.1 806.2L1942.4 808.5L1941.2 793.6L1946.1 786.7L1961.3 785.6L2000.4 753.6L2016.0 738.5L2019.4 732.6L2029.1 727.7L2044.0 725.3L2048.7 730.5L2059.0 727.7L2074.9 727.9L2084.9 726.2L2095.4 721.5L2113.8 719.6L2126.5 715.1L2130.4 716.5L2129.0 723.4L2133.1 726.9L2148.3 728.1L2158.0 722.6L2166.3 714.1L2162.4 702.2L2165.1 695.4L2177.7 682.3L2192.4 661.8L2194.6 650.5L2193.3 637.1L2198.6 627.1L2219.4 619.5L2220.0 624.1L2212.0 632.5L2202.1 638.5L2201.1 641.5L2205.2 646.4L2206.1 656.7L2216.1 661.2L2220.2 660.3L2227.6 650.5L2262.5 636.0L2276.0 622.2L2286.9 601.9L2307.6 587.9L2314.4 565.7L2326.6 544.7L2331.3 525.4L2336.7 515.1L2337.9 503.2L2334.9 490.2L2332.8 488.5L2326.9 488.9L2324.0 486.5L2324.6 484.4L2331.2 480.8L2335.6 467.3L2331.8 448.1L2336.4 440.4L2343.8 438.1L2347.3 434.0L2350.0 424.9L2350.0 413.5L2351.8 412.0L2362.3 414.0L2364.5 431.3L2367.5 434.9L2375.6 428.6L2383.5 431.9L2388.1 425.8L2388.9 413.4L2387.0 411.2L2369.8 417.2L2369.8 410.6L2372.3 400.7L2375.7 396.1L2383.0 399.0ZM2091.1 793.9L2097.1 796.0L2103.2 795.4L2104.9 815.2L2107.6 816.6L2092.0 827.6L2086.2 836.4L2083.5 846.3L2073.9 835.9L2059.8 832.7L2044.8 840.5L2038.7 854.8L2033.1 859.9L2031.4 867.2L2026.8 871.7L2024.0 871.9L2016.9 871.3L2019.8 864.1L2010.6 863.4L2010.5 858.7L2007.7 856.0L2011.3 844.0L2006.7 842.0L2007.0 836.9L1990.6 841.5L2017.0 823.4L2023.1 807.6L2029.6 802.3L2032.0 802.6L2038.2 811.0L2040.8 810.7L2057.6 806.3L2060.3 800.2L2058.5 794.5L2063.0 794.8L2073.4 789.0L2079.0 788.5ZM1953.5 827.9L1961.8 829.6L1971.2 825.3L1976.1 827.9L1976.7 833.1L1969.2 844.9L1984.7 846.0L1982.6 853.0L1987.0 856.7L1985.3 860.5L1989.6 863.3L1989.3 865.2L1974.5 886.6L1965.8 916.3L1965.8 927.1L1960.5 940.6L1949.0 939.0L1947.5 942.0L1950.2 948.2L1932.4 960.3L1936.9 947.5L1933.2 931.9L1937.1 929.5L1936.3 925.3L1931.0 924.7L1926.7 932.6L1926.1 940.7L1930.6 947.6L1928.2 952.1L1911.4 946.3L1909.1 940.4L1915.4 938.3L1916.6 930.7L1910.8 922.1L1911.1 905.7L1919.8 899.2L1930.4 878.7L1924.2 876.8L1927.3 872.8L1926.4 867.8L1919.2 854.3L1913.0 849.9L1908.2 853.7L1910.3 866.8L1916.8 866.7L1917.4 874.4L1913.3 875.7L1905.0 870.9L1892.7 881.2L1895.2 873.2L1889.3 865.5L1888.8 856.0L1895.3 864.6L1902.3 866.7L1898.2 857.9L1884.5 846.9L1885.8 841.3L1888.0 840.2L1896.0 842.5L1895.2 836.5L1905.8 832.1L1910.0 828.1L1918.5 826.3L1923.6 815.9L1933.6 811.0L1943.9 813.9L1948.5 824.3ZM1513.9 1367.6L1509.1 1378.9L1506.6 1400.1L1502.4 1398.7L1495.4 1380.0L1483.9 1371.1L1473.9 1345.4L1476.5 1331.1L1476.0 1319.1L1497.5 1280.0L1515.3 1253.6L1529.3 1247.6L1533.0 1243.3L1539.2 1242.0L1550.4 1250.2L1553.7 1256.4L1549.0 1263.5L1549.3 1277.3L1540.0 1300.2L1530.7 1341.7L1526.3 1351.4ZM1076.3 1489.7L1079.8 1494.7L1081.7 1505.1L1073.4 1509.6L1065.6 1521.8L1057.4 1546.7L1039.9 1557.8L1040.8 1560.4L1029.9 1562.7L1025.0 1569.0L1017.1 1570.8L995.9 1564.0L981.7 1556.4L978.8 1539.4L980.1 1521.2L1006.6 1500.3L1002.3 1499.9L1006.0 1494.7L1016.8 1493.7L1022.8 1490.0L1041.4 1489.6L1045.3 1486.8L1052.7 1487.5L1054.8 1490.4L1054.9 1486.6L1063.3 1490.4L1063.7 1484.8L1066.0 1482.9ZM2582.0 1546.0L2580.7 1547.7L2579.3 1544.0ZM2582.1 1655.9L2578.6 1654.2L2581.4 1654.1ZM2562.8 1753.7L2560.7 1755.8L2557.9 1753.5L2561.4 1752.3ZM1220.8 1386.8L1216.6 1383.0L1221.5 1384.3ZM662.4 2243.0L660.1 2242.6L662.1 2239.6ZM2106.6 2656.1L2104.3 2656.5L2103.1 2653.0L2105.0 2652.0ZM1625.8 2446.0L1620.9 2445.0L1621.0 2438.7L1622.9 2437.3L1626.7 2442.7ZM1762.3 789.3L1763.0 791.8L1759.5 791.3L1757.9 786.8ZM853.0 2828.6L851.8 2831.7L846.9 2829.4L847.4 2827.1L852.1 2825.8ZM3194.8 2742.7L3184.6 2735.6L3154.3 2721.1L3139.3 2708.8L3138.0 2704.1L3133.3 2699.5L3145.3 2702.1L3161.5 2715.1L3175.4 2720.6L3193.2 2733.6L3191.1 2737.1ZM3091.3 2690.1L3092.7 2691.7L3089.4 2694.3L3083.9 2690.6L3074.7 2689.8L3048.4 2665.3L3046.6 2660.0L3047.8 2658.7L3053.2 2660.1L3071.6 2671.0L3078.6 2682.7L3084.8 2688.0ZM2925.8 2549.7L2922.9 2549.5L2926.0 2547.2ZM1520.4 2109.0L1522.8 2112.2L1530.4 2112.2L1531.3 2115.0L1526.2 2118.0L1522.9 2114.8L1510.5 2116.9L1508.2 2114.4L1515.1 2108.2ZM1228.7 2681.5L1228.0 2683.3L1225.8 2682.8L1223.7 2680.0L1227.4 2679.2ZM2090.9 781.9L2086.6 785.1L2083.6 780.1L2089.8 779.3L2091.8 779.9ZM1204.1 2680.3L1195.9 2680.6L1187.9 2685.3L1173.1 2685.5L1157.4 2681.8L1155.7 2678.9L1161.9 2671.4L1209.7 2670.2L1214.4 2675.3L1205.9 2677.9ZM2101.4 2052.2L2098.8 2053.1L2098.0 2045.9L2103.8 2037.8ZM2585.0 1577.2L2582.9 1578.2L2586.3 1572.9L2587.5 1574.5ZM2583.9 1710.1L2580.9 1710.5L2582.2 1706.4L2586.9 1704.2ZM2540.2 1793.7L2536.2 1791.3L2536.2 1786.2L2542.3 1781.8L2544.3 1777.6L2546.0 1777.9L2548.8 1779.9L2541.8 1787.0ZM2580.0 1717.4L2578.2 1719.7L2576.7 1714.7L2578.4 1713.4ZM2254.8 1959.5L2251.5 1963.1L2255.0 1955.9L2257.9 1957.5ZM3224.9 2886.1L3219.2 2886.8L3211.7 2880.2L3200.2 2876.5L3199.4 2872.7L3203.3 2872.6ZM3232.4 2733.1L3243.1 2746.1L3240.8 2754.3L3250.1 2761.4L3254.3 2771.5L3254.4 2777.0L3259.2 2784.6L3259.1 2789.9L3251.5 2780.3L3237.8 2769.9L3233.4 2761.5L3228.7 2746.5L3230.9 2742.9L3225.5 2735.6L3225.8 2733.7ZM3274.2 2823.9L3280.0 2826.5L3280.0 2839.5L3277.3 2838.4L3266.5 2831.8L3264.3 2822.8L3256.0 2821.3L3256.4 2815.9L3263.8 2817.4ZM3266.9 2790.5L3267.2 2796.8L3261.0 2792.9L3261.3 2785.6L3259.0 2778.6ZM3164.9 2768.5L3158.3 2766.4L3162.4 2762.8L3166.6 2764.4L3166.9 2767.2ZM3207.3 2762.9L3211.0 2763.4L3217.6 2769.2L3216.1 2771.0L3211.9 2770.5L3204.6 2766.6L3204.2 2764.6ZM3186.5 2741.5L3181.4 2740.5L3180.7 2736.8L3184.5 2737.5ZM3103.3 2729.9L3109.1 2741.5L3105.7 2746.1L3102.7 2742.2L3095.7 2738.8L3094.4 2731.1L3085.5 2731.4L3083.3 2733.9L3080.3 2733.1L3079.7 2730.8L3091.5 2717.9L3096.2 2719.6L3098.4 2728.8ZM3122.2 2755.3L3120.2 2753.7L3122.6 2749.0L3124.5 2754.2ZM3118.2 2749.3L3113.9 2752.7L3110.8 2751.5L3108.3 2748.6L3109.6 2744.1L3113.4 2741.6L3118.1 2742.8L3119.2 2743.7L3116.5 2745.9ZM3087.1 2750.5L3079.5 2744.0L3086.7 2737.7L3088.0 2740.1L3084.6 2747.8ZM3056.8 2716.0L3049.1 2706.6L3048.8 2703.6L3051.3 2700.8L3062.0 2707.2ZM3053.1 2726.8L3050.4 2722.5L3051.7 2717.5ZM3077.7 2724.1L3072.1 2724.5L3068.5 2720.0L3068.5 2716.6L3071.3 2713.6L3074.7 2713.0L3078.3 2716.8ZM3020.1 2680.0L3013.1 2679.6L3015.7 2674.6L3021.2 2677.6ZM3127.1 2076.9L3121.4 2077.5L3119.3 2071.2L3121.6 2069.8L3126.3 2070.9L3128.0 2073.5ZM2209.5 3063.4L2207.6 3065.4L2202.9 3060.4L2205.8 3055.1ZM2187.7 3056.6L2184.4 3056.6L2184.8 3052.8L2188.6 3052.9ZM2014.8 2864.2L2010.5 2858.1L2010.1 2852.5L2014.2 2849.5L2016.4 2858.4ZM2726.2 3268.7L2721.7 3268.3L2723.5 3262.3ZM2721.5 3262.2L2719.4 3261.9L2722.9 3257.3ZM2606.6 3174.3L2609.4 3182.0L2607.5 3185.9L2598.9 3175.2ZM2433.5 2837.9L2429.9 2840.4L2427.6 2839.1L2427.3 2835.1L2430.2 2832.9ZM2436.3 2815.4L2433.7 2818.1L2430.1 2815.7L2431.1 2813.5L2434.5 2813.1ZM2428.9 2813.7L2427.8 2814.9L2425.8 2812.3L2428.1 2809.2L2429.9 2810.7ZM2313.9 3099.2L2310.5 3103.1L2298.8 3106.8L2298.9 3101.5L2304.6 3094.4L2318.0 3091.5L2322.1 3096.5ZM2311.7 3123.6L2310.1 3124.4L2309.5 3122.5L2313.2 3118.0L2316.6 3122.7ZM2193.1 2975.1L2197.0 2976.8L2198.7 2972.7L2200.7 2974.3L2201.3 2976.1L2196.2 2981.4L2194.4 2987.0L2196.2 2990.8L2203.3 2992.0L2200.8 2996.9L2176.7 2993.2L2180.7 2989.4L2180.5 2977.8L2190.5 2969.4L2192.5 2969.6ZM2172.4 2976.0L2167.5 2975.6L2171.5 2968.9L2174.1 2974.5ZM2188.0 2867.6L2184.9 2870.2L2184.7 2868.3L2192.9 2857.9L2193.8 2852.0L2195.9 2851.4L2194.2 2859.5ZM2176.8 2877.5L2170.0 2880.7L2173.7 2876.3L2182.9 2871.4ZM1922.6 2880.9L1927.8 2883.4L1928.9 2886.9L1924.4 2887.8L1916.4 2884.9L1906.0 2887.3L1904.6 2885.6L1905.8 2880.9L1911.2 2879.9L1909.3 2872.0L1915.5 2865.7L1917.4 2865.8ZM1929.5 2867.5L1935.2 2867.8L1942.2 2864.5L1946.9 2865.6L1957.5 2859.3L1969.2 2870.2L1965.8 2876.8L1962.5 2876.6L1958.6 2882.3L1943.8 2891.8L1924.8 2878.1L1918.6 2860.4L1921.2 2859.0ZM1695.1 3009.7L1692.3 3012.4L1690.4 3010.2L1693.4 3004.1L1695.1 3005.0ZM1669.1 3046.5L1665.9 3047.3L1664.1 3043.7L1665.7 3040.4ZM1273.3 3291.6L1270.8 3295.2L1267.8 3294.5L1272.8 3286.1ZM1175.5 3539.9L1174.3 3541.8L1166.0 3526.9L1163.6 3516.6L1165.3 3514.8L1166.8 3514.3ZM2653.2 4459.3L2651.2 4465.5L2644.5 4465.5L2642.4 4461.3L2644.9 4461.3L2650.1 4452.3ZM2685.6 4418.7L2682.4 4418.9L2682.1 4414.6L2684.2 4411.8L2688.4 4415.2ZM2656.6 4450.0L2652.9 4449.5L2650.6 4445.3L2653.1 4440.5ZM2542.0 4291.2L2540.5 4295.9L2538.8 4290.0L2542.0 4287.1ZM2505.0 4269.1L2501.1 4257.1L2502.9 4245.6L2505.5 4243.2L2505.9 4239.1L2508.1 4238.9L2512.1 4242.1L2514.2 4259.9L2512.9 4263.7ZM2695.2 4279.9L2701.6 4287.0L2698.6 4290.1L2696.3 4290.7L2694.9 4287.1L2685.5 4288.1L2682.0 4285.4L2683.6 4282.7L2689.6 4282.8ZM2681.1 4248.8L2688.8 4259.0L2693.9 4261.7L2691.9 4268.1L2694.6 4272.3L2685.7 4277.3L2676.3 4263.3L2675.7 4257.2L2673.0 4257.4L2671.0 4255.2L2678.2 4247.1ZM2691.3 4291.7L2689.2 4296.1L2686.2 4292.1ZM2231.2 4028.9L2241.6 4030.2L2245.6 4028.3L2250.7 4029.8L2254.0 4035.0L2249.2 4038.0L2241.5 4035.8L2234.4 4037.4L2230.9 4044.3L2224.8 4046.9L2221.9 4044.0L2214.5 4042.0L2211.8 4045.0L2194.8 4044.7L2185.5 4037.0L2189.8 4029.5L2219.9 4021.2L2230.7 4022.6L2232.9 4024.6ZM2572.4 4170.7L2565.9 4174.4L2563.5 4172.7L2564.1 4168.7L2569.8 4168.5ZM2564.9 4178.2L2566.7 4181.9L2563.1 4179.8L2556.9 4180.3L2560.8 4176.4ZM2920.6 3606.8L2915.7 3620.0L2914.4 3618.0L2916.1 3605.3ZM2916.4 3601.0L2913.1 3592.4L2913.7 3588.0L2916.0 3587.1L2917.5 3587.5ZM2900.6 3525.3L2899.5 3526.6L2897.6 3524.3L2896.3 3515.8L2899.9 3503.8L2898.9 3498.6L2907.1 3489.7L2907.8 3485.7L2903.5 3480.6L2908.4 3476.5L2910.2 3485.3L2912.8 3488.3L2912.4 3492.4ZM2817.1 3417.8L2821.2 3419.6L2823.6 3428.6L2821.1 3431.3L2812.3 3419.7L2813.4 3416.4ZM2789.9 3363.0L2787.6 3362.3L2788.7 3357.7L2791.3 3362.2ZM2764.5 3356.9L2763.0 3358.3L2761.9 3354.9L2763.8 3350.2ZM1355.9 2015.8L1353.0 2016.9L1352.7 2011.4L1355.8 2012.6ZM1344.0 2030.3L1341.8 2033.6L1339.2 2029.8L1340.3 2023.0L1343.9 2022.2ZM1466.6 1916.3L1461.3 1917.6L1460.1 1913.4L1463.9 1909.5L1470.6 1912.6ZM1464.3 1870.5L1465.2 1872.8L1462.9 1877.1L1458.6 1874.6L1458.4 1872.7ZM1474.6 1842.1L1478.6 1842.1L1480.1 1839.8L1485.0 1846.1L1483.9 1849.0L1470.7 1849.2L1464.5 1840.7L1465.3 1836.3L1466.7 1835.4ZM1471.9 1862.6L1467.9 1863.2L1464.3 1851.6L1466.6 1850.3L1471.8 1853.2L1473.4 1859.1ZM1584.8 1916.9L1580.0 1919.0L1580.0 1910.9L1587.1 1905.1L1588.6 1908.9ZM1616.0 1961.8L1614.3 1962.9L1613.7 1960.1L1616.7 1939.1L1630.8 1916.8L1640.2 1895.2L1641.8 1885.4L1644.9 1881.6L1645.5 1911.9L1643.5 1920.0L1630.3 1932.0L1621.3 1955.7ZM1632.7 1881.2L1635.3 1887.0L1631.9 1887.0L1630.6 1882.7ZM1668.9 1947.0L1668.5 1948.6L1663.9 1948.7L1658.8 1953.9L1648.5 1955.2L1640.5 1954.1L1635.3 1945.6L1650.7 1931.7L1657.8 1930.6L1668.2 1936.5L1667.2 1942.9ZM1678.1 1975.2L1676.9 1977.8L1672.0 1975.7L1671.5 1971.6L1675.1 1970.8ZM1630.2 1971.1L1630.5 1975.6L1626.6 1976.9L1621.3 1973.1L1628.3 1969.3ZM1481.1 2144.6L1478.6 2148.5L1475.4 2146.4L1468.5 2152.3L1462.6 2152.8L1462.8 2150.0L1477.4 2141.3L1479.3 2141.0ZM1560.8 2093.7L1555.0 2094.3L1548.5 2085.6L1549.5 2083.4L1559.3 2080.1L1569.2 2084.5L1570.7 2086.1ZM1732.3 1947.9L1729.3 1944.7L1732.9 1935.0L1737.2 1946.4ZM1716.3 1941.4L1715.6 1942.6L1707.9 1932.4L1709.2 1924.0L1715.3 1918.3ZM1482.0 1771.9L1482.1 1774.9L1474.8 1770.4L1474.7 1767.8L1479.4 1768.7ZM1553.1 1781.2L1556.6 1780.9L1561.7 1784.6L1562.0 1789.0L1557.0 1796.1L1549.4 1790.6L1551.0 1780.1ZM1560.8 1833.8L1557.4 1844.8L1553.4 1834.9L1556.3 1830.3L1556.8 1823.0L1563.0 1820.6ZM1570.2 1826.1L1568.0 1827.3L1568.8 1823.3ZM1585.1 1835.8L1582.8 1836.9L1575.0 1829.4L1582.9 1827.8L1585.9 1830.7ZM1612.2 1811.7L1615.9 1818.5L1597.8 1802.6L1598.2 1800.5L1601.9 1800.2ZM1633.5 1829.4L1633.7 1833.3L1626.8 1824.3L1625.4 1821.5L1626.9 1819.6L1630.6 1822.5ZM1631.0 1836.8L1639.3 1842.0L1645.0 1851.0L1645.2 1860.5L1636.7 1853.3L1631.4 1851.7L1631.8 1849.4L1620.5 1839.9L1606.8 1852.8L1611.6 1832.0L1610.2 1823.7L1624.2 1829.8ZM1658.5 1777.1L1657.4 1780.0L1654.0 1779.2L1650.8 1781.6L1644.9 1775.8L1648.6 1770.1L1648.6 1761.7L1653.0 1757.3L1661.3 1766.5L1660.7 1775.0ZM1564.3 1758.6L1564.2 1760.4L1554.9 1753.8L1555.0 1750.6ZM1558.2 1715.9L1559.0 1717.4L1555.5 1720.9L1557.7 1726.8L1556.3 1731.2L1553.9 1731.5L1553.4 1725.0L1549.0 1717.7L1549.8 1714.4L1555.5 1714.0ZM1553.4 1540.0L1550.6 1543.3L1549.2 1542.4L1552.0 1535.6L1554.3 1534.7L1556.2 1537.1ZM1524.4 1531.4L1524.2 1534.5L1522.0 1532.8L1522.7 1526.8ZM1536.0 1518.6L1536.5 1522.7L1529.7 1518.9L1530.4 1516.9ZM1555.0 1472.4L1553.0 1472.7L1554.2 1468.4L1558.1 1467.7ZM1551.5 1453.2L1547.7 1457.0L1550.2 1450.5ZM2682.2 2624.7L2675.7 2621.3L2671.6 2616.0L2672.2 2610.1L2683.5 2615.3ZM2645.5 2607.5L2643.0 2607.8L2638.1 2602.1L2638.5 2599.9L2643.5 2597.0L2646.8 2599.7L2647.4 2605.3ZM2595.4 2576.9L2592.5 2578.2L2589.6 2574.3L2594.4 2568.8L2596.9 2573.1ZM2675.8 2471.0L2674.4 2473.3L2669.6 2472.4L2674.0 2469.5ZM2640.8 2457.1L2657.0 2459.3L2656.8 2461.3L2652.4 2461.6L2646.8 2466.6L2626.9 2465.2L2618.2 2467.8L2617.6 2464.2L2620.8 2463.2L2620.4 2459.5L2623.0 2457.7ZM2968.5 2607.6L2963.9 2593.6L2967.9 2589.4L2972.0 2598.2L2970.7 2605.4ZM2883.1 2507.8L2882.0 2511.6L2877.5 2506.2L2881.7 2503.9ZM2858.3 2499.8L2856.5 2501.8L2852.1 2496.5L2853.0 2495.4ZM2852.2 2494.7L2851.7 2489.4L2854.1 2490.7L2854.5 2493.8ZM2757.4 2439.4L2757.3 2441.0L2753.3 2440.4L2747.9 2435.9L2749.4 2430.8L2755.7 2434.1ZM2786.4 2487.4L2774.7 2487.4L2765.9 2479.3L2777.4 2475.4L2786.1 2479.1ZM2814.3 2807.8L2821.9 2803.5L2823.6 2805.0L2820.8 2815.5L2809.0 2811.0L2808.8 2806.8L2806.3 2805.5L2801.1 2794.1L2813.0 2804.2ZM2782.5 2784.7L2779.4 2785.0L2772.3 2778.9L2773.4 2774.4L2776.6 2772.1L2781.4 2774.6L2783.5 2780.4ZM2790.4 2778.3L2796.5 2781.8L2801.7 2781.4L2805.6 2785.5L2806.2 2792.3L2804.1 2793.9L2802.6 2791.8L2786.4 2790.4L2789.6 2786.6L2786.4 2782.1L2786.5 2778.8ZM2815.4 2751.4L2816.2 2754.5L2812.8 2751.2L2814.4 2744.2L2811.0 2742.2L2815.9 2737.6ZM2881.3 2761.3L2889.1 2761.6L2895.3 2766.1L2897.1 2767.8L2895.9 2772.2L2891.6 2772.9L2885.2 2770.4L2881.6 2765.6L2876.3 2763.5ZM2806.4 2831.8L2805.8 2835.2L2801.5 2833.4L2802.1 2831.3ZM2952.7 2866.8L2952.0 2869.2L2945.8 2869.7L2943.3 2869.4L2941.6 2866.2L2945.6 2867.0L2944.9 2864.6ZM2920.5 2871.9L2930.2 2876.8L2921.2 2878.7L2913.7 2875.6L2912.7 2872.7L2909.7 2873.7L2911.2 2871.7L2907.4 2869.4L2906.1 2865.2ZM2490.2 2740.4L2478.8 2735.4L2490.0 2736.4ZM2490.4 2747.0L2491.2 2748.9L2484.9 2746.3L2473.8 2737.8L2484.0 2742.0ZM2135.5 2400.4L2157.6 2403.7L2168.9 2414.6L2178.4 2419.6L2175.4 2423.0L2169.3 2424.8L2158.5 2423.2L2155.2 2420.7L2151.2 2407.9L2146.8 2410.4L2137.6 2405.5ZM2139.4 2441.1L2170.9 2443.8L2200.8 2450.1L2189.1 2453.3L2172.0 2454.2L2140.0 2444.4ZM2117.4 2420.5L2112.9 2420.5L2110.7 2417.1L2111.5 2414.6L2114.1 2412.9L2118.8 2417.0ZM2091.9 2464.1L2090.2 2462.9L2091.7 2460.0L2093.8 2461.0ZM2287.4 2736.3L2274.3 2735.6L2273.0 2732.9L2277.9 2728.1L2283.1 2726.9ZM2057.1 2556.0L2059.3 2558.4L2046.8 2552.7L2046.3 2550.2ZM1918.0 2445.4L1921.1 2450.3L1919.2 2454.6L1920.8 2457.5L1913.4 2460.8L1908.5 2461.5L1897.8 2458.2L1891.4 2453.0L1902.4 2448.3ZM1946.0 2429.2L1939.2 2429.2L1936.5 2426.6L1931.8 2413.8L1941.5 2410.8L1947.4 2412.0L1949.1 2414.1ZM1941.8 2405.9L1938.7 2409.6L1920.1 2412.2L1923.6 2408.3ZM1929.8 2395.1L1922.8 2393.3L1929.3 2390.3L1932.3 2392.6ZM1937.9 2372.5L1957.9 2378.8L1960.6 2384.8L1957.1 2388.1L1943.6 2386.9L1932.3 2375.8L1929.6 2376.0L1930.3 2378.5L1935.6 2384.9L1941.6 2387.2L1941.5 2390.3L1935.1 2391.5L1932.5 2385.1L1926.5 2388.1L1924.2 2383.8L1912.9 2381.3L1915.5 2376.7L1918.4 2375.4L1921.3 2376.5ZM1883.2 2380.4L1875.5 2375.1L1872.8 2370.3ZM1835.8 2283.5L1829.0 2284.3L1825.6 2272.9L1830.5 2265.5L1836.6 2261.1L1842.3 2259.9L1846.0 2265.3L1843.2 2276.1L1839.9 2281.6ZM1792.6 2372.5L1792.4 2373.9L1790.1 2371.6L1791.6 2366.1ZM1791.1 2344.5L1789.1 2344.8L1789.5 2340.1L1792.1 2340.6ZM1783.8 2393.7L1778.1 2394.8L1778.4 2384.3L1785.5 2384.6ZM1786.0 2406.0L1779.7 2405.2L1782.0 2399.1L1784.1 2399.2ZM1797.5 2386.1L1802.5 2392.5L1799.1 2398.7L1801.5 2402.1L1807.8 2402.3L1811.0 2407.2L1805.9 2410.5L1799.9 2405.4L1793.0 2407.1L1793.2 2400.1L1785.9 2393.9L1787.0 2386.8L1792.7 2389.8L1795.8 2385.5ZM1822.8 2444.1L1818.9 2446.3L1812.5 2445.2L1797.3 2447.0L1789.9 2443.4L1790.1 2441.0L1792.7 2435.1L1800.9 2429.9L1812.1 2434.5L1822.6 2441.6ZM2108.0 2619.5L2108.3 2627.1L2106.5 2630.0L2108.4 2639.6L2106.6 2645.0L2103.2 2648.1L2094.8 2646.8L2082.4 2634.9L2082.3 2633.1L2088.7 2632.6L2090.5 2624.9L2084.6 2619.5L2090.4 2619.7L2096.9 2611.6L2097.6 2607.8L2100.4 2607.3L2102.3 2607.8L2103.6 2614.0ZM2098.9 2651.4L2097.5 2657.9L2089.6 2669.1L2084.3 2671.8L2079.6 2668.5L2078.2 2665.7L2080.3 2652.7L2084.1 2652.2L2081.1 2650.8L2080.6 2640.5L2082.9 2639.9ZM2029.2 2627.9L2025.7 2631.7L2029.7 2618.4L2032.8 2615.8L2038.4 2602.6L2039.9 2603.9L2037.6 2613.8L2031.2 2620.7ZM2024.1 2625.7L2021.5 2629.9L2018.7 2628.4L2016.4 2615.1L2021.1 2617.5ZM1847.5 2525.7L1847.1 2528.2L1843.0 2527.6L1841.5 2524.2ZM1840.5 2527.4L1833.2 2529.7L1835.7 2524.4ZM1828.1 2531.3L1824.5 2533.9L1821.0 2531.8L1815.3 2535.5L1813.0 2532.4L1816.9 2528.1L1827.6 2524.3L1830.4 2524.4ZM1607.8 2569.3L1608.5 2581.1L1605.2 2576.8L1602.4 2577.8L1598.8 2594.8L1599.2 2596.8L1602.2 2595.6L1606.5 2598.5L1608.7 2600.6L1608.1 2603.2L1601.9 2607.0L1598.6 2606.4L1591.9 2617.9L1588.5 2616.3L1584.6 2617.6L1582.1 2610.0L1589.9 2597.9L1593.7 2572.2L1597.7 2564.6L1603.2 2562.2ZM1584.7 2600.5L1581.1 2605.6L1573.7 2603.3L1572.8 2605.4L1570.0 2605.3L1569.0 2602.6L1571.0 2594.7L1573.9 2591.8L1571.2 2582.1L1572.7 2578.7L1587.1 2572.2L1589.6 2585.9L1583.3 2594.8ZM1558.6 2607.8L1555.9 2608.9L1548.5 2599.9L1553.0 2591.9L1558.5 2595.7ZM1610.5 2550.3L1606.2 2555.5L1603.3 2555.2L1599.8 2551.8L1598.7 2546.7L1601.1 2544.6L1609.2 2545.3ZM1732.1 2478.3L1728.8 2476.8L1723.8 2462.1L1726.4 2457.7L1729.4 2459.3L1728.7 2466.0L1732.6 2474.6ZM1730.8 2449.7L1744.1 2451.1L1727.8 2455.2L1705.2 2456.1L1703.2 2452.0L1709.0 2450.2ZM1685.2 2446.0L1689.2 2447.6L1694.6 2446.4L1695.0 2449.3L1700.3 2450.6L1700.1 2453.5L1686.8 2456.3L1679.3 2454.2L1670.9 2457.8L1661.3 2459.0L1657.5 2452.7L1661.3 2444.0L1672.0 2443.0ZM1636.7 2456.9L1637.4 2458.6L1634.7 2458.5L1633.9 2453.5ZM1609.2 2422.9L1610.3 2432.4L1614.6 2426.5L1618.8 2425.8L1623.7 2430.1L1622.1 2434.9L1615.9 2437.5L1611.9 2434.4L1610.3 2440.5L1607.5 2442.2L1605.3 2439.6L1607.9 2436.8L1606.5 2428.7L1595.3 2440.9L1591.8 2434.2L1592.7 2427.8L1596.0 2423.4ZM1606.6 2450.8L1603.4 2454.4L1604.6 2449.5ZM1550.9 2389.9L1552.7 2391.8L1551.6 2394.0L1541.8 2395.0L1545.9 2389.9ZM1765.0 2197.7L1760.5 2198.3L1760.2 2196.1L1764.9 2188.0L1761.0 2184.2L1762.5 2175.4L1767.1 2178.4L1769.6 2186.5ZM1760.8 2204.6L1757.3 2197.3L1761.7 2202.7ZM1766.6 2209.2L1763.4 2206.0L1766.8 2207.3ZM1714.9 2223.6L1713.9 2224.9L1708.6 2222.5L1706.8 2210.7ZM1704.1 2257.6L1702.1 2253.4L1703.4 2250.9L1705.8 2252.7ZM1493.1 2645.2L1491.3 2652.4L1489.1 2640.0L1490.9 2622.4L1494.0 2630.9ZM1988.4 2684.5L1987.9 2686.7L1978.4 2680.8L1985.8 2680.3ZM1940.0 2733.3L1936.2 2734.6L1946.8 2723.3L1953.6 2725.1L1942.0 2730.1ZM1960.0 2719.3L1950.9 2719.2L1949.7 2713.5L1951.9 2705.6L1954.2 2705.0L1957.2 2696.2L1969.1 2685.3L1970.2 2681.6L1973.8 2680.6L1977.8 2684.3L1973.8 2687.4L1975.8 2694.9L1972.9 2703.0L1962.3 2713.6ZM1895.7 2717.4L1893.2 2721.4L1890.3 2721.1L1885.1 2715.7L1885.8 2710.8L1894.6 2711.5ZM1845.2 2683.7L1843.2 2684.8L1839.1 2681.6L1843.4 2678.7ZM1808.6 2723.7L1820.5 2725.2L1821.4 2726.8L1817.2 2730.5L1808.5 2727.7L1807.0 2724.6ZM1791.1 2702.9L1788.3 2703.9L1789.0 2698.1L1793.5 2698.9ZM1764.4 2704.9L1764.9 2707.9L1754.7 2710.9L1750.1 2717.2L1731.5 2714.4L1721.0 2718.7L1722.9 2711.3L1728.7 2704.7L1739.0 2706.5L1756.1 2700.7ZM1714.4 2725.5L1711.5 2733.0L1708.4 2731.4ZM1618.0 2820.2L1614.1 2821.7L1614.1 2818.5L1619.8 2813.1L1621.5 2815.4L1617.5 2816.9ZM1597.8 2846.9L1592.5 2846.5L1593.3 2840.4L1602.7 2837.6L1616.0 2827.8L1618.1 2835.5L1609.3 2842.4ZM1551.7 2832.9L1544.0 2831.3L1551.0 2826.2L1556.7 2826.6L1556.0 2830.1ZM1668.1 2725.5L1669.2 2728.2L1675.8 2726.3L1688.7 2727.2L1691.9 2728.3L1692.2 2733.6L1662.5 2738.8L1658.6 2736.2L1661.7 2732.3L1660.3 2730.4L1661.9 2727.4ZM1655.6 2733.7L1649.6 2742.6L1646.1 2743.5L1644.0 2738.7L1640.1 2739.0L1643.8 2733.3L1648.0 2735.3L1653.6 2728.2L1656.4 2729.3ZM1640.0 2731.3L1633.9 2732.4L1630.2 2737.9L1627.2 2737.8L1623.9 2744.1L1621.1 2742.6L1617.8 2745.0L1609.9 2742.5L1620.6 2733.4L1616.9 2731.6L1626.0 2732.1L1633.6 2727.7ZM1613.7 2734.8L1612.9 2736.8L1601.1 2736.6L1601.4 2734.1L1609.4 2729.6L1614.5 2731.1ZM1447.1 2751.7L1443.7 2751.5L1443.4 2745.0L1446.3 2738.1L1451.1 2742.0L1446.2 2748.7ZM1430.2 2729.8L1427.9 2728.1L1431.3 2725.4L1432.9 2728.0ZM1280.4 2753.0L1279.2 2754.5L1274.8 2750.6L1278.3 2748.6ZM1270.4 2674.5L1263.6 2673.7L1264.5 2669.7L1272.0 2668.8L1276.7 2671.5L1277.7 2673.1ZM1155.4 2624.0L1150.4 2625.4L1149.7 2623.7L1154.2 2620.3ZM1380.4 2196.8L1372.4 2199.0L1367.6 2193.9L1369.2 2188.3L1378.8 2191.1ZM1369.0 2230.3L1368.5 2231.8L1364.8 2228.3L1364.2 2223.8L1370.0 2224.8ZM1315.6 2522.2L1314.1 2529.6L1311.4 2525.4L1314.4 2520.4L1315.8 2519.4ZM1310.4 2539.7L1301.3 2547.7L1299.8 2545.7L1300.6 2537.5L1298.1 2532.4L1302.4 2516.8L1309.0 2512.9ZM992.6 2442.3L987.6 2444.1L986.1 2440.1L992.7 2439.9ZM1025.3 2423.3L1014.6 2427.5L1013.1 2426.0L1015.2 2414.9L1021.2 2414.6L1026.7 2417.2L1027.5 2420.1ZM989.7 2246.6L987.6 2248.8L985.4 2247.4L989.7 2242.5ZM965.0 2212.6L959.1 2214.2L955.7 2212.0L961.9 2207.4L955.2 2205.6L951.5 2199.9L951.5 2197.3L962.1 2189.7L968.3 2199.8L968.4 2206.3ZM877.2 2235.7L877.1 2238.7L874.1 2236.9L873.6 2233.6L876.6 2233.1ZM854.5 2248.4L852.2 2247.3L851.6 2239.8L857.8 2243.5ZM679.3 2282.4L682.1 2288.2L679.8 2294.9L674.7 2298.1L670.3 2297.3L666.1 2290.0L666.4 2284.8L676.4 2280.3ZM710.4 2329.5L708.4 2330.8L704.0 2325.8L702.0 2317.6L703.0 2311.9L711.0 2318.9ZM713.2 2309.2L713.5 2314.7L703.8 2309.4L695.3 2307.5L692.9 2302.7L712.2 2307.0ZM736.3 2340.0L735.5 2341.7L713.1 2335.2L711.5 2333.8L713.8 2325.2L715.6 2323.4L723.3 2329.5L735.2 2335.1ZM742.3 2334.6L738.9 2335.6L730.2 2329.2L722.2 2326.7L723.3 2322.2L735.1 2326.1ZM747.4 2348.8L741.2 2348.5L743.2 2342.0L745.4 2342.1L747.9 2345.7ZM753.5 2326.9L753.7 2329.3L750.8 2328.7L748.8 2325.9L751.6 2323.2ZM754.6 2343.5L750.0 2338.6L751.8 2334.7L756.6 2341.0ZM771.0 2337.6L767.2 2336.4L767.7 2333.7ZM779.5 2321.2L782.2 2323.1L784.4 2321.9L781.2 2329.5L776.8 2328.5L775.4 2325.9ZM803.7 2319.7L807.0 2326.9L803.3 2336.3L800.2 2335.4L796.9 2330.9L797.4 2326.8L789.3 2328.4L789.2 2324.6L794.0 2321.2ZM788.7 2336.2L786.0 2337.5L783.1 2331.9ZM808.2 2369.7L804.5 2368.2L800.0 2362.2ZM812.0 2379.9L814.8 2378.4L821.9 2384.5L817.9 2386.3L808.7 2381.3L802.9 2382.9L797.7 2380.5L801.8 2371.5L805.9 2373.1ZM798.9 2386.7L803.9 2392.5L800.3 2398.1L796.3 2397.5L794.1 2400.8L789.5 2392.3L791.5 2389.0L794.1 2389.7ZM767.0 2387.3L761.4 2388.8L755.1 2387.7L758.9 2382.1L766.4 2384.2L768.2 2386.0ZM960.3 2502.0L958.6 2508.2L953.7 2511.9L950.4 2511.7L948.8 2507.7L945.2 2505.8L943.6 2509.0L934.7 2511.1L935.6 2507.5L932.5 2498.6L936.9 2483.3L944.3 2481.7L954.6 2484.6L960.7 2488.9L963.9 2494.7ZM928.6 2497.7L925.8 2497.8L926.2 2495.1L929.7 2495.4ZM903.2 2502.3L900.1 2502.7L897.0 2499.2L899.3 2497.7L904.2 2499.2ZM832.6 2660.1L829.9 2661.0L826.9 2659.0L832.9 2655.0ZM496.5 2308.9L505.9 2321.1L509.7 2322.7L516.0 2330.2L513.6 2345.1L511.2 2347.9L505.3 2346.5L501.8 2336.2L493.2 2331.3L488.5 2320.9L479.1 2310.6L486.2 2310.7L491.1 2305.7ZM707.8 2609.6L704.3 2609.8L696.7 2602.8L700.5 2601.3L708.0 2604.7L709.4 2606.3ZM623.8 2510.0L625.5 2516.3L620.4 2512.0L619.8 2507.0L614.2 2501.5L614.0 2492.8L616.0 2492.7L625.1 2502.1ZM614.2 2490.8L611.1 2494.3L606.1 2494.3L604.9 2481.5L614.1 2488.2ZM598.6 2473.6L588.4 2469.9L585.4 2465.8L586.9 2459.9L591.8 2461.5ZM569.2 2449.2L565.3 2449.4L554.7 2441.9L544.9 2424.1L548.2 2414.2L556.5 2411.9L559.2 2413.5L567.8 2434.7L573.7 2442.7L573.9 2447.5ZM538.8 2395.2L536.2 2397.2L532.3 2395.3L537.4 2382.1L532.9 2372.3L536.9 2373.0L542.4 2383.4ZM490.1 2282.5L480.4 2276.4L488.3 2277.1ZM452.5 2270.2L447.2 2269.7L433.4 2260.0L424.2 2257.4L420.2 2250.0L424.1 2246.1L427.9 2247.3L450.5 2263.5ZM404.8 2120.5L401.4 2121.1L398.6 2117.1L404.7 2117.7ZM1097.9 2267.8L1094.6 2266.8L1094.1 2253.7L1095.5 2252.5L1097.4 2255.1ZM1346.7 2061.5L1344.0 2063.8L1343.3 2057.5L1346.9 2054.1L1352.0 2053.5L1352.1 2059.2ZM2944.1 -51.5L2942.4 -48.1L2940.2 -50.3L2944.5 -54.2L2946.0 -59.0L2950.4 -58.2ZM2901.7 15.3L2899.6 18.9L2896.6 17.5L2900.7 12.3ZM2854.1 70.5L2846.1 77.5L2843.4 77.4L2841.7 73.3L2848.2 72.3L2861.2 57.0L2866.5 55.0ZM2754.1 149.0L2743.7 152.1L2753.1 136.8L2758.8 134.5L2765.9 125.5L2780.9 114.3L2791.5 113.8L2777.7 126.1L2776.0 131.0L2762.5 140.3ZM2707.0 169.1L2692.4 175.2L2677.4 189.1L2671.7 191.1L2666.3 189.9L2662.2 198.6L2651.2 208.2L2646.8 215.7L2642.1 217.1L2633.4 224.8L2635.0 218.2L2643.9 209.1L2644.5 202.8L2648.5 197.3L2656.5 191.9L2671.1 176.8L2676.1 174.7L2675.6 170.1L2677.8 165.0L2683.5 172.5L2695.1 171.2L2707.6 158.8L2714.5 156.2L2716.8 158.7L2717.3 166.3L2715.3 168.7ZM2625.5 264.5L2624.1 266.2L2620.9 264.7L2621.5 260.4L2630.3 257.5L2632.8 259.4L2633.5 260.9ZM2603.6 219.1L2610.0 223.5L2619.1 222.6L2616.9 226.6L2613.5 226.5L2607.4 232.2L2599.5 234.3L2590.9 242.9L2584.5 252.7L2576.7 258.5L2575.4 269.3L2570.3 264.9L2571.3 256.9L2583.7 244.9L2599.4 219.0ZM1655.9 1278.2L1653.4 1285.7L1649.1 1286.2L1646.9 1282.0L1652.3 1280.9L1656.3 1274.8ZM1638.4 1289.4L1629.4 1289.0L1629.4 1287.6L1632.5 1286.2L1633.4 1283.0L1640.4 1285.5ZM1705.7 1267.4L1698.1 1267.9L1698.8 1261.3ZM1827.4 1175.8L1810.5 1185.9L1812.1 1191.4L1807.1 1195.0L1807.7 1199.9L1801.2 1202.7L1804.5 1186.3L1808.5 1184.8L1813.9 1178.6L1811.5 1176.8L1812.2 1173.8L1818.2 1176.2L1820.4 1175.0L1827.2 1164.7L1830.6 1168.0ZM1859.4 1123.8L1855.1 1123.5L1855.5 1115.2L1857.4 1114.6ZM1879.0 1099.9L1875.3 1103.9L1866.6 1097.9L1889.3 1084.8L1890.2 1089.0L1879.2 1096.8ZM1873.5 1105.0L1869.5 1105.2L1867.8 1100.7ZM1929.6 998.1L1922.0 998.0L1919.5 991.9L1924.2 988.0L1930.5 991.8L1931.8 992.9ZM1944.2 991.4L1940.4 992.0L1940.3 989.0L1943.7 977.7L1948.6 969.7L1948.4 979.1ZM1845.0 870.2L1852.5 871.3L1854.9 877.0L1850.4 877.8L1848.7 880.4L1846.2 879.4L1844.3 876.5ZM1906.3 898.6L1902.9 900.5L1901.0 897.9L1903.5 895.5L1901.8 892.7L1903.1 883.7L1910.0 882.7L1911.3 893.0ZM1919.2 888.7L1915.4 888.9L1913.2 886.7L1918.5 883.4L1922.7 884.0ZM2048.5 690.7L2046.5 692.7L2042.8 692.1L2040.6 689.2L2041.3 685.9L2045.2 683.4L2048.9 688.5ZM2263.5 603.1L2258.4 602.7L2260.9 601.3L2262.6 595.0L2259.3 593.6L2259.5 589.0L2270.4 576.0L2268.3 589.2L2273.5 589.7L2270.1 598.6ZM2312.7 362.7L2310.7 362.5L2310.5 355.8L2316.0 353.7ZM2381.5 168.1L2379.8 172.0L2377.2 159.9L2380.8 160.9ZM2391.2 181.2L2388.2 181.7L2384.7 179.1L2384.2 175.9L2386.8 173.3L2391.8 177.6ZM2328.3 856.2L2325.4 855.1L2325.5 852.6L2329.7 854.3ZM2311.6 769.2L2311.2 771.7L2308.9 771.1L2307.9 766.6L2310.3 766.6ZM2116.0 792.2L2111.3 796.6L2107.3 796.3L2104.6 791.9L2111.8 782.5L2119.1 778.8L2114.8 786.4ZM1862.8 867.3L1859.3 861.6L1864.2 852.3L1867.3 859.5ZM1880.7 847.6L1875.5 850.0L1879.4 842.0L1884.1 840.4ZM1893.9 820.3L1890.9 822.5L1888.6 820.8L1890.5 814.6L1893.0 816.1ZM1871.5 800.8L1868.7 802.9L1867.5 799.7L1868.8 790.5L1874.0 792.4ZM1876.1 788.8L1875.3 791.3L1871.0 787.9L1873.6 775.5L1879.0 771.3L1880.0 779.0L1876.0 785.5ZM2014.2 801.2L2012.9 803.3L2009.1 802.7L2012.7 798.2ZM2000.7 810.1L2002.8 812.0L2008.4 811.8L2004.8 815.2L1998.2 813.9L1998.2 810.0ZM1401.4 1277.9L1402.5 1283.0L1396.5 1282.0L1396.2 1280.1ZM1391.7 1279.1L1390.2 1282.0L1387.7 1281.5L1388.3 1276.5ZM1848.3 765.4L1844.2 768.6L1837.4 761.9L1845.1 754.3L1847.4 754.1ZM1819.1 765.0L1818.6 770.2L1815.5 770.4L1813.7 767.1L1810.7 768.7L1809.0 761.4L1812.6 758.9L1817.9 761.2ZM1807.5 775.0L1807.0 776.7L1804.9 774.2L1807.0 771.5ZM1743.9 847.6L1740.1 848.0L1736.9 843.0L1744.3 835.3L1759.8 830.7L1768.7 832.5L1770.0 836.2L1767.5 841.5L1754.9 846.8ZM1739.8 787.9L1737.1 788.7L1734.4 786.4L1735.0 784.0L1740.4 777.8L1744.6 778.7L1746.2 781.2L1744.2 784.9ZM1752.2 607.8L1752.0 615.0L1748.0 613.9L1745.7 605.8L1747.5 603.1ZM1550.8 936.2L1547.3 937.6L1536.0 933.3L1528.1 928.5L1522.6 920.3L1533.6 922.8L1538.4 928.8L1548.5 933.2ZM1569.6 1013.1L1557.8 1010.6L1555.4 1004.1L1561.5 1004.3L1569.1 1007.9L1570.7 1009.7ZM1564.2 1027.3L1558.6 1024.4L1559.5 1022.6L1561.9 1022.1ZM1574.2 1016.7L1572.7 1018.6L1571.9 1013.5L1574.1 1013.8ZM1462.5 1233.3L1459.3 1235.5L1457.3 1234.5L1458.3 1224.6L1460.7 1223.9L1463.3 1226.9ZM1054.5 1438.8L1056.1 1440.4L1060.4 1439.3L1059.6 1444.6L1050.0 1443.1L1051.2 1439.7ZM934.2 1433.1L927.9 1438.9L925.6 1438.8L928.7 1430.7ZM930.7 1446.5L925.4 1447.6L931.9 1441.5ZM909.5 1454.8L904.2 1451.3L906.1 1449.3L910.9 1451.6ZM902.3 1451.7L898.1 1449.4L899.3 1446.5ZM891.6 1995.4L889.4 1994.6L893.3 1991.7ZM781.1 1920.5L781.7 1927.8L779.2 1936.3L776.3 1927.0L771.9 1921.3L777.8 1918.9ZM737.1 1881.1L734.8 1880.8L736.7 1876.5ZM718.1 1863.8L717.4 1868.4L714.9 1866.5L716.5 1863.1ZM710.3 1850.0L704.9 1850.4L703.9 1842.8ZM777.1 2314.7L770.6 2317.5L763.3 2314.9L765.6 2310.7L770.5 2309.7L778.2 2313.2ZM788.0 2254.1L784.7 2254.3L784.0 2252.6L786.4 2248.0ZM617.9 2143.0L613.7 2143.5L614.2 2136.4L616.0 2135.5L620.1 2138.0ZM598.8 2092.1L601.9 2096.7L594.3 2100.9L590.1 2094.1L594.6 2094.5ZM590.8 2089.6L588.4 2086.4L590.4 2081.3L592.5 2087.5ZM608.6 1950.9L604.7 1946.7L607.3 1946.8ZM608.5 1955.8L607.7 1961.3L603.8 1963.0L602.8 1956.9ZM544.5 2028.1L541.8 2020.5L545.1 2022.7ZM536.6 2029.5L536.1 2032.7L531.7 2035.0L530.3 2028.4L532.8 2017.9L537.7 2021.5ZM532.2 1979.2L529.8 1979.7L531.9 1975.4ZM341.2 2076.2L338.5 2079.8L333.4 2068.8L331.2 2068.1L332.3 2060.8L338.3 2058.5L342.9 2070.0ZM334.4 2053.3L330.3 2057.4L328.5 2054.9L332.6 2050.9ZM308.8 2014.3L310.1 2015.9L307.7 2015.7L305.5 2013.2L306.9 2009.9ZM321.8 2030.5L318.5 2030.6L316.1 2026.8L317.2 2024.9L318.9 2024.4ZM325.9 2022.7L323.4 2024.1L322.4 2017.7L324.1 2015.4L325.7 2015.9ZM293.5 1975.5L290.4 1974.2L292.4 1970.8ZM281.2 1913.2L279.9 1914.7L275.4 1913.6L274.7 1904.6L281.5 1898.2L284.3 1906.7ZM289.4 1876.8L285.2 1876.6L287.1 1871.2ZM303.5 1847.9L305.4 1854.0L300.8 1849.4ZM290.5 1811.2L289.1 1814.1L290.2 1806.9ZM290.7 1870.0L288.4 1869.9L282.5 1855.1L285.7 1851.7L288.7 1841.0L293.5 1839.5L290.5 1833.7L290.6 1825.6L291.5 1815.0L295.4 1805.1L296.5 1789.3L299.4 1783.6L305.4 1781.0L306.0 1787.4L303.4 1790.3L305.6 1795.4L297.8 1807.8L301.2 1811.9L302.3 1825.7L299.8 1829.5L296.8 1830.2L297.5 1839.4L291.8 1849.8L293.9 1855.1ZM542.3 1895.3L539.6 1894.5L541.7 1889.8ZM528.0 1895.7L531.6 1903.3L530.7 1905.1L525.6 1898.1L522.4 1898.6L526.2 1894.5ZM526.8 1940.6L524.0 1943.0L525.0 1938.7L531.5 1935.4ZM528.5 1872.6L527.0 1872.8L527.6 1868.6L531.9 1859.1L531.2 1867.4ZM541.2 1853.7L539.4 1854.0L539.1 1845.8L545.3 1851.4ZM522.2 1863.1L522.5 1865.6L519.8 1863.0L519.4 1855.7ZM542.9 1860.8L541.8 1869.9L537.7 1868.6L535.2 1858.7L541.6 1858.1ZM524.8 1842.9L520.5 1839.2L522.0 1836.6L524.2 1837.2ZM521.8 1832.3L519.0 1837.2L516.3 1834.2ZM536.8 1823.1L539.2 1824.2L538.8 1828.6L535.4 1833.9L532.5 1834.7L532.4 1819.5ZM532.6 1800.8L532.3 1808.1L529.8 1800.6L530.4 1796.2ZM500.5 1659.8L498.9 1660.4L496.4 1657.4L496.0 1650.4L499.1 1648.5L501.6 1651.9ZM565.6 2043.0L566.7 2048.3L563.8 2044.9L564.1 2041.1ZM380.8 1679.3L377.7 1679.2L381.8 1674.2ZM366.6 1673.6L363.8 1678.0L362.7 1671.5L371.9 1662.0L370.4 1670.3ZM332.6 1549.6L323.8 1541.2L334.9 1541.3ZM324.0 1494.2L324.9 1500.6L320.8 1494.9L320.6 1491.6ZM303.1 1492.8L303.7 1497.2L301.6 1495.4L299.0 1485.3ZM333.6 1509.6L343.6 1515.5L341.7 1520.0L338.0 1521.5L335.4 1520.3L334.4 1516.1L330.6 1512.5ZM254.0 1404.5L252.4 1408.3L251.7 1405.5L253.0 1400.0ZM257.3 1419.5L253.4 1418.4L253.3 1410.2L255.5 1409.6L257.2 1411.4ZM222.7 1388.5L218.2 1391.7L219.7 1372.4L223.9 1383.4ZM240.3 1378.8L236.4 1379.0L234.0 1374.4L235.9 1367.8ZM200.7 1351.6L201.5 1353.6L199.1 1352.4L196.2 1349.1L198.0 1348.2ZM206.6 1392.5L195.2 1393.6L202.4 1381.4L201.0 1371.4L197.4 1367.8L194.7 1357.6L198.8 1356.2L202.0 1358.6L204.8 1366.8L210.5 1374.0L208.9 1389.2ZM1656.9 1911.0L1657.7 1906.6L1659.7 1909.8ZM1698.6 1938.4L1698.9 1940.6L1693.4 1934.9L1692.2 1930.8L1696.5 1932.5ZM1597.3 2051.0L1597.6 2053.1L1591.6 2055.0L1592.3 2050.1ZM1720.4 2070.4L1719.7 2072.9L1716.0 2065.6L1717.4 2060.7L1720.4 2063.1ZM1728.5 1955.5L1727.7 1956.6L1726.4 1954.2L1728.3 1948.2ZM1669.6 1871.9L1664.2 1872.2L1658.8 1864.3L1665.3 1863.3L1670.2 1869.4ZM1680.2 1867.4L1679.4 1869.7L1677.0 1868.0L1674.8 1862.1ZM2111.1 2651.1L2110.1 2649.3L2114.0 2646.3ZM2104.8 2664.8L2102.9 2663.2L2107.5 2659.3ZM1815.7 2499.3L1813.5 2502.9L1809.0 2502.3ZM1799.2 2515.7L1800.2 2517.6L1794.1 2514.5L1797.0 2513.1ZM1645.5 2631.1L1645.1 2633.1L1642.0 2629.6L1642.2 2627.0ZM1627.1 2600.6L1626.9 2605.0L1625.2 2604.7L1623.5 2600.5ZM1503.8 2680.9L1498.0 2680.8L1497.7 2676.5L1504.1 2678.5ZM1599.0 2743.2L1597.6 2745.7L1595.1 2745.0L1595.8 2742.5L1600.5 2738.9L1606.6 2740.1ZM1364.6 2735.4L1361.7 2734.6L1361.8 2727.4L1369.3 2725.8ZM1890.5 927.8L1889.2 928.7L1890.0 924.7L1893.5 921.2ZM1747.8 675.2L1747.2 678.7L1744.3 676.4L1743.5 668.8ZM1682.4 508.1L1680.0 509.7L1679.8 506.9L1683.7 504.1ZM1524.4 1105.9L1519.2 1107.1L1519.3 1103.5L1522.4 1100.2ZM1191.6 1359.0L1191.9 1361.2L1185.1 1354.4L1187.7 1354.3ZM1158.5 1415.2L1155.1 1410.7L1158.1 1407.3L1161.6 1408.2L1158.9 1410.9ZM1152.2 1413.4L1147.0 1414.2L1152.3 1410.1ZM1210.7 1386.8L1203.8 1385.4L1212.7 1381.1ZM915.4 1920.2L911.7 1922.8L911.5 1920.6L915.7 1918.0ZM748.9 1906.0L747.3 1907.8L744.8 1903.2ZM1737.2 768.9L1734.7 769.8L1730.1 761.8L1733.1 759.3L1737.0 763.8ZM3098.2 2752.5L3098.1 2754.1L3095.6 2753.6L3089.9 2750.2L3095.3 2750.1ZM2429.8 1177.5L2426.3 1172.4L2428.6 1173.0ZM1942.3 621.9L1940.4 623.5L1937.7 620.2L1941.8 617.8ZM2350.9 -80.0L2348.5 -68.8L2351.5 -62.9L2344.8 -50.3L2340.0 -27.4L2308.0 7.3L2292.0 39.6L2274.0 60.4L2265.6 80.1L2263.2 92.8L2257.7 97.9L2253.2 111.2L2235.0 138.1L2211.8 164.4L2196.9 178.1L2182.1 199.4L2173.0 208.9L2168.3 219.6L2156.7 226.6L2142.0 250.9L2139.8 259.1L2130.2 268.1L2124.6 277.6L2076.1 311.9L2063.1 318.8L2057.8 318.9L2039.3 326.7L2035.0 325.1L2032.3 320.1L2026.5 321.0L2019.8 316.1L2014.1 316.4L2010.0 314.1L2002.3 315.7L2002.6 290.2L1986.9 303.1L1983.4 303.1L1989.8 292.2L1986.5 290.9L1980.3 293.7L1952.8 330.8L1933.4 329.0L1938.8 336.9L1934.3 348.4L1930.2 351.4L1922.5 349.8L1912.9 356.8L1892.2 384.1L1889.1 390.9L1889.0 396.7L1892.6 407.7L1890.3 418.1L1891.5 429.1L1890.1 433.3L1874.2 440.8L1864.2 454.2L1846.5 464.1L1838.3 474.7L1829.4 480.0L1814.8 482.3L1810.5 487.9L1797.5 494.3L1795.8 499.2L1796.7 512.3L1795.6 517.0L1792.8 515.7L1791.2 517.2L1790.0 526.5L1807.0 533.4L1815.0 543.8L1830.5 555.8L1843.0 583.7L1861.7 611.0L1874.0 633.0L1877.5 644.7L1879.9 661.8L1876.4 684.4L1876.9 698.9L1879.3 701.3L1884.2 698.9L1883.8 704.4L1877.6 728.4L1868.7 745.2L1858.6 749.4L1838.3 749.4L1834.3 753.9L1835.4 761.6L1820.3 758.3L1817.8 753.6L1803.9 757.2L1800.6 760.6L1805.1 766.2L1803.9 769.5L1800.3 771.1L1795.6 763.2L1790.5 764.1L1789.8 768.3L1793.7 774.5L1787.0 783.0L1780.5 778.7L1784.2 772.6L1783.7 767.7L1774.3 775.5L1768.5 784.3L1762.4 780.5L1756.1 786.1L1755.0 790.6L1752.7 790.8L1750.6 781.4L1741.2 772.0L1742.7 769.5L1752.4 770.7L1750.2 767.6L1755.4 764.0L1747.9 764.1L1742.3 746.6L1751.0 728.2L1756.3 724.5L1750.8 722.6L1750.9 720.5L1760.8 714.0L1762.3 708.5L1757.7 705.8L1759.7 700.9L1753.1 692.8L1753.4 676.0L1750.8 664.4L1746.5 666.7L1737.6 664.5L1736.7 660.2L1739.1 654.8L1750.8 647.4L1754.7 646.8L1763.7 650.6L1767.4 657.3L1772.0 651.1L1767.3 649.2L1762.0 637.4L1763.9 631.9L1757.9 623.6L1758.1 617.9L1754.1 608.9L1757.1 605.3L1745.7 600.0L1738.5 602.7L1734.8 607.4L1731.9 600.5L1727.2 600.3L1719.7 594.1L1716.5 595.4L1711.6 603.5L1705.9 608.1L1702.0 608.4L1699.9 601.9L1686.0 597.1L1697.2 590.2L1695.4 588.9L1673.1 586.2L1681.1 580.5L1681.3 574.6L1689.4 562.7L1699.9 556.7L1710.5 555.5L1693.8 548.9L1693.3 545.2L1704.2 522.0L1702.1 508.7L1690.8 505.1L1676.8 495.7L1674.9 501.6L1670.8 503.7L1667.3 493.8L1658.3 487.3L1658.4 481.4L1647.8 491.0L1632.9 492.1L1628.1 488.7L1625.1 494.1L1615.1 495.4L1609.8 499.7L1601.4 500.4L1598.3 503.4L1593.1 504.5L1571.2 517.7L1556.0 535.1L1550.9 538.3L1542.8 537.9L1540.9 540.6L1541.6 545.6L1527.4 548.7L1520.6 553.0L1518.1 542.5L1542.9 532.0L1540.7 525.8L1548.9 516.5L1525.4 516.6L1525.1 507.7L1535.9 502.4L1534.0 495.9L1535.9 490.8L1548.2 484.8L1565.0 461.8L1568.2 453.7L1568.6 451.3L1564.5 447.9L1562.8 443.0L1550.7 434.2L1549.6 426.6L1545.1 434.0L1521.1 430.8L1503.6 448.6L1491.0 469.0L1452.6 487.5L1443.9 496.0L1438.3 506.8L1436.7 515.3L1426.0 527.9L1410.9 528.2L1396.7 534.4L1390.2 527.2L1385.6 525.5L1378.0 527.4L1374.5 530.6L1364.5 555.2L1368.9 570.0L1373.7 576.2L1384.4 583.3L1407.3 588.1L1418.4 586.4L1424.4 591.0L1430.9 609.7L1426.6 613.0L1425.0 629.9L1431.9 636.9L1446.5 641.1L1459.9 639.4L1465.4 634.1L1465.2 628.8L1483.7 614.0L1481.4 610.9L1502.7 602.4L1515.6 608.4L1523.0 615.2L1530.3 616.4L1541.2 622.9L1555.2 623.7L1559.2 619.1L1571.4 625.9L1585.6 626.0L1581.5 630.6L1582.2 638.0L1576.1 644.2L1579.4 647.7L1579.2 650.7L1571.5 656.9L1567.2 656.0L1563.8 650.1L1553.8 650.0L1515.8 668.8L1505.3 667.7L1509.0 677.8L1503.8 677.2L1501.0 679.5L1499.7 692.6L1497.9 694.7L1487.3 698.8L1484.6 695.8L1484.4 689.4L1478.2 690.8L1474.3 695.3L1478.1 700.7L1482.6 702.5L1472.6 709.1L1469.3 715.5L1464.5 720.7L1458.2 723.6L1449.8 735.8L1445.6 738.8L1442.3 748.8L1436.4 754.1L1434.2 762.7L1435.7 768.0L1442.2 768.0L1452.2 776.8L1468.7 783.8L1481.8 792.9L1492.1 826.1L1507.9 858.2L1509.1 867.2L1507.2 876.5L1528.3 888.7L1530.9 891.4L1531.0 899.8L1533.0 902.6L1542.7 907.8L1549.5 915.5L1551.0 925.5L1546.5 925.7L1528.7 917.6L1512.4 917.0L1504.5 908.8L1492.8 905.0L1471.8 913.6L1478.6 915.1L1491.8 909.4L1501.2 911.2L1504.3 919.6L1515.9 924.7L1528.7 936.5L1542.1 944.9L1549.6 958.0L1551.5 965.3L1531.6 971.7L1513.4 983.3L1509.1 991.6L1505.8 993.5L1489.7 991.9L1478.7 999.2L1491.7 996.1L1497.7 1004.6L1509.4 1003.3L1520.4 996.2L1524.7 996.1L1532.2 1000.0L1542.8 1012.3L1560.3 1017.8L1535.4 1037.0L1543.4 1035.6L1551.9 1029.8L1554.2 1030.9L1555.4 1036.7L1553.2 1054.3L1550.4 1054.6L1544.5 1048.3L1536.6 1049.2L1532.9 1054.5L1542.3 1060.4L1542.9 1063.3L1541.2 1065.1L1536.9 1064.3L1542.2 1068.3L1540.8 1072.4L1536.0 1075.1L1534.1 1078.7L1539.9 1095.8L1535.6 1094.3L1525.3 1099.3L1522.9 1093.2L1519.8 1094.2L1511.7 1108.4L1502.6 1109.7L1506.3 1115.5L1495.7 1130.7L1496.5 1138.9L1486.9 1151.4L1482.3 1154.2L1472.1 1176.7L1468.9 1179.0L1465.2 1177.8L1462.7 1166.4L1457.7 1172.1L1452.5 1169.4L1454.6 1177.3L1458.4 1177.9L1461.0 1180.9L1465.1 1191.1L1447.1 1204.6L1433.1 1201.4L1441.4 1209.7L1448.7 1206.8L1453.8 1207.1L1455.1 1211.2L1450.4 1226.9L1453.9 1236.5L1452.7 1237.6L1445.3 1233.2L1434.8 1233.7L1434.3 1238.2L1439.4 1244.1L1426.1 1245.2L1423.3 1249.1L1425.1 1254.9L1423.1 1258.6L1411.3 1263.0L1414.9 1267.3L1412.2 1273.2L1408.0 1275.1L1396.6 1275.5L1387.6 1272.9L1384.4 1276.1L1384.0 1279.8L1377.0 1280.2L1378.6 1283.9L1384.8 1284.7L1386.2 1291.0L1376.8 1302.1L1372.6 1302.0L1367.7 1310.4L1360.7 1310.2L1359.3 1312.5L1360.5 1315.2L1356.4 1322.1L1354.8 1316.5L1353.1 1316.2L1344.1 1322.6L1336.7 1319.4L1334.5 1328.5L1324.5 1333.2L1327.5 1336.8L1320.6 1341.4L1319.8 1349.5L1317.7 1352.4L1308.2 1350.7L1304.1 1355.1L1290.9 1359.2L1281.7 1356.7L1278.3 1358.1L1275.6 1363.0L1270.6 1363.0L1262.5 1358.4L1247.7 1367.8L1243.3 1367.4L1241.6 1362.1L1239.0 1361.3L1234.4 1367.6L1234.8 1371.9L1225.5 1368.9L1222.3 1371.4L1225.3 1378.1L1222.4 1382.8L1206.6 1378.1L1211.5 1372.7L1203.4 1368.3L1194.4 1356.3L1192.9 1348.9L1194.4 1343.8L1190.0 1345.0L1186.8 1347.2L1186.7 1352.6L1181.9 1354.0L1191.5 1368.9L1193.0 1380.3L1191.3 1386.3L1174.0 1393.1L1171.4 1386.9L1167.9 1391.1L1165.6 1401.0L1163.4 1402.2L1159.3 1399.2L1149.7 1407.0L1142.5 1402.2L1142.9 1398.6L1139.9 1397.7L1141.2 1405.9L1137.5 1408.7L1121.9 1403.7L1118.9 1409.8L1114.6 1409.7L1107.1 1417.2L1098.0 1418.3L1094.9 1420.6L1081.8 1419.4L1080.9 1423.2L1071.2 1425.2L1062.4 1433.2L1057.6 1432.4L1055.6 1427.4L1054.0 1435.1L1046.2 1441.4L1044.5 1445.7L1045.6 1449.7L1053.6 1450.6L1054.6 1452.8L1051.4 1458.3L1060.0 1465.4L1057.3 1472.9L1052.7 1475.7L1043.2 1477.1L1035.2 1475.7L1032.9 1470.3L1037.1 1470.7L1036.5 1468.6L1031.8 1465.6L1028.8 1460.6L1029.4 1456.5L1023.2 1447.0L1024.1 1437.0L1028.3 1427.5L1034.4 1425.7L1034.8 1420.8L1030.5 1420.7L1027.4 1417.1L1024.3 1418.8L1020.3 1411.9L1017.1 1410.9L1018.1 1418.2L1009.6 1422.1L998.1 1422.7L1000.4 1417.9L999.0 1415.7L984.7 1413.9L978.0 1407.3L977.0 1401.3L972.1 1401.1L973.1 1413.7L970.6 1414.9L965.4 1410.9L962.0 1417.2L943.1 1420.1L935.6 1426.1L925.8 1429.9L923.4 1440.6L915.2 1445.5L911.4 1443.2L903.2 1445.4L894.4 1443.1L897.4 1455.4L888.7 1465.0L889.6 1471.2L887.3 1476.0L872.0 1489.7L864.2 1492.1L856.8 1508.2L855.8 1521.7L848.5 1536.7L860.0 1557.9L886.4 1583.2L884.7 1586.5L885.6 1593.5L880.9 1592.3L887.2 1596.1L896.7 1609.5L913.3 1623.6L915.9 1630.7L931.9 1642.3L931.5 1643.8L942.8 1653.1L944.2 1656.7L952.6 1656.3L960.4 1667.1L962.9 1667.2L963.7 1671.7L976.3 1689.9L986.9 1699.2L998.3 1728.8L998.4 1736.1L1007.7 1767.1L1007.1 1771.2L1005.3 1767.2L1006.4 1792.8L1012.9 1807.2L1013.8 1823.0L1009.1 1816.2L1004.1 1820.9L1007.8 1832.2L1003.5 1831.1L1005.8 1851.5L1005.3 1853.6L1003.2 1849.6L1001.4 1856.7L1003.2 1861.7L1000.3 1867.1L996.3 1867.5L994.0 1878.8L986.8 1879.7L963.1 1896.5L955.5 1898.2L951.4 1906.0L944.7 1906.9L919.4 1920.1L916.5 1916.9L911.9 1915.7L908.4 1908.6L905.8 1920.0L900.0 1918.6L896.3 1914.1L891.1 1917.2L896.9 1918.1L897.6 1924.6L884.9 1924.5L896.4 1929.1L898.8 1932.5L890.6 1943.8L870.8 1927.9L886.8 1945.5L889.6 1953.4L885.8 1957.0L881.2 1957.1L857.6 1937.6L871.7 1955.4L873.8 1959.5L872.1 1964.1L843.3 1977.4L835.6 1990.2L826.6 1997.7L811.7 1999.1L817.1 1992.6L813.8 1990.1L814.9 1954.9L817.4 1945.7L825.6 1942.0L822.8 1934.7L816.1 1932.6L813.1 1928.7L807.1 1930.2L789.7 1913.8L775.7 1911.8L772.8 1908.8L771.5 1912.1L763.8 1915.3L760.5 1913.4L758.2 1911.1L758.5 1908.2L764.6 1904.3L766.4 1898.5L763.4 1891.1L758.2 1887.2L750.4 1897.1L741.7 1897.4L739.1 1884.3L740.6 1873.3L735.6 1867.7L735.3 1862.3L732.9 1859.5L731.3 1862.6L724.9 1849.0L717.6 1840.5L715.3 1844.7L706.7 1838.3L703.1 1832.1L701.8 1834.8L693.4 1826.0L679.9 1819.0L667.9 1822.1L652.6 1819.7L646.6 1822.0L644.2 1820.6L642.7 1817.9L647.0 1786.0L631.5 1780.0L628.6 1782.4L615.6 1783.7L606.2 1789.5L605.0 1794.4L609.3 1803.2L603.8 1819.0L604.9 1842.0L589.3 1873.2L583.2 1898.5L569.3 1923.6L570.6 1929.9L569.1 1949.3L574.6 1963.3L573.1 1969.9L579.2 1972.1L593.5 1967.7L598.3 1968.8L605.0 1999.4L611.0 2006.5L612.5 2003.0L617.5 2013.5L625.0 2049.5L629.0 2058.9L624.4 2056.6L621.9 2045.2L617.7 2044.8L619.1 2037.6L616.5 2035.0L612.2 2037.1L612.4 2042.7L623.7 2060.6L630.8 2061.1L649.4 2074.9L661.7 2072.8L670.2 2074.7L683.2 2091.7L696.3 2101.8L706.6 2104.9L715.0 2118.3L734.4 2133.0L743.7 2144.4L753.1 2162.3L754.8 2170.1L755.4 2182.1L750.8 2209.2L754.7 2219.9L754.1 2245.4L758.4 2252.2L770.3 2260.6L787.8 2297.8L790.9 2308.2L789.2 2312.2L786.0 2313.2L783.3 2311.2L777.6 2302.1L778.0 2309.4L765.2 2309.6L758.9 2314.6L755.9 2314.8L750.6 2305.4L723.3 2292.0L715.6 2283.9L698.2 2275.0L682.4 2260.9L671.1 2256.2L661.4 2247.5L664.0 2242.0L661.6 2231.5L636.3 2200.6L639.8 2198.1L632.0 2183.0L632.0 2170.9L625.9 2153.9L620.7 2130.3L620.2 2113.0L610.6 2093.1L599.7 2079.7L592.3 2074.2L593.3 2064.2L586.1 2059.3L588.0 2053.3L581.0 2054.2L577.7 2052.6L573.6 2041.8L570.1 2037.5L565.5 2037.5L564.4 2030.1L553.0 2022.6L549.3 2014.0L544.0 2010.2L540.5 2011.3L537.1 2017.4L532.1 2015.3L529.2 2006.7L529.4 1991.6L533.0 1982.8L535.0 1968.7L549.3 1929.3L543.2 1936.1L541.5 1932.9L539.0 1907.9L548.1 1894.2L548.4 1887.8L551.1 1883.1L551.0 1867.6L556.8 1861.9L553.7 1859.3L548.9 1862.0L546.4 1861.1L549.0 1839.6L544.9 1838.7L548.3 1834.1L545.9 1830.0L547.6 1820.2L543.8 1798.0L529.5 1772.6L527.6 1761.6L525.4 1776.4L523.7 1773.5L522.1 1761.4L523.3 1753.6L518.9 1745.8L515.0 1731.6L515.9 1729.7L519.7 1731.6L516.2 1726.6L513.3 1727.8L510.8 1722.4L506.4 1676.8L500.9 1670.3L503.1 1650.6L507.1 1645.6L491.9 1647.7L484.8 1631.0L484.3 1621.8L469.3 1608.0L471.8 1612.3L469.2 1616.9L471.7 1624.7L465.5 1639.2L459.3 1645.8L451.1 1648.5L444.6 1644.4L443.2 1636.7L440.6 1636.6L442.7 1645.6L446.5 1651.2L438.3 1655.8L434.3 1655.9L433.0 1659.8L422.2 1663.6L418.6 1672.3L406.0 1683.7L402.2 1682.2L405.0 1671.9L404.2 1666.8L396.8 1679.0L386.7 1679.4L384.6 1663.0L380.5 1672.5L374.6 1675.5L376.4 1648.2L374.7 1656.1L365.0 1667.0L358.9 1670.9L355.6 1670.5L357.7 1647.9L361.2 1642.4L366.4 1620.0L370.4 1612.1L371.4 1600.3L364.6 1571.6L353.3 1547.4L356.6 1547.0L349.0 1540.0L347.9 1522.0L343.4 1528.5L344.6 1535.4L342.9 1539.8L333.2 1533.9L324.0 1518.2L327.7 1516.8L334.2 1523.0L338.4 1524.3L344.3 1520.1L345.9 1515.0L339.0 1510.7L334.7 1503.2L329.2 1499.6L333.3 1493.3L327.9 1493.5L320.4 1487.5L313.5 1486.1L309.5 1487.4L311.3 1494.0L310.9 1496.1L308.3 1495.8L302.8 1485.8L306.8 1480.9L303.4 1480.8L305.6 1471.9L304.2 1470.6L297.6 1482.3L295.3 1481.1L293.7 1479.6L298.0 1473.6L291.3 1463.3L290.7 1475.7L272.8 1452.8L261.9 1435.0L259.8 1411.3L251.9 1386.0L253.6 1380.3L250.7 1382.8L239.1 1363.6L237.0 1355.2L225.6 1366.6L213.9 1368.7L201.4 1348.6L199.1 1322.0L197.0 1330.0L184.6 1328.4L189.9 1332.6L195.6 1333.6L198.5 1337.3L198.7 1343.5L193.1 1347.3L196.9 1354.3L192.9 1355.4L191.8 1361.5L199.6 1379.7L198.5 1384.6L188.4 1394.4L182.9 1404.6L179.8 1405.2L176.1 1401.9L176.8 1395.8L182.0 1389.3L171.0 1395.6L169.4 1391.2L168.4 1382.2L172.3 1374.9L167.9 1378.5L164.8 1397.4L154.3 1407.5L150.6 1383.8L151.4 1400.6L145.0 1409.6L139.9 1409.6L133.8 1402.6L132.0 1392.3L130.9 1399.6L127.5 1399.5L130.6 1404.4L132.0 1412.8L125.7 1412.8L123.6 1408.5L118.7 1416.0L116.4 1409.1L118.5 1396.4L114.2 1391.0L111.0 1404.5L111.8 1412.5L105.8 1414.6L98.9 1407.9L97.5 1414.2L91.8 1413.6L88.9 1410.9L95.0 1390.1L86.2 1384.2L84.0 1379.2L84.8 1384.7L93.4 1391.0L84.3 1404.8L72.6 1412.8L47.6 1419.9L37.2 1432.1L36.4 1438.2L42.2 1457.0L33.0 1470.0L32.4 1474.9L21.6 1481.4L16.3 1489.0L10.6 1486.8L13.5 1489.9L9.3 1494.1L-18.4 1503.4L-21.8 1503.2L-19.0 1500.6L-19.2 1495.4L-21.4 1494.5L-32.5 1500.4L-35.4 1507.9L-27.2 1504.1L-24.1 1506.5L-33.5 1511.9L-53.1 1529.4L-56.6 1536.8L-80.0 1564.5L-80.0 -80.0ZM2589.5 281.5L2592.2 283.5L2590.0 283.9ZM2610.1 271.6L2606.4 271.3L2608.0 270.0ZM1953.4 2241.3L1951.9 2240.8L1954.1 2240.1ZM2838.8 2053.7L2835.4 2053.8L2838.0 2051.8ZM2848.9 2050.0L2848.2 2048.5L2850.2 2048.8ZM1675.4 594.4L1673.4 597.7L1670.3 596.4L1670.7 594.4Z","detail":{"rect":[1150.27,2523.72,1427.03,2939.32],"land":"M1150.27 2671.08L1150.43 2671.57L1150.38 2672.51L1150.27 2672.78L1150.27 2676.56L1150.68 2677.19L1151.05 2677.53L1151.51 2677.71L1152.14 2677.45L1152.75 2677.38L1153.11 2678.12L1151.04 2678.81L1150.73 2679.19L1150.88 2679.71L1151.69 2681.13L1152.07 2681.42L1152.79 2681.73L1153.50 2682.46L1153.90 2683.35L1153.69 2684.13L1153.05 2684.40L1150.43 2684.13L1151.14 2685.10L1152.24 2685.76L1154.62 2686.83L1156.55 2684.67L1157.55 2684.42L1158.25 2684.69L1158.83 2685.27L1159.29 2685.95L1159.92 2687.18L1160.07 2687.84L1160.06 2688.51L1159.62 2690.85L1159.61 2692.61L1159.24 2693.49L1157.62 2694.59L1157.25 2695.30L1157.25 2698.89L1160.86 2701.58L1166.36 2703.97L1167.16 2704.16L1169.17 2704.29L1169.99 2704.64L1170.86 2705.32L1172.39 2706.83L1173.30 2707.47L1176.20 2708.33L1177.50 2708.03L1178.00 2708.03L1178.85 2708.44L1179.91 2709.82L1180.51 2710.12L1181.54 2709.99L1182.38 2709.65L1183.90 2708.62L1185.46 2707.84L1186.41 2707.53L1188.01 2707.22L1189.39 2706.42L1190.42 2706.27L1196.06 2707.13L1196.59 2707.04L1197.84 2706.54L1198.83 2706.61L1200.56 2707.25L1201.55 2707.40L1202.33 2707.20L1202.88 2706.72L1203.77 2705.65L1204.53 2705.25L1206.89 2705.65L1207.81 2705.55L1208.44 2705.29L1211.51 2702.68L1212.78 2702.41L1214.15 2703.23L1215.87 2705.41L1216.88 2706.29L1218.26 2706.84L1219.29 2706.87L1221.05 2706.40L1221.99 2706.27L1222.64 2706.49L1224.22 2708.03L1224.87 2708.45L1225.84 2708.62L1227.29 2708.62L1228.40 2709.45L1230.10 2710.39L1230.71 2711.04L1231.02 2711.97L1230.71 2714.76L1230.04 2715.88L1229.86 2716.40L1229.85 2716.89L1230.15 2717.89L1230.13 2719.97L1228.32 2726.27L1226.64 2734.95L1226.29 2737.66L1226.38 2738.16L1226.88 2739.15L1226.96 2741.13L1227.10 2742.05L1227.63 2742.43L1228.16 2741.95L1228.33 2740.84L1228.35 2738.88L1229.11 2739.67L1229.29 2741.06L1229.24 2743.93L1229.53 2744.81L1230.07 2745.69L1230.75 2746.37L1231.48 2746.65L1232.35 2746.67L1232.90 2746.81L1233.99 2747.54L1236.29 2748.38L1236.90 2749.43L1237.43 2749.95L1237.87 2750.65L1237.83 2751.72L1236.63 2753.25L1234.83 2753.35L1231.03 2752.05L1230.07 2751.87L1227.63 2752.05L1226.68 2751.76L1226.80 2751.10L1227.76 2749.96L1227.47 2748.40L1225.93 2746.99L1223.90 2746.09L1222.13 2746.05L1220.36 2747.17L1219.33 2747.56L1218.37 2746.44L1217.22 2746.55L1215.31 2747.24L1214.91 2747.23L1213.38 2746.94L1213.01 2746.76L1212.61 2745.93L1212.19 2745.75L1211.35 2745.98L1210.59 2746.37L1209.95 2746.45L1209.43 2745.75L1209.68 2744.15L1209.27 2743.93L1207.48 2744.55L1205.61 2744.09L1204.49 2743.61L1203.77 2743.04L1203.28 2743.43L1203.18 2743.66L1202.98 2743.02L1202.76 2741.53L1202.43 2741.24L1201.02 2741.55L1200.44 2741.89L1200.03 2742.42L1198.87 2742.43L1198.69 2742.27L1198.72 2741.24L1198.15 2740.86L1197.36 2741.06L1196.65 2740.97L1196.04 2740.54L1195.26 2739.39L1194.72 2739.15L1193.38 2738.88L1192.61 2738.08L1192.35 2737.96L1190.96 2738.16L1190.37 2738.11L1188.78 2737.19L1188.27 2736.59L1188.00 2736.04L1187.74 2735.84L1186.86 2735.76L1185.45 2736.40L1184.66 2736.01L1182.53 2733.51L1181.54 2732.86L1179.76 2732.11L1177.98 2731.62L1176.13 2731.46L1170.60 2732.12L1168.72 2732.58L1167.02 2733.48L1164.83 2736.01L1163.36 2737.00L1161.97 2736.47L1161.40 2736.50L1160.38 2735.76L1160.06 2736.39L1159.69 2736.67L1159.26 2736.77L1158.24 2736.25L1157.59 2736.61L1156.66 2737.39L1156.03 2737.60L1154.68 2737.80L1154.18 2738.13L1153.41 2738.88L1152.70 2738.42L1150.80 2737.54L1150.27 2737.46ZM1427.03 2524.77L1427.03 2526.26L1426.70 2526.18L1426.13 2525.55L1425.74 2525.44L1425.38 2525.71L1424.84 2526.71L1424.38 2526.92L1423.86 2526.58L1423.43 2525.75L1422.71 2523.72L1427.03 2523.72ZM1297.48 2523.72L1297.29 2525.46L1296.84 2527.30L1295.91 2528.43L1295.09 2528.67L1292.22 2528.70L1291.16 2528.93L1290.21 2529.49L1288.50 2531.07L1286.87 2532.25L1279.28 2535.87L1267.62 2540.32L1256.66 2544.77L1248.69 2548.46L1241.64 2552.79L1239.54 2553.37L1237.83 2552.78L1237.04 2551.12L1237.22 2549.24L1238.12 2545.94L1237.25 2542.19L1236.94 2539.11L1237.24 2531.68L1236.60 2529.69L1234.03 2526.47L1233.40 2524.55L1233.43 2523.72L1231.06 2523.72ZM1184.66 2738.88L1185.13 2739.15L1185.39 2739.75L1185.43 2740.35L1185.26 2740.62L1183.65 2740.97L1180.22 2740.97L1179.76 2740.68L1179.59 2740.03L1179.76 2739.33L1180.36 2738.88L1180.07 2738.26L1182.26 2738.75ZM1236.49 2681.42L1237.39 2681.49L1237.70 2681.71L1237.82 2682.18L1237.75 2682.85L1237.57 2683.02L1233.85 2682.64L1232.44 2682.63L1232.23 2682.47L1232.40 2681.74L1234.21 2680.90L1234.60 2680.82L1235.95 2681.32ZM1292.58 2680.40L1292.73 2680.59L1292.80 2681.18L1292.73 2682.90L1291.92 2683.82L1290.28 2684.32L1288.47 2684.01L1286.80 2683.13L1286.18 2682.28L1286.61 2681.85L1287.01 2681.79L1287.18 2682.01L1287.35 2681.93L1287.70 2680.76L1288.04 2680.79L1288.42 2681.74L1288.69 2682.11L1288.99 2682.26L1289.63 2682.25L1290.50 2682.60L1292.12 2682.64L1292.27 2682.41L1291.90 2682.42L1291.65 2682.14L1291.53 2681.71L1291.66 2681.34L1292.00 2681.11L1292.26 2681.13L1292.37 2681.38ZM1369.27 2725.82L1370.45 2726.54L1370.61 2727.03L1370.49 2727.36L1369.40 2728.06L1368.23 2729.14L1367.38 2730.43L1365.04 2735.25L1364.49 2735.91L1363.63 2736.17L1361.84 2735.12L1361.51 2734.65L1361.54 2734.33L1361.99 2733.75L1362.65 2732.26L1362.63 2731.62L1362.15 2730.93L1361.50 2730.49L1361.41 2730.30L1361.32 2728.48L1361.37 2727.87L1361.59 2727.34L1361.90 2727.04L1364.25 2725.86L1364.91 2725.69ZM1277.84 2748.46L1278.84 2748.72L1279.53 2749.75L1279.90 2750.76L1280.68 2751.68L1281.05 2752.96L1279.52 2754.64L1278.30 2754.27L1275.91 2752.61L1275.19 2751.72L1274.58 2751.54L1274.30 2751.34L1274.44 2750.98L1275.98 2749.02L1276.44 2748.64L1277.19 2748.79ZM1278.73 2671.57L1278.80 2672.71L1278.15 2673.12L1275.81 2672.97L1274.95 2672.57L1274.25 2672.42L1273.26 2671.81L1273.04 2671.89L1272.83 2672.17L1272.47 2672.25L1272.18 2672.47L1271.57 2672.32L1271.10 2671.93L1270.59 2671.85L1269.21 2672.57L1268.96 2672.60L1269.11 2673.14L1270.44 2673.66L1270.96 2674.04L1271.38 2674.55L1270.41 2675.18L1269.42 2674.95L1267.78 2673.66L1267.17 2674.25L1267.07 2674.52L1267.18 2675.12L1267.52 2675.54L1267.48 2675.76L1267.00 2676.04L1266.74 2676.06L1265.54 2675.01L1265.53 2674.69L1265.98 2673.06L1264.35 2673.22L1263.63 2673.10L1263.32 2672.60L1263.50 2671.57L1263.95 2671.01L1264.52 2670.55L1265.10 2669.77L1264.62 2669.04L1265.08 2668.68L1265.98 2668.56L1270.45 2668.53L1273.98 2668.87L1274.97 2669.27L1277.99 2670.91ZM1154.62 2620.30L1155.76 2621.22L1156.16 2621.91L1156.34 2622.96L1156.26 2623.95L1155.95 2624.75L1155.41 2625.32L1154.62 2625.63L1153.03 2625.61L1152.79 2625.49L1152.64 2625.13L1152.27 2625.22L1151.59 2625.63L1150.45 2625.57L1150.27 2625.31L1150.27 2622.54L1151.05 2621.92L1152.23 2620.56L1152.74 2620.76L1153.93 2620.38ZM1315.34 2523.72L1315.09 2524.63L1314.79 2527.05L1314.39 2528.63L1314.30 2529.46L1313.99 2529.77L1313.30 2528.98L1311.66 2526.39L1311.37 2525.78L1311.34 2525.15L1311.86 2523.72ZM1290.63 2578.53L1290.77 2578.98L1290.94 2579.19L1291.16 2579.21L1288.94 2581.03L1288.06 2581.29L1287.50 2580.74L1288.44 2579.49L1290.89 2577.44ZM1226.78 2679.63L1227.97 2681.46L1227.76 2683.53L1227.17 2683.49L1226.26 2683.03L1225.16 2682.68L1224.87 2682.16L1224.07 2682.21L1223.47 2681.97L1222.63 2680.14L1222.48 2679.25L1223.56 2678.11L1224.75 2677.91L1225.64 2678.16L1226.28 2678.75ZM1324.68 2731.36L1326.19 2731.98L1327.84 2733.20L1329.09 2734.77L1329.43 2736.47L1329.09 2737.21L1327.66 2739.34L1327.21 2739.77L1326.93 2740.35L1326.75 2743.66L1326.22 2744.42L1324.44 2746.22L1324.06 2747.09L1321.31 2751.91L1319.76 2753.38L1318.94 2754.44L1319.28 2755.76L1319.18 2756.40L1319.31 2756.86L1319.79 2756.92L1320.18 2756.17L1320.68 2755.90L1320.96 2756.31L1321.51 2756.45L1322.02 2756.89L1322.76 2757.08L1321.75 2758.50L1319.96 2758.78L1319.32 2758.56L1317.86 2759.57L1316.61 2759.57L1316.01 2759.16L1316.88 2758.11L1317.70 2756.04L1317.00 2755.79L1315.59 2755.91L1314.50 2756.74L1314.73 2761.07L1314.13 2760.85L1314.11 2759.72L1313.71 2759.21L1313.30 2759.18L1312.89 2759.77L1312.49 2759.84L1311.88 2758.83L1311.48 2758.64L1310.71 2758.80L1309.07 2759.45L1308.33 2759.57L1308.08 2759.46L1307.79 2759.04L1307.51 2758.94L1307.02 2759.04L1306.46 2759.47L1306.15 2759.57L1305.79 2759.32L1305.02 2758.16L1304.53 2757.75L1303.89 2757.63L1301.87 2757.59L1301.68 2758.21L1301.22 2758.52L1300.63 2758.46L1300.07 2757.99L1300.56 2757.80L1300.87 2757.50L1300.92 2757.16L1300.66 2756.86L1300.26 2756.76L1299.04 2757.15L1298.86 2757.41L1299.04 2758.79L1298.59 2759.05L1298.13 2759.05L1297.39 2758.64L1297.14 2758.25L1296.80 2757.26L1296.50 2756.86L1295.97 2756.48L1295.51 2756.73L1294.89 2756.86L1294.19 2756.72L1291.57 2755.25L1290.35 2755.06L1289.89 2753.96L1289.98 2753.00L1290.11 2752.08L1290.75 2751.03L1291.63 2751.28L1292.08 2751.03L1292.64 2752.34L1295.33 2752.29L1296.56 2751.56L1297.00 2751.80L1298.30 2752.05L1299.08 2751.44L1299.48 2751.45L1299.78 2752.13L1300.14 2752.57L1300.64 2751.83L1301.08 2751.57L1301.25 2751.12L1299.90 2750.55L1300.04 2748.76L1300.35 2747.25L1300.44 2744.60L1300.02 2742.13L1298.97 2741.21L1298.51 2738.79L1299.46 2737.46L1300.28 2737.10L1301.53 2737.19L1301.87 2737.06L1302.61 2735.71L1305.12 2734.08L1308.96 2730.17L1309.68 2729.67L1313.57 2728.16L1314.33 2728.13L1315.66 2728.86L1318.81 2729.72L1320.61 2730.00L1322.08 2730.88L1322.85 2731.13ZM1212.79 2672.01L1214.86 2672.80L1215.56 2673.42L1216.21 2674.93L1214.99 2674.99L1213.02 2676.23L1209.99 2676.63L1208.89 2677.69L1208.03 2677.91L1206.92 2677.83L1206.14 2678.31L1205.22 2679.88L1205.89 2680.07L1206.27 2680.50L1206.29 2680.98L1205.31 2681.35L1203.57 2681.48L1198.11 2680.68L1196.33 2680.53L1195.47 2681.45L1193.95 2681.36L1193.23 2681.78L1192.77 2682.42L1191.31 2685.92L1189.77 2686.53L1188.98 2685.78L1188.00 2685.41L1185.85 2685.61L1179.20 2685.21L1178.43 2684.87L1177.70 2684.78L1175.63 2685.46L1174.73 2685.31L1174.43 2683.80L1173.90 2683.21L1173.87 2682.96L1174.43 2682.64L1174.43 2682.31L1173.88 2682.25L1172.86 2681.81L1172.51 2681.88L1172.31 2682.33L1172.31 2683.20L1172.04 2683.53L1174.00 2685.09L1173.84 2685.61L1173.10 2685.80L1159.70 2682.76L1157.97 2682.64L1156.43 2682.76L1155.74 2682.65L1155.46 2682.18L1155.33 2680.86L1155.41 2680.23L1155.78 2679.63L1155.46 2679.34L1155.03 2679.97L1154.65 2679.74L1154.38 2679.05L1154.28 2678.28L1154.36 2677.43L1154.64 2677.18L1156.07 2676.96L1157.34 2676.21L1158.60 2675.04L1160.82 2672.47L1160.73 2671.76L1162.09 2671.28L1163.90 2671.01L1166.78 2671.00L1170.48 2670.55L1173.88 2671.13L1179.39 2671.07L1186.84 2670.61L1190.32 2671.21L1196.63 2670.48L1201.86 2670.61L1207.51 2669.84L1209.43 2670.09L1210.37 2670.41L1212.02 2671.33ZM1427.03 2752.29L1426.66 2752.35L1425.81 2752.18L1424.69 2751.28L1423.72 2749.88L1423.37 2749.60L1422.64 2749.44L1422.35 2749.66L1422.21 2750.09L1421.88 2750.55L1420.85 2750.90L1418.95 2750.39L1418.00 2750.85L1416.87 2750.42L1416.06 2750.72L1415.26 2751.39L1414.14 2752.05L1415.20 2753.00L1415.62 2753.21L1416.07 2753.28L1419.49 2753.29L1423.02 2753.87L1423.87 2754.17L1424.76 2755.43L1424.85 2755.79L1424.63 2756.13L1424.11 2756.35L1423.05 2756.53L1422.57 2756.50L1421.28 2756.26L1420.37 2755.93L1420.40 2756.03L1420.21 2756.24L1419.64 2756.53L1417.40 2754.83L1416.53 2754.41L1414.66 2754.32L1412.71 2754.62L1403.89 2757.16L1401.70 2756.66L1400.54 2754.14L1400.70 2753.01L1402.04 2751.30L1402.60 2750.23L1402.76 2749.51L1402.80 2748.83L1402.60 2747.54L1401.71 2745.59L1401.72 2744.82L1401.10 2745.40L1400.95 2746.35L1401.13 2748.30L1400.80 2748.83L1399.16 2749.29L1398.45 2749.60L1397.29 2751.12L1396.54 2752.80L1396.18 2753.02L1395.67 2753.10L1390.60 2757.29L1389.85 2757.48L1388.02 2756.52L1387.19 2756.26L1385.40 2756.86L1385.45 2756.77L1385.30 2756.64L1384.83 2756.53L1384.51 2757.06L1384.15 2757.28L1383.71 2757.86L1379.05 2760.30L1378.60 2759.93L1378.29 2759.91L1377.59 2760.14L1377.08 2759.17L1376.84 2758.94L1376.24 2758.93L1375.36 2759.84L1374.61 2760.13L1374.03 2760.14L1373.28 2759.86L1372.88 2759.61L1372.45 2759.12L1371.90 2759.22L1369.41 2760.32L1364.68 2763.16L1362.94 2763.85L1357.36 2765.43L1354.99 2765.67L1350.32 2764.11L1348.86 2764.11L1347.95 2764.48L1347.18 2765.75L1346.02 2767.07L1343.62 2767.53L1340.96 2767.77L1340.17 2766.80L1338.35 2765.71L1337.44 2765.87L1336.49 2765.85L1334.07 2765.06L1333.12 2764.95L1332.16 2764.66L1330.76 2763.63L1330.29 2763.75L1329.53 2762.33L1328.80 2761.46L1328.92 2760.73L1329.64 2759.70L1329.33 2758.92L1329.09 2757.53L1330.11 2756.50L1330.89 2755.47L1332.63 2755.11L1332.95 2754.27L1332.81 2753.76L1332.09 2753.08L1331.78 2752.33L1331.49 2751.93L1330.64 2752.04L1330.34 2751.61L1330.70 2750.17L1330.69 2749.08L1329.67 2748.48L1331.46 2744.86L1333.28 2744.47L1333.59 2743.60L1333.54 2741.54L1334.37 2742.25L1334.74 2742.40L1335.34 2742.43L1339.87 2741.01L1341.92 2739.81L1344.44 2737.93L1346.00 2737.06L1345.63 2736.10L1346.62 2735.60L1348.04 2735.30L1348.98 2734.97L1349.86 2736.17L1350.44 2736.30L1351.87 2736.40L1352.38 2736.61L1352.97 2737.04L1354.21 2737.69L1355.81 2738.87L1359.31 2740.37L1359.04 2739.68L1359.63 2738.11L1359.69 2737.29L1359.88 2737.20L1360.81 2737.66L1363.01 2737.64L1364.07 2737.45L1364.68 2737.06L1365.10 2737.80L1365.49 2740.63L1366.15 2741.84L1366.41 2740.93L1366.48 2738.84L1367.04 2738.26L1367.49 2738.50L1367.74 2739.34L1368.02 2742.29L1368.20 2742.97L1368.61 2743.46L1370.76 2744.55L1372.14 2744.05L1372.71 2744.23L1372.38 2744.82L1373.24 2745.11L1373.56 2745.36L1373.91 2745.75L1373.61 2746.19L1373.61 2746.50L1374.54 2746.78L1374.77 2747.24L1373.90 2747.26L1373.29 2747.54L1373.64 2748.19L1374.20 2749.77L1374.61 2750.39L1375.36 2750.82L1376.15 2750.79L1378.88 2749.92L1379.20 2749.96L1379.46 2750.24L1379.65 2751.12L1380.94 2751.24L1381.75 2751.52L1382.44 2752.05L1383.29 2751.36L1385.09 2749.43L1385.85 2749.03L1386.16 2748.60L1386.61 2748.30L1386.73 2748.02L1389.09 2747.57L1390.60 2747.54L1392.08 2748.14L1394.43 2748.07L1395.27 2747.84L1395.97 2747.39L1396.38 2746.65L1396.36 2745.83L1396.02 2745.04L1395.44 2744.45L1394.75 2744.23L1393.87 2743.32L1393.40 2744.03L1392.83 2744.55L1392.12 2743.36L1390.22 2741.73L1389.56 2740.62L1389.26 2740.62L1388.85 2741.04L1388.25 2740.69L1387.05 2739.31L1386.27 2739.04L1385.36 2739.33L1383.92 2740.05L1383.28 2739.88L1382.50 2739.51L1381.83 2739.07L1381.19 2738.26L1378.66 2736.76L1376.11 2734.82L1373.91 2731.96L1372.71 2731.09L1371.77 2730.03L1371.34 2729.87L1371.08 2729.38L1371.29 2728.25L1372.09 2726.29L1372.58 2725.81L1372.96 2725.68L1373.56 2725.67L1374.92 2724.80L1375.68 2724.67L1379.26 2723.28L1380.23 2723.10L1382.00 2722.98L1382.30 2723.23L1382.81 2724.12L1383.18 2724.03L1383.62 2723.75L1384.00 2723.72L1384.83 2723.88L1386.88 2723.95L1388.77 2724.32L1390.26 2725.22L1391.06 2726.89L1391.45 2729.51L1393.42 2731.96L1394.33 2733.71L1394.75 2734.21L1395.01 2734.33L1395.49 2734.08L1396.93 2735.44L1397.29 2735.57L1397.96 2735.41L1399.58 2734.41L1400.72 2733.26L1401.01 2732.85L1401.13 2732.42L1402.37 2731.69L1402.97 2730.61L1403.82 2730.24L1404.80 2730.10L1405.55 2730.17L1406.68 2730.98L1407.18 2731.09L1408.96 2731.09L1409.31 2731.17L1410.01 2731.66L1411.78 2731.96L1412.49 2732.71L1413.87 2735.57L1413.58 2736.29L1413.39 2737.38L1413.25 2739.31L1412.17 2742.35L1412.08 2743.04L1412.64 2743.26L1413.32 2742.66L1413.90 2741.83L1414.71 2739.95L1415.22 2739.09L1415.17 2738.66L1414.76 2737.66L1414.79 2735.93L1415.41 2734.61L1416.39 2733.61L1417.42 2732.86L1418.93 2732.26L1420.94 2731.97L1423.05 2731.97L1424.85 2732.26L1426.52 2732.85L1426.95 2733.38L1427.03 2733.65ZM1337.26 2738.08L1337.75 2737.82L1338.44 2737.75L1338.35 2738.40L1338.12 2738.51L1337.87 2738.35L1336.93 2738.83L1335.89 2738.99L1335.48 2738.81L1334.44 2739.11L1333.90 2739.03L1333.54 2738.84L1335.47 2738.33L1337.00 2738.43ZM1340.77 2737.15L1341.09 2737.14L1341.12 2737.39L1340.89 2737.60L1340.65 2737.54L1340.44 2737.65L1340.61 2737.81L1339.88 2738.18L1339.74 2737.45L1340.01 2736.91L1340.28 2737.12L1340.41 2737.01ZM1298.57 2734.89L1298.74 2734.43L1299.11 2734.49L1299.13 2734.84L1298.96 2735.03L1298.76 2735.14ZM1358.45 2725.37L1358.76 2725.53L1358.60 2725.72L1358.35 2725.74L1358.05 2726.07L1357.25 2726.34L1357.09 2726.30L1356.88 2726.54L1356.55 2726.56L1356.02 2726.32L1355.65 2726.35L1355.80 2726.01L1356.19 2725.91L1356.82 2725.96L1357.23 2725.38L1357.79 2725.28ZM1372.58 2723.98L1372.80 2723.49L1373.62 2723.92L1373.28 2724.47L1372.95 2724.33ZM1201.45 2685.01L1202.44 2685.21L1202.44 2685.46L1202.01 2685.83L1201.26 2685.87L1199.99 2685.30L1199.94 2685.10L1200.16 2684.84ZM1208.34 2685.15L1208.73 2685.74L1208.43 2685.61L1207.86 2684.92L1207.55 2684.74L1206.39 2685.00L1205.86 2684.87L1205.81 2684.31L1206.35 2683.78L1207.23 2683.46L1207.58 2683.66ZM1243.63 2681.26L1244.62 2680.92L1244.52 2681.64L1244.10 2681.85L1243.66 2681.51ZM1212.46 2678.99L1213.06 2679.36L1213.41 2680.17L1213.24 2680.67L1210.48 2680.43L1208.65 2679.76L1208.27 2679.45L1207.99 2678.96L1208.30 2678.46L1208.69 2678.30L1209.19 2678.63ZM1280.65 2677.55L1281.06 2677.21L1281.23 2677.89L1281.10 2678.60L1280.35 2678.35L1280.41 2678.00L1279.74 2678.03L1279.78 2677.79L1279.58 2677.37ZM1277.09 2675.62L1277.56 2676.10L1277.65 2676.59L1277.30 2676.79L1276.95 2676.83L1276.88 2677.16L1275.90 2676.43L1275.88 2676.08L1276.30 2675.57L1277.09 2675.04L1277.36 2674.96L1277.43 2675.29L1277.21 2675.37ZM1274.30 2675.40L1274.77 2675.89L1274.55 2676.07L1274.18 2676.05L1273.29 2675.88L1272.50 2675.19L1272.87 2674.80L1273.65 2674.71L1274.00 2674.78L1274.05 2674.52L1274.24 2674.61ZM1217.75 2675.36L1218.26 2674.23L1218.80 2674.56L1218.62 2675.92L1218.48 2676.05L1217.84 2675.91ZM1293.02 2674.13L1292.63 2673.64L1294.06 2674.15ZM1282.62 2675.10L1283.20 2675.66L1283.26 2675.99L1282.95 2676.12L1281.79 2675.60L1281.51 2675.65L1281.36 2675.80L1280.65 2675.82L1279.40 2675.30L1279.15 2674.92L1278.40 2674.49L1278.24 2674.13L1278.54 2673.93L1278.56 2673.48L1278.69 2673.32L1278.99 2673.22L1279.44 2673.28ZM1307.57 2673.03L1308.29 2672.87L1308.49 2673.25L1307.93 2673.64L1307.29 2673.26ZM1230.31 2612.52L1230.51 2612.51L1230.58 2613.36L1230.41 2613.45L1229.90 2614.23L1229.39 2614.37L1228.86 2613.66L1228.04 2613.39L1228.10 2612.35L1228.25 2612.04L1228.63 2611.88L1229.07 2611.90L1228.99 2612.33ZM1229.67 2607.49L1229.98 2607.84L1229.93 2607.98L1230.04 2608.22L1229.90 2608.98L1229.39 2608.95L1229.06 2608.53L1228.80 2607.78L1229.09 2607.30L1229.29 2607.26ZM1381.11 2604.79L1381.47 2605.24L1381.76 2605.89L1381.55 2606.79L1380.92 2606.42L1380.63 2605.72L1380.34 2604.38L1380.88 2604.38ZM1368.62 2597.33L1369.22 2596.59L1369.89 2597.45L1368.73 2598.54L1368.91 2597.94ZM1237.10 2592.78L1236.85 2593.29L1236.49 2592.83L1236.43 2592.12L1236.70 2591.27L1237.25 2590.92L1237.39 2592.54ZM1282.40 2584.29L1283.32 2583.32L1283.19 2583.89L1282.74 2584.93L1282.31 2585.38L1281.21 2586.18L1281.13 2585.89L1281.56 2585.04ZM1286.43 2575.05L1285.63 2576.10L1284.80 2576.58L1284.34 2576.48L1285.27 2575.57L1286.42 2574.83ZM1427.03 2790.22L1426.33 2789.57L1425.11 2788.71L1424.50 2788.07L1424.23 2787.32L1424.51 2786.10L1425.21 2784.96L1426.13 2783.94L1427.03 2783.16ZM1280.83 2731.96L1282.27 2733.26L1283.94 2734.39L1284.94 2735.74L1284.36 2737.66L1282.53 2739.25L1281.73 2739.72L1280.21 2741.24L1277.13 2741.48L1276.67 2741.69L1276.37 2742.70L1275.62 2743.31L1269.80 2745.44L1268.00 2746.61L1266.63 2748.14L1265.68 2749.91L1265.03 2750.58L1263.24 2751.19L1262.84 2752.00L1262.93 2752.98L1263.59 2753.84L1263.92 2753.54L1263.32 2752.65L1264.11 2752.31L1264.34 2753.10L1264.24 2755.18L1263.96 2755.64L1263.27 2756.07L1261.88 2756.53L1259.87 2756.54L1258.96 2756.30L1258.16 2755.79L1258.13 2755.13L1259.02 2754.47L1260.94 2753.54L1261.43 2752.95L1261.92 2751.97L1262.11 2750.92L1260.80 2748.28L1259.76 2747.84L1258.52 2746.87L1257.95 2746.22L1257.37 2744.92L1256.57 2744.29L1255.03 2743.34L1252.03 2740.55L1250.90 2739.77L1245.26 2737.06L1243.50 2736.72L1238.44 2736.76L1236.95 2736.23L1235.64 2735.18L1234.55 2733.95L1231.07 2728.89L1230.18 2724.67L1230.37 2723.50L1231.63 2723.26L1232.64 2723.30L1233.20 2723.70L1234.15 2724.94L1234.83 2725.20L1235.50 2725.00L1236.65 2724.18L1237.30 2724.67L1238.23 2724.90L1240.71 2725.25L1247.90 2727.78L1249.42 2727.22L1253.38 2727.23L1255.03 2726.89L1256.79 2725.60L1259.93 2722.53L1261.53 2721.77L1262.41 2721.76L1263.37 2721.95L1264.27 2722.32L1265.68 2723.25L1268.67 2723.88L1275.78 2726.89L1277.20 2727.85L1278.49 2729.03ZM1310.43 2533.17L1310.69 2533.45L1311.35 2533.77L1311.61 2534.08L1311.71 2534.54L1311.18 2534.85L1310.77 2536.10L1310.24 2536.68L1309.80 2537.39L1309.81 2538.49L1310.61 2540.12L1310.73 2540.76L1310.55 2541.25L1310.14 2541.40L1309.25 2541.48L1308.87 2541.83L1308.41 2542.55L1306.89 2542.77L1306.60 2542.95L1306.30 2543.28L1306.27 2544.06L1306.15 2544.31L1305.12 2544.93L1304.66 2545.56L1303.94 2546.24L1302.69 2546.70L1302.29 2546.98L1301.61 2548.02L1301.25 2548.28L1301.20 2547.58L1300.88 2547.02L1300.37 2546.81L1299.78 2547.15L1299.47 2546.26L1300.07 2543.42L1301.07 2542.94L1301.25 2542.54L1301.13 2542.12L1300.39 2541.18L1300.27 2540.42L1300.66 2537.78L1300.52 2536.76L1300.16 2536.16L1299.19 2535.24L1298.41 2534.12L1298.12 2533.46L1297.86 2530.24L1298.01 2529.31L1299.05 2526.59L1299.29 2523.72L1310.91 2523.72L1309.25 2524.31L1309.15 2525.14L1310.14 2527.39L1310.22 2528.14L1310.14 2530.05L1310.43 2531.52Z"},"source":"Natural Earth (public domain): ne_50m_land + ne_10m_land detail box lon 112.6..119, lat -13..-3.5; baked to Mercator map px by the VOYNANN PETA map baker"}
+==== 28249 project/src/film/sets.tsx
+// Generic CHRONICLE locations. Convention for every set: the stage is around the origin, people stand on y = 0,
+// the bright background (sun, doorway, fire, sea) is toward −z and the camera works from the +z side, so the cast
+// reads as black silhouettes against light. Each set exports anchors the planner/stager uses.
+
+import React, { useMemo } from "react";
+import { BufferAttribute, CanvasTexture, Color, DoubleSide, MeshStandardMaterial, QuadraticBezierCurve3, RepeatWrapping, SRGBColorSpace, TubeGeometry, Vector3 } from "three";
+import { Flag, Ground, Lantern, Palm, Ship, Stilthouse, Volcano, Water, stone } from "../kits/chronicle/props.tsx";
+import { AshColumn, Birds, Embers } from "../kits/chronicle/fx.tsx";
+import { fbm } from "../kits/chronicle/relief.ts";
+import { Candle, Flames, Shafts } from "./fxextra.tsx";
+import type { MoodId, SetId } from "../director/types.ts";
+
+export type V3 = [number, number, number];
+export type SetProps = { t: number; fire: boolean; rain: boolean; fog: boolean; candle: boolean; volcano: boolean; seed: number; mood: MoodId };
+export type Anchors = {
+  lead: V3; // where the lead stands
+  second: V3; // a second singleton (conversation partner, opponent)
+  target: V3; // what idle people look at
+  rows: [number, number, number, number]; // x0, x1, z0, z1 for crowds
+  guards: V3[]; // positions for guards / bystanders
+  path: [V3, V3]; // movers run/walk along this
+  seat?: { pos: V3; rotY: number; kind: "chair" | "floor" };
+  camMaxZ?: number; // interiors: camera must stay inside
+  camMinY?: number;
+  interior?: boolean;
+  /** override the key light direction (relative to the stage) */
+  light?: V3;
+};
+
+const hsh = (n: number) => {
+  const x = Math.sin(n * 91.3458 + 47.123) * 43758.5453;
+  return x - Math.floor(x);
+};
+const M = (color: string, rough = 0.95) => new MeshStandardMaterial({ color, roughness: rough });
+const wood = M("#3a2a20"), darkWood = M("#221812"), plaster = M("#7d6a56", 1), leaf = M("#161a12", 1), bark = M("#2a2019", 1);
+const limestone = M("#cfc6b3", 0.9), sand = M("#7a6650", 1), canvasM = M("#6a5c4a", 1);
+
+const canvasTex = (w: number, h: number, paint: (g: CanvasRenderingContext2D) => void, rep: [number, number]) => {
+  const c = document.createElement("canvas");
+  c.width = w; c.height = h;
+  paint(c.getContext("2d")!);
+  const t = new CanvasTexture(c);
+  t.colorSpace = SRGBColorSpace;
+  t.wrapS = t.wrapT = RepeatWrapping;
+  t.repeat.set(...rep);
+  return t;
+};
+let planks: MeshStandardMaterial | null = null;
+const plankMat = () => {
+  if (planks) return planks;
+  const map = canvasTex(256, 256, (g) => {
+    for (let i = 0; i < 8; i++) {
+      const v = 0.75 + hsh(i) * 0.3;
+      g.fillStyle = `rgb(${Math.round(92 * v)},${Math.round(66 * v)},${Math.round(46 * v)})`;
+      g.fillRect(0, i * 32, 256, 30);
+      g.fillStyle = "rgba(0,0,0,0.5)";
+      g.fillRect(0, i * 32 + 30, 256, 2);
+      g.fillRect(hsh(i * 3) * 256, i * 32, 2, 30);
+    }
+  }, [4, 4]);
+  planks = new MeshStandardMaterial({ map, roughness: 0.9 });
+  return planks;
+};
+let tiles: MeshStandardMaterial | null = null;
+const tileMat = () => {
+  if (tiles) return tiles;
+  const map = canvasTex(256, 256, (g) => {
+    for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) {
+      const v = (x + y) % 2 ? 0.8 : 0.95;
+      g.fillStyle = `rgb(${Math.round(150 * v)},${Math.round(110 * v)},${Math.round(80 * v)})`;
+      g.fillRect(x * 64 + 1, y * 64 + 1, 62, 62);
+    }
+  }, [8, 8]);
+  tiles = new MeshStandardMaterial({ map, roughness: 0.6 });
+  return tiles;
+};
+
+// ------------------------------------------------------------------ shared props
+export const Tree: React.FC<{ pos: V3; h: number; r?: number; crown?: number; seed: number }> = ({ pos, h, r = 0.35, crown = 4, seed }) => {
+  const geo = useMemo(() => {
+    const c = new QuadraticBezierCurve3(new Vector3(0, 0, 0), new Vector3((hsh(seed) - 0.5) * 1.2, h * 0.5, (hsh(seed + 1) - 0.5) * 1.2), new Vector3((hsh(seed + 2) - 0.5) * 1.6, h, (hsh(seed + 3) - 0.5) * 1.6));
+    return new TubeGeometry(c, 10, r, 7, false);
+  }, [h, r, seed]);
+  return (
+    <group position={pos}>
+      <mesh geometry={geo} material={bark} castShadow />
+      {Array.from({ length: 7 }, (_, i) => {
+        const a = hsh(seed * 7 + i) * Math.PI * 2, d = crown * (0.3 + 0.6 * hsh(seed * 5 + i));
+        return (
+          <mesh key={i} material={leaf} position={[Math.cos(a) * d, h * (0.8 + 0.25 * hsh(seed + i * 3)), Math.sin(a) * d]} scale={[crown * (0.6 + 0.4 * hsh(i + seed)), crown * 0.45, crown * (0.6 + 0.4 * hsh(i * 2 + seed))]} castShadow>
+            <icosahedronGeometry args={[1, 1]} />
+          </mesh>
+        );
+      })}
+    </group>
+  );
+};
+
+const Kamboja: React.FC<{ pos: V3; seed: number }> = ({ pos, seed }) => {
+  const branches = useMemo(() => Array.from({ length: 6 }, (_, i) => {
+    const a = (i / 6) * Math.PI * 2 + hsh(seed + i);
+    const end = new Vector3(Math.cos(a) * (1.6 + hsh(i) * 1.2), 3.4 + hsh(i + 9) * 1.4, Math.sin(a) * (1.6 + hsh(i + 4) * 1.2));
+    const c = new QuadraticBezierCurve3(new Vector3(0, 2.0, 0), new Vector3(end.x * 0.3, end.y * 0.75, end.z * 0.3), end);
+    return { geo: new TubeGeometry(c, 8, 0.09, 6, false), end };
+  }), [seed]);
+  const trunk = useMemo(() => new TubeGeometry(new QuadraticBezierCurve3(new Vector3(0, 0, 0), new Vector3(0.3, 1.0, 0.1), new Vector3(0.1, 2.1, 0)), 8, 0.2, 7, false), []);
+  return (
+    <group position={pos}>
+      <mesh geometry={trunk} material={bark} castShadow />
+      {branches.map((b, i) => (
+        <group key={i}>
+          <mesh geometry={b.geo} material={bark} castShadow />
+          <mesh material={leaf} position={b.end} scale={[0.9, 0.45, 0.9]} castShadow><icosahedronGeometry args={[1, 1]} /></mesh>
+        </group>
+      ))}
+    </group>
+  );
+};
+
+const Nisan: React.FC<{ pos: V3; rotY?: number; h?: number }> = ({ pos, rotY = 0, h = 0.75 }) => (
+  <group position={pos} rotation={[0, rotY, 0]}>
+    <mesh material={limestone} position={[0, h / 2, 0]} castShadow><boxGeometry args={[0.3, h, 0.14]} /></mesh>
+    <mesh material={limestone} position={[0, h, 0]} rotation={[Math.PI / 2, 0, 0]} castShadow><cylinderGeometry args={[0.15, 0.15, 0.14, 14, 1, false, 0, Math.PI]} /></mesh>
+  </group>
+);
+
+const Grave: React.FC<{ pos: V3; rotY?: number }> = ({ pos, rotY = 0 }) => (
+  <group position={pos} rotation={[0, rotY, 0]}>
+    <mesh material={limestone} position={[0, 0.15, 0]} castShadow receiveShadow><boxGeometry args={[1.0, 0.3, 2.1]} /></mesh>
+    <mesh material={limestone} position={[0, 0.38, 0]} castShadow receiveShadow><boxGeometry args={[0.7, 0.16, 1.7]} /></mesh>
+    <Nisan pos={[0, 0.46, -0.7]} />
+    <Nisan pos={[0, 0.46, 0.7]} h={0.55} />
+  </group>
+);
+
+const Pillar: React.FC<{ pos: V3; h: number; w?: number; mat?: MeshStandardMaterial }> = ({ pos, h, w = 0.42, mat = plaster }) => (
+  <group position={pos}>
+    <mesh material={mat} position={[0, h / 2, 0]} castShadow receiveShadow><boxGeometry args={[w, h, w]} /></mesh>
+    <mesh material={mat} position={[0, 0.12, 0]}><boxGeometry args={[w * 1.35, 0.24, w * 1.35]} /></mesh>
+    <mesh material={mat} position={[0, h - 0.1, 0]}><boxGeometry args={[w * 1.3, 0.2, w * 1.3]} /></mesh>
+  </group>
+);
+
+const Chair: React.FC<{ pos: V3; rotY: number }> = ({ pos, rotY }) => (
+  <group position={pos} rotation={[0, rotY, 0]}>
+    <mesh material={darkWood} position={[0, 0.44, 0]} castShadow><boxGeometry args={[0.48, 0.05, 0.46]} /></mesh>
+    {[[-0.2, -0.19], [0.2, -0.19], [-0.2, 0.19], [0.2, 0.19]].map(([x, z], i) => (
+      <mesh key={i} material={darkWood} position={[x, 0.22, z]}><boxGeometry args={[0.04, 0.44, 0.04]} /></mesh>
+    ))}
+    <mesh material={darkWood} position={[0, 0.82, -0.21]} castShadow><boxGeometry args={[0.46, 0.72, 0.04]} /></mesh>
+  </group>
+);
+
+const Table: React.FC<{ pos: V3; w: number; d: number; h?: number; rotY?: number }> = ({ pos, w, d, h = 0.76, rotY = 0 }) => (
+  <group position={pos} rotation={[0, rotY, 0]}>
+    <mesh material={wood} position={[0, h, 0]} castShadow receiveShadow><boxGeometry args={[w, 0.05, d]} /></mesh>
+    {[[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([sx, sz], i) => (
+      <mesh key={i} material={darkWood} position={[sx * (w / 2 - 0.06), h / 2, sz * (d / 2 - 0.06)]}><boxGeometry args={[0.06, h, 0.06]} /></mesh>
+    ))}
+  </group>
+);
+
+const Tent: React.FC<{ pos: V3; rotY?: number; s?: number }> = ({ pos, rotY = 0, s = 1 }) => (
+  <mesh position={[pos[0], 1.2 * s, pos[2]]} rotation={[0, rotY + Math.PI / 4, 0]} scale={[2.2 * s, 2.4 * s, 2.2 * s]} material={canvasM} castShadow>
+    <coneGeometry args={[1, 1, 4]} />
+  </mesh>
+);
+
+const Hills: React.FC<{ z: number; color?: string; seed?: number; h?: number }> = ({ z, color = "#2a2420", seed = 1, h = 60 }) => (
+  <group>
+    {Array.from({ length: 7 }, (_, i) => (
+      <mesh key={i} position={[(i - 3) * 160 + (hsh(seed + i) - 0.5) * 80, -h * 0.3, z - hsh(i + seed) * 80]} scale={[120 + hsh(i) * 80, h * (0.6 + hsh(i + 3) * 0.6), 60]}>
+        <sphereGeometry args={[1, 24, 10]} />
+        <meshStandardMaterial color={color} roughness={1} />
+      </mesh>
+    ))}
+  </group>
+);
+
+const Grass: React.FC<{ x0: number; x1: number; z0: number; z1: number; n: number; seed: number; h?: number }> = ({ x0, x1, z0, z1, n, seed, h = 0.7 }) => (
+  <group>
+    {Array.from({ length: n }, (_, i) => {
+      const x = x0 + hsh(seed + i) * (x1 - x0), z = z0 + hsh(seed * 3 + i) * (z1 - z0);
+      return (
+        <group key={i} position={[x, 0, z]} userData={{ noMask: true }}>
+          {Array.from({ length: 6 }, (_, j) => (
+            <mesh key={j} material={leaf} position={[(hsh(i * 9 + j) - 0.5) * 0.25, 0, (hsh(i * 5 + j) - 0.5) * 0.2]} rotation={[(hsh(j + i) - 0.5) * 0.9, 0, (hsh(j * 3 + i) - 0.5) * 1.1]} scale={[0.022, h * (0.4 + hsh(j + i * 2) * 0.8), 0.022]} userData={{ noMask: true }}>
+              <coneGeometry args={[1, 1, 4]} />
+            </mesh>
+          ))}
+        </group>
+      );
+    })}
+  </group>
+);
+
+// ------------------------------------------------------------------ sets
+const Makam: React.FC<SetProps> = ({ t, seed }) => (
+  <group>
+    <Ground size={400} color="#2c2a1e" amp={1.0} seed={seed} />
+    <Grave pos={[-0.9, 0, -2.0]} rotY={Math.PI / 2} />
+    {/* low fence */}
+    {Array.from({ length: 9 }, (_, i) => <mesh key={i} material={darkWood} position={[-3.1 + i * 0.55, 0.35, -3.6]} castShadow><boxGeometry args={[0.07, 0.7, 0.07]} /></mesh>)}
+    <mesh material={darkWood} position={[-0.9, 0.6, -3.6]}><boxGeometry args={[4.6, 0.06, 0.05]} /></mesh>
+    <Kamboja pos={[3.2, 0, -6.5]} seed={seed} />
+    {/* small shrine roof over an older grave */}
+    <group position={[-5.5, 0, -7.5]}>
+      <Grave pos={[0, 0, 0]} rotY={Math.PI / 2} />
+      {[[-1.2, -1.2], [1.2, -1.2], [-1.2, 1.2], [1.2, 1.2]].map(([x, z], i) => <mesh key={i} material={darkWood} position={[x, 1.2, z]}><boxGeometry args={[0.12, 2.4, 0.12]} /></mesh>)}
+      <mesh material={darkWood} position={[0, 3.0, 0]} rotation={[0, Math.PI / 4, 0]} scale={[2.4, 1.3, 2.4]} castShadow><coneGeometry args={[1, 1, 4]} /></mesh>
+    </group>
+    <Tree pos={[-9, 0, -16]} h={11} crown={4.5} seed={seed + 3} />
+    <Tree pos={[7, 0, -20]} h={13} crown={5} seed={seed + 4} />
+    <Tree pos={[-2, 0, -30]} h={14} crown={5.5} seed={seed + 5} />
+    <Tree pos={[16, 0, -34]} h={12} crown={5} seed={seed + 6} />
+    <Grass x0={-6} x1={6} z0={1.5} z1={4} n={16} seed={seed} h={0.5} />
+    <Birds t={t} start={-5} origin={[-30, 22, -60]} dir={[1, 0.08, 0.1]} count={6} speed={4} size={0.5} seed={seed} />
+  </group>
+);
+const MAKAM_A: Anchors = { lead: [0.65, 0, -1.2], second: [1.8, 0, -0.4], target: [-0.9, 0.4, -2.0], rows: [-4, 4, -6, -3.5], guards: [[2.4, 0, -1.5], [3.0, 0, -2.4]], path: [[2, 0, -16], [-1, 0, 6]] };
+
+const Balai: React.FC<SetProps> = ({ t }) => (
+  <group>
+    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, -2]} material={tileMat()} receiveShadow><planeGeometry args={[16, 18]} /></mesh>
+    <mesh position={[0, 0.005, -3.0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow><planeGeometry args={[4.4, 3.0]} /><meshStandardMaterial color="#6e1f1a" roughness={1} /></mesh>
+    {/* back wall with a big doorway, side walls with tall windows */}
+    <mesh material={plaster} position={[-4.8, 2.4, -9]} receiveShadow castShadow><boxGeometry args={[6.4, 4.8, 0.3]} /></mesh>
+    <mesh material={plaster} position={[4.8, 2.4, -9]} receiveShadow castShadow><boxGeometry args={[6.4, 4.8, 0.3]} /></mesh>
+    <mesh material={plaster} position={[0, 4.2, -9]} castShadow><boxGeometry args={[3.2, 1.2, 0.3]} /></mesh>
+    {[-1, 1].map((sx) => (
+      <group key={sx}>
+        <mesh material={plaster} position={[sx * 8, 2.4, -6.5]} castShadow><boxGeometry args={[0.3, 4.8, 5]} /></mesh>
+        <mesh material={plaster} position={[sx * 8, 2.4, 3.5]} castShadow><boxGeometry args={[0.3, 4.8, 9]} /></mesh>
+        <mesh material={plaster} position={[sx * 8, 0.5, -2.5]}><boxGeometry args={[0.3, 1.0, 3]} /></mesh>
+        <mesh material={plaster} position={[sx * 8, 4.2, -2.5]}><boxGeometry args={[0.3, 1.2, 3]} /></mesh>
+      </group>
+    ))}
+    <mesh material={darkWood} position={[0, 4.85, -2]} receiveShadow><boxGeometry args={[16.5, 0.2, 18]} /></mesh>
+    {[-4, -1, 2].map((z) => <mesh key={z} material={darkWood} position={[0, 4.6, z]}><boxGeometry args={[16, 0.25, 0.3]} /></mesh>)}
+    {[-3.2, 3.2].flatMap((x) => [1.2, -2.8, -6.6].map((z) => <Pillar key={`${x}${z}`} pos={[x, 0, z]} h={4.6} />))}
+    {/* negotiation table, chairs */}
+    <Table pos={[0, 0, -3.1]} w={1.6} d={0.9} />
+    <Chair pos={[1.25, 0, -3.05]} rotY={-Math.PI / 2} />
+    {/* outside, seen through the doorway */}
+    <mesh position={[0, 3, -18]}><planeGeometry args={[40, 14]} /><meshBasicMaterial color={[1.25, 1.05, 0.8]} toneMapped={false} fog={false} /></mesh>
+    <Shafts from={[0, 3.6, -8.9]} tilt={1.0} len={9} width={2.8} count={4} opacity={0.07} t={t} />
+    <Shafts from={[-7.9, 3.4, -2.5]} yaw={Math.PI / 2} tilt={0.9} len={6} width={2.4} count={3} opacity={0.05} t={t} />
+    <Lantern pos={[-3.2, 2.0, 0.9]} t={t} seed={3} light />
+  </group>
+);
+const BALAI_A: Anchors = {
+  lead: [1.2, 0, -3.05], second: [-1.15, 0, -3.15], target: [0, 1.2, -3.1], rows: [-2.6, 2.6, -7.8, -6.8],
+  guards: [[-2.3, 0, -7.6], [-0.9, 0, -7.9], [0.9, 0, -7.9], [2.3, 0, -7.6], [-5.2, 0, -5.5], [5.2, 0, -5.5]], path: [[-5, 0, -7.5], [3, 0, 2]],
+  seat: { pos: [1.25, 0, -3.05], rotY: -Math.PI / 2, kind: "chair" }, camMaxZ: 7.5, interior: true,
+};
+
+const Kamar: React.FC<SetProps> = ({ t, candle, rain }) => (
+  <group>
+    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]} material={plankMat()} receiveShadow><planeGeometry args={[7, 8]} /></mesh>
+    {/* back wall with a barred window */}
+    <mesh material={plaster} position={[-2.2, 1.6, -2.6]} castShadow receiveShadow><boxGeometry args={[2.6, 3.2, 0.25]} /></mesh>
+    <mesh material={plaster} position={[2.2, 1.6, -2.6]} castShadow receiveShadow><boxGeometry args={[2.6, 3.2, 0.25]} /></mesh>
+    <mesh material={plaster} position={[0, 0.55, -2.6]} castShadow receiveShadow><boxGeometry args={[1.8, 1.1, 0.25]} /></mesh>
+    <mesh material={plaster} position={[0, 2.85, -2.6]} castShadow receiveShadow><boxGeometry args={[1.8, 0.7, 0.25]} /></mesh>
+    {[-0.6, -0.2, 0.2, 0.6].map((x) => <mesh key={x} material={darkWood} position={[x, 1.8, -2.6]}><boxGeometry args={[0.05, 1.4, 0.05]} /></mesh>)}
+    <mesh material={plaster} position={[-3.4, 1.6, 0.5]} receiveShadow><boxGeometry args={[0.25, 3.2, 6.5]} /></mesh>
+    <mesh material={plaster} position={[3.4, 1.6, 0.5]} receiveShadow><boxGeometry args={[0.25, 3.2, 6.5]} /></mesh>
+    <mesh material={darkWood} position={[0, 3.25, 0.5]}><boxGeometry args={[7, 0.12, 7]} /></mesh>
+    {/* desk side-on to the camera, writer faces −x */}
+    <Table pos={[-0.15, 0, -1.25]} w={0.75} d={1.3} />
+    <Chair pos={[0.55, 0, -1.25]} rotY={-Math.PI / 2} />
+    <mesh material={limestone} position={[-0.1, 0.79, -1.35]} rotation={[0, 0.2, 0]}><boxGeometry args={[0.32, 0.01, 0.44]} /></mesh>
+    {candle && <Candle pos={[-0.32, 0.785, -1.7]} t={t} power={1.6} />}
+    {/* bed / mat */}
+    <mesh material={wood} position={[-2.4, 0.22, -0.4]} castShadow><boxGeometry args={[1.0, 0.44, 2.0]} /></mesh>
+    <mesh position={[0, 1.8, -6]}><planeGeometry args={[8, 4]} /><meshBasicMaterial color={rain ? [0.15, 0.2, 0.32] : [0.22, 0.3, 0.55]} toneMapped={false} fog={false} /></mesh>
+    <Shafts from={[0, 2.4, -2.5]} tilt={0.85} len={4} width={1.5} count={3} color="#9fb0ff" opacity={0.06} t={t} />
+  </group>
+);
+const KAMAR_A: Anchors = {
+  lead: [0.6, 0, -1.25], second: [-1.6, 0, -1.6], target: [-0.2, 0.8, -1.3], rows: [-2, 2, -2.2, -1.8], guards: [[2.4, 0, -1.8]], path: [[2.8, 0, -1.8], [-1.5, 0, 1.5]],
+  seat: { pos: [0.55, 0, -1.25], rotY: -Math.PI / 2, kind: "chair" }, camMaxZ: 3.6, interior: true,
+};
+
+const Hutan: React.FC<SetProps> = ({ t, seed }) => {
+  const trees = useMemo(() => {
+    const out: { p: V3; h: number; r: number }[] = [];
+    for (let i = 0; i < 60; i++) {
+      const x = (hsh(seed * 11 + i) - 0.5) * 70, z = -3 - hsh(seed * 7 + i) * 60;
+      if (Math.abs(x) < 4.5 && z > -11) continue;
+      out.push({ p: [x, 0, z], h: 14 + hsh(i + 3) * 12, r: 0.25 + hsh(i + 5) * 0.35 });
+    }
+    return out;
+  }, [seed]);
+  return (
+    <group>
+      <Ground size={500} color="#2a2a20" amp={2.0} seed={seed} />
+      {trees.map((tr, i) => <Tree key={i} pos={tr.p} h={tr.h} r={tr.r} crown={3 + (i % 4)} seed={seed * 13 + i} />)}
+      <Shafts from={[3, 18, -24]} tilt={0.55} len={34} width={10} count={5} color="#fff0cc" opacity={0.1} t={t} />
+      <Shafts from={[-8, 18, -34]} tilt={0.5} len={34} width={8} count={4} color="#fff0cc" opacity={0.08} t={t} />
+      <Grass x0={-7} x1={7} z0={1.2} z1={4.5} n={20} seed={seed} h={0.8} />
+      <Grass x0={-12} x1={12} z0={-14} z1={-6} n={24} seed={seed + 5} h={0.9} />
+    </group>
+  );
+};
+const HUTAN_A: Anchors = { lead: [0.6, 0, -0.6], second: [-1.5, 0, -1.4], target: [0, 1.2, -7], rows: [-3.5, 3.5, -9.5, -4.0], guards: [[-2.8, 0, -3], [2.8, 0, -3.4]], path: [[3, 0, -22], [-2, 0, 8]] };
+
+const Desa: React.FC<SetProps> = ({ t, fire, volcano, seed }) => (
+  <group>
+    <Ground size={900} color="#2d211a" amp={2.2} seed={seed} />
+    <Stilthouse pos={[-12, 0, -22]} rotY={0.35} />
+    <Stilthouse pos={[10, 0, -30]} rotY={-0.45} />
+    <Stilthouse pos={[-28, 0, -46]} rotY={0.1} />
+    <Stilthouse pos={[26, 0, -50]} rotY={-0.2} />
+    <Palm pos={[-5.5, 0, -16]} h={10.5} lean={[1.4, -0.3]} t={t} seed={1} />
+    <Palm pos={[17, 0, -21]} h={12} lean={[-1.8, 0.5]} t={t} seed={2} />
+    <Palm pos={[-21, 0, -30]} h={9.5} lean={[2.0, 0.2]} t={t} seed={3} />
+    <Palm pos={[4, 0, -44]} h={13} lean={[0.8, -0.4]} t={t} seed={4} />
+    {fire && (
+      <>
+        <Flames t={t} at={[{ p: [-12, 4.2, -22], h: 4.5 }, { p: [-13.5, 3.2, -20.5], h: 3.2 }, { p: [-10.4, 3.6, -23], h: 3.8 }]} seed={1} />
+        <Flames t={t} at={[{ p: [10, 4.0, -30], h: 5 }, { p: [11.6, 3.0, -28.8], h: 3.4 }]} seed={2} />
+        <Flames t={t} at={[{ p: [-28, 4.2, -46], h: 5 }, { p: [26, 4.2, -50], h: 4.6 }]} seed={3} light={false} />
+        <AshColumn t={t + 3} base={[-12, 6, -22]} height={40} width={9} count={40} life={6} wind={[0.25, 0.05]} dark="#2a2222" lit="#b04a20" hot="#ff9a4a" density={0.8} seed={2} />
+        <AshColumn t={t + 7} base={[10, 6, -30]} height={44} width={10} count={40} life={6} wind={[0.25, 0.05]} dark="#2a2222" lit="#b04a20" hot="#ff9a4a" density={0.8} seed={5} />
+        <Embers t={t} count={220} box={[-16, 1, -30, 14, 16, 4]} rise={1.4} size={0.12} color="#ff9a3c" scale={700} />
+      </>
+    )}
+    {volcano && (
+      <>
+        <Volcano pos={[420, -60, -2700]} radius={1500} height={740} glow={1.2} />
+        <AshColumn t={t + 20} base={[420, 620, -2700]} height={2300} width={900} count={170} life={9} wind={[-0.16, 0.1]} dark="#2f2626" lit="#a8401f" hot="#ff8a3a" density={0.95} />
+      </>
+    )}
+    <Grass x0={-8} x1={8} z0={4.5} z1={7.5} n={22} seed={seed} h={0.9} />
+  </group>
+);
+const DESA_A: Anchors = { lead: [0.8, 0, -2], second: [-1.6, 0, -3], target: [0, 1.5, -20], rows: [-5, 5, -12, -6], guards: [[4.2, 0, -13], [5.6, 0, -14.5], [3.0, 0, -15.5], [6.8, 0, -12.5]], path: [[3.5, 0, -24], [-2.5, 0, 9]] };
+
+const BentengSet: React.FC<SetProps> = ({ t, seed }) => {
+  const st = stone();
+  const Z = -20;
+  return (
+    <group>
+      <Ground size={500} color="#5a4a38" amp={0.6} seed={seed} />
+      {/* curtain wall + gate + bastion, lit from the front-left so the black cast reads against warm stone */}
+      <mesh material={st} position={[-14, 3.5, Z]} castShadow receiveShadow><boxGeometry args={[24, 7, 2]} /></mesh>
+      <mesh material={st} position={[14, 3.5, Z]} castShadow receiveShadow><boxGeometry args={[24, 7, 2]} /></mesh>
+      <mesh material={st} position={[0, 5.9, Z]} castShadow><boxGeometry args={[4.4, 2.2, 2]} /></mesh>
+      <mesh position={[0, 2.4, Z - 0.6]}><boxGeometry args={[4.0, 4.8, 0.8]} /><meshStandardMaterial color="#120d0a" /></mesh>
+      <mesh material={st} position={[-22, 3.9, Z + 5]} rotation={[0, Math.PI / 4, 0]} castShadow receiveShadow><boxGeometry args={[8, 7.8, 8]} /></mesh>
+      {Array.from({ length: 22 }, (_, i) => <mesh key={i} material={st} position={[-26 + i * 2.5, 7.5, Z + 0.6]} castShadow><boxGeometry args={[1.2, 1.0, 0.8]} /></mesh>)}
+      <Flag pos={[3.5, 7, Z]} t={t} h={7} w={3} color="#8a2a20" />
+      <Lantern pos={[-3.2, 0, Z + 1.4]} t={t} seed={4} light={false} />
+      <Tree pos={[16, 0, -8]} h={9} crown={3.5} seed={seed + 2} />
+      <Grass x0={-8} x1={8} z0={2.5} z1={5} n={14} seed={seed} h={0.5} />
+      <Birds t={t} start={-3} origin={[-40, 18, -36]} dir={[1, 0.1, 0.05]} count={7} speed={5} size={0.5} seed={seed} />
+    </group>
+  );
+};
+const BENTENG_A: Anchors = {
+  lead: [0.9, 0, -3.5], second: [-1.2, 0, -4.2], target: [0, 2, -20], rows: [-6, 6, -15, -8],
+  guards: [[-1.6, 0, -8.5], [1.4, 0, -9.2], [-3.2, 0, -10.5], [3.4, 0, -11]], path: [[-3, 0, -18], [2, 0, 8]], light: [-45, 26, 38],
+};
+
+const Pelabuhan: React.FC<SetProps> = ({ t, seed }) => (
+  <group>
+    <Water y={-1.4} t={t} deep="#13202e" sky="#c98a68" sun="#ffa060" sunDir={[0.1, 0.06, -1]} glitter={1} />
+    <mesh material={plankMat()} position={[0, -0.12, -10]} receiveShadow castShadow><boxGeometry args={[5, 0.24, 40]} /></mesh>
+    {Array.from({ length: 14 }, (_, i) => [-2.4, 2.4].map((x) => <mesh key={`${i}${x}`} material={darkWood} position={[x, -0.9, 8 - i * 3]}><cylinderGeometry args={[0.12, 0.12, 1.8, 6]} /></mesh>))}
+    {[[-1.6, -4], [1.7, -7.5], [-1.5, -13]].map(([x, z], i) => <mesh key={i} material={wood} position={[x, 0.35, z]} castShadow><boxGeometry args={[0.7, 0.7, 0.7]} /></mesh>)}
+    <Lantern pos={[2.2, 0, -2]} t={t} seed={5} />
+    <Ship pos={[-17, -1.4, -36]} rotY={0.25} t={t} seed={seed} />
+    <Ship pos={[20, -1.4, -60]} rotY={-0.4} t={t} seed={seed + 1} scale={1.1} />
+    <Ship pos={[-50, -1.4, -140]} rotY={0.9} t={t} seed={seed + 2} scale={1.2} />
+    <Hills z={-700} color="#1b1820" seed={seed} h={50} />
+  </group>
+);
+const PELABUHAN_A: Anchors = { lead: [0.5, 0, -1.8], second: [-1.2, 0, -2.6], target: [0, 1.5, -40], rows: [-1.9, 1.9, -12, -4.5], guards: [[-1.8, 0, -5.5], [1.8, 0, -6]], path: [[-0.5, 0, -16], [0.8, 0, 4]] };
+
+const Dek: React.FC<SetProps> = ({ t, seed }) => {
+  const roll = Math.sin(t * 0.6) * 0.012;
+  return (
+    <group rotation={[0, 0, roll]}>
+      <Water y={-3.2} t={t} deep="#16202c" sky="#e0a070" sun="#ffb070" sunDir={[-0.15, 0.05, -1]} glitter={1.2} />
+      <mesh material={plankMat()} position={[0, -0.12, 0.5]} receiveShadow castShadow><boxGeometry args={[26, 0.24, 7]} /></mesh>
+      {/* rail */}
+      <mesh material={darkWood} position={[0, 0.95, -2.9]} castShadow><boxGeometry args={[26, 0.1, 0.12]} /></mesh>
+      {Array.from({ length: 22 }, (_, i) => <mesh key={i} material={darkWood} position={[-12.5 + i * 1.2, 0.47, -2.9]}><boxGeometry args={[0.08, 0.94, 0.08]} /></mesh>)}
+      <mesh material={darkWood} position={[0, -0.6, -3.0]}><boxGeometry args={[26, 1.2, 0.2]} /></mesh>
+      {/* mast + rigging */}
+      <mesh material={darkWood} position={[-3.4, 9, -0.6]} castShadow><cylinderGeometry args={[0.18, 0.26, 18, 10]} /></mesh>
+      <mesh material={darkWood} position={[-3.4, 12, -0.6]} rotation={[Math.PI / 2, 0, 0.0]}><cylinderGeometry args={[0.08, 0.08, 9, 6]} /></mesh>
+      {Array.from({ length: 6 }, (_, i) => {
+        const x = -6 + i * 1.2;
+        const a = new Vector3(-3.4, 16, -0.6), b = new Vector3(x, 0.95, -2.9);
+        const d = b.clone().sub(a);
+        const mid = a.clone().add(b).multiplyScalar(0.5);
+        const up = new Vector3(0, 1, 0), n = d.clone().normalize();
+        const ax = up.clone().cross(n).normalize();
+        const ang = Math.acos(up.dot(n));
+        const sn = Math.sin(ang / 2);
+        return <mesh key={i} material={darkWood} position={mid} quaternion={[ax.x * sn, ax.y * sn, ax.z * sn, Math.cos(ang / 2)]} scale={[0.025, d.length(), 0.025]}><cylinderGeometry args={[1, 1, 1, 4]} /></mesh>;
+      })}
+      <mesh position={[-3.0, 8.5, -0.6]} rotation={[0, 0.3, 0]} castShadow><planeGeometry args={[6, 7, 8, 8]} /><meshStandardMaterial color="#6a5a4a" side={DoubleSide} roughness={1} /></mesh>
+      <Ship pos={[40, -3.2, -120]} rotY={0.4} t={t} seed={seed + 3} />
+      <Birds t={t} start={-4} origin={[-20, 14, -40]} dir={[1, 0.05, 0.1]} count={5} speed={4} size={0.5} seed={seed} />
+    </group>
+  );
+};
+const DEK_A: Anchors = { lead: [0.7, 0, -1.9], second: [-1.4, 0, -1.6], target: [0, 1.5, -60], rows: [-6, 6, -2.4, 2.4], guards: [[2.6, 0, -1.2], [3.6, 0, -0.4]], path: [[-8, 0, -1.6], [6, 0, 2.5]] };
+
+const Medan: React.FC<SetProps> = ({ t, fire, seed }) => (
+  <group>
+    <Ground size={900} color="#3a2e22" amp={1.6} seed={seed} />
+    <Hills z={-500} color="#2a2420" seed={seed} h={70} />
+    {[[-9, -16], [8, -20], [-18, -26], [16, -30], [-4, -34]].map(([x, z], i) => <Tent key={i} pos={[x, 0, z]} rotY={hsh(i) * 2} s={1 + hsh(i + 4) * 0.4} />)}
+    {[[-6, -13], [5, -15], [12, -22], [-13, -20], [0, -26]].map(([x, z], i) => <Flag key={i} pos={[x, 0, z]} t={t + i} h={6 + hsh(i) * 2} w={1.4} color="#8a1f18" />)}
+    {fire && <Flames t={t} at={[{ p: [-2.6, 0, -5.5], h: 1.4 }]} seed={seed} />}
+    {fire && <Embers t={t} count={60} box={[-3.5, 0.5, -6.5, -1.7, 6, -4.5]} rise={1.2} size={0.08} scale={700} />}
+    <Grass x0={-8} x1={8} z0={2} z1={5} n={18} seed={seed} h={0.7} />
+  </group>
+);
+const MEDAN_A: Anchors = { lead: [0.8, 0, -1.0], second: [-1.6, 0, -2.0], target: [0, 1.5, -12], rows: [-5.5, 5.5, -13, -5], guards: [[-3.5, 0, -4], [3.8, 0, -4.5]], path: [[4, 0, -24], [-2.5, 0, 8]] };
+
+const Pantai: React.FC<SetProps> = ({ t, seed }) => (
+  <group>
+    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 10]} material={sand} receiveShadow><planeGeometry args={[400, 40]} /></mesh>
+    <Water y={-0.08} t={t} deep="#17283a" sky="#e3a070" sun="#ffb070" sunDir={[0.1, 0.05, -1]} glitter={1.1} />
+    <Palm pos={[-6, 0, -1]} h={10} lean={[1.6, -0.6]} t={t} seed={seed} />
+    <Palm pos={[8, 0, 1]} h={11} lean={[-1.8, -0.8]} t={t} seed={seed + 1} />
+    <mesh material={wood} position={[-2.5, 0.3, -2.5]} rotation={[0, 0.4, 0]} scale={[0.8, 0.5, 3.2]} castShadow><sphereGeometry args={[1, 16, 8, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2]} /></mesh>
+    <Ship pos={[30, -0.1, -90]} rotY={0.6} t={t} seed={seed + 2} />
+  </group>
+);
+const PANTAI_A: Anchors = { lead: [0.8, 0, -1.6], second: [-1.4, 0, -2.0], target: [0, 1.5, -50], rows: [-5, 5, -4, -1.5], guards: [[3, 0, -1], [-3.5, 0, -0.5]], path: [[-9, 0, -3], [7, 0, 3]] };
+
+// the old rampart scene reads "on the fort wall" — exterior wall covers more scripts, so "benteng" uses BentengSet
+export const SETS: Record<SetId, { Comp: React.FC<SetProps>; anchors: Anchors }> = {
+  makam: { Comp: Makam, anchors: MAKAM_A },
+  balai: { Comp: Balai, anchors: BALAI_A },
+  kamar: { Comp: Kamar, anchors: KAMAR_A },
+  hutan: { Comp: Hutan, anchors: HUTAN_A },
+  desa: { Comp: Desa, anchors: DESA_A },
+  benteng: { Comp: BentengSet, anchors: BENTENG_A },
+  pelabuhan: { Comp: Pelabuhan, anchors: PELABUHAN_A },
+  dek: { Comp: Dek, anchors: DEK_A },
+  medan: { Comp: Medan, anchors: MEDAN_A },
+  pantai: { Comp: Pantai, anchors: PANTAI_A },
+};
+
+void Color; void BufferAttribute; void fbm;
+
+==== 13022 project/src/kits/chronicle/Stage.tsx
+// Stage — light, atmosphere and the finishing chain of a CHRONICLE shot.
+//
+// A Look is one mood of the style: a low key light (sun / moon / fire) with soft shadows, a coloured hemisphere,
+// exponential fog that swallows distance into the sky colour, and a grade that pushes shadows toward ink-teal and
+// highlights toward lamp-amber. Chain: MSAA scene → sanitize (NaN guard) → silhouette contours → faint bloom →
+// neutral tone map → grade (split tone, S-curve, vignette, film grain).
+
+import React, { useLayoutEffect, useMemo } from "react";
+import { useFrame, useThree } from "@react-three/fiber";
+import {
+  BackSide, Color, DirectionalLight, FogExp2, HalfFloatType, HemisphereLight, Mesh, NeutralToneMapping, Object3D,
+  PerspectiveCamera, ShaderMaterial, SphereGeometry, Vector2, Vector3, WebGLRenderTarget,
+} from "three";
+import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
+import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
+import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
+import { ShaderPass } from "three/examples/jsm/postprocessing/ShaderPass.js";
+import { SilhouetteOutlinePass } from "./outline.ts";
+import type { Shot, V3 } from "./cam.ts";
+
+export type Look = {
+  key: { pos: V3; color: string; intensity: number; shadow?: { box: number; at: V3; far?: number; bias?: number } };
+  hemi: { sky: string; ground: string; intensity: number };
+  /** soft counter-light from the camera side (keeps sets readable behind the black figures) */
+  fill?: { pos: V3; color: string; intensity: number };
+  fog: { color: string; density: number };
+  sky: { zenith: string; horizon: string; ground: string; sunDir: V3; sunColor: string; sunSize: number; glow: number; stars?: number };
+  exposure: number;
+  bloom: { strength: number; radius: number; threshold: number };
+  grade: { shadow: string; high: string; amount: number; contrast: number; vignette: number; grain: number };
+  outline?: { width?: number; halo?: number; gain?: number };
+  near?: number;
+  far?: number;
+};
+
+const C = (x: string) => new Color(x);
+const mixC = (a: string, b: string, t: number) => "#" + C(a).lerp(C(b), t).getHexString();
+const m = (a: number, b: number, t: number) => a + (b - a) * t;
+const m3 = (a: V3, b: V3, t: number): V3 => [m(a[0], b[0], t), m(a[1], b[1], t), m(a[2], b[2], t)];
+
+/** Blend two looks (light changes inside a shot: a flash, dusk falling, fire flaring). */
+export const mixLook = (a: Look, b: Look, t: number): Look => {
+  if (t <= 0) return a;
+  if (t >= 1) return b;
+  return {
+    key: { pos: m3(a.key.pos, b.key.pos, t), color: mixC(a.key.color, b.key.color, t), intensity: m(a.key.intensity, b.key.intensity, t), shadow: a.key.shadow },
+    hemi: { sky: mixC(a.hemi.sky, b.hemi.sky, t), ground: mixC(a.hemi.ground, b.hemi.ground, t), intensity: m(a.hemi.intensity, b.hemi.intensity, t) },
+    fog: { color: mixC(a.fog.color, b.fog.color, t), density: m(a.fog.density, b.fog.density, t) },
+    sky: {
+      zenith: mixC(a.sky.zenith, b.sky.zenith, t), horizon: mixC(a.sky.horizon, b.sky.horizon, t), ground: mixC(a.sky.ground, b.sky.ground, t),
+      sunDir: m3(a.sky.sunDir, b.sky.sunDir, t), sunColor: mixC(a.sky.sunColor, b.sky.sunColor, t), sunSize: m(a.sky.sunSize, b.sky.sunSize, t),
+      glow: m(a.sky.glow, b.sky.glow, t), stars: m(a.sky.stars ?? 0, b.sky.stars ?? 0, t),
+    },
+    exposure: m(a.exposure, b.exposure, t),
+    bloom: { strength: m(a.bloom.strength, b.bloom.strength, t), radius: m(a.bloom.radius, b.bloom.radius, t), threshold: m(a.bloom.threshold, b.bloom.threshold, t) },
+    grade: {
+      shadow: mixC(a.grade.shadow, b.grade.shadow, t), high: mixC(a.grade.high, b.grade.high, t), amount: m(a.grade.amount, b.grade.amount, t),
+      contrast: m(a.grade.contrast, b.grade.contrast, t), vignette: m(a.grade.vignette, b.grade.vignette, t), grain: m(a.grade.grain, b.grade.grain, t),
+    },
+    fill: a.fill && b.fill ? { pos: m3(a.fill.pos, b.fill.pos, t), color: mixC(a.fill.color, b.fill.color, t), intensity: m(a.fill.intensity, b.fill.intensity, t) } : a.fill,
+    outline: a.outline,
+    near: a.near,
+    far: a.far,
+  };
+};
+
+// ---------------------------------------------------------------- sky dome
+const SkyShader = {
+  uniforms: {
+    uZenith: { value: new Color() }, uHorizon: { value: new Color() }, uGround: { value: new Color() },
+    uSunDir: { value: new Vector3(0, 0.1, -1) }, uSun: { value: new Color() }, uSunSize: { value: 0.02 }, uGlow: { value: 1 }, uStars: { value: 0 },
+  },
+  vertexShader: /* glsl */ `varying vec3 vDir; void main(){ vDir = normalize(position); vec4 p = projectionMatrix * modelViewMatrix * vec4(position, 1.0); gl_Position = p.xyww; }`,
+  fragmentShader: /* glsl */ `
+    uniform vec3 uZenith; uniform vec3 uHorizon; uniform vec3 uGround; uniform vec3 uSunDir; uniform vec3 uSun;
+    uniform float uSunSize; uniform float uGlow; uniform float uStars; varying vec3 vDir;
+    float hash(vec3 p){ p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
+    void main(){
+      vec3 d = normalize(vDir);
+      float h = d.y;
+      vec3 c = h > 0.0 ? mix(uHorizon, uZenith, pow(clamp(h, 0.0, 1.0), 0.55)) : mix(uHorizon, uGround, clamp(-h * 6.0, 0.0, 1.0));
+      vec3 s = normalize(uSunDir);
+      float cs = max(dot(d, s), 0.0);
+      // wide warm wash + tight halo + hard disc
+      c += uSun * uGlow * (0.22 * pow(cs, 6.0) + 0.35 * pow(cs, 60.0));
+      c += uSun * 2.2 * smoothstep(1.0 - uSunSize * 0.02, 1.0 - uSunSize * 0.012, cs);
+      if (uStars > 0.0 && h > 0.05) {
+        vec3 q = floor(d * 420.0);
+        float st = step(0.9975, hash(q)) * smoothstep(0.05, 0.4, h);
+        c += vec3(0.9, 0.92, 1.0) * st * uStars * (0.4 + 0.6 * hash(q + 3.1));
+      }
+      gl_FragColor = vec4(c, 1.0);
+    }`,
+};
+
+// ---------------------------------------------------------------- grade
+const GradeShader = {
+  uniforms: {
+    tDiffuse: { value: null }, uTime: { value: 0 }, uRes: { value: new Vector2(1080, 1920) },
+    uShadow: { value: new Color("#0f2a33") }, uHigh: { value: new Color("#ffb46b") }, uAmount: { value: 0.12 },
+    uContrast: { value: 0.18 }, uVignette: { value: 0.3 }, uGrain: { value: 0.018 },
+  },
+  vertexShader: /* glsl */ `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+  fragmentShader: /* glsl */ `
+    uniform sampler2D tDiffuse; uniform float uTime; uniform vec2 uRes; uniform vec3 uShadow; uniform vec3 uHigh;
+    uniform float uAmount; uniform float uContrast; uniform float uVignette; uniform float uGrain; varying vec2 vUv;
+    float hash(vec2 p){ p = fract(p * vec2(443.897, 441.423)); p += dot(p, p.yx + 19.19); return fract((p.x + p.y) * p.x); }
+    void main(){
+      vec4 c = texture2D(tDiffuse, vUv);
+      float l = dot(c.rgb, vec3(0.2126, 0.7152, 0.0722));
+      c.rgb = mix(c.rgb, c.rgb * uShadow * 2.2, uAmount * (1.0 - smoothstep(0.0, 0.45, l)));
+      c.rgb = mix(c.rgb, c.rgb * uHigh * 1.35, uAmount * smoothstep(0.35, 1.0, l));
+      c.rgb = mix(c.rgb, c.rgb * c.rgb * (3.0 - 2.0 * c.rgb), uContrast);
+      vec2 d = (vUv - 0.5) * vec2(1.0, 0.85);
+      c.rgb *= 1.0 - uVignette * smoothstep(0.25, 0.85, length(d));
+      float g = hash(vUv * uRes + uTime * 17.0) - 0.5;
+      c.rgb += g * uGrain * (0.5 + 0.5 * (1.0 - l));
+      gl_FragColor = vec4(max(c.rgb, 0.0), 1.0);
+    }`,
+};
+
+const SanitizeShader = {
+  uniforms: { tDiffuse: { value: null }, uMax: { value: 16 } },
+  vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: `uniform sampler2D tDiffuse; uniform float uMax; varying vec2 vUv;
+    void main() {
+      vec4 c = texture2D(tDiffuse, vUv);
+      if (any(isnan(c)) || any(isinf(c))) c = vec4(0.0, 0.0, 0.0, 1.0);
+      gl_FragColor = vec4(clamp(c.rgb, 0.0, uMax), 1.0);
+    }`,
+};
+
+export const Stage: React.FC<{ shot: Shot; look: Look; frame: number; children: React.ReactNode }> = ({ shot, look, frame, children }) => {
+  const { gl, scene, camera, size } = useThree();
+
+  const rig = useMemo(() => {
+    const target = new Object3D();
+    const key = new DirectionalLight("#fff", 2);
+    key.target = target;
+    key.shadow.mapSize.set(4096, 4096);
+    key.shadow.radius = 4;
+    const hemi = new HemisphereLight("#fff", "#444", 1);
+    const fill = new DirectionalLight("#fff", 0);
+    fill.target = target;
+    const sky = new Mesh(new SphereGeometry(1, 48, 24), new ShaderMaterial({ ...SkyShader, side: BackSide, depthWrite: false, fog: false }));
+    sky.frustumCulled = false;
+    sky.renderOrder = -10;
+    sky.userData.noMask = true;
+    return { target, key, hemi, fill, sky };
+  }, []);
+
+  const chain = useMemo(() => {
+    const w = size.width, h = size.height;
+    const rt = new WebGLRenderTarget(w, h, { type: HalfFloatType, samples: 4 });
+    const composer = new EffectComposer(gl, rt);
+    composer.setPixelRatio(1);
+    composer.setSize(w, h);
+    composer.addPass(new RenderPass(scene, camera));
+    composer.addPass(new ShaderPass(SanitizeShader));
+    const outline = new SilhouetteOutlinePass(scene, camera, w, h);
+    composer.addPass(outline);
+    const bloom = new UnrealBloomPass(new Vector2(w, h), 0.3, 0.5, 0.9);
+    composer.addPass(bloom);
+    composer.addPass(new OutputPass());
+    const grade = new ShaderPass(GradeShader);
+    (grade.uniforms.uRes.value as Vector2).set(w, h);
+    composer.addPass(grade);
+    return { composer, outline, bloom, grade };
+  }, [gl, scene, camera, size.width, size.height]);
+
+  useLayoutEffect(() => {
+    const cam = camera as PerspectiveCamera;
+    cam.position.set(...shot.pos);
+    cam.up.set(Math.sin(shot.roll ?? 0), Math.cos(shot.roll ?? 0), 0);
+    cam.lookAt(...shot.target);
+    cam.fov = shot.fov;
+    cam.near = look.near ?? 0.1;
+    cam.far = look.far ?? 4000;
+    cam.updateProjectionMatrix();
+    cam.updateMatrixWorld();
+    gl.toneMapping = NeutralToneMapping;
+    gl.shadowMap.autoUpdate = false;
+  }, [shot, camera, gl, look.near, look.far]);
+
+  useFrame(() => {
+    const L = look;
+    const k = rig.key;
+    const sh = L.key.shadow;
+    const at = sh?.at ?? [0, 0, 0];
+    rig.target.position.set(...at);
+    rig.target.updateMatrixWorld();
+    k.position.set(at[0] + L.key.pos[0], at[1] + L.key.pos[1], at[2] + L.key.pos[2]);
+    k.color.set(L.key.color);
+    k.intensity = L.key.intensity;
+    k.castShadow = !!sh;
+    if (sh) {
+      const b = sh.box;
+      const sc = k.shadow.camera;
+      sc.left = -b; sc.right = b; sc.top = b; sc.bottom = -b;
+      sc.near = 0.5;
+      sc.far = sh.far ?? 400;
+      sc.updateProjectionMatrix();
+      k.shadow.bias = sh.bias ?? -0.0004;
+      k.shadow.normalBias = 0.02;
+    }
+    k.updateMatrixWorld();
+    rig.hemi.color.set(L.hemi.sky);
+    rig.hemi.groundColor.set(L.hemi.ground);
+    rig.hemi.intensity = L.hemi.intensity;
+    const F = L.fill;
+    rig.fill.intensity = F ? F.intensity : 0;
+    if (F) { rig.fill.position.set(at[0] + F.pos[0], at[1] + F.pos[1], at[2] + F.pos[2]); rig.fill.color.set(F.color); }
+    rig.fill.updateMatrixWorld();
+
+    const fog = scene.fog as FogExp2 | null;
+    if (!fog) scene.fog = new FogExp2(L.fog.color, L.fog.density);
+    else { fog.color.set(L.fog.color); fog.density = L.fog.density; }
+    scene.background = new Color(L.sky.horizon);
+
+    const cam = camera as PerspectiveCamera;
+    rig.sky.position.copy(cam.position);
+    rig.sky.scale.setScalar((cam.far ?? 1000) * 0.9);
+    rig.sky.updateMatrixWorld();
+    const su = (rig.sky.material as ShaderMaterial).uniforms;
+    su.uZenith.value.set(L.sky.zenith);
+    su.uHorizon.value.set(L.sky.horizon);
+    su.uGround.value.set(L.sky.ground);
+    su.uSunDir.value.set(...L.sky.sunDir).normalize();
+    su.uSun.value.set(L.sky.sunColor);
+    su.uSunSize.value = L.sky.sunSize;
+    su.uGlow.value = L.sky.glow;
+    su.uStars.value = L.sky.stars ?? 0;
+
+    gl.toneMappingExposure = L.exposure;
+    chain.bloom.strength = L.bloom.strength;
+    chain.bloom.radius = L.bloom.radius;
+    chain.bloom.threshold = L.bloom.threshold;
+    chain.outline.setRadius(size.width, L.outline?.width ?? 1);
+    chain.outline.mat.uniforms.uHalo.value = L.outline?.halo ?? 0.35;
+    chain.outline.mat.uniforms.uGain.value = L.outline?.gain ?? 1.5;
+    const g = chain.grade.uniforms;
+    g.uTime.value = frame % 997;
+    g.uShadow.value.set(L.grade.shadow);
+    g.uHigh.value.set(L.grade.high);
+    g.uAmount.value = L.grade.amount;
+    g.uContrast.value = L.grade.contrast;
+    g.uVignette.value = L.grade.vignette;
+    g.uGrain.value = L.grade.grain;
+    gl.shadowMap.needsUpdate = true;
+    chain.composer.render();
+  }, 1);
+
+  return (
+    <>
+      <primitive object={rig.target} />
+      <primitive object={rig.key} />
+      <primitive object={rig.hemi} />
+      <primitive object={rig.fill} />
+      <primitive object={rig.sky} />
+      {children}
+    </>
+  );
+};

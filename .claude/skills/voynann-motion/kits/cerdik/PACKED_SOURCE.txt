@@ -1,0 +1,2762 @@
+VOYNANN Motion - packed source files of this folder. Do not edit by hand.
+The skill upload in the Claude app accepts at most 200 files, so the source files are packed here.
+`node <skill folder>/new-project.mjs <project folder> --kit=<style>` unpacks them into the project.
+Format: per file one line with four '=' signs, the byte length and the path, then exactly that many bytes.
+
+==== 20315 project/scripts/make.mjs
+// CERDIK — story → film.
+//   node scripts/make.mjs --library [world]       what exists: worlds + places, cast presets, props, actions, expressions, shots, effects
+//   node scripts/make.mjs <id> --plan             compile stories/<id>/story.json, print the shot list + warnings
+//   node scripts/make.mjs <id> --stills 2s,9.5s   plan + stills (out/<id>/stills/_sheet.jpg); --stills auto = one per shot
+//   node scripts/make.mjs <id> --preview          plan + sound + 540×960 preview (rendered at 2×, downscaled) + QA report
+//   node scripts/make.mjs <id> --final            plan + sound + QA gate + 1080×1920 @ 60 + delivery scan
+// Characters (tokoh):
+//   node scripts/make.mjs --menu                  the buyer's character cards → out/_menu/kartu-tokoh-1|2|3.jpg (codes T/R/K/F/B/W)
+//   node scripts/make.mjs <id> --cast             this story's people, full body + face → out/<id>/tokoh.jpg (show before stills)
+//   node scripts/make.mjs <id> --save-tokoh bu[,saingan] [--nama "Bu Sari"]   save people → tokoh/tokoh-<nama>.json
+//   story.json "cast": { "bu": { "tokoh": "bu-sari" } } uses a saved file (+ optional "look" changes on top)
+// Voice: stories/<id>/vo.(mp3|wav|m4a) → word timings with whisper.cpp; without a voice the sentences are paced.
+// Own objects: stories/<id>/props.json ({ "name": { "about", "size", "parts": [...] } }, same format as the library).
+// Flags: --silent (no sound), --no-music (voice + SFX only), --wide (16:9: only when asked), --no-qa, --force-qa.
+import fs from "node:fs";
+import path from "node:path";
+import { execFileSync, spawnSync } from "node:child_process";
+import { compile, paceLines, EXPRS } from "../src/cerdik/compile.ts";
+import { WORLDS } from "../src/cerdik/worlds/index.ts";
+import { CAST, MENU, lookProblems, menuText, mergeLook, resolveLook, tokohCode } from "../src/cerdik/cast.ts";
+import { PROPS } from "../src/cerdik/props/lib.ts";
+import { ACTIONS } from "../src/cerdik/actions.ts";
+import { syncVo } from "./lib/vo.mjs";
+import { buildSound } from "./lib/cerdik-sound.mjs";
+import { deliveryScan, sceneGate } from "./qa-gate.mjs";
+
+const args = process.argv.slice(2);
+const flag = (f) => args.includes(f);
+const val = (f) => (args.includes(f) ? args[args.indexOf(f) + 1] : undefined);
+const sh = (cmd, a) => { const r = spawnSync(cmd, a, { stdio: "inherit" }); if (r.status) process.exit(r.status); };
+
+// ---------------------------------------------------------------- character cards (CerdikCard strips → stacked JPGs)
+const renderCards = (groups, h, outDir, names) => {
+  fs.mkdirSync(outDir, { recursive: true });
+  const tmp = path.join(outDir, "_strips"), pf = path.join(outDir, "_card-props.json");
+  fs.rmSync(tmp, { recursive: true, force: true });
+  fs.writeFileSync(pf, JSON.stringify({ strips: groups.flat(), h }));
+  sh("npx", ["remotion", "render", "src/index.ts", "CerdikCard", tmp, "--sequence", "--image-format=jpeg", "--jpeg-quality=92", `--props=${pf}`, "--concurrency=2", "--log=error"]);
+  const files = fs.readdirSync(tmp).filter((f) => /^element-\d+\.jpe?g$/.test(f)).sort((a, b) => parseInt(a.slice(8)) - parseInt(b.slice(8))).map((f) => path.join(tmp, f));
+  let k = 0;
+  const made = groups.map((g, gi) => {
+    const part = files.slice(k, (k += g.length)), to = path.join(outDir, names[gi]);
+    if (part.length === 1) fs.copyFileSync(part[0], to);
+    else execFileSync("ffmpeg", ["-v", "error", "-y", ...part.flatMap((f) => ["-i", f]), "-filter_complex", part.map((_, i) => `[${i}:v]`).join("") + `vstack=inputs=${part.length}`, "-q:v", "3", to]);
+    return to;
+  });
+  fs.rmSync(tmp, { recursive: true, force: true });
+  fs.rmSync(pf, { force: true });
+  return made;
+};
+const rows = (a, n) => Array.from({ length: Math.ceil(a.length / n) }, (_, i) => a.slice(i * n, i * n + n));
+const BASE = { costume: { base: "#2f9c93", collar: "#f4f1e8", belt: "#3b2618" }, hair: { color: "#2a1a12", style: "tuft" }, face: { brows: "thick" } };
+
+if (flag("--menu")) {
+  const presets = Object.keys(CAST).map((k) => ({ look: resolveLook(k), code: tokohCode(k), name: k }));
+  const card1 = [
+    { kind: "header", title: "KARTU TOKOH", lines: ["Pilih tokoh siap pakai T1–T" + presets.length + ", lalu ganti apa saja:", "rambut (R), penutup kepala (K), wajah (F), badan (B), warna (W).", "Contoh: “Tokoh utama T5, baju W7, kerudung W2.”", "“Saingannya T3, rambut R2, kumis, badan B5.”"] },
+    ...rows(presets, 6).map((items, i) => ({ kind: "people", frame: "body", title: i ? undefined : "TOKOH SIAP PAKAI", items })),
+  ];
+  const hair = MENU.hair.map((o) => ({ look: { ...BASE, hair: { color: o.style === "bald-ring" ? "#9e9a92" : "#2a1a12", style: o.style } }, code: o.code, name: o.name, rotY: { bun: 1.75, side: 0.75, "bald-ring": 0.55 }[o.style] ?? 0.42 }));
+  const hats = MENU.hat.map((o) => ({ look: { ...BASE, hat: { kind: o.kind } }, code: o.code, name: o.name, rotY: 0.3 }));
+  const face = MENU.face.map((o) => ({ look: { ...BASE, face: { brows: "thick", ...o.face } }, code: o.code, name: o.name, rotY: 0.22, expr: "neutral" }));
+  const card2 = [
+    { kind: "people", frame: "head", title: "RAMBUT \u00b7 sebut juga warnanya", items: hair.slice(0, 3) },
+    { kind: "people", frame: "head", items: hair.slice(3) },
+    { kind: "people", frame: "head", title: "PENUTUP KEPALA \u00b7 bisa diwarnai", items: hats.slice(0, 4) },
+    { kind: "people", frame: "head", items: hats.slice(4) },
+  ];
+  const build = MENU.build.map((o) => ({ look: { ...BASE, costume: { ...BASE.costume, base: "#3a7bd5" }, build: o.build }, code: o.code, name: o.name, rotY: 0.15 }));
+  const card3 = [
+    { kind: "people", frame: "head", title: "WAJAH \u00b7 boleh digabung", items: face.slice(0, 3) },
+    { kind: "people", frame: "head", items: face.slice(3) },
+    { kind: "people", frame: "body", title: "BADAN", items: build },
+    { kind: "swatches", title: "WARNA \u00b7 untuk baju, rambut, penutup kepala", colors: [...MENU.colors], lines: [
+      "Pakaian: " + MENU.clothes.map((c) => c.name).join(" \u00b7 "),
+      "Sebut bagian + warna, mis. \u201crompi W12, sabuk W16\u201d. Warna lain boleh, sebut namanya.",
+    ] },
+  ];
+  const made = renderCards([card1, card2, card3], 480, path.join("out", "_menu"), ["kartu-tokoh-1.jpg", "kartu-tokoh-2.jpg", "kartu-tokoh-3.jpg"]);
+  console.log("cards:\n  " + made.join("\n  ") + "\n\n" + menuText());
+  process.exit(0);
+}
+
+if (flag("--library")) {
+  const only = val("--library") && !val("--library").startsWith("--") ? val("--library") : null;
+  for (const W of Object.values(WORLDS)) {
+    if (only && W.id !== only) continue;
+    console.log(`WORLD "${W.id}" — ${W.about}\n  places: ${Object.entries(W.spots).map(([k, s]) => `${k}${s.surface ? "[table]" : ""}`).join(", ")}\n  views: ${Object.keys(W.views).join(", ")}   crowd places: ${(W.crowd ?? []).join(", ")}${W.indoor ? "\n  indoors: rain = grey light + sound only" : ""}\n`);
+  }
+  if (only) process.exit(0);
+  console.log("CAST presets:\n" + Object.entries(CAST).map(([k, c]) => `  ${tokohCode(k).padEnd(4)}${k.padEnd(10)} ${c.about}`).join("\n"));
+  console.log("\n" + menuText());
+  const saved = fs.existsSync("tokoh") ? fs.readdirSync("tokoh").filter((f) => f.endsWith(".json")) : [];
+  console.log(saved.length ? `SAVED tokoh/: ${saved.join(", ")}` : "SAVED tokoh/: none");
+  console.log("\nPROPS:\n" + Object.entries(PROPS).map(([k, p]) => `  ${k.padEnd(14)} ${p.about}${p.vessel ? "  [can be cut open]" : ""}${p.grips ? "  [can be held]" : ""}`).join("\n"));
+  console.log("\nACTIONS (\"do\"):\n" + Object.entries(ACTIONS).map(([k, a]) => `  ${k.padEnd(9)} ${a.about}`).join("\n"));
+  console.log(`\nEXPRESSIONS ("expr"): ${EXPRS.join(", ")}`);
+  console.log("SHOTS: establish, aerial, wide, medium, close, reaction, low, ots (\"over\": a person), insert (a prop), cutaway (a vessel cut open), top, ground");
+  console.log("MOVES: push (default), pull, still, orbit, rise, track    TIME: day, gold, hot, night, dawn    WEATHER: clear, rain");
+  console.log("EFFECTS (\"fx\"): glow, sweat, vapor, steam, sparkle, dust, heat, chill, cut");
+  process.exit(0);
+}
+
+const id = args.find((a) => !a.startsWith("--") && a !== val("--stills") && a !== val("--save-tokoh") && a !== val("--nama"));
+if (!id) { console.error("usage: node scripts/make.mjs <id> --plan | --stills 2s,9s | --preview | --final   (or --library)"); process.exit(1); }
+const dir = path.join("stories", id), out = path.join("out", id);
+const storyFile = path.join(dir, "story.json");
+if (!fs.existsSync(storyFile)) { console.error(`missing ${storyFile}`); process.exit(1); }
+fs.mkdirSync(out, { recursive: true });
+let story;
+try { story = JSON.parse(fs.readFileSync(storyFile, "utf8")); } catch (e) { console.error(`${storyFile} is not valid JSON: ${e.message}`); process.exit(1); }
+const extraFile = path.join(dir, "props.json");
+const extraProps = fs.existsSync(extraFile) ? JSON.parse(fs.readFileSync(extraFile, "utf8")) : undefined;
+
+// ---------------------------------------------------------------- saved characters (tokoh/tokoh-<slug>.json)
+const slug = (x) => String(x).toLowerCase().normalize("NFKD").replace(/[̀-ͯ]/g, "").replace(/^tokoh-/, "").replace(/\.json$/, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+const savedTokoh = () => (fs.existsSync("tokoh") ? fs.readdirSync("tokoh").filter((f) => f.endsWith(".json")) : []);
+for (const [cid, c] of Object.entries(story.cast ?? {})) {
+  if (!c.tokoh) continue;
+  const f = [path.join("tokoh", `tokoh-${slug(c.tokoh)}.json`), path.join("tokoh", `${slug(c.tokoh)}.json`), c.tokoh].find((x) => x.endsWith(".json") && fs.existsSync(x));
+  if (!f) { console.error(`✗ cast "${cid}": saved tokoh "${c.tokoh}" not found in tokoh/ (have: ${savedTokoh().join(", ") || "none"}) — copy the buyer's tokoh-*.json there`); process.exit(2); }
+  let t;
+  try { t = JSON.parse(fs.readFileSync(f, "utf8")); } catch (e) { console.error(`✗ ${f} is not valid JSON: ${e.message}`); process.exit(2); }
+  if (!t.preset || !CAST[t.preset] || !t.look) { console.error(`✗ ${f}: needs "preset" (one of ${Object.keys(CAST).join(", ")}) and "look"`); process.exit(2); }
+  story.cast[cid] = { ...c, preset: t.preset, look: mergeLook(t.look, c.look), name: c.name ?? t.nama };
+}
+if (flag("--save-tokoh")) {
+  const ids = String(val("--save-tokoh") ?? "").split(",").filter(Boolean);
+  if (!ids.length) { console.error("usage: --save-tokoh <castId>[,<castId>] [--nama \"Nama\"]"); process.exit(1); }
+  fs.mkdirSync("tokoh", { recursive: true });
+  for (const cid of ids) {
+    const c = story.cast?.[cid];
+    if (!c) { console.error(`✗ "${cid}" is not in cast (have: ${Object.keys(story.cast ?? {}).join(", ")})`); process.exit(2); }
+    const look = resolveLook(c.preset, c.look), bad = lookProblems(look);
+    if (bad.length) { console.error(`✗ cast "${cid}":\n  ` + bad.join("\n  ")); process.exit(2); }
+    const nama = (ids.length === 1 && val("--nama")) || c.name || cid;
+    const file = path.join("tokoh", `tokoh-${slug(nama)}.json`);
+    fs.writeFileSync(file, JSON.stringify({ voynann: "cerdik-tokoh/1", nama, preset: c.preset, look, dari: id, catatan: "Tokoh CERDIK tersimpan. Di video berikutnya cukup sebut namanya. Untuk proyek atau komputer lain: salin file ini ke folder tokoh/ di proyek itu." }, null, 2) + "\n");
+    console.log(`saved: ${file}   (story.json: "cast": { "${cid}": { "tokoh": "${slug(nama)}" } })`);
+  }
+  if (!["--cast", "--plan", "--stills", "--preview", "--final"].some(flag)) process.exit(0);
+}
+if (flag("--cast")) {
+  const people = Object.entries(story.cast ?? {}).map(([cid, c]) => {
+    const look = resolveLook(c.preset, c.look);
+    return { look, code: c.name ?? cid, name: c.tokoh ? "tokoh tersimpan" : `dari ${tokohCode(c.preset)} ${c.preset}` };
+  });
+  if (!people.length) { console.error("✗ story has no cast"); process.exit(2); }
+  const bad = Object.entries(story.cast).flatMap(([cid, c]) => lookProblems(resolveLook(c.preset, c.look)).map((p) => `cast "${cid}": ${p}`));
+  if (bad.length) { console.error("✗ " + bad.join("\n  ")); process.exit(2); }
+  const strips = [
+    ...rows(people, 4).map((items, i) => ({ kind: "people", frame: "body", title: i ? undefined : `TOKOH · ${story.title ?? id}`, items })),
+    ...rows(people, 4).map((items) => ({ kind: "people", frame: "head", items: items.map((x) => ({ ...x, rotY: 0.2 })) })),
+  ];
+  const [file] = renderCards([strips], 600, out, ["tokoh.jpg"]);
+  console.log(`cast card: ${file}`);
+  if (!["--plan", "--stills", "--preview", "--final"].some(flag)) process.exit(0);
+}
+const texts = story.lines.map((l) => l.text);
+
+// ---------------------------------------------------------------- timing
+const vo = ["vo.wav", "vo.mp3", "vo.m4a"].map((f) => path.join(dir, f)).find((f) => fs.existsSync(f));
+let lines, voice;
+if (vo) {
+  const cache = path.join(out, "timing.json");
+  const stamp = `${fs.statSync(vo).mtimeMs}|${texts.join("|")}`;
+  const c = fs.existsSync(cache) ? JSON.parse(fs.readFileSync(cache, "utf8")) : null;
+  if (c?.stamp === stamp && fs.existsSync(c.voice)) { lines = c.lines; voice = c.voice; console.log(`voice: ${vo} (timings cached)`); }
+  else {
+    const r = syncVo(vo, texts, path.join(out, "vo"));
+    lines = r.lines; voice = r.voice;
+    fs.writeFileSync(cache, JSON.stringify({ stamp, lines, voice }));
+    console.log(r.method === "whisper" ? `voice: ${vo} — whisper matched all but ${r.missed} word(s)` : `voice: ${vo} — whisper.cpp not found: sentences laid onto the speech runs (sentence starts ≈ exact, words paced)`);
+    if (r.missed > texts.join(" ").split(/\s+/).length * 0.15) console.log(`! many words not matched: is the recording this script?\n  heard: ${r.heard}`);
+  }
+} else {
+  lines = paceLines(texts);
+  console.log("voice: none yet — sentences paced at 2.9 words/s (put the recording at " + path.join(dir, "vo.mp3") + ")");
+}
+
+// ---------------------------------------------------------------- plan
+const silent = flag("--silent"), wide = flag("--wide") || story.format === "landscape";
+const wantSound = !silent && (flag("--preview") || flag("--final"));
+const audio = wantSound ? `stories/${id}/mix.wav` : undefined;
+let plan;
+try { plan = compile(story, lines, { aspect: wide ? 16 / 9 : 9 / 16, audio, extraProps }); }
+catch (e) { console.error(`\n✗ ${e.message}`); process.exit(2); }
+const cuts = plan.shots.slice(1).map((s) => s.t0.toFixed(3)).join(",");
+console.log(`\n"${plan.title}" — ${plan.shots.length} shots, ${plan.duration}s, world ${plan.world}`);
+plan.shots.forEach((S, i) => {
+  const who = S.actors.filter((a) => !a.extra).map((a) => `${a.id}:${a.keys.map((k) => k.do || k.expr).filter(Boolean).join(">")}`).join(" ");
+  console.log(`${String(i + 1).padStart(2)}  ${S.t0.toFixed(2).padStart(6)}–${S.t1.toFixed(2).padEnd(6)} ${S.kind.padEnd(9)} vis ${S.vis.toFixed(2)} ${S.time}${S.weather === "rain" ? " rain" : ""}${S.dissolve ? " dissolve" : ""}${S.cut ? ` cut:${S.cut}` : ""}${S.fx.length ? `  fx:${S.fx.map((f) => `${f.kind}@${f.on}`).join(",")}` : ""}\n      ${lines[S.line].text.slice(0, 80)}   [${who}]`);
+});
+if (plan.warnings.length) console.log(`\n! ${plan.warnings.length} warning(s):\n  ` + plan.warnings.join("\n  "));
+else console.log("\nno warnings");
+
+if (wantSound) {
+  const r = buildSound(plan, { voice, outDir: path.join(out, "sound"), mixFile: path.join("public", audio), music: !flag("--no-music") });
+  console.log(`sound: public/${audio}  ${r.lufs} LUFS  ${r.peak} dBTP  (${r.events} cues)`);
+}
+const tag = wide ? "-wide" : "";
+const planFile = path.join(out, `plan${tag}.json`), propsFile = path.join(out, `props${tag}.json`);
+const extraOut = extraProps ? { extraProps } : {};
+fs.writeFileSync(planFile, JSON.stringify(plan));
+fs.writeFileSync(propsFile, JSON.stringify({ plan, ...extraOut }));
+if (flag("--plan")) process.exit(plan.warnings.length ? 3 : 0);
+
+const run = sh;
+const comp = (k) => `Cerdik${k}${wide ? "Wide" : ""}`;
+const gateDir = path.join(out, `qa-gate${tag}`);
+// the scene probe runs in one tab: with several tabs it can read a pose from another frame (false one-frame flicks)
+// a dissolve has two cut moments for the probe: the new shot appears (t0) and the old one leaves (t0 + 0.5 s)
+const gate = { comp: comp("Preview"), cuts: plan.shots.slice(1).flatMap((s) => (s.dissolve ? [s.t0, s.t0 + 0.5] : [s.t0])), out: gateDir, props: propsFile, extra: ["--concurrency=1"] };
+if (flag("--stills")) {
+  // all stills from ONE loaded page (composition CerdikStills maps its frame i to film frame frames[i]): a world with
+  // heavy procedural textures pays its load once, not once per still
+  let list = val("--stills");
+  const auto = !list || list === "auto";
+  if (auto) list = plan.shots.map((s) => `${((s.t0 + s.t1) / 2).toFixed(2)}s`).join(",");
+  const frames = list.split(",").map((t) => (t.endsWith("s") ? Math.round(parseFloat(t) * 30) : parseInt(t, 10)));
+  const dir = path.join(out, `stills${tag}`);
+  fs.rmSync(dir, { recursive: true, force: true });
+  fs.mkdirSync(dir, { recursive: true });
+  const sp = path.join(out, `stills-props${tag}.json`);
+  fs.writeFileSync(sp, JSON.stringify({ plan: { ...plan, audio: undefined }, ...extraOut, frames }));
+  run("npx", ["remotion", "render", "src/index.ts", wide ? "CerdikStillsWide" : "CerdikStills", dir, "--sequence", "--image-format=jpeg", "--jpeg-quality=92", `--props=${sp}`, "--concurrency=2", "--log=error"]);
+  const made = fs.readdirSync(dir).filter((f) => /^element-\d+\.jpe?g$/.test(f)).sort((a, b) => parseInt(a.slice(8)) - parseInt(b.slice(8)));
+  const files = made.map((f, i) => { const to = path.join(dir, `f${String(frames[i]).padStart(4, "0")}${auto ? `-shot${i + 1}` : ""}.jpg`); fs.renameSync(path.join(dir, f), to); return to; });
+  // numbered contact sheet (4 per row)
+  const W = wide ? 960 : 540, H = wide ? 540 : 960, cols = Math.min(4, files.length), n = cols * Math.ceil(files.length / cols);
+  const sheet = (labels) => {
+    const pads = Array.from({ length: n - files.length }, () => ["-f", "lavfi", "-i", `color=c=black:s=${W}x${H}`]).flat();
+    const filter = Array.from({ length: n }, (_, i) => `[${i}:v]scale=${W}:${H},setsar=1${labels && i < files.length ? `,drawtext=text='${auto ? i + 1 : frames[i]}':x=10:y=10:fontsize=34:fontcolor=yellow:box=1:boxcolor=black@0.6` : ""}[v${i}]`).join(";") + ";" +
+      Array.from({ length: n }, (_, i) => `[v${i}]`).join("") + `xstack=inputs=${n}:layout=` + Array.from({ length: n }, (_, i) => `${(i % cols) * W}_${Math.floor(i / cols) * H}`).join("|") + `,scale='min(2160,iw)':-2`;
+    execFileSync("ffmpeg", ["-v", "error", "-y", ...files.flatMap((f) => ["-i", f]), ...pads, "-filter_complex", filter, "-frames:v", "1", path.join(dir, "_sheet.jpg")], { stdio: ["ignore", "ignore", "ignore"] });
+  };
+  if (n > 1) { try { sheet(true); } catch { try { sheet(false); } catch { console.log("(contact sheet skipped: ffmpeg not available)"); } } }
+  console.log(`stills: ${files.length} → ${path.join(dir, "_sheet.jpg")}${auto ? "  (numbers = shots)" : ""}`);
+}
+if (flag("--preview")) {
+  const big = path.join(out, "_ss.mp4"), file = path.join(out, wide ? `${id}_preview_960x540.mp4` : `${id}_preview_540x960.mp4`);
+  run("npx", ["remotion", "render", "src/index.ts", comp("PreviewSS"), big, `--props=${propsFile}`, "--concurrency=3", "--crf=12", "--log=error"]);
+  execFileSync("ffmpeg", ["-v", "error", "-y", "-i", big, "-vf", wide ? "scale=960:540:flags=lanczos" : "scale=540:960:flags=lanczos", "-c:v", "libx264", "-crf", "17", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", file]);
+  fs.rmSync(big);
+  console.log(`\npreview: ${file}`);
+  if (!flag("--no-qa")) sceneGate({ ...gate, force: true });
+}
+if (flag("--final")) {
+  if (!flag("--no-qa")) sceneGate({ ...gate, force: flag("--force-qa") });
+  const file = path.join(out, wide ? `${id}_1920x1080_60fps.mp4` : `${id}_1080x1920_60fps.mp4`);
+  run("npx", ["remotion", "render", "src/index.ts", comp("Final"), file, `--props=${propsFile}`, "--concurrency=3", "--crf=16", "--log=error"]);
+  console.log(`\nfinal: ${file}`);
+  if (!flag("--no-qa") && deliveryScan({ file, cuts: gate.cuts, out: path.join(gateDir, "delivered") }) === "FAIL") {
+    console.error(`✗ the delivered film has a hard glitch (see ${path.join(gateDir, "delivered")}) — fix it before delivery`);
+    process.exitCode = 1;
+  }
+}
+
+==== 13493 project/src/cerdik/camera.ts
+// CERDIK camera solver — picks a camera for each shot automatically. For a shot kind and its subjects it tries a fan
+// of angles and distances around them and scores each: are the subjects' heads and bodies visible (rays tested
+// against the world's colliders, the other people and big props), do they fit the narrow 9:16 frame, does the
+// camera see their faces, is there something behind them (not empty sky), is it different from the previous shot.
+// Pure TypeScript (no three).
+
+import type { Box, PCam, ShotKind, V3, WorldMeta } from "./types.ts";
+
+export type Subj = { id: string; p: V3; face: number; s: number; kind: "person" | "prop"; size?: V3 };
+export type Occ = { c: V3; r: number; id: string };
+
+const D = Math.PI / 180;
+const add = (a: V3, b: V3, k = 1): V3 => [a[0] + b[0] * k, a[1] + b[1] * k, a[2] + b[2] * k];
+const sub = (a: V3, b: V3): V3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const len = (a: V3) => Math.hypot(a[0], a[1], a[2]);
+const nrm = (a: V3): V3 => { const l = len(a) || 1; return [a[0] / l, a[1] / l, a[2] / l]; };
+const dot = (a: V3, b: V3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const wrapA = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
+
+/** Head centre / chest of a person, centre of a prop. */
+export const headOf = (s: Subj): V3 => (s.kind === "person" ? add(s.p, [0, 1.25 * s.s, 0]) : add(s.p, [0, (s.size?.[1] ?? 0.3) * 0.55, 0]));
+export const chestOf = (s: Subj): V3 => (s.kind === "person" ? add(s.p, [0, 0.82 * s.s, 0]) : add(s.p, [0, (s.size?.[1] ?? 0.3) * 0.4, 0]));
+export const feetOf = (s: Subj): V3 => add(s.p, [0, 0.08, 0]);
+
+/** Ray (o + d·t, t ∈ [0, 1]) against an AABB: entry t or Infinity. */
+const rayBox = (o: V3, d: V3, b: Box) => {
+  let t0 = 0, t1 = 1;
+  for (let i = 0; i < 3; i++) {
+    if (Math.abs(d[i]) < 1e-9) { if (o[i] < b.min[i] || o[i] > b.max[i]) return Infinity; continue; }
+    let a = (b.min[i] - o[i]) / d[i], c = (b.max[i] - o[i]) / d[i];
+    if (a > c) [a, c] = [c, a];
+    t0 = Math.max(t0, a); t1 = Math.min(t1, c);
+    if (t0 > t1) return Infinity;
+  }
+  return t0;
+};
+const raySphere = (o: V3, d: V3, c: V3, r: number) => {
+  const m = sub(o, c), b = dot(m, d), cc = dot(m, m) - r * r, a = dot(d, d);
+  const disc = b * b - a * cc;
+  if (disc < 0) return Infinity;
+  const t = (-b - Math.sqrt(disc)) / a;
+  return t >= 0 && t <= 1 ? t : cc < 0 ? 0 : Infinity;
+};
+const inside = (p: V3, b: Box, pad = 0) => p[0] > b.min[0] - pad && p[0] < b.max[0] + pad && p[1] > b.min[1] - pad && p[1] < b.max[1] + pad && p[2] > b.min[2] - pad && p[2] < b.max[2] + pad;
+
+/** Fraction of the way from a to b that is clear (1 = nothing in between). */
+const clear = (a: V3, b: V3, W: WorldMeta, occ: Occ[], skip: Set<string>) => {
+  const d = sub(b, a);
+  let t = 1;
+  for (const c of W.colliders) t = Math.min(t, rayBox(a, d, c));
+  for (const o of occ) if (!skip.has(o.id)) t = Math.min(t, raySphere(a, d, o.c, o.r));
+  return t;
+};
+
+export type Solve = { a: PCam; b: PCam; vis: number; blur: number; box: number; az: number; note?: string };
+
+const KIND: Record<string, { fov: number; el: number; offs: number[]; ext: (s: Subj) => number; aim: (s: Subj) => V3; blur: number }> = {
+  close: { fov: 38, el: 5, offs: [28, -28, 42, -42, 12, -12, 58, -58], ext: (s) => 1.0 * s.s, aim: (s) => add(headOf(s), [0, -0.17 * s.s, 0]), blur: 1.3 },
+  reaction: { fov: 36, el: 4, offs: [20, -20, 35, -35, 50, -50], ext: (s) => 0.8 * s.s, aim: (s) => add(headOf(s), [0, -0.12 * s.s, 0]), blur: 1.5 },
+  medium: { fov: 42, el: 10, offs: [38, -38, 52, -52, 24, -24, 66, -66, 0], ext: (s) => 1.75 * s.s, aim: (s) => add(s.p, [0, 0.85 * s.s, 0]), blur: 0.5 },
+  low: { fov: 44, el: -12, offs: [22, -22, 36, -36, 10, -10], ext: (s) => 2.1 * s.s, aim: (s) => add(s.p, [0, 1.0 * s.s, 0]), blur: 0.35 },
+  wide: { fov: 44, el: 14, offs: [0, 25, -25, 45, -45, 70, -70, 100, -100], ext: (s) => 2.4 * s.s, aim: (s) => add(s.p, [0, 0.75 * s.s, 0]), blur: 0 },
+  insert: { fov: 38, el: 30, offs: [0, 30, -30, 55, -55, 80, -80, 180], ext: (s) => Math.max(0.3, Math.max(...(s.size ?? [0.3, 0.3, 0.3])) * 2.3), aim: (s) => add(s.p, [0, (s.size?.[1] ?? 0.3) * 0.5, 0]), blur: 1.8 },
+  cutaway: { fov: 36, el: 7, offs: [0, 12, -12, 24, -24], ext: (s) => Math.max(0.3, Math.max(...(s.size ?? [0.3, 0.3, 0.3])) * 2.1), aim: (s) => add(s.p, [0, (s.size?.[1] ?? 0.3) * 0.48, 0]), blur: 1.6 },
+  top: { fov: 44, el: 62, offs: [0, 40, -40, 90, -90, 180], ext: (s) => (s.kind === "prop" ? Math.max(0.4, Math.max(...(s.size ?? [0.3, 0.3, 0.3])) * 2.6) : 1.6 * s.s), aim: (s) => (s.kind === "prop" ? add(s.p, [0, (s.size?.[1] ?? 0.3) * 0.5, 0]) : add(s.p, [0, 0.5 * s.s, 0])), blur: 0.4 },
+  ground: { fov: 40, el: 2, offs: [0, 25, -25, 50, -50, 80, -80], ext: (s) => (s.kind === "prop" ? Math.max(0.5, (s.size?.[1] ?? 0.3) * 2.8) : 1.3 * s.s), aim: (s) => (s.kind === "prop" ? add(s.p, [0, (s.size?.[1] ?? 0.3) * 0.4, 0]) : add(s.p, [0, 0.25 * s.s, 0])), blur: 1.0 },
+};
+
+export type SolveOpts = {
+  aspect: number;
+  prevAz?: number;
+  prevId?: string;
+  side?: "left" | "right";
+  move?: string;
+  /** person whose shoulder frames an "ots" shot */
+  over?: Subj;
+  /** a direction the subject must be seen from (cutaway: the open side of a vessel), world yaw */
+  fromYaw?: number;
+};
+
+/** Camera for one shot. `subs[0]` is the main subject; `occ` = everything else that can block the view. */
+export const solveShot = (kind: ShotKind, subs: Subj[], W: WorldMeta, occ: Occ[], o: SolveOpts): Solve => {
+  if (kind === "establish" || kind === "aerial") {
+    const v = W.views[kind] ?? W.views.establish ?? Object.values(W.views)[0];
+    return { a: v.a, b: v.b, vis: 1, blur: 0, box: 34, az: 0 };
+  }
+  if (kind === "ots" && o.over) return solveOts(subs[0], o.over, W, occ, o);
+  const K = KIND[kind] ?? KIND.medium;
+  const main = subs[0];
+  const skip = new Set(subs.map((s) => s.id));
+  const hfov = (f: number) => Math.atan(Math.tan((f * D) / 2) * o.aspect);
+  // group centre / extent (wide shots frame everyone)
+  const aim: V3 = subs.length > 1 && (kind === "wide" || kind === "medium")
+    ? (() => { const c = subs.map(K.aim).reduce((x, y) => add(x, y), [0, 0, 0] as V3); return [c[0] / subs.length, c[1] / subs.length, c[2] / subs.length]; })()
+    : K.aim(main);
+  const baseFace = main.face;
+  let best: (Solve & { score: number }) | null = null;
+  const dists = [1, 0.82, 1.2, 0.68];
+  const els = kind === "cutaway" ? [K.el, K.el + 5] : kind === "close" || kind === "reaction" ? [K.el, K.el + 9, K.el + 18] : [K.el, K.el + 9, K.el + 18, K.el - 5];
+  for (const dk of dists)
+    for (const el of els)
+      for (const off of K.offs) {
+        const A = baseFace + off * D;
+        // distance: vertical extent, and the lateral spread of the group across the view
+        const fov = K.fov;
+        let d = K.ext(main) / (2 * Math.tan((fov * D) / 2));
+        if (subs.length > 1) {
+          const right: V3 = [Math.cos(A), 0, -Math.sin(A)];
+          const xs = subs.map((s) => dot(sub(s.p, aim), right));
+          const spread = Math.max(...xs) - Math.min(...xs) + 0.7;
+          d = Math.max(d, spread / 2 / Math.tan(hfov(fov)));
+          const ys = subs.map((s) => headOf(s)[1]);
+          d = Math.max(d, (Math.max(...ys) + 0.25) / (2 * Math.tan((fov * D) / 2)) * 1.25);
+        }
+        d *= dk;
+        const dir: V3 = [Math.cos(el * D) * Math.sin(A), Math.sin(el * D), Math.cos(el * D) * Math.cos(A)];
+        const pos = add(aim, dir, d);
+        if (kind === "low") pos[1] = Math.max(0.3, Math.min(pos[1], 0.55));
+        if (kind === "ground") pos[1] = 0.32;
+        // validity
+        if (pos[1] < 0.2) continue;
+        if (pos[0] < W.bounds.min[0] || pos[0] > W.bounds.max[0] || pos[2] < W.bounds.min[2] || pos[2] > W.bounds.max[2]) continue;
+        if (W.colliders.some((c) => inside(pos, c, 0.2))) continue;
+        if (occ.some((q) => !skip.has(q.id) && len(sub(pos, q.c)) < q.r + 0.3)) continue;
+        // never right on top of a person in the shot (a head filling the frame)
+        const minD = kind === "close" || kind === "reaction" ? 0.55 : kind === "insert" || kind === "cutaway" || kind === "top" || kind === "ground" ? 0.45 : kind === "wide" ? 2.0 : 1.4;
+        if (subs.some((q) => q.kind === "person" && len(sub(pos, headOf(q))) < minD && q !== main)) continue;
+        // visibility of the subjects (main counts most)
+        const pts = subs.flatMap((s, i) => (s.kind === "person" ? [[headOf(s), i], [chestOf(s), i]] : [[K.aim(s), i], [add(s.p, [0, (s.size?.[1] ?? 0.3) * 0.85, 0]), i]]) as [V3, number][]);
+        let vMain = 0, nMain = 0, vAll = 0;
+        for (const [q, i] of pts) {
+          const c = clear(pos, q, W, occ, new Set([subs[i].id])) >= 0.985 ? 1 : 0;
+          if (i === 0) { vMain += c; nMain++; }
+          vAll += c;
+        }
+        vMain /= nMain || 1;
+        vAll /= pts.length || 1;
+        // foreground clutter at the frame edges (something big right in front of the lens)
+        const fwd = nrm(sub(aim, pos)), rgt = nrm([fwd[2], 0, -fwd[0]]);
+        let clutter = 0;
+        for (const k of [-0.55, 0.55]) {
+          const edge = add(aim, rgt, Math.tan(hfov(fov)) * d * k);
+          const tt = clear(pos, edge, W, occ, skip);
+          if (tt < 0.55) clutter += 1;
+        }
+        // depth behind the subject: a ray past it should travel a while before meeting the world (not a wall
+        // right behind, not empty sky)
+        const far = add(aim, fwd, 45);
+        const hitT = clear(aim, far, W, [], skip);
+        const back = hitT < 1 ? Math.min(1, (hitT * 45) / 9) : 0.3;
+        // faces: the people face the camera (all of them in a group, the main one counts double)
+        const people = subs.filter((q) => q.kind === "person");
+        const faceOf = (q: Subj) => Math.cos(wrapA(Math.atan2(pos[0] - q.p[0], pos[2] - q.p[2]) - q.face));
+        const front = people.length ? (people.reduce((acc, q, i) => acc + faceOf(q) * (i === 0 ? 2 : 1), 0) / (people.length + 1)) : 1;
+        let score = 4 * vMain + 1.6 * vAll + (kind === "insert" || kind === "top" || kind === "cutaway" ? 0 : 1.2 * front) - 0.7 * clutter + 0.6 * back - (kind === "wide" || kind === "medium" || kind === "close" ? 1.3 : 0.3) * Math.max(0, 1 - dk) - 0.15 * Math.max(0, dk - 1) - 0.012 * Math.abs(el - K.el);
+        if (o.prevAz !== undefined && o.prevId === main.id && Math.abs(wrapA(A - o.prevAz)) < 18 * D) score -= 0.9;
+        if (o.side) {
+          // screen side of the camera relative to the subject's facing: left = camera on the subject's right
+          const wantSign = o.side === "left" ? 1 : -1;
+          if (Math.sign(off) === wantSign) score += 0.4;
+        }
+        if (o.fromYaw !== undefined) score += 2 * Math.cos(wrapA(A - o.fromYaw));
+        if (!best || score > best.score) {
+          const a: PCam = { pos, target: aim, fov };
+          best = { a, b: a, vis: vMain, blur: K.blur, box: Math.max(3, Math.min(30, d * 1.2 + 2)), az: A, score };
+        }
+      }
+  if (!best) {
+    // nothing valid: straight in front, close
+    const A = baseFace, d = K.ext(main) / (2 * Math.tan((K.fov * D) / 2)) * 0.7;
+    const pos = add(aim, [Math.sin(A) * d, 0.3, Math.cos(A) * d]);
+    return { a: { pos, target: aim, fov: K.fov }, b: { pos, target: aim, fov: K.fov }, vis: 0, blur: K.blur, box: 6, az: A, note: "no clear camera position found" };
+  }
+  best.b = moved(best.a, o.move ?? (kind === "insert" || kind === "cutaway" ? "push" : "push"), W);
+  return best;
+};
+
+/** Over-the-shoulder: camera behind `over`'s shoulder looking at `subj`. */
+const solveOts = (subj: Subj, over: Subj, W: WorldMeta, occ: Occ[], o: SolveOpts): Solve => {
+  const target = add(headOf(subj), [0, -0.12 * subj.s, 0]);
+  const from = headOf(over);
+  const back = nrm([from[0] - target[0], 0, from[2] - target[2]]);
+  const side: V3 = [back[2], 0, -back[0]];
+  let best: Solve & { score: number } | null = null;
+  for (const sd of [1, -1])
+    for (const k of [0.75, 1.05, 0.55]) {
+      const pos = add(add(add(from, back, k), side, 0.42 * sd), [0, 0.16, 0]);
+      if (W.colliders.some((c) => inside(pos, c, 0.15))) continue;
+      const v = clear(pos, target, W, occ, new Set([subj.id]));
+      const score = (v >= 0.985 ? 4 : 0) + (o.side ? (o.side === "left" ? -sd : sd) * 0.3 : 0) - Math.abs(k - 0.75);
+      if (!best || score > best.score) best = { a: { pos, target, fov: 40 }, b: { pos, target, fov: 40 }, vis: v >= 0.985 ? 1 : 0, blur: 0.8, box: 6, az: Math.atan2(pos[0] - target[0], pos[2] - target[2]), score };
+    }
+  if (!best) return solveShot("medium", [subj], W, occ, { ...o, over: undefined });
+  best.b = moved(best.a, o.move ?? "push", W);
+  return best;
+};
+
+/** The end key of a camera move. */
+export const moved = (a: PCam, move: string, W: WorldMeta): PCam => {
+  const v = sub(a.target, a.pos), d = len(v);
+  let b: PCam = a;
+  if (move === "push") b = { ...a, pos: add(a.pos, v, 0.09), fov: a.fov - 1 };
+  else if (move === "pull") b = { ...a, pos: add(a.pos, v, -0.12), fov: a.fov + 1 };
+  else if (move === "orbit") {
+    const r = sub(a.pos, a.target), c = Math.cos(9 * D), s = Math.sin(9 * D);
+    b = { ...a, pos: add(a.target, [r[0] * c + r[2] * s, r[1], -r[0] * s + r[2] * c]) };
+  } else if (move === "rise") b = { ...a, pos: add(a.pos, [0, d * 0.18, 0]), target: add(a.target, [0, d * 0.05, 0]) };
+  else if (move === "track") { const rgt = nrm([v[2], 0, -v[0]]); b = { ...a, pos: add(a.pos, rgt, d * 0.07), target: add(a.target, rgt, d * 0.07) }; }
+  if (W.colliders.some((c) => inside(b.pos, c, 0.1))) return a;
+  return b;
+};
+
+==== 15549 project/src/cerdik/cast.ts
+// CERDIK cast library: ready characters (original designs). A story picks a preset and may override any look field:
+//   "cast": { "budi": { "preset": "pedagang", "look": { "costume": { "base": "#3a7bd5" }, "hat": { "kind": "topi" } } } }
+// Pure data (node + browser).
+import type { Look } from "../kits/cerdik/look.ts";
+
+export const CAST: Record<string, { about: string; look: Look }> = {
+  tukang: { about: "tukang muda (young builder): teal shirt, brown vest, red headband", look: {
+    costume: { base: "#2f9c93", vest: "#7b4a2b", trim: "#f0d9a8", belt: "#3b2618", scarf: "#d8412f" },
+    hair: { color: "#2a1a12", style: "tuft" }, face: { brows: "thick" }, hat: { kind: "headband", color: "#d8412f" } } },
+  kades: { about: "kepala desa (village chief): round, gold vest, red sash, gold headdress, mustache", look: {
+    build: { s: 1.04, wide: 1.36, deep: 1.42, head: 1.04 },
+    costume: { base: "#2c2930", vest: "#e7b53a", trim: "#c4372c", sash: "#c4372c", belt: "#c4372c", hem: "#c4372c" },
+    hair: { color: "#1d1714", style: "side" }, face: { brows: "bushy", mustache: true }, hat: { kind: "crown", color2: "#f0c43c" } } },
+  saingan: { about: "saingan (the confident rival): navy shirt, black peci, towel on the shoulder", look: {
+    build: { s: 1.02, wide: 1.08 }, costume: { base: "#2f4f93", belt: "#1f1b19", buttons: "#e9e2d0", collar: "#e9e2d0" },
+    hair: { color: "#1b1511", style: "tuft" }, face: { brows: "thick" }, hat: { kind: "peci", color: "#1c1a1e" }, towel: "#f3efe4" } },
+  pedagang: { about: "pedagang (trader): cream shirt, sarong band, black peci", look: {
+    costume: { base: "#efe2c4", hem: "#7a3b8c", belt: "#3b2618", buttons: "#6b4a2a" },
+    hair: { color: "#231812", style: "neat" }, face: { brows: "thick", mustache: true }, hat: { kind: "peci", color: "#1c1a1e" } } },
+  ibu: { about: "ibu (woman): headscarf, long dress", look: {
+    build: { s: 0.96 }, costume: { base: "#d9577a", long: true, trim: "#f6d6df", belt: "#b03a5c" },
+    face: { brows: "thin", lashes: true, blush: true }, hat: { kind: "kerudung", color: "#4f6fb8" } } },
+  pemudi: { about: "pemudi (young woman): hair bun, yellow blouse", look: {
+    build: { s: 0.95 }, costume: { base: "#f2c94c", collar: "#ffffff", belt: "#8a5a2b" },
+    hair: { color: "#2a1a12", style: "bun" }, face: { brows: "thin", lashes: true, blush: true } } },
+  pemuda: { about: "pemuda (young man): red t-shirt, cap", look: {
+    costume: { base: "#d8412f", collar: "#b23224" }, hair: { color: "#1f1712", style: "tuft" }, face: { brows: "thick" }, hat: { kind: "topi", color: "#2e3f7a" } } },
+  anak: { about: "anak (child): small, striped shirt", look: {
+    build: { s: 0.72, head: 1.12 }, costume: { base: "#ffffff", stripes: "#2f7fd1" }, hair: { color: "#231812", style: "tuft" }, face: { brows: "thin" } } },
+  kakek: { about: "kakek (old man): grey hair, mustache, white shirt, sarong band", look: {
+    build: { s: 0.95 }, costume: { base: "#f1ede4", hem: "#3b6b4a", buttons: "#9a8f80" },
+    hair: { color: "#9e9a92", style: "bald-ring" }, face: { brows: "bushy", mustache: true, ink: "#6a655d" } } },
+  nenek: { about: "nenek (grandmother): grey bun, glasses, batik-brown dress", look: {
+    build: { s: 0.9 }, costume: { base: "#8a5a3a", long: true, trim: "#e8c58a", belt: "#5a3a22" },
+    hair: { color: "#a8a39a", style: "bun" }, face: { brows: "thin", glasses: true, lashes: true } } },
+  petani: { about: "petani (farmer): caping hat, green shirt", look: {
+    costume: { base: "#5b8f3e", belt: "#5a3a22", buttons: "#e9e2d0" }, hair: { color: "#231812", style: "tuft" }, face: { brows: "thick" }, hat: { kind: "caping", color2: "#d9be7c" } } },
+  nelayan: { about: "nelayan (fisherman): striped shirt, caping", look: {
+    costume: { base: "#f4f1e8", stripes: "#2c5aa0", belt: "#3b2618" }, hair: { color: "#231812", style: "tuft" }, face: { brows: "thick", beard: true }, hat: { kind: "caping", color2: "#cfb06a" } } },
+  ilmuwan: { about: "ilmuwan (scientist): white coat, glasses", look: {
+    costume: { base: "#fbfbf8", collar: "#6aa6d8", buttons: "#9aa3ad", belt: "#e6e6e0" }, hair: { color: "#3a2a20", style: "bald-ring" }, face: { brows: "bushy", glasses: true } } },
+  raja: { about: "raja (king): red robe, gold crown and trim", look: {
+    build: { s: 1.03, wide: 1.2, deep: 1.25 }, costume: { base: "#a3262e", vest: "#c8322f", trim: "#f0c43c", sash: "#f0c43c", long: true },
+    hair: { color: "#1d1714", style: "side" }, face: { brows: "bushy", mustache: true, beard: true }, hat: { kind: "crown", color2: "#f0c43c" } } },
+  prajurit: { about: "prajurit (soldier/guard): brown tunic, headband", look: {
+    build: { s: 1.03 }, costume: { base: "#7a5233", vest: "#4a3322", trim: "#c9a24a", belt: "#2a1a12" }, hair: { color: "#1b1511", style: "tuft" }, face: { brows: "thick" }, hat: { kind: "headband", color: "#c9a24a" } } },
+  priyayi: { about: "priyayi (Javanese noble): blangkon, dark beskap with gold buttons", look: {
+    costume: { base: "#1f2630", buttons: "#e2b54a", collar: "#e9e2d0", hem: "#7a5233" }, hair: { color: "#1b1511", style: "neat" }, face: { brows: "thick", mustache: true }, hat: { kind: "blangkon", color: "#6b3f22", color2: "#c9a24a" } } },
+  warga: { about: "warga (villager): yellow shirt, red hem", look: {
+    build: { s: 0.97 }, costume: { base: "#e9c446", hem: "#b8332b", belt: "#5a3a22" }, hair: { color: "#231812", style: "tuft" }, face: { brows: "thin" } } },
+  warga2: { about: "warga (villager): green shirt and vest, cloth headband", look: {
+    build: { s: 1.0, wide: 1.12 }, costume: { base: "#5b9a4b", vest: "#3d5f33", trim: "#e8d7a4" }, hair: { color: "#2a1d14", style: "side" }, face: { brows: "thick" }, hat: { kind: "headband", color: "#efe3c2" } } },
+};
+
+const isObj = (x: unknown): x is Record<string, unknown> => !!x && typeof x === "object" && !Array.isArray(x);
+const deep = (a: Record<string, unknown>, b: Record<string, unknown>): Record<string, unknown> => {
+  const o: Record<string, unknown> = { ...a };
+  for (const [k, v] of Object.entries(b)) o[k] = isObj(v) && isObj(a[k]) ? deep(a[k] as Record<string, unknown>, v) : v;
+  return o;
+};
+/** Deep-merge look overrides (later wins). */
+export const mergeLook = (a?: Record<string, unknown>, b?: Record<string, unknown>): Record<string, unknown> => deep(a ?? {}, b ?? {});
+
+// ------------------------------------------------------------------ KARTU TOKOH: the buyer's menu
+// The codes on the character card (`make.mjs --menu` → out/_menu/kartu-tokoh-1/2.jpg). A buyer says e.g.
+// "tokoh T5, rambut R5, baju W7, kerudung W2, kacamata" and Claude writes the matching look fields.
+export const MENU = {
+  hair: [
+    { code: "R1", name: "jambul", style: "tuft" },
+    { code: "R2", name: "belah samping", style: "side" },
+    { code: "R3", name: "rapi", style: "neat" },
+    { code: "R4", name: "sanggul", style: "bun" },
+    { code: "R5", name: "botak pinggir", style: "bald-ring" },
+    { code: "R6", name: "botak", style: "none" },
+  ],
+  hat: [
+    { code: "K1", name: "tanpa", kind: "none" },
+    { code: "K2", name: "kerudung", kind: "kerudung" },
+    { code: "K3", name: "peci", kind: "peci" },
+    { code: "K4", name: "blangkon", kind: "blangkon" },
+    { code: "K5", name: "caping", kind: "caping" },
+    { code: "K6", name: "topi", kind: "topi" },
+    { code: "K7", name: "ikat kepala", kind: "headband" },
+    { code: "K8", name: "mahkota", kind: "crown" },
+  ],
+  face: [
+    { code: "F1", name: "kacamata", face: { glasses: true } },
+    { code: "F2", name: "kumis", face: { mustache: true } },
+    { code: "F3", name: "jenggot", face: { beard: true } },
+    { code: "F4", name: "bulu mata + pipi", face: { lashes: true, blush: true } },
+    { code: "F5", name: "alis lebat", face: { brows: "bushy" } },
+    { code: "F6", name: "alis tipis", face: { brows: "thin" } },
+  ],
+  build: [
+    { code: "B1", name: "anak", build: { s: 0.72, head: 1.12 } },
+    { code: "B2", name: "mungil", build: { s: 0.92 } },
+    { code: "B3", name: "sedang", build: { s: 1 } },
+    { code: "B4", name: "tinggi", build: { s: 1.06, wide: 1.12 } },
+    { code: "B5", name: "gemuk", build: { s: 1.02, wide: 1.36, deep: 1.42 } },
+  ],
+  colors: [
+    { code: "W1", name: "merah", hex: "#d8412f" },
+    { code: "W2", name: "oranye", hex: "#e8833a" },
+    { code: "W3", name: "kuning", hex: "#f2c94c" },
+    { code: "W4", name: "hijau", hex: "#5b9a4b" },
+    { code: "W5", name: "tosca", hex: "#2f9c93" },
+    { code: "W6", name: "biru muda", hex: "#6aa6d8" },
+    { code: "W7", name: "biru", hex: "#3a7bd5" },
+    { code: "W8", name: "dongker", hex: "#2f4f93" },
+    { code: "W9", name: "ungu", hex: "#8a5ab8" },
+    { code: "W10", name: "pink", hex: "#d9577a" },
+    { code: "W11", name: "marun", hex: "#a3262e" },
+    { code: "W12", name: "cokelat", hex: "#8a5a3a" },
+    { code: "W13", name: "krem", hex: "#efe2c4" },
+    { code: "W14", name: "putih", hex: "#f4f1e8" },
+    { code: "W15", name: "abu", hex: "#8d8f94" },
+    { code: "W16", name: "hitam", hex: "#2c2930" },
+  ],
+  /** clothing parts a buyer can add or recolour ("rompi W12"); field = costume.<field> (or look.<field> when top) */
+  clothes: [
+    { name: "baju", field: "base" }, { name: "rompi", field: "vest" }, { name: "kerah", field: "collar" },
+    { name: "sabuk", field: "belt" }, { name: "kancing", field: "buttons" }, { name: "selendang", field: "sash" },
+    { name: "kain bawah", field: "hem" }, { name: "syal", field: "scarf" }, { name: "list", field: "trim" },
+    { name: "garis-garis", field: "stripes" }, { name: "baju panjang", field: "long", flag: true },
+    { name: "handuk di bahu", field: "towel", top: true }, { name: "kalung", field: "necklace", top: true },
+  ],
+} as const;
+
+/** The tokoh numbers T1… follow the cast library order. */
+export const tokohCode = (preset: string) => `T${Object.keys(CAST).indexOf(preset) + 1}`;
+export const presetOfCode = (code: string) => Object.keys(CAST)[parseInt(code.replace(/^T/i, ""), 10) - 1];
+
+/** The menu as text (make.mjs --library / --menu): code → the look field Claude writes. */
+export const menuText = () => [
+  "KARTU TOKOH codes (buyer says a code or a word → write the field):",
+  "  T1…T" + Object.keys(CAST).length + " tokoh siap pakai = preset: " + Object.keys(CAST).map((k) => `${tokohCode(k)} ${k}`).join(", "),
+  "  rambut  → hair.style (+ hair.color hex): " + MENU.hair.map((h) => `${h.code} ${h.name}="${h.style}"`).join(", "),
+  "  penutup kepala → hat.kind (+ hat.color, hat.color2 = band/trim): " + MENU.hat.map((h) => `${h.code} ${h.name}="${h.kind}"`).join(", "),
+  "  wajah   → face: " + MENU.face.map((f) => `${f.code} ${f.name}=${JSON.stringify(f.face)}`).join(", "),
+  "  badan   → build: " + MENU.build.map((b) => `${b.code} ${b.name}=${JSON.stringify(b.build)}`).join(", "),
+  "  warna   → any colour field: " + MENU.colors.map((c) => `${c.code} ${c.name} ${c.hex}`).join(", "),
+  "  pakaian → costume.<field> = colour: " + MENU.clothes.map((c) => `${c.name}=${"top" in c ? "" : "costume."}${c.field}${"flag" in c ? " (true)" : ""}`).join(", "),
+  "  A colour the buyer names that is not on the card: pick a flat hex close to it (no neon, no gradients).",
+].join("\n");
+
+// ------------------------------------------------------------------ look validation (buyer-made looks are checked)
+const HAIR = ["none", "tuft", "cap", "side", "bald-ring", "bun", "neat"];
+const HATS = ["none", "headband", "peci", "crown", "caping", "kerudung", "topi", "blangkon"];
+const BROWS = ["thin", "thick", "bushy"];
+const COSTUME_KEYS = ["base", "vest", "collar", "belt", "buttons", "sash", "hem", "scarf", "trim", "stripes", "long"];
+const HEX = /^#[0-9a-fA-F]{6}$/;
+const RANGE: Record<string, [number, number]> = { s: [0.6, 1.2], wide: [0.8, 1.6], deep: [0.8, 1.6], head: [0.8, 1.3] };
+/** Problems with a final look, in plain words (empty = fine). */
+export const lookProblems = (look: Record<string, unknown>): string[] => {
+  const p: string[] = [];
+  const known = ["build", "costume", "hair", "face", "hat", "necklace", "towel"];
+  for (const k of Object.keys(look)) if (!known.includes(k)) p.push(`unknown look field "${k}" (have: ${known.join(", ")})`);
+  const hex = (v: unknown, where: string) => { if (typeof v !== "string" || !HEX.test(v)) p.push(`${where} must be a colour like "#3a7bd5" (got ${JSON.stringify(v)})`); };
+  const c = look.costume as Record<string, unknown> | undefined;
+  if (!isObj(c)) p.push(`costume missing`);
+  else for (const [k, v] of Object.entries(c)) {
+    if (!COSTUME_KEYS.includes(k)) p.push(`unknown costume field "${k}" (have: ${COSTUME_KEYS.join(", ")})`);
+    else if (k === "long") { if (typeof v !== "boolean") p.push(`costume.long must be true or false`); }
+    else hex(v, `costume.${k}`);
+  }
+  const h = look.hair as Record<string, unknown> | undefined;
+  if (h !== undefined) {
+    if (!isObj(h)) p.push(`hair must be { "color": "#…", "style": … }`);
+    else { if (!HAIR.includes(String(h.style))) p.push(`hair.style "${h.style}" unknown (have: ${HAIR.join(", ")})`); hex(h.color, "hair.color"); }
+  }
+  const f = look.face as Record<string, unknown> | undefined;
+  if (f !== undefined) {
+    if (!isObj(f)) p.push(`face must be an object`);
+    else for (const [k, v] of Object.entries(f)) {
+      if (k === "brows") { if (!BROWS.includes(String(v))) p.push(`face.brows "${v}" unknown (have: ${BROWS.join(", ")})`); }
+      else if (k === "ink") hex(v, "face.ink");
+      else if (["mustache", "beard", "glasses", "lashes", "blush"].includes(k)) { if (typeof v !== "boolean") p.push(`face.${k} must be true or false`); }
+      else p.push(`unknown face field "${k}" (have: brows, mustache, beard, glasses, lashes, blush, ink)`);
+    }
+  }
+  const t = look.hat as Record<string, unknown> | undefined;
+  if (t !== undefined) {
+    if (!isObj(t)) p.push(`hat must be { "kind": … }`);
+    else {
+      if (!HATS.includes(String(t.kind))) p.push(`hat.kind "${t.kind}" unknown (have: ${HATS.join(", ")})`);
+      if (t.color !== undefined) hex(t.color, "hat.color");
+      if (t.color2 !== undefined) hex(t.color2, "hat.color2");
+    }
+  }
+  const b = look.build as Record<string, unknown> | undefined;
+  if (b !== undefined) {
+    if (!isObj(b)) p.push(`build must be an object`);
+    else for (const [k, v] of Object.entries(b)) {
+      const r = RANGE[k];
+      if (!r) p.push(`unknown build field "${k}" (have: s, wide, deep, head)`);
+      else if (typeof v !== "number" || v < r[0] || v > r[1]) p.push(`build.${k} must be a number ${r[0]}–${r[1]} (got ${JSON.stringify(v)})`);
+    }
+  }
+  if (look.necklace !== undefined) hex(look.necklace, "necklace");
+  if (look.towel !== undefined) hex(look.towel, "towel");
+  return p;
+};
+/** Preset + overrides → final look. */
+export const resolveLook = (preset: string, over?: Record<string, unknown>): Look => {
+  const base = CAST[preset];
+  if (!base) throw new Error(`cast preset "${preset}" does not exist (have: ${Object.keys(CAST).join(", ")})`);
+  return (over ? deep(base.look as unknown as Record<string, unknown>, over) : base.look) as unknown as Look;
+};
+
+/** Extras for crowds: rotate through these presets with colour variations. */
+export const EXTRA_PRESETS = ["warga", "warga2", "pemudi", "pemuda", "ibu", "kakek", "anak", "pedagang"];
+const EXTRA_COLORS = ["#e9c446", "#5b9a4b", "#d8577a", "#3a7bd5", "#e8833a", "#8a5ab8", "#2f9c93", "#c94a3a"];
+export const extraLook = (i: number): Look => {
+  const p = EXTRA_PRESETS[i % EXTRA_PRESETS.length];
+  return resolveLook(p, { costume: { base: EXTRA_COLORS[(i * 3 + 1) % EXTRA_COLORS.length] } });
+};
+
+==== 25878 project/src/cerdik/compile.ts
+// CERDIK director — compiles a Story (stories/<id>/story.json) into a Plan: cut times on the spoken words, the place,
+// action and expression of every person in every shot, props, effects, crowds and an automatic camera per shot.
+// Pure TypeScript: node runs it (scripts/make.mjs) and the browser reads the Plan (Film.tsx).
+
+import type { ActKey, BeatSpec, LineSpec, Weather, PActor, PFx, Place, Plan, PProp, PShot, ShotKind, Story, TimeOfDay, Timed, V3, WorldMeta, Word } from "./types.ts";
+import { WORLDS, floorAt } from "./worlds/index.ts";
+import { propLib, type PropDef } from "./props/lib.ts";
+import { CAST, extraLook, lookProblems, resolveLook } from "./cast.ts";
+import { ACTIONS } from "./actions.ts";
+import { solveShot, type Occ, type Subj } from "./camera.ts";
+
+export const LEAD = 0.06;
+export const EXPRS = ["neutral", "smug", "happy", "laugh", "angry", "surprised", "worried", "proud", "sly", "scared"];
+const SHOTS: ShotKind[] = ["wide", "medium", "close", "low", "ots", "insert", "top", "ground", "aerial", "establish", "cutaway", "reaction"];
+const AUTO_NEXT: Record<string, ShotKind> = { establish: "wide", aerial: "wide", wide: "medium", medium: "close", close: "medium", low: "close", ots: "close", insert: "medium", cutaway: "insert", top: "medium", ground: "medium", reaction: "medium" };
+const D2R = Math.PI / 180;
+const norm = (w: string) => w.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9-]/g, "");
+const add = (a: V3, b: V3, k = 1): V3 => [a[0] + b[0] * k, a[1] + b[1] * k, a[2] + b[2] * k];
+
+// ------------------------------------------------------------------ timing without a voice
+export const paceWords = (text: string, t0: number, t1: number): Word[] => {
+  const raw = text.split(/\s+/).filter(Boolean);
+  const weights = raw.map((w) => 0.55 + w.replace(/[,.?!"“”]/g, "").length * 0.085 + (/[,.?!]["”]?$/.test(w) ? 0.5 : 0));
+  const tot = weights.reduce((x, y) => x + y, 0);
+  let acc = 0;
+  return raw.map((w, i) => { const t = t0 + ((t1 - t0) * acc) / tot; acc += weights[i]; return { w, t }; });
+};
+/** Sentence timing at a natural narrator pace (the genre talks fast), for previews before the voice-over exists. */
+export const paceLines = (texts: string[], wps = 2.9, gap = 0.28, start = 0.25): Timed[] => {
+  let t = start;
+  return texts.map((text) => {
+    const n = text.split(/\s+/).length;
+    const commas = (text.match(/,/g) ?? []).length, stops = (text.slice(0, -1).match(/[.?!]/g) ?? []).length;
+    const d = n / wps + commas * 0.14 + stops * 0.28;
+    const line = { text, t0: t, t1: t + d, words: paceWords(text, t, t + d) };
+    t += d + gap;
+    return line;
+  });
+};
+
+// ------------------------------------------------------------------ helpers
+const rightOf = (face: number): V3 => [-Math.cos(face), 0, Math.sin(face)];
+const fwdOf = (face: number): V3 => [Math.sin(face), 0, Math.cos(face)];
+const yawTo = (from: V3, to: V3) => Math.atan2(to[0] - from[0], to[2] - from[2]);
+const toLocal = (p: V3, face: number, w: V3): V3 => {
+  const x = w[0] - p[0], y = w[1] - p[1], z = w[2] - p[2], c = Math.cos(face), s = Math.sin(face);
+  return [x * c - z * s, y, x * s + z * c];
+};
+
+type AState = { pos?: V3; face: number; do: string; expr: string; flush: number; flushColor?: string; hold?: string; gone: boolean };
+type OState = { kind: string; pos?: V3; yaw: number; scale: number; gone: boolean; fill?: { color: string; level: number }; heldBy?: string };
+
+export type CompileOpts = { aspect: number; audio?: string; extraProps?: Record<string, PropDef>; tail?: number };
+
+/** Compile a story. Throws an Error listing every problem in plain language when the story cannot be built. */
+export const compile = (story: Story, lines: Timed[], opts: CompileOpts): Plan => {
+  const errors: string[] = [], warnings: string[] = [];
+  const W: WorldMeta | undefined = WORLDS[story.world];
+  if (!W) throw new Error(`world "${story.world}" does not exist (have: ${Object.keys(WORLDS).join(", ")})`);
+  const LIB = propLib(opts.extraProps);
+  const castIds = Object.keys(story.cast ?? {});
+  for (const [id, c] of Object.entries(story.cast ?? {})) {
+    if (!CAST[c.preset]) { errors.push(`cast "${id}": preset "${c.preset}" does not exist (have: ${Object.keys(CAST).join(", ")})`); continue; }
+    for (const p of lookProblems(resolveLook(c.preset, c.look) as unknown as Record<string, unknown>)) errors.push(`cast "${id}": ${p}`);
+  }
+  const propIds = new Set(Object.keys(story.props ?? {}));
+  for (const [id, p] of Object.entries(story.props ?? {})) if (!LIB[p.kind]) errors.push(`prop "${id}": kind "${p.kind}" is not in the library (have: ${Object.keys(LIB).join(", ")}) — or define it in props.json`);
+  story.lines.forEach((l) => [l, ...(l.beats ?? [])].forEach((b) => Object.entries(b.props ?? {}).forEach(([id, p]) => { propIds.add(id); if (p.kind && !LIB[p.kind]) errors.push(`prop "${id}": kind "${p.kind}" is not in the library`); })));
+  const spot = (name: string, where: string) => {
+    const s = W.spots[name];
+    if (!s) { errors.push(`${where}: place "${name}" is not in world "${W.id}" (have: ${Object.keys(W.spots).slice(0, 40).join(", ")}${Object.keys(W.spots).length > 40 ? ", …" : ""})`); return null; }
+    return s;
+  };
+  const place = (pl: Place, where: string, onSurface = false): { pos: V3; face: number } | null => {
+    const P = typeof pl === "string" ? { at: pl } : pl;
+    const s = spot(P.at, where);
+    if (!s) return null;
+    const r = rightOf(s.face), f = fwdOf(s.face);
+    let pos = add(add(s.pos, r, P.side ?? 0), f, P.ahead ?? 0);
+    if (onSurface && s.surface) { const q = add(pos, f, s.surface.ahead); pos = [q[0], s.surface.y, q[2]]; }
+    else if (onSurface) { warnings.push(`${where}: place "${P.at}" has no table/surface — the prop stands on the ground`); pos = [pos[0], floorAt(W, pos[0], pos[2]), pos[2]]; }
+    else pos = [pos[0], P.side || P.ahead ? floorAt(W, pos[0], pos[2]) : s.pos[1], pos[2]];
+    if (P.up) pos = [pos[0], pos[1] + P.up, pos[2]];
+    return { pos, face: s.face };
+  };
+
+  // ---------------------------------------------------------------- words
+  const words = lines.flatMap((l, li) => l.words.map((w, i) => ({ w: w.w, t0: w.t, t1: l.words[i + 1]?.t ?? l.t1, line: li })));
+  const quoteWords = new Set<number>();
+  {
+    let inQ = false, k = 0;
+    lines.forEach((l) => l.words.forEach((w) => { const open = /^["“]/.test(w.w), close = /["”][,.!?]*$/.test(w.w); if (open) inQ = true; if (inQ) quoteWords.add(k); if (close) inQ = false; k++; }));
+  }
+  /** Time of a word in a line ("kata", "kata#2" = the second one), searched from word index `from`. */
+  const wordTime = (li: number, at: string | number, from: number, where: string): { t: number; i: number } => {
+    const L = lines[li];
+    if (typeof at === "number") return { t: L.t0 + at, i: from };
+    const [txt, nth] = at.split("#");
+    let seen = 0;
+    for (let i = Math.max(0, from); i < L.words.length; i++)
+      if (norm(L.words[i].w).startsWith(norm(txt)) && ++seen >= (nth ? +nth : 1)) return { t: L.words[i].t, i };
+    errors.push(`${where}: the word "${at}" is not in line ${li + 1} ("${L.text.slice(0, 60)}…")`);
+    return { t: L.t0, i: from };
+  };
+
+  // ---------------------------------------------------------------- beats → shots (times)
+  type B = { spec: BeatSpec; line: number; t0: number; wi: number; auto?: boolean };
+  const beats: B[] = [];
+  story.lines.forEach((ls: LineSpec, li) => {
+    const L = lines[li];
+    if (!L) { errors.push(`line ${li + 1} has no timing (does the voice-over match the script?)`); return; }
+    const lineDefaults: BeatSpec = { shot: ls.shot, on: ls.on, over: ls.over, move: ls.move, cast: ls.cast, props: ls.props, fx: ls.fx, time: ls.time, weather: ls.weather, side: ls.side, dissolve: ls.dissolve };
+    const specs = ls.beats?.length ? ls.beats.map((b, i) => (i === 0 ? { ...lineDefaults, ...b, cast: { ...(ls.cast ?? {}), ...(b.cast ?? {}) }, props: { ...(ls.props ?? {}), ...(b.props ?? {}) }, fx: [...(ls.fx ?? []), ...(b.fx ?? [])] } : b)) : [lineDefaults];
+    let from = 0;
+    specs.forEach((b, i) => {
+      if (i === 0) { beats.push({ spec: b, line: li, t0: (li === 0 ? 0 : L.t0 - LEAD), wi: 0 }); return; }
+      if (b.at === undefined) { errors.push(`line ${li + 1}, beat ${i + 1}: give "at" (the word the cut lands on)`); return; }
+      const w = wordTime(li, b.at, from, `line ${li + 1}, beat ${i + 1}`);
+      from = w.i + 1;
+      beats.push({ spec: b, line: li, t0: w.t - LEAD, wi: w.i });
+    });
+    // automatic cuts inside long single-beat lines (the genre cuts every ~2 s)
+    if (!ls.beats?.length) {
+      const dur = L.t1 - L.t0;
+      const n = Math.round(dur / 2.3);
+      if (n >= 2) {
+        let prevI = 0;
+        for (let k = 1; k < n; k++) {
+          const tt = L.t0 + (dur * k) / n;
+          let bi = -1, bd = 9;
+          L.words.forEach((w, i) => { if (i > prevI + 1 && Math.abs(w.t - tt) < bd && L.t1 - w.t > 0.9) { bd = Math.abs(w.t - tt); bi = i; } });
+          if (bi < 0) continue;
+          prevI = bi;
+          beats.push({ spec: { shot: undefined }, line: li, t0: L.words[bi].t - LEAD, wi: bi, auto: true });
+        }
+      }
+    }
+  });
+  beats.sort((a, b) => a.t0 - b.t0);
+  const duration = +(lines[lines.length - 1].t1 + (opts.tail ?? 1.1)).toFixed(3);
+  // merge beats shorter than 0.85 s into the previous one
+  for (let i = beats.length - 1; i > 0; i--) {
+    const end = beats[i + 1]?.t0 ?? duration;
+    if (end - beats[i].t0 < 0.85 || beats[i].t0 - beats[i - 1].t0 < 0.85) {
+      // an automatic cut gives way to an authored one right after it
+      if (!beats[i].auto && beats[i - 1].auto && beats[i].t0 - beats[i - 1].t0 < 0.85) { beats.splice(i - 1, 1); continue; }
+      if (!beats[i].auto) warnings.push(`line ${beats[i].line + 1}: a cut at ${beats[i].t0.toFixed(2)} s makes a shot shorter than 0.85 s — merged`);
+      const keep = beats[i - 1];
+      keep.spec = { ...keep.spec, cast: { ...(keep.spec.cast ?? {}), ...(beats[i].spec.cast ?? {}) }, props: { ...(keep.spec.props ?? {}), ...(beats[i].spec.props ?? {}) }, fx: [...(keep.spec.fx ?? []), ...(beats[i].spec.fx ?? [])] };
+      beats.splice(i, 1);
+    }
+  }
+
+  // ---------------------------------------------------------------- validation of references
+  const checkRef = (id: string, where: string) => { if (!castIds.includes(id) && !propIds.has(id)) errors.push(`${where}: "${id}" is neither a person in "cast" nor a prop`); };
+  beats.forEach((b, bi) => {
+    const where = `line ${b.line + 1}${bi ? `, cut at ${b.t0.toFixed(1)} s` : ""}`;
+    const s = b.spec;
+    if (s.shot && !SHOTS.includes(s.shot)) errors.push(`${where}: shot "${s.shot}" does not exist (have: ${SHOTS.join(", ")})`);
+    if (s.time && !["day", "gold", "hot", "night", "dawn"].includes(s.time)) errors.push(`${where}: time "${s.time}" does not exist (have: day, gold, hot, night, dawn)`);
+    if (s.weather && !["clear", "rain"].includes(s.weather)) errors.push(`${where}: weather "${s.weather}" does not exist (have: clear, rain)`);
+    for (const id of ([] as string[]).concat(s.on ?? [])) checkRef(id, where);
+    if (s.over && !castIds.includes(s.over)) errors.push(`${where}: "over": "${s.over}" is not in cast`);
+    for (const [id, a] of Object.entries(s.cast ?? {})) {
+      if (!castIds.includes(id)) errors.push(`${where}: "${id}" is not in cast`);
+      if (a.do && !ACTIONS[a.do]) errors.push(`${where}: ${id} — action "${a.do}" does not exist (have: ${Object.keys(ACTIONS).join(", ")})`);
+      if (a.expr && !EXPRS.includes(a.expr)) errors.push(`${where}: ${id} — expression "${a.expr}" does not exist (have: ${EXPRS.join(", ")})`);
+      for (const th of a.then ?? []) { if (th.do && !ACTIONS[th.do]) errors.push(`${where}: ${id} — action "${th.do}" does not exist`); if (th.expr && !EXPRS.includes(th.expr)) errors.push(`${where}: ${id} — expression "${th.expr}" does not exist`); }
+      if (a.hold && !propIds.has(a.hold)) errors.push(`${where}: ${id} holds "${a.hold}", which is not a prop`);
+    }
+    for (const f of s.fx ?? []) { checkRef(f.on, where); }
+  });
+  if (errors.length) throw new Error("the story cannot be built yet:\n  - " + errors.join("\n  - "));
+
+  // ---------------------------------------------------------------- state through the beats
+  const A: Record<string, AState> = Object.fromEntries(castIds.map((id) => [id, { face: 0, do: "stand", expr: "neutral", flush: 0, gone: false }]));
+  const O: Record<string, OState> = {};
+  for (const [id, p] of Object.entries(story.props ?? {})) {
+    const pl = p.at ? place(p.at, `prop "${id}"`, p.on === "surface") : null;
+    O[id] = { kind: p.kind, pos: pl?.pos, yaw: ((p.yaw ?? 0) * D2R) + (pl?.face ?? 0), scale: p.scale ?? 1, gone: !!p.gone, fill: p.fill ? { color: p.fill.color ?? "#5fb4e6", level: p.fill.level ?? 0.7 } : undefined };
+  }
+  const posOf = (id: string): V3 | null => A[id]?.pos ?? O[id]?.pos ?? (O[id]?.heldBy ? A[O[id].heldBy!]?.pos ?? null : null);
+  const headOfId = (id: string): V3 | null => { const p = posOf(id); if (!p) return null; return castIds.includes(id) ? add(p, [0, 1.25, 0]) : add(p, [0, 0.2, 0]); };
+
+  // extras (crowds)
+  type X = { id: string; pos: V3; face: number; do: string; expr: string; from: number; until: number; seed: number; look: Record<string, unknown> };
+  const extras: X[] = [];
+  (story.extras ?? []).forEach((g, gi) => {
+    const s = spot(g.at, `extras ${gi + 1}`);
+    if (!s) return;
+    const n = g.n ?? 4, mode = g.mode ?? "idle";
+    const at = (v: string | number | undefined, dflt: number, what: string) => {
+      if (v === undefined || v === "end") return dflt;
+      if (typeof v === "number") return v;
+      const [txt, nth] = v.split("#");
+      const hits = words.filter((w) => norm(w.w).startsWith(norm(txt)));
+      const w = hits[(nth ? +nth : 1) - 1];
+      if (w) return w.t0 - LEAD;
+      warnings.push(`extras ${gi + 1}: ${what} word "${v}" not found`);
+      return dflt;
+    };
+    const from = at(g.from, 0, "from"), until = at(g.until, 1e9, "until");
+    const f = fwdOf(s.face), r = rightOf(s.face);
+    for (let i = 0; i < n; i++) {
+      let pos: V3, face = s.face;
+      // a queue runs along the stall front (the spot's right), each person facing the spot
+      if (mode === "queue") { pos = add(add(s.pos, r, 0.62 * (i + 1)), f, -0.12 - 0.05 * Math.sin(i * 1.7)); face = yawTo(pos, add(s.pos, f, 1.2)); }
+      else { const a = i * 2.39996 + gi, rr = 0.95 + 0.42 * (i % 3); pos = add(add(s.pos, r, Math.cos(a) * rr), f, Math.sin(a) * rr * 0.8 - 0.4); face = yawTo(pos, add(s.pos, f, 0.6)); }
+      pos = [pos[0], floorAt(W, pos[0], pos[2]), pos[2]];
+      if (W.colliders.some((c) => pos[0] > c.min[0] - 0.25 && pos[0] < c.max[0] + 0.25 && pos[2] > c.min[2] - 0.25 && pos[2] < c.max[2] + 0.25 && c.min[1] < 1.2)) continue;
+      const act = mode === "laugh" ? "laugh" : mode === "cheer" ? "cheer" : mode === "queue" ? "queue" : mode === "hot" ? "hot" : "stand";
+      const expr = mode === "laugh" ? "laugh" : mode === "cheer" ? "happy" : mode === "watch" ? "surprised" : mode === "hot" ? "worried" : i % 3 ? "neutral" : "happy";
+      extras.push({ id: `x${gi}_${i}`, pos, face, do: act, expr, from, until, seed: 50 + gi * 13 + i, look: extraLook(gi * 5 + i) as unknown as Record<string, unknown> });
+    }
+  });
+
+  // ---------------------------------------------------------------- shots
+  const shots: PShot[] = [];
+  const fxAll: PFx[] = [];
+  let prevOn: string[] = [], prevKind: ShotKind = "establish", prevAz: number | undefined, prevId: string | undefined;
+  let curTime: TimeOfDay = story.time ?? W.time ?? "day";
+  let curWeather: Weather = story.weather ?? "clear";
+  let lastLine = -1;
+  const sizeOf = (id: string): V3 => { const o = O[id]; if (!o) return [0.5, 1.5, 0.4]; const sz = LIB[o.kind]?.size ?? [0.3, 0.3, 0.3]; const k = o.scale ?? 1; return [sz[0] * k, sz[1] * k, sz[2] * k]; };
+
+  beats.forEach((b, bi) => {
+    const s = b.spec, t0 = b.t0, t1 = beats[bi + 1]?.t0 ?? duration, L = lines[b.line];
+    const where = `line ${b.line + 1}`;
+    // persons
+    const walkSeg: Record<string, [V3, V3, number, number]> = {};
+    const keys: Record<string, ActKey[]> = {};
+    for (const [id, a] of Object.entries(s.cast ?? {})) {
+      const st = A[id];
+      if (a.gone) { st.gone = true; continue; }
+      st.gone = false;
+      if (a.at) {
+        const pl = place(a.at, `${where}: ${id}`);
+        if (pl) {
+          if (a.walk && st.pos) {
+            const dist = Math.hypot(pl.pos[0] - st.pos[0], pl.pos[2] - st.pos[2]);
+            const w0 = 0.05, w1 = Math.min(t1 - t0 - 0.15, w0 + Math.max(0.6, dist / 1.15));
+            walkSeg[id] = [st.pos, pl.pos, w0, w1];
+          }
+          st.pos = pl.pos;
+          st.face = pl.face;
+        }
+      }
+      if (a.face !== undefined && st.pos) {
+        if (typeof a.face === "number") st.face = a.face * D2R;
+        else if (a.face === "front") { /* keep the spot's facing */ }
+        else { const p = posOf(a.face); if (p) st.face = yawTo(st.pos, p); else warnings.push(`${where}: ${id} faces "${a.face}", which is not placed yet`); }
+      }
+      if (a.do) st.do = a.do;
+      if (a.expr) st.expr = a.expr;
+      if (a.flush !== undefined) st.flush = a.flush;
+      if (a.flushColor) st.flushColor = a.flushColor;
+      if (a.hold !== undefined) {
+        if (st.hold && O[st.hold]) O[st.hold].heldBy = undefined;
+        st.hold = a.hold || undefined;
+        if (a.hold && O[a.hold]) O[a.hold].heldBy = id;
+        if (a.hold && !a.do) st.do = "hold";
+      }
+      keys[id] = [];
+      for (const th of a.then ?? []) {
+        const tt = typeof th.at === "number" ? t0 + th.at : wordTime(b.line, th.at, b.wi, `${where}: ${id} then`).t;
+        keys[id].push({ t: tt, do: th.do ?? "", expr: th.expr ?? "", flush: th.flush ?? -1 });
+      }
+    }
+    // props
+    for (const [id, p] of Object.entries(s.props ?? {})) {
+      const st = (O[id] ??= { kind: p.kind ?? "peti", yaw: 0, scale: 1, gone: false });
+      if (p.kind) st.kind = p.kind;
+      if (p.gone !== undefined) st.gone = p.gone;
+      if (p.at) { const pl = place(p.at, `${where}: prop ${id}`, p.on === "surface"); if (pl) { st.pos = pl.pos; st.yaw = (p.yaw ?? 0) * D2R + pl.face; st.heldBy = undefined; } }
+      else if (p.yaw !== undefined) st.yaw = p.yaw * D2R;
+      if (p.scale) st.scale = p.scale;
+      if (p.fill) st.fill = { color: p.fill.color ?? st.fill?.color ?? "#5fb4e6", level: p.fill.level ?? st.fill?.level ?? 0.7 };
+    }
+    // effects
+    for (const f of s.fx ?? []) {
+      const ft0 = f.at === undefined ? t0 : typeof f.at === "number" ? t0 + f.at : wordTime(b.line, f.at, b.wi, `${where}: fx`).t;
+      const ft1 = f.until === undefined ? t1 : f.until === "end" ? duration : typeof f.until === "number" ? t0 + f.until : wordTime(b.line, f.until, b.wi, `${where}: fx until`).t;
+      fxAll.push({ kind: f.kind, on: f.on, t0: ft0, t1: Math.max(ft1, ft0 + 0.3), color: f.color, amount: f.amount ?? 1 });
+    }
+
+    // the people in this shot
+    const present = castIds.filter((id) => A[id].pos && !A[id].gone);
+    // speaker of the quoted words in this line
+    const qIdx = [...quoteWords].filter((k) => words[k].line === b.line);
+    const sayer = Object.entries(s.cast ?? {}).find(([, a]) => a.says)?.[0] ?? (story.lines[b.line].cast && Object.entries(story.lines[b.line].cast!).find(([, a]) => a.says)?.[0]);
+    // subject + shot kind
+    let on = ([] as string[]).concat(s.on ?? []);
+    if (!on.length) {
+      const named = Object.keys(s.cast ?? {}).filter((id) => present.includes(id));
+      on = named.length ? named.slice(0, b.auto ? 1 : 3) : prevOn.length ? prevOn : present.slice(0, 1);
+      if (qIdx.length && sayer && !s.shot) on = [sayer];
+    }
+    on = on.filter((id) => posOf(id));
+    let kind: ShotKind = s.shot ?? (bi === 0 ? "establish" : b.auto ? AUTO_NEXT[prevKind] ?? "medium" : on.some((id) => propIds.has(id)) ? "insert" : qIdx.length ? "close" : (["medium", "close", "wide", "medium"] as ShotKind[])[bi % 4]);
+    if (!on.length && kind !== "establish" && kind !== "aerial") { kind = "establish"; }
+    const cutFx = fxAll.find((f) => f.kind === "cut" && f.t0 < t1 - 0.05 && f.t1 > t0 + 0.05);
+    // a held prop sits in front of its holder at hand height (not inside the body, where every ray hits the holder)
+    const heldBase = (hid: string, pid: string): V3 => {
+      const h = A[hid], bs = (resolveLook(story.cast[hid].preset, story.cast[hid].look).build?.s) ?? 1, f = fwdOf(h.face);
+      const handY = h.do === "drink" ? 0.98 : h.do === "offer" ? 0.85 : 0.78, ahead = (h.do === "offer" ? 0.36 : 0.3) * bs;
+      return [h.pos![0] + f[0] * ahead, h.pos![1] + Math.max(0.05, handY * bs - sizeOf(pid)[1] * 0.5), h.pos![2] + f[2] * ahead];
+    };
+    const subj: Subj[] = on.map((id) => {
+      const isP = castIds.includes(id);
+      const p = posOf(id)!;
+      const pos = isP ? (walkSeg[id] ? walkSeg[id][1] : p) : O[id]?.heldBy ? heldBase(O[id].heldBy!, id) : p;
+      const s0 = isP ? ((resolveLook(story.cast[id].preset, story.cast[id].look).build?.s) ?? 1) : 1;
+      return { id, p: pos, face: isP ? A[id].face : O[id]?.yaw ?? 0, s: s0, kind: isP ? "person" : "prop", size: isP ? undefined : sizeOf(id) };
+    });
+    // extras join at the start of the shot their word falls in (no one pops in mid-shot)
+    const activeX = extras.filter((x) => x.from < t1 - 0.3 && x.until > t0 + 0.01);
+    const occ: Occ[] = [
+      ...present.filter((id) => !on.includes(id)).flatMap((id) => { const p = A[id].pos!; return [{ c: add(p, [0, 1.25, 0]), r: 0.22, id }, { c: add(p, [0, 0.8, 0]), r: 0.19, id }]; }),
+      ...activeX.flatMap((x) => [{ c: add(x.pos, [0, 1.22, 0]), r: 0.21, id: x.id }, { c: add(x.pos, [0, 0.78, 0]), r: 0.18, id: x.id }]),
+      ...Object.entries(O).filter(([id, o]) => o.pos && !o.gone && !o.heldBy && !on.includes(id)).map(([id, o]) => ({ c: add(o.pos!, [0, sizeOf(id)[1] * 0.5, 0]), r: Math.max(...sizeOf(id)) * 0.62, id })),
+    ];
+    // a wide shot frames the crowd standing round its subject too
+    if (kind === "wide" && subj[0]) {
+      const near = activeX.filter((x) => Math.hypot(x.pos[0] - subj[0].p[0], x.pos[2] - subj[0].p[2]) < 4.5).slice(0, 6);
+      for (const x of near) subj.push({ id: x.id, p: x.pos, face: x.face, s: 1, kind: "person" });
+    }
+    const over = s.over ? subj[0] && { id: s.over, p: A[s.over].pos!, face: A[s.over].face, s: 1, kind: "person" as const } : undefined;
+    if (kind === "ots" && !over) kind = "close";
+    const cam = solveShot(kind === "cutaway" || (cutFx && on.includes(cutFx.on) && (kind === "insert")) ? "cutaway" : kind, subj, W, occ, {
+      aspect: opts.aspect, prevAz: prevAz, prevId, side: s.side, move: s.move, over,
+      // a cut-open vessel turns its opening to the camera, so any angle works
+    });
+    if (cam.note || cam.vis < 0.75) warnings.push(`${where} (${t0.toFixed(1)} s, ${kind} on ${on.join("+") || "-"}): the camera could not see clearly${cam.note ? ` (${cam.note})` : ""} — move people apart, pick another place or shot`);
+    prevAz = cam.az; prevId = on[0]; prevOn = on; prevKind = kind;
+
+    // compile the actors of the shot
+    const actors: PActor[] = present.map((id, k) => {
+      const st = A[id];
+      const look = resolveLook(story.cast[id].preset, story.cast[id].look) as unknown as Record<string, unknown>;
+      const ks: ActKey[] = [{ t: t0, do: st.do, expr: st.expr, flush: st.flush }, ...(keys[id] ?? [])];
+      // carry "then" changes into the state for the next shots
+      for (const kk of keys[id] ?? []) { if (kk.do) st.do = kk.do; if (kk.expr) st.expr = kk.expr; if (kk.flush >= 0) st.flush = kk.flush; }
+      const tgt = s.cast?.[id]?.to ? headOfId(s.cast[id].to!) : null;
+      const w = walkSeg[id];
+      const talk = id === sayer ? qIdx.map((qi) => ({ w: words[qi].w, t0: words[qi].t0, t1: words[qi].t1 })) : [];
+      return {
+        id, look, p0: w ? w[0] : st.pos!, p1: st.pos!, face0: w ? yawTo(w[0], w[1]) : st.face, face1: st.face, walk: w ? [t0 + w[2], t0 + w[3]] : undefined,
+        keys: ks.map((x) => ({ ...x, to: tgt ? toLocal(st.pos!, st.face, tgt) : undefined })), flushColor: st.flushColor, hold: st.hold, talk, seed: k + 1,
+      };
+    });
+    for (const x of activeX) actors.push({ id: x.id, look: x.look, p0: x.pos, p1: x.pos, face0: x.face, face1: x.face, keys: [{ t: t0, do: x.do, expr: x.expr, flush: 0 }], talk: [], seed: x.seed, extra: true });
+
+    const props: PProp[] = Object.entries(O).filter(([, o]) => !o.gone && (o.pos || o.heldBy)).map(([id, o]) => ({ id, kind: o.kind, pos: o.pos ?? [0, 0, 0], yaw: o.yaw, scale: o.scale, held: o.heldBy ? { by: o.heldBy } : undefined, fill: o.fill }));
+    if (b.line !== lastLine && story.lines[b.line].time) curTime = story.lines[b.line].time!;
+    if (s.time) curTime = s.time;
+    if (b.line !== lastLine && story.lines[b.line].weather) curWeather = story.lines[b.line].weather!;
+    if (s.weather) curWeather = s.weather;
+    lastLine = b.line;
+    const time: TimeOfDay = curTime;
+    shots.push({
+      i: shots.length, t0: +t0.toFixed(3), t1: +t1.toFixed(3), kind, line: b.line, a: cam.a, b: cam.b, blur: cam.blur, shadowAt: [cam.a.target[0], 0, cam.a.target[2]], shadowBox: cam.box,
+      time, weather: curWeather, dissolve: !!s.dissolve, actors, props, fx: [], cut: cutFx && on.includes(cutFx.on) ? cutFx.on : undefined,
+      cutYaw: cutFx && on.includes(cutFx.on) && O[cutFx.on]?.pos ? Math.atan2(cam.a.pos[0] - O[cutFx.on].pos![0], cam.a.pos[2] - O[cutFx.on].pos![2]) : undefined, vis: +cam.vis.toFixed(2),
+    });
+    void L;
+  });
+  // effects into the shots they overlap
+  for (const S of shots) S.fx = fxAll.filter((f) => f.t0 < S.t1 - 0.02 && f.t1 > S.t0 + 0.02);
+  return { id: story.id, title: story.title, world: W.id, duration, aspect: opts.aspect, shots, words: words.map(({ w, t0, t1 }) => ({ w, t0, t1 })), lines, audio: opts.audio, warnings };
+};
+
+==== 16098 project/src/cerdik/worlds/Pasar.tsx
+// World "pasar" picture (see pasar.meta.ts for the layout the director uses).
+import React, { useMemo } from "react";
+import { CanvasTexture, Color, CylinderGeometry, DoubleSide, MeshStandardMaterial, RepeatWrapping, SphereGeometry, SRGBColorSpace } from "three";
+import { boxUV, Rod } from "../../kits/bedah/geo.tsx";
+import { flat, mat } from "../../kits/bedah/mats.ts";
+import { hash2, plaster, tileSheet, wood } from "../../kits/bedah/tex.ts";
+import { Palm, Trees } from "../../kits/bedah/props.tsx";
+import { Backdrop } from "../../kits/cerdik/backdrop.tsx";
+import { Toon, blinkAt } from "../../kits/cerdik/Toon.tsx";
+import { POSES } from "../../kits/cerdik/rig.ts";
+import { extraLook } from "../cast.ts";
+import { PROPS } from "../props/lib.ts";
+import { Prop } from "../props/Prop.tsx";
+import { STALL_X, STALL_Z } from "./pasar.meta.ts";
+
+type V3 = [number, number, number];
+const R = Math.PI;
+
+// ------------------------------------------------------------------ textures
+const stripeTex = (a: string, b: string, n = 6) => {
+  const cv = document.createElement("canvas");
+  cv.width = 256;
+  cv.height = 64;
+  const g = cv.getContext("2d")!;
+  for (let i = 0; i < n * 2; i++) {
+    g.fillStyle = i % 2 ? b : a;
+    g.fillRect((i * 256) / (n * 2), 0, 256 / (n * 2) + 1, 64);
+  }
+  const t = new CanvasTexture(cv);
+  t.colorSpace = SRGBColorSpace;
+  t.wrapS = t.wrapT = RepeatWrapping;
+  return t;
+};
+const AWN: [string, string][] = [["#2f6fd1", "#f4f1ea"], ["#e8833a", "#fbf3e2"], ["#2f9c6a", "#f4f1ea"], ["#d23a3a", "#fbeee6"], ["#2b5cb8", "#2b5cb8"], ["#f2c230", "#fbf3e2"], ["#7b4fb8", "#f4efe8"]];
+const awnMats = new Map<number, MeshStandardMaterial>();
+const awnMat = (i: number) => {
+  let m = awnMats.get(i);
+  if (!m) {
+    const [a, b] = AWN[i % AWN.length];
+    awnMats.set(i, (m = new MeshStandardMaterial({ map: stripeTex(a, b), roughness: 0.85, side: DoubleSide })));
+  }
+  return m;
+};
+
+const sphereGeo = new SphereGeometry(1, 16, 12);
+const bulbGeo = new SphereGeometry(0.05, 12, 8);
+
+// ------------------------------------------------------------------ goods on a table (seeded variety)
+const Goods: React.FC<{ kind: number; seed: number }> = ({ kind, seed }) => {
+  const k = kind % 6;
+  if (k === 0) return <group><Prop kind="buah" def={PROPS.buah} pos={[0, 0.8, -0.5]} /><Prop kind="buah" def={PROPS.buah} pos={[0.05, 0.8, 0.35]} yaw={1} /></group>;
+  if (k === 1) return <group><Prop kind="semangka" def={PROPS.semangka} pos={[0.05, 0.8, -0.55]} /><Prop kind="semangka" def={PROPS.semangka} pos={[-0.05, 0.8, -0.1]} yaw={1} /><Prop kind="semangka" def={PROPS.semangka} pos={[0.0, 0.8, 0.45]} yaw={2} /></group>;
+  if (k === 2) {
+    // vegetables: piles of green and red spheres in baskets
+    return (
+      <group>
+        {[-0.5, 0.05, 0.6].map((z, i) => (
+          <group key={i} position={[0, 0.8, z]}>
+            <Prop kind="keranjang" def={PROPS.keranjang} scale={0.9} />
+            {Array.from({ length: 7 }, (_, j) => (
+              <mesh key={j} geometry={sphereGeo} material={flat(i === 1 ? "#d0382c" : j % 2 ? "#4e9a3a" : "#7cbf4a", 0.6)} position={[Math.cos(j * 2.4) * 0.09 * (j % 3), 0.17 + (j % 2) * 0.04, Math.sin(j * 2.4) * 0.09 * (j % 3)]} scale={0.055} castShadow />
+            ))}
+          </group>
+        ))}
+      </group>
+    );
+  }
+  if (k === 3) {
+    // fish on a tray
+    return (
+      <group position={[0, 0.8, 0]}>
+        <mesh geometry={boxUV(0.6, 0.04, 1.5)} material={flat("#c8d0d6", 0.4)} castShadow receiveShadow />
+        {Array.from({ length: 9 }, (_, j) => (
+          <mesh key={j} geometry={sphereGeo} material={flat(j % 3 ? "#a9b6c0" : "#d5dde2", 0.3)} position={[(j % 2) * 0.16 - 0.08, 0.06, -0.6 + j * 0.15]} rotation={[0, 0.4 * (j % 2 ? 1 : -1), 0]} scale={[0.06, 0.025, 0.14]} castShadow />
+        ))}
+      </group>
+    );
+  }
+  if (k === 4) return <group><Prop kind="karung" def={PROPS.karung} pos={[0, 0.8, -0.5]} scale={0.8} /><Prop kind="karung" def={PROPS.karung} pos={[0, 0.8, 0.1]} scale={0.8} yaw={1} /><Prop kind="peti" def={PROPS.peti} pos={[0, 0.8, 0.65]} yaw={R / 2} /></group>;
+  return <group><Prop kind="ember" def={PROPS.ember} pos={[0, 0.8, -0.55]} /><Prop kind="ember" def={PROPS.ember} pos={[0, 0.8, 0.0]} scale={0.9} /><Prop kind="keranjang" def={PROPS.keranjang} pos={[0, 0.8, 0.55]} /><mesh visible={seed < 0} /></group>;
+};
+
+// ------------------------------------------------------------------ a stall (x local: + toward the back)
+export const Stall: React.FC<{ z: number; side: 1 | -1; seed: number; bare?: boolean; t: number; night?: boolean }> = ({ z, side, seed, bare, t, night }) => {
+  const mT = mat("stallTop", wood({ base: "#9c6a3c", dark: "#6a4423", rings: 9, seed: 7 }), { repeat: [1.2, 0.6], roughness: 0.8 });
+  const mPole = mat("stallPole", wood({ base: "#c8ad6a", dark: "#927840", rings: 3, seed: 2 }), { repeat: [1, 2], roughness: 0.8 });
+  const mShelf = mat("stallShelf", wood({ base: "#7a5233", dark: "#4a3322", rings: 8, seed: 3 }), { repeat: [1, 1], roughness: 0.85 });
+  const awnI = Math.floor(hash2(seed, 1) * AWN.length);
+  const goodsI = Math.floor(hash2(seed, 3) * 6);
+  return (
+    <group position={[side * STALL_X, 0.02, z]} rotation={[0, side > 0 ? 0 : R, 0]}>
+      {/* table: top at 0.8 (local x toward the seller = +x) */}
+      <mesh geometry={boxUV(0.74, 0.06, 2.0)} material={mT} position={[0, 0.74, 0]} castShadow receiveShadow />
+      {/* front panel 5 mm behind the top's front face and 5 mm short at the ends: coplanar faces z-fought (flicker) */}
+      <mesh geometry={boxUV(0.06, 0.74, 1.99)} material={mShelf} position={[-0.335, 0.0 + 0.37, 0]} castShadow receiveShadow />
+      {[[-0.32, -0.95], [0.32, -0.95], [-0.32, 0.95], [0.32, 0.95]].map(([x, zz], i) => <mesh key={i} geometry={boxUV(0.05, 0.74, 0.05)} material={mShelf} position={[x, 0.37, zz]} castShadow />)}
+      {bare ? null : <Goods kind={goodsI} seed={seed} />}
+      {/* bamboo poles + sloping awning (high at the back) */}
+      {[[-0.62, -1.15], [-0.62, 1.15], [1.35, -1.15], [1.35, 1.15]].map(([x, zz], i) => <Rod key={i} a={[x, 0, zz]} b={[x, i < 2 ? 2.22 : 2.58, zz]} r={0.035} material={mPole} />)}
+      <mesh geometry={boxUV(2.3, 0.02, 2.6)} material={awnMat(awnI)} position={[0.32, 2.36, 0]} rotation={[0, 0, 0.16]} castShadow receiveShadow />
+      <mesh geometry={boxUV(0.03, 0.18, 2.6)} material={awnMat(awnI)} position={[-0.8, 2.12, 0]} castShadow />
+      {/* back shelf with stock */}
+      <mesh geometry={boxUV(0.5, 0.05, 2.2)} material={mShelf} position={[1.55, 1.0, 0]} castShadow receiveShadow />
+      <mesh geometry={boxUV(0.5, 0.05, 2.2)} material={mShelf} position={[1.55, 1.5, 0]} castShadow receiveShadow />
+      <mesh geometry={boxUV(0.05, 2.0, 2.2)} material={mShelf} position={[1.8, 1.0, 0]} castShadow receiveShadow />
+      {[0, 1, 2].map((i) => <Prop key={i} kind="karung" def={PROPS.karung} pos={[1.55, 0.0, -0.7 + i * 0.7]} scale={0.85} yaw={i} />)}
+      {[0, 1, 2, 3].map((i) => <mesh key={"j" + i} geometry={sphereGeo} material={flat(["#e8833a", "#f2c230", "#d0382c", "#4e9a3a"][(seed + i) % 4], 0.6)} position={[1.5, 1.6, -0.75 + i * 0.5]} scale={[0.12, 0.1, 0.12]} castShadow />)}
+      {/* hanging bananas + bulb under the awning front */}
+      {hash2(seed, 7) > 0.45 ? <Prop kind="pisang" def={PROPS.pisang} pos={[-0.55, 1.78, 0.6]} yaw={R / 2} /> : null}
+      <mesh geometry={bulbGeo} material={night ? flat("#fff2c2", 0.3, { emissive: "#ffd27a", emissiveIntensity: 6 }) : flat("#f3ead0", 0.3, { emissive: "#ffe9b0", emissiveIntensity: 0.4 })} position={[-0.2, 2.0, -0.2]} />
+      <Rod a={[-0.2, 2.05, -0.2]} b={[-0.2, 2.3, -0.2]} r={0.004} material={flat("#222", 0.8)} />
+      {void t}
+    </group>
+  );
+};
+
+// ------------------------------------------------------------------ shophouse (facade toward the street, −x local)
+const RUKO = ["#cfe8d8", "#f3e3c3", "#f2c9b8", "#cfe0f1", "#f6e7a4", "#e4d6f0", "#d9ead0"];
+const Ruko: React.FC<{ z: number; side: 1 | -1; seed: number }> = ({ z, side, seed }) => {
+  const wall = RUKO[Math.floor(hash2(seed, 2) * RUKO.length)];
+  const mW = mat("rukoWall" + wall, plaster({ rough: 0.8, seed: 21 }), { repeat: [1 / 3, 1 / 3], color: wall, roughness: 0.92 });
+  const mRoof = mat("rukoRoof", tileSheet(), { repeat: [1 / 2.4, 1 / 2.5], roughness: 0.88, bump: 1.4, double: true });
+  const mDark = flat("#3a3634", 0.8), mFrame = flat("#f4f1ea", 0.7);
+  const sign = AWN[Math.floor(hash2(seed, 5) * AWN.length)][0];
+  const H = 6.6 + hash2(seed, 9) * 1.2;
+  return (
+    <group position={[side * 6.0, 0, z]} rotation={[0, side > 0 ? 0 : R, 0]}>
+      <mesh geometry={boxUV(8, H, 5.1)} material={mW} position={[4, H / 2, 0]} castShadow receiveShadow />
+      {/* ground floor: open shop (dark) with folding door frame */}
+      <mesh position={[-0.01, 1.4, 0]} rotation={[0, -R / 2, 0]} material={mDark}><planeGeometry args={[4.2, 2.8]} /></mesh>
+      {[-1.6, -0.5, 0.6, 1.7].map((zz, i) => <mesh key={i} position={[-0.02, 1.4, zz]} rotation={[0, -R / 2, 0]} material={flat("#6d6a66", 0.6)}><planeGeometry args={[0.05, 2.8]} /></mesh>)}
+      {/* signboard */}
+      <mesh geometry={boxUV(0.1, 0.7, 4.4)} material={flat(sign, 0.6)} position={[-0.08, 3.25, 0]} castShadow />
+      <mesh geometry={boxUV(0.11, 0.14, 3.4)} material={flat("#fbf7ee", 0.6)} position={[-0.09, 3.3, 0]} />
+      {/* upper floor windows */}
+      {[-1.25, 1.25].map((zz, i) => (
+        <group key={i} position={[-0.02, 4.9, zz]} rotation={[0, -R / 2, 0]}>
+          <mesh material={mFrame}><planeGeometry args={[1.3, 1.5]} /></mesh>
+          <mesh position={[0, 0, 0.01]} material={flat("#2e3a44", 0.3)}><planeGeometry args={[1.1, 1.3]} /></mesh>
+          <mesh position={[0, 0, 0.02]} material={mFrame}><planeGeometry args={[0.05, 1.3]} /></mesh>
+        </group>
+      ))}
+      {/* balcony rail */}
+      <mesh geometry={boxUV(0.5, 0.08, 5.1)} material={mFrame} position={[-0.25, 3.9, 0]} castShadow />
+      <mesh geometry={boxUV(0.06, 0.9, 5.1)} material={mFrame} position={[-0.48, 3.95, 0]} castShadow />
+      {/* pitched roof */}
+      <mesh geometry={boxUV(8.6, 0.12, 5.4)} material={mRoof} position={[4, H + 0.6, 0]} rotation={[0, 0, 0.14]} castShadow />
+    </group>
+  );
+};
+
+// ------------------------------------------------------------------ gate, bunting, mosque
+const Gate: React.FC = () => {
+  const mP = flat("#2f8a5a", 0.6), mW = flat("#f6f2e8", 0.6);
+  return (
+    <group position={[0, 0, 12]}>
+      {[-4.2, 4.2].map((x) => <group key={x}><mesh geometry={boxUV(0.6, 4.2, 0.6)} material={mP} position={[x, 2.1, 0]} castShadow receiveShadow /><mesh geometry={boxUV(0.7, 0.3, 0.7)} material={mW} position={[x, 4.35, 0]} castShadow /></group>)}
+      <mesh geometry={boxUV(9.0, 0.9, 0.4)} material={mP} position={[0, 3.75, 0]} castShadow receiveShadow />
+      <mesh geometry={boxUV(7.2, 0.5, 0.42)} material={mW} position={[0, 3.95, 0]} />
+      <mesh geometry={boxUV(9.6, 0.25, 1.2)} material={flat("#c8462e", 0.7)} position={[0, 4.55, 0]} castShadow />
+    </group>
+  );
+};
+const FLAG = ["#e0342e", "#f6f2e8", "#f2c230", "#2f6fd1", "#2f9c6a", "#e8833a"];
+const Bunting: React.FC<{ z: number; seed: number }> = ({ z, seed }) => {
+  const geo = useMemo(() => new CylinderGeometry(0.0, 0.16, 0.3, 3, 1), []);
+  const n = 18;
+  return (
+    <group position={[0, 0, z]}>
+      {Array.from({ length: n }, (_, i) => {
+        const k = (i + 0.5) / n, x = -5.4 + 10.8 * k, y = 3.7 - 0.5 * Math.sin(Math.PI * k);
+        return <mesh key={i} geometry={geo} material={flat(FLAG[(i + seed) % FLAG.length], 0.7, { double: true })} position={[x, y - 0.16, 0]} rotation={[Math.PI, 0, 0]} scale={[1, 1, 0.08]} castShadow />;
+      })}
+      {Array.from({ length: n }, (_, i) => {
+        const k0 = i / n, k1 = (i + 1) / n;
+        return <Rod key={"c" + i} a={[-5.4 + 10.8 * k0, 3.7 - 0.5 * Math.sin(Math.PI * k0), 0]} b={[-5.4 + 10.8 * k1, 3.7 - 0.5 * Math.sin(Math.PI * k1), 0]} r={0.006} material={flat("#3a3a3a", 0.8)} shadow={false} />;
+      })}
+    </group>
+  );
+};
+const Mosque: React.FC<{ pos: V3 }> = ({ pos }) => {
+  const dome = useMemo(() => new SphereGeometry(6, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2), []);
+  return (
+    <group position={pos}>
+      <mesh geometry={boxUV(16, 7, 16)} material={flat("#f4f0e4", 0.8)} position={[0, 3.5, 0]} />
+      <mesh geometry={new CylinderGeometry(6.4, 6.4, 1.6, 32)} material={flat("#f4f0e4", 0.8)} position={[0, 7.8, 0]} />
+      <mesh geometry={dome} material={flat("#2f8a5a", 0.5)} position={[0, 8.6, 0]} />
+      <mesh geometry={new CylinderGeometry(0.15, 0.15, 2.2, 8)} material={flat("#d9b04a", 0.4)} position={[0, 15.6, 0]} />
+      <mesh geometry={new CylinderGeometry(1.1, 1.3, 26, 16)} material={flat("#f4f0e4", 0.8)} position={[12, 13, 4]} />
+      <mesh geometry={new SphereGeometry(1.4, 16, 10, 0, Math.PI * 2, 0, Math.PI / 2)} material={flat("#2f8a5a", 0.5)} position={[12, 26, 4]} />
+    </group>
+  );
+};
+
+// ------------------------------------------------------------------ the market
+export const Pasar: React.FC<{ t: number; night?: boolean; bare?: string[]; avoid?: V3[] }> = ({ t, night, bare = [], avoid = [] }) => {
+  const mFloor = mat("pasarFloor", plaster({ rough: 1.1, seed: 44 }), { repeat: [1 / 2.2, 1 / 2.2], color: "#bdb5aa", roughness: 0.95, bump: 0.8 });
+  const mStall = mat("pasarStallFloor", plaster({ rough: 1.3, seed: 45 }), { repeat: [1 / 1.4, 1 / 1.4], color: "#a59581", roughness: 0.95 });
+  const mGround = mat("pasarGround", plaster({ rough: 1.5, seed: 46 }), { repeat: [1 / 6, 1 / 6], color: "#8f9a6a", roughness: 1 });
+  const avoidKey = avoid.map((p) => p.map((x) => x.toFixed(1)).join(",")).join(";");
+  const idle = useMemo(() => STALL_Z.flatMap((z, i) => [[1, z, i], [-1, z, i + 20]] as [number, number, number][])
+    .filter(([sd, z]) => Math.abs(z) > 0.1 && !avoid.some((p) => Math.hypot(p[0] - sd * 3.45, p[2] - z) < 1.6)), [avoidKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  return (
+    <group>
+      <mesh rotation={[-R / 2, 0, 0]} material={mGround} receiveShadow><planeGeometry args={[600, 600]} /></mesh>
+      <mesh geometry={boxUV(4.6, 0.02, 70)} material={mFloor} position={[0, 0, -5]} receiveShadow />
+      {[1, -1].map((sd) => <mesh key={sd} geometry={boxUV(3.7, 0.02, 70)} material={mStall} position={[sd * 4.15, 0.001, -5]} receiveShadow />)}
+      {[1, -1].map((sd) => <mesh key={"g" + sd} geometry={boxUV(0.14, 0.03, 70)} material={flat("#5e5750", 0.9)} position={[sd * 2.32, 0.002, -5]} receiveShadow />)}
+      {STALL_Z.map((z, i) => <Stall key={"r" + i} z={z} side={1} seed={i * 2 + 1} t={t} night={night} bare={bare.includes(`r${i}`) || Math.abs(z) < 0.1} />)}
+      {STALL_Z.map((z, i) => <Stall key={"l" + i} z={z} side={-1} seed={i * 2 + 2} t={t} night={night} bare={bare.includes(`l${i}`) || Math.abs(z) < 0.1} />)}
+      {/* sellers minding the other stalls (life in the background) */}
+      {idle.map(([sd, z, i]) => (
+        <Toon key={"s" + i} look={extraLook(i)} pose={i % 3 ? POSES.stand() : POSES.akimbo()} face={{ expr: i % 4 ? "neutral" : "happy", blink: blinkAt(t, i + 9) }} pos={[sd * 3.45, 0.02, z + (i % 2 ? 0.35 : -0.3)]} rotY={-sd * R / 2 + (i % 2 ? 0.25 : -0.2)} />
+      ))}
+      {[-38, -32.9, -27.8, -22.7, -17.6, -12.5, -7.4, -2.3, 2.8, 7.9, 13, 18.1].map((z, i) => <group key={i}><Ruko z={z} side={1} seed={i * 3 + 1} /><Ruko z={z} side={-1} seed={i * 3 + 2} /></group>)}
+      <Gate />
+      {[-12, -4, 4].map((z, i) => <Bunting key={z} z={z} seed={i * 2} />)}
+      <Mosque pos={[9, 0, -62]} />
+      <Trees trees={[{ pos: [-18, 0, -30], h: 10, r: 4.2, seed: 2 }, { pos: [19, 0, -12], h: 11, r: 4.4, seed: 3 }, { pos: [-19, 0, 6], h: 10, r: 4, seed: 4 }, { pos: [18, 0, 20], h: 9, r: 3.8, seed: 5 }, { pos: [-8, 0, 30], h: 9, r: 3.6, seed: 6 }, { pos: [9, 0, 34], h: 10, r: 4, seed: 7 }]} />
+      {([[16, -24, 13, 1.0], [-16.5, -8, 12, -1.1], [16.5, 2, 12.5, 0.9], [-16, 14, 11, -0.8], [7, 26, 11, 0.6], [-7, 24, 12, -0.7]] as [number, number, number, number][]).map(([x, z, h, l], i) => <Palm key={i} pos={[x, 0, z]} h={h} lean={l} yaw={i * 1.3} seed={i + 1} />)}
+      <Backdrop />
+      {void Color}
+    </group>
+  );
+};
+
+==== 113 project/src/index.ts
+import { registerRoot } from "remotion";
+import { RemotionRoot } from "./Root.tsx";
+
+registerRoot(RemotionRoot);
+
+==== 16037 project/src/kits/cerdik/face.ts
+// CERDIK faces — the 2D cartoon face drawn onto the round head.
+//
+// The face is a decal: a spherical patch slightly outside the head (±75° around the front) whose texture is drawn on
+// a canvas. Features are designed in "face-plane" coordinates (x right as you look at the face, y up, both in head
+// radii) and projected onto the sphere, so they look exactly as drawn when seen from the front and wrap naturally
+// when the head turns. Expressions are discrete (like a 2D cartoon swapping faces); every combination is drawn once
+// and cached.
+
+import { CanvasTexture, LinearFilter, SRGBColorSpace } from "three";
+
+/** Patch half-extent in longitude / latitude (radians). The decal geometry uses the same numbers. */
+export const PATCH = { lon: (75 * Math.PI) / 180, lat: (75 * Math.PI) / 180 };
+
+export type Expr =
+  | "neutral" | "smug" | "happy" | "laugh" | "angry" | "surprised" | "worried" | "proud" | "sly" | "scared";
+
+import type { FaceSpec, HairSpec } from "./look.ts";
+export type { FaceSpec, HairSpec };
+
+export type FaceState = {
+  expr: Expr;
+  /** mouth open 0..1 (lip flap while talking), quantised to 4 steps */
+  open?: number;
+  /** eyelids 0 open … 1 closed, quantised */
+  blink?: number;
+  /** pupils looking (x right, y up) in head radii, quantised */
+  look?: [number, number];
+};
+
+type P2 = [number, number];
+
+const projector = (W: number, H: number) => (p: P2): P2 => {
+  const [x, y] = p;
+  const r2 = Math.min(0.995, x * x + y * y);
+  const z = Math.sqrt(1 - r2);
+  const lon = Math.atan2(x, z), lat = Math.asin(Math.max(-1, Math.min(1, y)));
+  return [((lon + PATCH.lon) / (2 * PATCH.lon)) * W, ((PATCH.lat - lat) / (2 * PATCH.lat)) * H];
+};
+
+// ------------------------------------------------------------------ shape helpers (face-plane coordinates)
+const ellipse = (cx: number, cy: number, rx: number, ry: number, rot = 0, n = 48, a0 = 0, a1 = Math.PI * 2): P2[] => {
+  const pts: P2[] = [];
+  const c = Math.cos(rot), s = Math.sin(rot);
+  for (let i = 0; i <= n; i++) {
+    const a = a0 + ((a1 - a0) * i) / n;
+    const x = Math.cos(a) * rx, y = Math.sin(a) * ry;
+    pts.push([cx + x * c - y * s, cy + x * s + y * c]);
+  }
+  return pts;
+};
+/** Thick bar from a to b with rounded caps, as a polygon. */
+export const bar = (a: P2, b: P2, w0: number, w1 = w0, n = 10): P2[] => {
+  const dx = b[0] - a[0], dy = b[1] - a[1];
+  const L = Math.hypot(dx, dy) || 1;
+  const nx = -dy / L, ny = dx / L;
+  const pts: P2[] = [];
+  const ang = Math.atan2(dy, dx);
+  for (let i = 0; i <= n; i++) {
+    const t = ang - Math.PI / 2 - (Math.PI * i) / n;
+    pts.push([a[0] + Math.cos(t) * w0 / 2, a[1] + Math.sin(t) * w0 / 2]);
+  }
+  for (let i = 0; i <= n; i++) {
+    const t = ang + Math.PI / 2 - (Math.PI * i) / n;
+    pts.push([b[0] + Math.cos(t) * w1 / 2, b[1] + Math.sin(t) * w1 / 2]);
+  }
+  void nx; void ny;
+  return pts;
+};
+/** Quadratic curve sampled. */
+const quad = (a: P2, c: P2, b: P2, n = 24): P2[] => {
+  const pts: P2[] = [];
+  for (let i = 0; i <= n; i++) {
+    const t = i / n, u = 1 - t;
+    pts.push([u * u * a[0] + 2 * u * t * c[0] + t * t * b[0], u * u * a[1] + 2 * u * t * c[1] + t * t * b[1]]);
+  }
+  return pts;
+};
+/** Closed shape between an upper and a lower curve (both left → right). */
+const lens = (upper: P2[], lower: P2[]): P2[] => [...upper, ...lower.slice().reverse()];
+
+type Ctx = { g: CanvasRenderingContext2D; P: (p: P2) => P2; k: number };
+const fill = (C: Ctx, pts: P2[], color: string) => {
+  const { g, P } = C;
+  g.beginPath();
+  pts.forEach((p, i) => { const q = P(p); if (i) g.lineTo(q[0], q[1]); else g.moveTo(q[0], q[1]); });
+  g.closePath();
+  g.fillStyle = color;
+  g.fill();
+};
+const stroke = (C: Ctx, pts: P2[], w: number, color: string) => {
+  const { g, P, k } = C;
+  g.beginPath();
+  pts.forEach((p, i) => { const q = P(p); if (i) g.lineTo(q[0], q[1]); else g.moveTo(q[0], q[1]); });
+  g.lineWidth = w * k;
+  g.lineCap = "round";
+  g.lineJoin = "round";
+  g.strokeStyle = color;
+  g.stroke();
+};
+
+const INK = "#141414";
+const MOUTH = "#5a1a1d";
+const TONGUE = "#d8505a";
+const TEETH = "#fbfaf6";
+
+// ------------------------------------------------------------------ expression table
+// eyes: x ±EX at EY. brow: centre (±BX, BY + dy), angle (+ = inner end down = cross), lift = arch.
+const EX = 0.3, EY = 0.1;
+
+type EyeKind = "dot" | "half" | "closedUp" | "closedDown" | "wide" | "sly";
+type MouthKind = "line" | "smile" | "grin" | "laugh" | "grimace" | "o" | "frown" | "smirk" | "wobble";
+type Look = { eye: EyeKind; brow: { a: number; dy: number; arch?: number; asym?: number }; mouth: MouthKind; blush?: boolean; sweat?: boolean };
+
+const TABLE: Record<Expr, Look> = {
+  neutral: { eye: "dot", brow: { a: 0, dy: 0 }, mouth: "line" },
+  smug: { eye: "half", brow: { a: -0.05, dy: 0.02, asym: 0.07 }, mouth: "smirk" },
+  happy: { eye: "dot", brow: { a: -0.12, dy: 0.04, arch: 0.04 }, mouth: "smile" },
+  laugh: { eye: "closedUp", brow: { a: -0.2, dy: 0.07, arch: 0.05 }, mouth: "laugh" },
+  angry: { eye: "dot", brow: { a: 0.42, dy: -0.04 }, mouth: "grimace" },
+  surprised: { eye: "wide", brow: { a: -0.18, dy: 0.12, arch: 0.05 }, mouth: "o" },
+  worried: { eye: "dot", brow: { a: -0.38, dy: 0.04 }, mouth: "wobble", sweat: true },
+  proud: { eye: "closedDown", brow: { a: -0.1, dy: 0.05 }, mouth: "grin" },
+  sly: { eye: "sly", brow: { a: 0.18, dy: -0.01, asym: -0.08 }, mouth: "smirk" },
+  scared: { eye: "wide", brow: { a: -0.45, dy: 0.1 }, mouth: "grimace", sweat: true },
+};
+
+const drawEye = (C: Ctx, side: -1 | 1, kind: EyeKind, blink: number, look: P2) => {
+  const cx = side * EX + look[0], cy = EY + look[1];
+  const closed = blink >= 0.99;
+  if (closed || kind === "closedUp") {
+    // ^ shape (laughing / happy squeeze)
+    stroke(C, quad([cx - 0.085, cy - 0.025], [cx, cy + 0.075], [cx + 0.085, cy - 0.025]), 0.042, INK);
+    return;
+  }
+  if (kind === "closedDown") {
+    stroke(C, quad([cx - 0.085, cy + 0.02], [cx, cy - 0.06], [cx + 0.085, cy + 0.02]), 0.042, INK);
+    return;
+  }
+  const rx = kind === "wide" ? 0.085 : 0.068, ry = kind === "wide" ? 0.1 : 0.085;
+  if (kind === "wide") fill(C, ellipse(side * EX, EY, 0.13, 0.15), "#ffffff");
+  const dot = ellipse(cx, cy, rx, ry);
+  // lids: cut the top (half-lidded smug / sly / blinking)
+  const lid = Math.max(kind === "half" ? 0.48 : kind === "sly" ? 0.4 : 0, blink);
+  if (lid <= 0.01) {
+    fill(C, dot, INK);
+    if (kind === "wide") fill(C, ellipse(cx + 0.025, cy + 0.03, 0.02, 0.024), "#ffffff");
+    return;
+  }
+  const top = cy + ry - lid * 2 * ry;
+  const slope = kind === "sly" ? side * 0.25 : 0;
+  const pts = dot.filter((p) => p[1] <= top + slope * (p[0] - cx));
+  if (pts.length > 2) fill(C, pts, INK);
+  stroke(C, [[cx - rx * 1.25, top - slope * rx * 1.25], [cx + rx * 1.25, top + slope * rx * 1.25]], 0.035, INK);
+};
+
+const drawBrow = (C: Ctx, side: -1 | 1, b: Look["brow"], spec: FaceSpec) => {
+  const w = spec.brows === "bushy" ? 0.085 : spec.brows === "thin" ? 0.04 : 0.058;
+  const by = 0.33 + b.dy + (b.asym ?? 0) * side;
+  const half = spec.brows === "bushy" ? 0.15 : 0.13;
+  const inner: P2 = [side * (EX - half * 0.85), by - b.a * half];
+  const outer: P2 = [side * (EX + half * 0.85), by + b.a * half];
+  const mid: P2 = [(inner[0] + outer[0]) / 2, (inner[1] + outer[1]) / 2 + (b.arch ?? 0.015) * 2];
+  const pts = quad(inner, mid, outer, 16);
+  stroke(C, pts, w, spec.ink ?? INK);
+};
+
+const MY = -0.34;
+const drawMouth = (C: Ctx, kind: MouthKind, open: number, spec: FaceSpec) => {
+  // a talking mouth opens whatever the expression; shut mouths keep their shape
+  if (open > 0.05 && kind !== "laugh" && kind !== "o") {
+    const w = kind === "grimace" ? 0.24 : 0.17, h = 0.05 + open * 0.13;
+    const base = kind === "smile" || kind === "grin" || kind === "smirk" ? 0.03 : 0;
+    const upper = quad([-w, MY + base], [0, MY + base * 0.3 + 0.015], [w, MY + base]);
+    const lower = quad([-w, MY + base], [0, MY - h - base * 0.5], [w, MY + base]);
+    fill(C, lens(upper, lower), MOUTH);
+    if (open > 0.4) fill(C, ellipse(0, MY - h * 0.72, w * 0.5, h * 0.25), TONGUE);
+    fill(C, lens(upper, quad([-w * 0.85, MY + base - 0.012], [0, MY + base * 0.3 - 0.03], [w * 0.85, MY + base - 0.012])), TEETH);
+    stroke(C, lens(upper, lower), 0.03, INK);
+    return;
+  }
+  switch (kind) {
+    case "line": stroke(C, quad([-0.1, MY], [0, MY - 0.012], [0.1, MY]), 0.034, INK); break;
+    case "smile": stroke(C, quad([-0.15, MY + 0.04], [0, MY - 0.07], [0.15, MY + 0.04]), 0.036, INK); break;
+    case "smirk": stroke(C, quad([-0.13, MY - 0.01], [0.02, MY - 0.035], [0.15, MY + 0.06]), 0.036, INK); break;
+    case "frown": stroke(C, quad([-0.12, MY - 0.03], [0, MY + 0.05], [0.12, MY - 0.03]), 0.036, INK); break;
+    case "wobble": stroke(C, [[-0.12, MY - 0.01], [-0.06, MY + 0.02], [0, MY - 0.015], [0.06, MY + 0.02], [0.12, MY - 0.01]], 0.032, INK); break;
+    case "o": {
+      const h = 0.07 + open * 0.06;
+      fill(C, ellipse(0, MY - 0.02, 0.06 + open * 0.02, h), MOUTH);
+      stroke(C, ellipse(0, MY - 0.02, 0.06 + open * 0.02, h), 0.03, INK);
+      break;
+    }
+    case "grin": {
+      const upper = quad([-0.18, MY + 0.05], [0, MY - 0.0], [0.18, MY + 0.05]);
+      const lower = quad([-0.18, MY + 0.05], [0, MY - 0.13], [0.18, MY + 0.05]);
+      fill(C, lens(upper, lower), TEETH);
+      stroke(C, quad([-0.14, MY - 0.0], [0, MY - 0.05], [0.14, MY - 0.0]), 0.018, "#9a9a9a");
+      stroke(C, lens(upper, lower), 0.032, INK);
+      break;
+    }
+    case "laugh": {
+      const h = 0.2 + open * 0.06;
+      const upper = quad([-0.21, MY + 0.06], [0, MY + 0.03], [0.21, MY + 0.06]);
+      const lower = quad([-0.21, MY + 0.06], [0, MY - h * 1.5], [0.21, MY + 0.06]);
+      fill(C, lens(upper, lower), MOUTH);
+      // lower lip bottom (the quad reaches half way to its control point)
+      const bottom = MY + 0.06 - (0.06 + h * 1.5) * 0.5;
+      fill(C, ellipse(0, bottom + (MY + 0.06 - bottom) * 0.28, 0.1, 0.05), TONGUE);
+      fill(C, lens(upper, quad([-0.19, MY + 0.035], [0, MY - 0.035], [0.19, MY + 0.035])), TEETH);
+      stroke(C, lens(upper, lower), 0.032, INK);
+      break;
+    }
+    case "grimace": {
+      const upper = quad([-0.2, MY + 0.03], [0, MY + 0.045], [0.2, MY + 0.03]);
+      const lower = quad([-0.2, MY + 0.03], [0, MY - 0.11], [0.2, MY + 0.03]);
+      fill(C, lens(upper, lower), TEETH);
+      for (const x of [-0.1, 0, 0.1]) stroke(C, [[x, MY + 0.04], [x, MY - 0.07]], 0.016, "#8c8c8c");
+      stroke(C, [[-0.19, MY - 0.02], [0.19, MY - 0.02]], 0.016, "#8c8c8c");
+      stroke(C, lens(upper, lower), 0.032, INK);
+      break;
+    }
+  }
+  void spec;
+};
+
+const drawMustache = (C: Ctx, spec: FaceSpec) => {
+  const y = MY + 0.11;
+  const half = (side: -1 | 1): P2[] => {
+    const up = quad([0, y + 0.03], [side * 0.12, y + 0.06], [side * 0.24, y - 0.01]);
+    const dn = quad([0, y - 0.03], [side * 0.14, y - 0.04], [side * 0.24, y - 0.01]);
+    return lens(up, dn);
+  };
+  fill(C, half(-1), spec.ink ?? INK);
+  fill(C, half(1), spec.ink ?? INK);
+  // curled tips
+  stroke(C, quad([-0.24, y - 0.01], [-0.3, y + 0.0], [-0.29, y + 0.05]), 0.03, spec.ink ?? INK);
+  stroke(C, quad([0.24, y - 0.01], [0.3, y + 0.0], [0.29, y + 0.05]), 0.03, spec.ink ?? INK);
+};
+
+// ------------------------------------------------------------------ cache
+const cache = new Map<string, CanvasTexture>();
+const q = (x: number, n: number) => Math.round(Math.max(0, Math.min(1, x)) * n) / n;
+
+export const faceTexture = (spec: FaceSpec, st: FaceState, size = 1024): CanvasTexture => {
+  const open = q(st.open ?? 0, 3), blink = q(st.blink ?? 0, 2);
+  const look: P2 = [Math.round((st.look?.[0] ?? 0) * 40) / 40, Math.round((st.look?.[1] ?? 0) * 40) / 40];
+  const key = `${JSON.stringify(spec)}|${st.expr}|${open}|${blink}|${look}|${size}`;
+  const hit = cache.get(key);
+  if (hit) return hit;
+  const cv = document.createElement("canvas");
+  cv.width = size;
+  cv.height = size;
+  const g = cv.getContext("2d")!;
+  g.clearRect(0, 0, size, size);
+  // pixels per head radius at the face centre (lon 57.3° of 150°)
+  const k = (size / (2 * PATCH.lon)) * 1;
+  const C: Ctx = { g, P: projector(size, size), k };
+  const L = TABLE[st.expr] ?? TABLE.neutral;
+  if (spec.beard) {
+    // chin beard: a crescent under the mouth (the mouth stays clear above it)
+    const up = quad([-0.3, -0.36], [0, -0.52], [0.3, -0.36]);
+    const dn = quad([-0.3, -0.36], [0, -0.82], [0.3, -0.36]);
+    fill(C, lens(up, dn), spec.ink ?? "#3a2a1e");
+  }
+  if (spec.blush || L.blush) { fill(C, ellipse(-0.42, -0.12, 0.1, 0.06), "rgba(230,110,110,0.55)"); fill(C, ellipse(0.42, -0.12, 0.1, 0.06), "rgba(230,110,110,0.55)"); }
+  drawEye(C, -1, L.eye, blink, look);
+  drawEye(C, 1, L.eye, blink, look);
+  if (spec.lashes && L.eye !== "closedUp" && L.eye !== "closedDown" && blink < 0.99)
+    for (const sd of [-1, 1] as const) {
+      const cx = sd * EX + look[0], cy = EY + look[1];
+      stroke(C, [[cx + sd * 0.055, cy + 0.06], [cx + sd * 0.1, cy + 0.1]], 0.022, INK);
+      stroke(C, [[cx + sd * 0.07, cy + 0.035], [cx + sd * 0.115, cy + 0.06]], 0.02, INK);
+    }
+  if (spec.glasses) {
+    for (const sd of [-1, 1] as const) stroke(C, ellipse(sd * EX, EY, 0.135, 0.12), 0.026, INK);
+    stroke(C, quad([-EX + 0.135, EY + 0.02], [0, EY + 0.06], [EX - 0.135, EY + 0.02]), 0.024, INK);
+  }
+  drawBrow(C, -1, L.brow, spec);
+  drawBrow(C, 1, L.brow, spec);
+  if (spec.mustache) drawMustache(C, spec);
+  drawMouth(C, L.mouth, open, spec);
+  if (L.sweat) {
+    const drop = [...quad([0.56, 0.36], [0.5, 0.22], [0.56, 0.18]), ...quad([0.56, 0.18], [0.62, 0.22], [0.56, 0.36])];
+    fill(C, drop, "#8fd3ff");
+    stroke(C, drop, 0.018, "#2a6c9a");
+  }
+  const t = new CanvasTexture(cv);
+  t.colorSpace = SRGBColorSpace;
+  t.minFilter = LinearFilter;
+  t.generateMipmaps = false;
+  t.anisotropy = 4;
+  cache.set(key, t);
+  return t;
+};
+
+// ------------------------------------------------------------------ hair / scalp texture (equirect on the whole head)
+const hairCache = new Map<string, CanvasTexture>();
+/** Full-sphere texture (u around from the back, v from the top): white skin with the hair painted on. */
+export const hairTexture = (h: HairSpec): CanvasTexture => {
+  const key = JSON.stringify(h);
+  const hit = hairCache.get(key);
+  if (hit) return hit;
+  const W = 1024, Hh = 512;
+  const cv = document.createElement("canvas");
+  cv.width = W;
+  cv.height = Hh;
+  const g = cv.getContext("2d")!;
+  g.fillStyle = "#ffffff";
+  g.fillRect(0, 0, W, Hh);
+  // three.js sphere: u = 0.25 is the front (+z); v = 0 the top. lat (deg) → y px; lon (deg, 0 front, + toward +x) → x px.
+  const X = (lonDeg: number) => (((0.25 + lonDeg / 360) % 1) + 1) % 1 * W;
+  const Y = (latDeg: number) => ((90 - latDeg) / 180) * Hh;
+  g.fillStyle = h.color;
+  const band = (edge: (lon: number) => number) => {
+    // fill from the top of the head down to edge(lon) (latitude) all the way round
+    g.beginPath();
+    g.moveTo(0, 0);
+    for (let i = 0; i <= 360; i += 2) {
+      const lon = i - 90; // u = 0 ↔ lon −90
+      g.lineTo((i / 360) * W, Y(edge(lon)));
+    }
+    g.lineTo(W, 0);
+    g.closePath();
+    g.fill();
+  };
+  const wrapLon = (lon: number) => ((((lon + 180) % 360) + 360) % 360) - 180;
+  if (h.style === "tuft" || h.style === "cap" || h.style === "side" || h.style === "bun" || h.style === "neat") {
+    band((lon) => {
+      const a = Math.abs(wrapLon(lon));
+      // hairline high on the forehead, low at the back; little jagged fringe at the front
+      const base = a < 60 ? 46 - (60 - a) * 0.05 : a < 120 ? 46 - (a - 60) * 0.55 : 13 - (a - 120) * 0.25;
+      const jag = h.style === "neat" || h.style === "bun" ? 0 : a < 70 ? Math.abs(Math.sin((lon * Math.PI) / 9)) * -7 : 0;
+      return h.style === "side" ? base - 6 + jag : base + jag;
+    });
+  }
+  if (h.style === "bald-ring") {
+    g.fillRect(0, Y(10), W, Y(-12) - Y(10));
+    g.fillStyle = "#ffffff";
+    g.fillRect(X(-70), Y(12), X(70) - X(-70), Y(-14) - Y(12));
+  }
+  void X;
+  const t = new CanvasTexture(cv);
+  t.colorSpace = SRGBColorSpace;
+  t.anisotropy = 4;
+  hairCache.set(key, t);
+  return t;
+};
+
+==== 14473 project/src/kits/cerdik/nias.tsx
+// Nias-inspired village kit (stylised, original): stilt houses on river stones with crossed diagonal posts, a
+// lean-out front facade with a window band and a huge steep thatched roof; stone-paved street, megaliths, a stone
+// jumping tower, river stones, log piles. Local frame of a house: it faces +z (the street), width along x.
+// Everything static is memoised; parts that the story changes (a frame under construction, a post being planted)
+// take explicit parameters so each frame stays a pure function of time.
+
+import React, { useMemo } from "react";
+import { BufferAttribute, BufferGeometry, CylinderGeometry, Float32BufferAttribute, IcosahedronGeometry, Matrix4, Quaternion, Vector3, type Material } from "three";
+import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import { boxUV, Rod } from "../bedah/geo.tsx";
+import { flat, mat } from "../bedah/mats.ts";
+import { fbm, hash2, plaster, rubble, thatch, wood } from "../bedah/tex.ts";
+import type { V3 } from "../bedah/cam.ts";
+
+// ------------------------------------------------------------------ materials
+export const M = {
+  post: () => mat("niasPost", wood({ base: "#5a3b26", dark: "#3a2416", rings: 5, seed: 3 }), { repeat: [1, 1.2], roughness: 0.8, bump: 0.8, color: "#e4d6cc" }),
+  postFresh: () => mat("niasPostFresh", wood({ base: "#a88762", dark: "#7a5d40", rings: 6, seed: 5 }), { repeat: [1, 1.2], roughness: 0.78, bump: 0.8, color: "#eae2d8" }),
+  plank: () => mat("niasPlank", wood({ base: "#5e3c25", dark: "#3a2416", rings: 9, seed: 9 }), { repeat: [1.3, 0.8], roughness: 0.82, bump: 0.7, color: "#dccfc4" }),
+  dark: () => flat("#2a1c14", 0.9),
+  thatch: () => mat("niasThatch", thatch({ blades: 900, seed: 4 }), { repeat: [1 / 1.1, 1 / 0.9], color: "#8f8270", roughness: 0.95, bump: 2.2 }),
+  stone: () => mat("niasStone", plaster({ rough: 1.6, seed: 31 }), { repeat: [1.6, 1.6], color: "#9b9890", roughness: 0.9, bump: 1.2 }),
+  stoneDark: () => mat("niasStoneD", plaster({ rough: 1.8, seed: 37 }), { repeat: [1.4, 1.4], color: "#7c7a74", roughness: 0.92, bump: 1.3 }),
+  paving: () => mat("niasPave", rubble({ cells: 6, seed: 47 }), { repeat: [1 / 2.2, 1 / 2.2], roughness: 0.93, bump: 1.5, color: "#d8d2c6" }),
+  red: () => flat("#b3372a", 0.8),
+  gold: () => flat("#d9a42f", 0.45),
+};
+
+// ------------------------------------------------------------------ river stone (lumpy, flat-topped)
+export const stoneGeo = (() => {
+  const cache = new Map<number, BufferGeometry>();
+  return (seed: number) => {
+    const hit = cache.get(seed);
+    if (hit) return hit;
+    const ico = new IcosahedronGeometry(1, 3);
+    ico.deleteAttribute("normal");
+    ico.deleteAttribute("uv");
+    const g = mergeVertices(ico, 1e-4);
+    const p = g.getAttribute("position") as BufferAttribute;
+    const uv: number[] = [];
+    for (let i = 0; i < p.count; i++) {
+      const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+      const n = 1 + 0.12 * (fbm(x * 0.3 + 0.5, z * 0.3 + 0.5, 3, 3, seed) - 0.5) + 0.05 * Math.sin(x * 7 + seed) * Math.cos(z * 6);
+      // flatten: squashed top, rounded belly
+      const yy = y > 0 ? y * 0.42 : y * 0.55;
+      p.setXYZ(i, x * n, Math.max(yy, -0.3) * n, z * n * (0.82 + 0.1 * hash2(seed, 2)));
+      uv.push(x * 0.5 + 0.5, z * 0.5 + 0.5);
+    }
+    g.setAttribute("uv", new Float32BufferAttribute(uv, 2));
+    g.computeVertexNormals();
+    cache.set(seed, g);
+    return g;
+  };
+})();
+
+/** A flat river stone, top surface at y = pos.y + r * 0.42 (its own height). */
+export const RiverStone: React.FC<{ pos: V3; r?: number; yaw?: number; seed?: number; material?: Material }> = ({ pos, r = 0.34, yaw = 0, seed = 1, material }) => (
+  <mesh geometry={stoneGeo(seed % 7)} material={material ?? M.stone()} position={pos} rotation={[0, yaw, 0]} scale={[r, r, r]} castShadow receiveShadow />
+);
+/** Height of a river stone's top above its centre. */
+export const stoneTop = (r: number) => r * 0.42 * 0.96;
+/** The footing stone of post (xi, zi) in a HouseFrame (same numbers the frame uses). */
+export const frameStone = (xi: number, zi: number) => ({ seed: (xi * 7 + zi * 3) % 7, r: 0.33 + 0.03 * hash2(xi, zi, 5), yaw: hash2(xi, zi, 9) * 6 });
+export const POST_BASE = stoneTop(0.33);
+
+// ------------------------------------------------------------------ house frame (posts on stones + crossed diagonals)
+export type FrameSpec = {
+  w?: number; d?: number; floor?: number;
+  /** columns across (x) and rows along (z) */
+  cols?: number; rows?: number;
+  /** posts sit on stones (Nias) or go into the ground (planted) */
+  footing?: "stone" | "planted";
+  diagonals?: boolean;
+  /** 0..1 how much of the frame stands (posts appear column by column) — static houses use 1 */
+  built?: number;
+  beams?: boolean;
+  fresh?: boolean;
+  /** leave out posts (their stones stay): (column, row) → true */
+  omit?: (xi: number, zi: number) => boolean;
+  /** leave out stones/footings too for these posts */
+  omitAll?: (xi: number, zi: number) => boolean;
+};
+
+export const postGrid = (o: FrameSpec) => {
+  const w = o.w ?? 5, d = o.d ?? 8, cols = o.cols ?? 4, rows = o.rows ?? 5;
+  const xs = Array.from({ length: cols }, (_, i) => -w / 2 + 0.4 + ((w - 0.8) * i) / (cols - 1));
+  const zs = Array.from({ length: rows }, (_, i) => -d / 2 + 0.4 + ((d - 0.8) * i) / (rows - 1));
+  return { xs, zs };
+};
+
+export const HouseFrame: React.FC<FrameSpec> = (o) => {
+  const floor = o.floor ?? 2.0, footing = o.footing ?? "stone", built = o.built ?? 1;
+  const { xs, zs } = postGrid(o);
+  const mPost = o.fresh ? M.postFresh() : M.post();
+  const SR = 0.33, base = footing === "stone" ? stoneTop(SR) + 0.0 : -0.02;
+  const n = xs.length * zs.length;
+  const items: React.ReactNode[] = [];
+  let k = 0;
+  zs.forEach((z, zi) => xs.forEach((x, xi) => {
+    const order = (zi * xs.length + xi) / n;
+    if (order > built + 1e-6) return;
+    const seed = xi * 7 + zi * 3;
+    if (o.omitAll?.(xi, zi)) return;
+    if (footing === "stone") items.push(<RiverStone key={"s" + k} pos={[x, 0.02, z]} r={SR + 0.03 * hash2(xi, zi, 5)} yaw={hash2(xi, zi, 9) * 6} seed={seed} />);
+    else items.push(<mesh key={"m" + k} position={[x, 0.03, z]} rotation={[-Math.PI / 2, 0, 0]} material={flat("#7a5536", 0.98)} receiveShadow><circleGeometry args={[0.42, 20]} /></mesh>);
+    if (!o.omit?.(xi, zi)) items.push(<Rod key={"p" + k} a={[x, base, z]} b={[x, floor - 0.05, z]} r={0.12} material={mPost} />);
+    k++;
+  }));
+  // crossed diagonal posts along each column (the Nias earthquake trick)
+  if ((o.diagonals ?? true) && built >= 0.999)
+    xs.forEach((x, xi) => {
+      for (let i = 0; i < zs.length - 1; i++) {
+        const za = zs[i], zb = zs[i + 1];
+        items.push(<Rod key={`d${xi}_${i}a`} a={[x + 0.02, base + 0.12, za]} b={[x + 0.02, floor - 0.25, zb]} r={0.095} material={mPost} />);
+        items.push(<Rod key={`d${xi}_${i}b`} a={[x - 0.02, base + 0.12, zb]} b={[x - 0.02, floor - 0.25, za]} r={0.095} material={mPost} />);
+      }
+    });
+  if ((o.beams ?? true) && built >= 0.999) {
+    const w = o.w ?? 5, d = o.d ?? 8;
+    xs.forEach((x, i) => items.push(<mesh key={"bz" + i} geometry={boxUV(0.22, 0.26, d - 0.4)} material={M.plank()} position={[x, floor - 0.13, 0]} castShadow receiveShadow />));
+    zs.forEach((z, i) => items.push(<mesh key={"bx" + i} geometry={boxUV(w - 0.4, 0.2, 0.2)} material={M.plank()} position={[0, floor + 0.07, z]} castShadow receiveShadow />));
+  }
+  return <group>{items}</group>;
+};
+
+// ------------------------------------------------------------------ full house
+export type HouseSpec = { pos: V3; rotY?: number; w?: number; d?: number; floor?: number; roofH?: number; seed?: number; tint?: string; scale?: number };
+
+const slopeQuat = (a: number) => new Quaternion().setFromAxisAngle(new Vector3(0, 0, 1), a);
+
+/** Nias-style stilt house (omo hada, stylised). */
+export const NiasHouse: React.FC<HouseSpec> = ({ pos, rotY = 0, w = 5, d = 8, floor = 2.0, roofH = 4.4, seed = 1, tint = "#ffffff", scale = 1 }) => {
+  const G = useMemo(() => {
+    const eave = floor + 2.0;
+    const ovS = 0.75, ovF = 1.3, ovB = 0.5;
+    const half = w / 2 + ovS;
+    const slope = Math.hypot(half, roofH);
+    const ang = Math.atan2(roofH, half);
+    const roofLen = d + ovF + ovB;
+    const roofZ = (ovF - ovB) / 2;
+    const slab = boxUV(slope, 0.34, roofLen, seed * 0.7, seed * 0.3);
+    // gable triangles (front, back) at the roof planes' inner face
+    const tri = (z: number, inset: number) => {
+      const g = new BufferGeometry();
+      const hw = half - inset;
+      g.setAttribute("position", new Float32BufferAttribute([-hw, eave - 0.05, z, hw, eave - 0.05, z, 0, eave + roofH * (hw / half) - 0.1, z], 3));
+      g.setAttribute("uv", new Float32BufferAttribute([0, 0, 2 * hw, 0, hw, roofH], 2));
+      g.computeVertexNormals();
+      return g;
+    };
+    return { eave, half, slope, ang, roofLen, roofZ, slab, gableF: tri(d / 2 + 0.6, 0.35), gableB: tri(-d / 2, 0.35) };
+  }, [w, d, floor, roofH, seed]);
+  const mPl = M.plank(), mTh = M.thatch(), mDk = M.dark();
+  const facadeTilt = 0.36; // lean-out front wall
+  const fh = G.eave - floor;
+  return (
+    <group position={pos} rotation={[0, rotY, 0]} scale={scale}>
+      <HouseFrame w={w} d={d} floor={floor} cols={4} rows={5} />
+      {/* floor */}
+      <mesh geometry={boxUV(w + 0.3, 0.16, d + 0.3)} material={mPl} position={[0, floor + 0.25, 0]} castShadow receiveShadow />
+      {/* side + back walls (vertical boards) */}
+      {[-1, 1].map((sd) => <mesh key={sd} geometry={boxUV(0.1, fh, d)} material={mPl} position={[sd * (w / 2 - 0.05), floor + 0.33 + fh / 2, -0.15]} castShadow receiveShadow />)}
+      <mesh geometry={boxUV(w, fh, 0.1)} material={mPl} position={[0, floor + 0.33 + fh / 2, -d / 2 + 0.05]} castShadow receiveShadow />
+      {/* lean-out front facade with the window band */}
+      <group position={[0, floor + 0.33, d / 2 - 0.1]} rotation={[facadeTilt, 0, 0]}>
+        <mesh geometry={boxUV(w + 0.2, fh * 1.05, 0.12)} material={mPl} position={[0, (fh * 1.05) / 2, 0]} castShadow receiveShadow />
+        <mesh position={[0, fh * 0.68, 0.07]} material={mDk}><boxGeometry args={[w - 0.5, fh * 0.3, 0.04]} /></mesh>
+        {Array.from({ length: 11 }, (_, i) => (
+          <mesh key={i} position={[-w / 2 + 0.45 + ((w - 0.9) * i) / 10, fh * 0.68, 0.1]} material={mPl} castShadow><boxGeometry args={[0.07, fh * 0.3, 0.06]} /></mesh>
+        ))}
+        <mesh position={[0, fh * 0.48, 0.08]} material={M.red()}><boxGeometry args={[w + 0.2, 0.07, 0.04]} /></mesh>
+      </group>
+      {/* gables */}
+      <mesh geometry={G.gableF} material={mPl} castShadow receiveShadow />
+      <mesh geometry={G.gableB} material={mPl} castShadow receiveShadow />
+      <mesh position={[0, G.eave + 1.2, d / 2 + 0.66]} material={mDk}><boxGeometry args={[0.9, 0.7, 0.03]} /></mesh>
+      {/* roof slopes (thick thatch) */}
+      {[-1, 1].map((sd) => {
+        const m = new Matrix4().compose(new Vector3(sd * G.half / 2, G.eave + roofH / 2, G.roofZ), slopeQuat(sd * -G.ang + (sd > 0 ? 0 : 0)).multiply(new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), sd > 0 ? 0 : Math.PI)), new Vector3(1, 1, 1));
+        return <mesh key={sd} geometry={G.slab} material={mTh} matrix={m} matrixAutoUpdate={false} castShadow receiveShadow />;
+      })}
+      {/* ridge */}
+      <mesh position={[0, G.eave + roofH + 0.1, G.roofZ]} material={mDk} castShadow><boxGeometry args={[0.3, 0.26, G.roofLen + 0.1]} /></mesh>
+      {tint !== "#ffffff" ? null : null}
+    </group>
+  );
+};
+
+// ------------------------------------------------------------------ street, megaliths, jumping stone
+export const Street: React.FC<{ z0: number; z1: number; w?: number }> = ({ z0, z1, w = 6.5 }) => {
+  const L = Math.abs(z1 - z0);
+  return (
+    <group>
+      <mesh geometry={boxUV(w, 0.12, L)} material={M.paving()} position={[0, 0.06, (z0 + z1) / 2]} receiveShadow />
+      {/* kerb stones */}
+      {[-1, 1].map((sd) => <mesh key={sd} geometry={boxUV(0.45, 0.22, L)} material={M.stoneDark()} position={[sd * (w / 2 + 0.2), 0.11, (z0 + z1) / 2]} castShadow receiveShadow />)}
+    </group>
+  );
+};
+
+/** Standing stone (megalith) slab. */
+export const Megalith: React.FC<{ pos: V3; h?: number; w?: number; yaw?: number; seed?: number }> = ({ pos, h = 1.8, w = 0.6, yaw = 0, seed = 1 }) => (
+  <group position={pos} rotation={[0, yaw, 0.03 * (hash2(seed, 1) - 0.5)]}>
+    <mesh geometry={stoneGeo(seed % 7)} material={M.stoneDark()} position={[0, h / 2, 0]} scale={[w, h * 1.15, w * 0.45]} castShadow receiveShadow />
+  </group>
+);
+
+/** Stone jumping tower (hombo batu style): a truncated stone block with a small launch stone in front. */
+export const JumpStone: React.FC<{ pos: V3; yaw?: number }> = ({ pos, yaw = 0 }) => {
+  const G = useMemo(() => {
+    const g = new CylinderGeometry(0.62, 0.95, 2.15, 4, 1);
+    g.rotateY(Math.PI / 4);
+    g.scale(1.25, 1, 0.55);
+    g.translate(0, 1.075, 0);
+    g.computeVertexNormals();
+    return g;
+  }, []);
+  return (
+    <group position={pos} rotation={[0, yaw, 0]}>
+      <mesh geometry={G} material={M.stoneDark()} castShadow receiveShadow />
+      <mesh geometry={boxUV(0.6, 0.38, 0.5)} material={M.stone()} position={[0, 0.19, 1.2]} castShadow receiveShadow />
+    </group>
+  );
+};
+
+/** Pile of logs (building material). */
+export const LogPile: React.FC<{ pos: V3; yaw?: number; n?: number; L?: number; fresh?: boolean }> = ({ pos, yaw = 0, n = 6, L = 3.2, fresh = true }) => {
+  const mm = fresh ? M.postFresh() : M.post();
+  const logs: React.ReactNode[] = [];
+  let i = 0;
+  for (let row = 0; i < n; row++) {
+    const inRow = Math.max(1, 3 - row);
+    for (let c = 0; c < inRow && i < n; c++, i++) {
+      const x = (c - (inRow - 1) / 2) * 0.25;
+      const y = 0.12 + row * 0.215;
+      logs.push(<Rod key={i} a={[x, y, -L / 2 + hash2(i, 3) * 0.2]} b={[x, y, L / 2 - hash2(i, 5) * 0.2]} r={0.115} material={mm} />);
+    }
+  }
+  return <group position={pos} rotation={[0, yaw, 0]}>{logs}</group>;
+};
+
+/** A scatter of river stones on the ground (material waiting to be used). */
+export const StonePile: React.FC<{ pos: V3; n?: number; seed?: number }> = ({ pos, n = 7, seed = 3 }) => (
+  <group position={pos}>
+    {Array.from({ length: n }, (_, i) => {
+      const a = i * 2.39996 + seed, rr = 0.25 + 0.38 * Math.sqrt(i / n);
+      const r = 0.2 + 0.1 * hash2(i, seed);
+      return <RiverStone key={i} pos={[Math.cos(a) * rr, r * 0.25 + (i === 0 ? 0.0 : 0), Math.sin(a) * rr]} r={r} yaw={a} seed={i + seed} />;
+    })}
+  </group>
+);
+
+==== 5286 project/src/kits/cerdik/rain.tsx
+// CERDIK rain for any world: slanted streaks falling through a box around the shot and ripples where they land.
+// Drops stop on whatever covers them (awnings, roofs, tables — the world's colliders), so people under a shelter stay
+// dry. Everything is a pure function of t; the streaks live on FX_LAYER (no AO / DOF on them).
+import React, { useLayoutEffect, useMemo, useRef } from "react";
+import { AdditiveBlending, BoxGeometry, Color, InstancedMesh, MeshBasicMaterial, Object3D, RingGeometry } from "three";
+import { FX_LAYER } from "./Stage.tsx";
+
+type Box = { min: [number, number, number]; max: [number, number, number] };
+const hash = (i: number, k: number) => { const x = Math.sin(i * 127.1 + k * 311.7) * 43758.5453; return x - Math.floor(x); };
+
+const HALF = 22, TOP = 12, SLANT = 0.09;
+
+/** Where a drop at (x, z) lands: the highest collider top above it, else the ground. */
+const landAt = (x: number, z: number, ground: (x: number, z: number) => number, cover: Box[]) => {
+  let y = ground(x, z);
+  for (const b of cover) if (x >= b.min[0] && x <= b.max[0] && z >= b.min[2] && z <= b.max[2] && b.max[1] > y) y = b.max[1];
+  return y;
+};
+
+/** `eye`: the camera position(s) of the shot — drops close to the lens thin out and fade so they never smear the frame. */
+export const Rain: React.FC<{ t: number; center: [number, number]; eye: [number, number, number][]; ground: (x: number, z: number) => number; cover: Box[]; count?: number; ripples?: number }> = ({ t, center, eye, ground, cover, count = 8000, ripples = 220 }) => {
+  const streaks = useRef<InstancedMesh>(null);
+  const rings = useRef<InstancedMesh>(null);
+  const G = useMemo(() => ({
+    geo: new BoxGeometry(0.006, 0.46, 0.006),
+    mat: new MeshBasicMaterial({ color: "#e2e9f2", transparent: true, opacity: 0.3, depthWrite: false }),
+    ring: new RingGeometry(0.8, 1, 24).rotateX(-Math.PI / 2),
+    ringMat: new MeshBasicMaterial({ color: "#ffffff", transparent: true, depthWrite: false, blending: AdditiveBlending, opacity: 0.55 }),
+  }), []);
+  // drops: x, z, floor, phase, speed — fixed per shot centre
+  const drops = useMemo(() => {
+    const top = ground(center[0], center[1]) + TOP;
+    return Array.from({ length: count }, (_, i) => {
+      const x = center[0] + (hash(i, 1) * 2 - 1) * HALF, z = center[1] + (hash(i, 2) * 2 - 1) * HALF;
+      return { x, z, floor: landAt(x, z, ground, cover), top, ph: hash(i, 3), v: 8.5 + hash(i, 4) * 2.5, len: 0.75 + hash(i, 5) * 0.5 };
+    });
+  }, [center[0], center[1], ground, cover, count]);
+  // ripples only on open ground near the centre (not on roofs)
+  const spots = useMemo(() => {
+    const out: { x: number; z: number; y: number; ph: number; per: number; r: number }[] = [];
+    for (let i = 0; out.length < ripples && i < ripples * 4; i++) {
+      const a = hash(i, 7) * Math.PI * 2, d = Math.sqrt(hash(i, 8)) * 11;
+      const x = center[0] + Math.cos(a) * d, z = center[1] + Math.sin(a) * d;
+      const g = ground(x, z), y = landAt(x, z, ground, cover);
+      if (y > g + 0.01) continue;
+      out.push({ x, z, y: g + 0.012, ph: hash(i, 9), per: 0.55 + hash(i, 10) * 0.5, r: 0.06 + hash(i, 11) * 0.07 });
+    }
+    return out;
+  }, [center[0], center[1], ground, cover, ripples]);
+
+  useLayoutEffect(() => {
+    const o = new Object3D();
+    const im = streaks.current!;
+    im.layers.set(FX_LAYER);
+    for (let i = 0; i < drops.length; i++) {
+      const d = drops[i], h = d.top - d.floor;
+      if (h < 0.6) { o.scale.set(0, 0, 0); o.updateMatrix(); im.setMatrixAt(i, o.matrix); continue; }
+      const k = (d.ph + (t * d.v) / h) % 1, y = d.top - k * h;
+      const grow = Math.min(1, (y - d.floor) / 0.4, (d.top - y) / 1.0); // shrink into the landing, grow in at the top
+      const px = d.x + (d.top - y) * SLANT, py = y + 0.23;
+      let near = 99;
+      for (const e of eye) near = Math.min(near, Math.hypot(px - e[0], py - e[1], d.z - e[2]));
+      const keep = Math.min(1, Math.max(0, (near - 1.4) / 1.6)); // gone within 1.4 m of the lens, full from 3 m
+      const thin = Math.min(1, Math.max(0.3, near / 7)); // a hair-thin streak up close, not a white bar
+      o.position.set(px, py, d.z);
+      o.rotation.set(0, 0, SLANT);
+      o.scale.set(thin * keep, Math.max(0.001, grow * d.len * keep), thin * keep);
+      o.updateMatrix();
+      im.setMatrixAt(i, o.matrix);
+    }
+    im.instanceMatrix.needsUpdate = true;
+    const rm = rings.current!;
+    rm.layers.set(FX_LAYER);
+    const c = new Color();
+    for (let i = 0; i < spots.length; i++) {
+      const s = spots[i], k = ((t / s.per) + s.ph) % 1;
+      const r = s.r * (0.25 + 0.75 * k);
+      o.position.set(s.x, s.y, s.z);
+      o.rotation.set(0, 0, 0);
+      o.scale.set(r, 1, r);
+      o.updateMatrix();
+      rm.setMatrixAt(i, o.matrix);
+      const f = Math.sin(Math.PI * k) * (1 - k) * 1.4; // additive: black = invisible, so the fade never pops
+      rm.setColorAt(i, c.setRGB(f, f, f));
+    }
+    rm.instanceMatrix.needsUpdate = true;
+    if (rm.instanceColor) rm.instanceColor.needsUpdate = true;
+  });
+  return (
+    <group>
+      <instancedMesh ref={streaks} args={[G.geo, G.mat, drops.length]} frustumCulled={false} />
+      <instancedMesh ref={rings} args={[G.ring, G.ringMat, Math.max(1, spots.length)]} frustumCulled={false} />
+    </group>
+  );
+};
+
+==== 14748 project/src/kits/cerdik/Stage.tsx
+// Stage — daylight, sky and the finishing chain of an CERDIK shot (forked from the BEDAH Stage).
+// CERDIK change: bloom only above a high threshold (glow highlights, lamps, sun glints) — sunlit white heads must
+// never bloom over the drawn faces.
+//
+// The look is "real building site on a clear day": one hard sun with crisp shadows, a blue sky bounce, a deep blue
+// sky dome with drifting cumulus, light aerial haze, contact shadows from ambient occlusion and a punchy grade.
+// Chain: MSAA scene → NaN guard → GTAO → (depth of field for inserts) → faint bloom → neutral tone map → grade.
+
+import React, { useLayoutEffect, useMemo } from "react";
+import { useFrame, useThree } from "@react-three/fiber";
+import {
+  BackSide, Color, DirectionalLight, FogExp2, HalfFloatType, HemisphereLight, Mesh, NeutralToneMapping, Object3D,
+  PerspectiveCamera, ShaderMaterial, SphereGeometry, Vector2, Vector3, WebGLRenderTarget,
+} from "three";
+import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
+import { GTAOPass } from "three/examples/jsm/postprocessing/GTAOPass.js";
+import { BokehPass } from "three/examples/jsm/postprocessing/BokehPass.js";
+import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
+import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
+import { ShaderPass } from "three/examples/jsm/postprocessing/ShaderPass.js";
+import type { Shot, V3 } from "../bedah/cam.ts";
+
+/** Render layer for rain and other see-through effects: the camera draws it, the depth-based passes (AO, DOF) skip it. */
+export const FX_LAYER = 1;
+
+export type Look = {
+  /** direction TOWARD the sun */
+  sun: { dir: V3; color: string; intensity: number };
+  hemi: { sky: string; ground: string; intensity: number };
+  fog: { color: string; density: number };
+  sky: { zenith: string; horizon: string; cover: number; cloud: string; shade: string; drift: number };
+  exposure: number;
+  bloom: number;
+  ao: number;
+  grade: { contrast: number; sat: number; vignette: number; grain: number; tint: string };
+};
+
+const C = (x: string) => new Color(x);
+const mixC = (a: string, b: string, t: number) => "#" + C(a).lerp(C(b), t).getHexString();
+const m = (a: number, b: number, t: number) => a + (b - a) * t;
+const m3 = (a: V3, b: V3, t: number): V3 => [m(a[0], b[0], t), m(a[1], b[1], t), m(a[2], b[2], t)];
+
+/** Blend two looks (weather changing inside a shot). */
+export const mixLook = (a: Look, b: Look, t: number): Look => {
+  if (t <= 0) return a;
+  if (t >= 1) return b;
+  return {
+    sun: { dir: m3(a.sun.dir, b.sun.dir, t), color: mixC(a.sun.color, b.sun.color, t), intensity: m(a.sun.intensity, b.sun.intensity, t) },
+    hemi: { sky: mixC(a.hemi.sky, b.hemi.sky, t), ground: mixC(a.hemi.ground, b.hemi.ground, t), intensity: m(a.hemi.intensity, b.hemi.intensity, t) },
+    fog: { color: mixC(a.fog.color, b.fog.color, t), density: m(a.fog.density, b.fog.density, t) },
+    sky: {
+      zenith: mixC(a.sky.zenith, b.sky.zenith, t), horizon: mixC(a.sky.horizon, b.sky.horizon, t), cover: m(a.sky.cover, b.sky.cover, t),
+      cloud: mixC(a.sky.cloud, b.sky.cloud, t), shade: mixC(a.sky.shade, b.sky.shade, t), drift: m(a.sky.drift, b.sky.drift, t),
+    },
+    exposure: m(a.exposure, b.exposure, t),
+    bloom: m(a.bloom, b.bloom, t),
+    ao: m(a.ao, b.ao, t),
+    grade: {
+      contrast: m(a.grade.contrast, b.grade.contrast, t), sat: m(a.grade.sat, b.grade.sat, t), vignette: m(a.grade.vignette, b.grade.vignette, t),
+      grain: m(a.grade.grain, b.grade.grain, t), tint: mixC(a.grade.tint, b.grade.tint, t),
+    },
+  };
+};
+
+/** Clear tropical late morning: the house look. */
+export const DAY: Look = {
+  sun: { dir: [-0.5, 0.78, 0.42], color: "#fff2dc", intensity: 3.1 },
+  hemi: { sky: "#e3e9f6", ground: "#b59877", intensity: 1.55 },
+  fog: { color: "#a9c8ee", density: 0.0045 },
+  sky: { zenith: "#05287e", horizon: "#6ea4e4", cover: 0.43, cloud: "#ffffff", shade: "#a3b4d0", drift: 1 },
+  exposure: 0.95,
+  bloom: 0.1,
+  ao: 1,
+  grade: { contrast: 0.24, sat: 1.04, vignette: 0.1, grain: 0.005, tint: "#ffffff" },
+};
+
+/** Rain: sun gone, grey ceiling, cool flat light. */
+export const RAIN: Look = {
+  sun: { dir: [-0.5, 0.78, 0.42], color: "#dfe6f0", intensity: 0.9 },
+  hemi: { sky: "#cfd8e4", ground: "#8d867c", intensity: 2.7 },
+  fog: { color: "#a3aebb", density: 0.012 },
+  sky: { zenith: "#66758a", horizon: "#a3afbe", cover: 0.98, cloud: "#b4bdc9", shade: "#6c7684", drift: 2.4 },
+  exposure: 1.0,
+  bloom: 0.05,
+  ao: 1,
+  grade: { contrast: 0.2, sat: 0.86, vignette: 0.2, grain: 0.005, tint: "#eef3ff" },
+};
+
+// ---------------------------------------------------------------- sky dome with cumulus
+const SkyShader = {
+  uniforms: {
+    uZenith: { value: new Color() }, uHorizon: { value: new Color() }, uSunDir: { value: new Vector3(0, 1, 0) },
+    uCover: { value: 0.5 }, uCloud: { value: new Color() }, uShade: { value: new Color() }, uTime: { value: 0 },
+  },
+  vertexShader: /* glsl */ `varying vec3 vDir; void main(){ vDir = normalize(position); vec4 p = projectionMatrix * modelViewMatrix * vec4(position, 1.0); gl_Position = p.xyww; }`,
+  fragmentShader: /* glsl */ `
+    precision highp float;
+    uniform vec3 uZenith; uniform vec3 uHorizon; uniform vec3 uSunDir; uniform float uCover; uniform vec3 uCloud; uniform vec3 uShade; uniform float uTime;
+    varying vec3 vDir;
+    float hash(vec2 p){ vec3 q = fract(vec3(p.xyx) * vec3(0.1031, 0.1030, 0.0973)); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
+    float vn(vec2 p){ vec2 i = floor(p), f = fract(p); vec2 u = f * f * (3.0 - 2.0 * f);
+      return mix(mix(hash(i), hash(i + vec2(1, 0)), u.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), u.x), u.y); }
+    float fbm(vec2 p){ float a = 0.5, s = 0.0; for (int i = 0; i < 5; i++){ s += a * vn(p); p = p * 2.03 + vec2(17.1, 9.2); a *= 0.5; } return s; }
+    // puffy: big soft masses with rounded billows carved on their edges
+    float dens(vec2 p){
+      float base = 0.58 * vn(p * vec2(0.5, 0.62)) + 0.30 * vn(p * 1.05 + 7.3) + 0.12 * vn(p * 2.3 + 3.1);
+      float bil = 0.0, a = 0.5; vec2 q = p * 2.6;
+      for (int i = 0; i < 4; i++){ bil += a * abs(2.0 * vn(q) - 1.0); q = q * 2.07 + vec2(3.7, 1.3); a *= 0.5; }
+      return base - bil * 0.24 + 0.07;
+    }
+    void main(){
+      vec3 d = normalize(vDir);
+      float h = max(d.y, 0.0);
+      vec3 c = mix(uHorizon, uZenith, 1.0 - exp(-h * 4.2));
+      // warm, bright haze band right at the horizon
+      c = mix(c, uHorizon * 1.08 + vec3(0.04, 0.03, 0.0), exp(-h * 14.0) * 0.7);
+      vec3 s = normalize(uSunDir);
+      float cs = max(dot(d, s), 0.0);
+      c += vec3(1.0, 0.96, 0.88) * (0.10 * pow(cs, 8.0) + 0.5 * pow(cs, 200.0));
+      if (d.y > 0.0) {
+        vec2 p = d.xz / (d.y + 0.34) * 2.5 + vec2(uTime * 0.012, uTime * 0.004);
+        float n = dens(p);
+        float cov = 1.0 - uCover;
+        float a = smoothstep(cov, cov + 0.09, n);
+        if (a > 0.0) {
+          vec2 toSun = normalize(s.xz + vec2(1e-4)) * 0.3;
+          float lit = n - dens(p + toSun);
+          float light = clamp(0.7 + lit * 3.2, 0.0, 1.0);
+          // thick cores go grey underneath
+          float core = smoothstep(cov + 0.1, cov + 0.3, n);
+          vec3 cc = mix(uShade, uCloud, light) * mix(1.0, 0.8, core);
+          a *= smoothstep(0.015, 0.16, d.y);
+          c = mix(c, cc, a * 0.97);
+        }
+      }
+      gl_FragColor = vec4(c, 1.0);
+    }`,
+};
+
+// ---------------------------------------------------------------- grade
+const GradeShader = {
+  uniforms: {
+    tDiffuse: { value: null }, uTime: { value: 0 }, uRes: { value: new Vector2(1080, 1920) }, uTint: { value: new Color("#fff") },
+    uContrast: { value: 0.2 }, uSat: { value: 1.1 }, uVignette: { value: 0.15 }, uGrain: { value: 0.01 },
+  },
+  vertexShader: /* glsl */ `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+  fragmentShader: /* glsl */ `
+    uniform sampler2D tDiffuse; uniform float uTime; uniform vec2 uRes; uniform vec3 uTint;
+    uniform float uContrast; uniform float uSat; uniform float uVignette; uniform float uGrain; varying vec2 vUv;
+    float hash(vec2 p){ p = fract(p * vec2(443.897, 441.423)); p += dot(p, p.yx + 19.19); return fract((p.x + p.y) * p.x); }
+    void main(){
+      vec4 c = texture2D(tDiffuse, vUv);
+      c.rgb *= uTint;
+      c.rgb = mix(c.rgb, c.rgb * c.rgb * (3.0 - 2.0 * c.rgb), uContrast);
+      float l = dot(c.rgb, vec3(0.2126, 0.7152, 0.0722));
+      c.rgb = mix(vec3(l), c.rgb, uSat);
+      vec2 d = (vUv - 0.5) * vec2(1.0, 0.8);
+      c.rgb *= 1.0 - uVignette * smoothstep(0.3, 0.9, length(d));
+      c.rgb += (hash(vUv * uRes + uTime * 17.0) - 0.5) * uGrain;
+      gl_FragColor = vec4(clamp(c.rgb, 0.0, 1.0), 1.0);
+    }`,
+};
+
+const SanitizeShader = {
+  uniforms: { tDiffuse: { value: null } },
+  vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: `uniform sampler2D tDiffuse; varying vec2 vUv;
+    void main() { vec4 c = texture2D(tDiffuse, vUv); if (any(isnan(c)) || any(isinf(c))) c = vec4(0.0, 0.0, 0.0, 1.0); gl_FragColor = vec4(clamp(c.rgb, 0.0, 32.0), 1.0); }`,
+};
+
+export const Stage: React.FC<{ shot: Shot; look: Look; frame: number; t: number; children: React.ReactNode }> = ({ shot, look, frame, t, children }) => {
+  const { gl, scene, camera, size } = useThree();
+
+  const rig = useMemo(() => {
+    const target = new Object3D();
+    const sun = new DirectionalLight("#fff", 3);
+    sun.target = target;
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(4096, 4096);
+    sun.shadow.radius = 2.2;
+    sun.shadow.bias = -0.0003;
+    sun.shadow.normalBias = 0.03;
+    const hemi = new HemisphereLight("#fff", "#444", 1);
+    const sky = new Mesh(new SphereGeometry(1, 48, 24), new ShaderMaterial({ ...SkyShader, uniforms: Object.fromEntries(Object.entries(SkyShader.uniforms).map(([k, v]) => [k, { value: (v.value as { clone?: () => unknown }).clone ? (v.value as { clone: () => unknown }).clone() : v.value }])), side: BackSide, depthWrite: false, fog: false }));
+    sky.frustumCulled = false;
+    sky.renderOrder = -10;
+    return { target, sun, hemi, sky };
+  }, []);
+
+  const chain = useMemo(() => {
+    const w = size.width, h = size.height;
+    const rt = new WebGLRenderTarget(w, h, { type: HalfFloatType, samples: 8 });
+    const composer = new EffectComposer(gl, rt);
+    composer.setPixelRatio(1);
+    composer.setSize(w, h);
+    composer.addPass(new RenderPass(scene, camera));
+    composer.addPass(new ShaderPass(SanitizeShader));
+    const gtao = new GTAOPass(scene, camera, w, h);
+    gtao.updateGtaoMaterial({ radius: 0.55, distanceExponent: 1.4, thickness: 1.0, scale: 1.15, samples: 16, distanceFallOff: 1.0, screenSpaceRadius: false });
+    gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, rings: 2, samples: 16 });
+    const skipFx = <P extends { render: (...a: never[]) => void }>(pass: P) => {
+      const r = pass.render.bind(pass) as (...a: unknown[]) => void;
+      (pass as unknown as { render: (...a: unknown[]) => void }).render = (...a: unknown[]) => { camera.layers.disable(FX_LAYER); try { r(...a); } finally { camera.layers.enable(FX_LAYER); } };
+      return pass;
+    };
+    composer.addPass(skipFx(gtao));
+    const dof = new BokehPass(scene, camera, { focus: 10, aperture: 0.002, maxblur: 0.008 });
+    composer.addPass(skipFx(dof));
+    const bloom = new UnrealBloomPass(new Vector2(w, h), 0.1, 0.6, 4.5);
+    composer.addPass(bloom);
+    composer.addPass(new OutputPass());
+    const grade = new ShaderPass(GradeShader);
+    (grade.uniforms.uRes.value as Vector2).set(w, h);
+    composer.addPass(grade);
+    return { composer, gtao, dof, bloom, grade };
+  }, [gl, scene, camera, size.width, size.height]);
+
+  useLayoutEffect(() => {
+    const cam = camera as PerspectiveCamera;
+    cam.position.set(...shot.pos);
+    cam.up.set(Math.sin(shot.roll ?? 0), Math.cos(shot.roll ?? 0), 0);
+    cam.lookAt(...shot.target);
+    cam.fov = shot.fov;
+    cam.near = 0.08;
+    cam.far = 1500;
+    cam.updateProjectionMatrix();
+    cam.updateMatrixWorld();
+    cam.layers.enable(FX_LAYER);
+    gl.toneMapping = NeutralToneMapping;
+    gl.shadowMap.autoUpdate = false;
+  }, [shot, camera, gl]);
+
+  useFrame(() => {
+    const L = look;
+    const at = shot.shadowAt ?? shot.target;
+    const box = shot.shadowBox ?? 12;
+    const dir = new Vector3(...L.sun.dir).normalize();
+    rig.target.position.set(...at);
+    rig.target.updateMatrixWorld();
+    rig.sun.position.set(at[0] + dir.x * 60, at[1] + dir.y * 60, at[2] + dir.z * 60);
+    rig.sun.color.set(L.sun.color);
+    rig.sun.intensity = L.sun.intensity;
+    const sc = rig.sun.shadow.camera;
+    sc.left = -box; sc.right = box; sc.top = box; sc.bottom = -box;
+    sc.near = 1;
+    sc.far = 140;
+    sc.updateProjectionMatrix();
+    rig.sun.updateMatrixWorld();
+    rig.hemi.color.set(L.hemi.sky);
+    rig.hemi.groundColor.set(L.hemi.ground);
+    rig.hemi.intensity = L.hemi.intensity;
+
+    const fog = scene.fog as FogExp2 | null;
+    if (!fog) scene.fog = new FogExp2(L.fog.color, L.fog.density);
+    else { fog.color.set(L.fog.color); fog.density = L.fog.density; }
+
+    const cam = camera as PerspectiveCamera;
+    rig.sky.position.copy(cam.position);
+    rig.sky.scale.setScalar(cam.far * 0.9);
+    rig.sky.updateMatrixWorld();
+    const su = (rig.sky.material as ShaderMaterial).uniforms;
+    su.uZenith.value.set(L.sky.zenith);
+    su.uHorizon.value.set(L.sky.horizon);
+    su.uSunDir.value.copy(dir);
+    su.uCover.value = L.sky.cover;
+    su.uCloud.value.set(L.sky.cloud);
+    su.uShade.value.set(L.sky.shade);
+    su.uTime.value = t * L.sky.drift;
+
+    gl.toneMappingExposure = L.exposure;
+    chain.bloom.strength = L.bloom;
+    chain.gtao.blendIntensity = L.ao;
+    const du = chain.dof.uniforms as unknown as Record<string, { value: number }>;
+    const blur = shot.blur ?? 0;
+    chain.dof.enabled = blur > 0;
+    du.focus.value = shot.focus ?? 8;
+    du.aperture.value = blur * 0.0009;
+    du.maxblur.value = 0.012;
+    const g = chain.grade.uniforms;
+    g.uTime.value = frame % 997;
+    g.uTint.value.set(L.grade.tint);
+    g.uContrast.value = L.grade.contrast;
+    g.uSat.value = L.grade.sat;
+    g.uVignette.value = L.grade.vignette;
+    g.uGrain.value = L.grade.grain;
+    gl.shadowMap.needsUpdate = true;
+    chain.composer.render();
+  }, 1);
+
+  return (
+    <>
+      <primitive object={rig.target} />
+      <primitive object={rig.sun} />
+      <primitive object={rig.hemi} />
+      <primitive object={rig.sky} />
+      {children}
+    </>
+  );
+};
+
+==== 21335 project/src/kits/cerdik/Toon.tsx
+// Toon — the CERDIK round-head stick figure.
+//   • head: a white sphere (hair painted on), a 2D cartoon face decal (face.ts), a thin ink outline (inverted hull)
+//   • torso: a rounded costume body (vest / collar / belt / sash painted on a canvas), outlined
+//   • limbs: thin black sticks with small black mitten hands and shoes (two-bone IK from rig.ts)
+//   • headgear: headband, peci, chief's crown, caping; extras: neckerchief, necklace, towel
+// Everything is a pure function of (look, pose, face) — one frame in, one picture out.
+
+import React, { useEffect, useMemo } from "react";
+import {
+  BackSide, BufferGeometry, CanvasTexture, Color, ConeGeometry, CylinderGeometry, Float32BufferAttribute, LatheGeometry, Matrix4,
+  MeshBasicMaterial, MeshLambertMaterial, MeshStandardMaterial, Quaternion, SphereGeometry, SRGBColorSpace, TorusGeometry, Vector2, Vector3, type Material,
+} from "three";
+import { faceTexture, hairTexture, PATCH, type FaceState } from "./face.ts";
+import { DIM, solve, type Joints, type Pose, type V3 } from "./rig.ts";
+
+import type { Costume, Look } from "./look.ts";
+export type { Costume, Look };
+
+const INK = "#121212";
+
+// ------------------------------------------------------------------ shared geometries / materials
+const UNIT = { sph: new SphereGeometry(1, 40, 28), cyl: new CylinderGeometry(1, 1, 1, 10, 1) };
+UNIT.cyl.translate(0, 0.5, 0);
+const mInk = new MeshStandardMaterial({ color: INK, roughness: 0.55 });
+const mLine = new MeshBasicMaterial({ color: INK, side: BackSide });
+const matCache = new Map<string, MeshStandardMaterial>();
+const flat = (c: string, r = 0.75) => {
+  const k = c + r;
+  let m = matCache.get(k);
+  if (!m) matCache.set(k, (m = new MeshStandardMaterial({ color: c, roughness: r })));
+  return m;
+};
+
+const Yv = new Vector3(0, 1, 0);
+/** Matrix for a unit +Y cylinder from a to b with radius r. */
+const stick = (a: V3, b: V3, r: number) => {
+  const A = new Vector3(...a), B = new Vector3(...b);
+  const d = B.clone().sub(A);
+  const L = d.length();
+  const q = new Quaternion().setFromUnitVectors(Yv, d.clone().normalize());
+  return new Matrix4().compose(A, q, new Vector3(r, L, r));
+};
+const basis = (p: V3, x: V3, y: V3, z: V3, s: V3 = [1, 1, 1]) => {
+  const m = new Matrix4().makeBasis(new Vector3(...x), new Vector3(...y), new Vector3(...z));
+  m.scale(new Vector3(...s));
+  m.setPosition(...p);
+  return m;
+};
+const cross = (a: V3, b: V3): V3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const nrm = (a: V3): V3 => {
+  const l = Math.hypot(a[0], a[1], a[2]) || 1;
+  return [a[0] / l, a[1] / l, a[2] / l];
+};
+const add = (a: V3, b: V3, s = 1): V3 => [a[0] + b[0] * s, a[1] + b[1] * s, a[2] + b[2] * s];
+
+const M: React.FC<{ g: BufferGeometry; m: Matrix4; material: Material; shadow?: boolean; name?: string }> = ({ g, m, material, shadow = true, name }) => (
+  <mesh name={name ?? `${g.type}:${(material as MeshStandardMaterial).color?.getHexString?.() ?? ""}`} geometry={g} material={material} matrix={m} matrixAutoUpdate={false} castShadow={shadow} receiveShadow />
+);
+
+// ------------------------------------------------------------------ torso geometry (baked to size) + hull
+const torsoProfile = (n = 28) => {
+  const pts: Vector2[] = [];
+  for (let i = 0; i <= n; i++) {
+    const y = -1 + (2 * i) / n;
+    const p = 3.6;
+    let r = Math.pow(Math.max(0, 1 - Math.pow(Math.abs(y), p)), 1 / p);
+    r *= 1 - 0.07 * Math.max(0, y) + 0.03 * Math.max(0, -y);
+    pts.push(new Vector2(Math.max(1e-3, r), y));
+  }
+  return pts;
+};
+const bakeTorso = (half: V3, thick: number) => {
+  const g = new LatheGeometry(torsoProfile(), 40);
+  g.rotateY(Math.PI); // front (+z) at u = 0.5
+  g.computeVertexNormals();
+  const p = g.getAttribute("position");
+  const nn = g.getAttribute("normal");
+  const body = g.clone();
+  const bp = body.getAttribute("position");
+  const hull = g.clone();
+  const hp = hull.getAttribute("position");
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i) * half[0], y = p.getY(i) * half[1], z = p.getZ(i) * half[2];
+    bp.setXYZ(i, x, y, z);
+    // normal of the scaled ellipsoid-ish surface
+    const n = nrm([nn.getX(i) / half[0], nn.getY(i) / half[1], nn.getZ(i) / half[2]]);
+    hp.setXYZ(i, x + n[0] * thick, y + n[1] * thick, z + n[2] * thick);
+  }
+  body.computeVertexNormals();
+  hull.computeVertexNormals();
+  g.dispose();
+  return { body, hull };
+};
+
+// ------------------------------------------------------------------ costume texture (u around, front at 0.5; v up)
+const costumeCache = new Map<string, CanvasTexture>();
+const costumeTexture = (c: Costume) => {
+  const key = JSON.stringify(c);
+  const hit = costumeCache.get(key);
+  if (hit) return hit;
+  const W = 1024, H = 512;
+  const cv = document.createElement("canvas");
+  cv.width = W;
+  cv.height = H;
+  const g = cv.getContext("2d")!;
+  g.fillStyle = c.base;
+  g.fillRect(0, 0, W, H);
+  // soft fabric shading: a few vertical folds
+  for (let i = 0; i < 9; i++) {
+    const x = ((i + 0.5) / 9) * W;
+    const grd = g.createLinearGradient(x - 40, 0, x + 40, 0);
+    grd.addColorStop(0, "rgba(0,0,0,0)");
+    grd.addColorStop(0.5, "rgba(0,0,0,0.05)");
+    grd.addColorStop(1, "rgba(0,0,0,0)");
+    g.fillStyle = grd;
+    g.fillRect(x - 40, H * 0.15, 80, H * 0.85);
+  }
+  const fx = (u: number) => u * W; // u: 0.5 = front centre
+  const fy = (v: number) => (1 - v) * H; // v: 0 = bottom hem, 1 = top
+  if (c.stripes) {
+    g.fillStyle = c.stripes;
+    for (let k = 0; k < 7; k++) g.fillRect(0, fy(0.9 - k * 0.12), W, H * 0.05);
+  }
+  if (c.hem) {
+    g.fillStyle = c.hem;
+    g.fillRect(0, fy(0.2), W, fy(0.08) - fy(0.2));
+    g.strokeStyle = "rgba(255,255,255,0.85)";
+    g.lineWidth = 5;
+    g.beginPath();
+    for (let x = 0; x <= W; x += 24) g.lineTo(x, fy((x / 24) % 2 ? 0.17 : 0.11));
+    g.stroke();
+  }
+  if (c.belt) {
+    g.fillStyle = c.belt;
+    g.fillRect(0, fy(0.27), W, fy(0.2) - fy(0.27));
+  }
+  if (c.vest) {
+    // two front panels from the side seams to a narrow opening at the front, V neck
+    g.fillStyle = c.vest;
+    const side = (s: -1 | 1) => {
+      g.beginPath();
+      g.moveTo(fx(0.5 + s * 0.035), fy(0.12));
+      g.lineTo(fx(0.5 + s * 0.035), fy(0.6));
+      g.lineTo(fx(0.5 + s * 0.12), fy(0.97));
+      g.lineTo(fx(0.5 + s * 0.5), fy(0.97));
+      g.lineTo(fx(0.5 + s * 0.5), fy(0.12));
+      g.closePath();
+      g.fill();
+      if (c.trim) {
+        g.strokeStyle = c.trim;
+        g.lineWidth = 9;
+        g.beginPath();
+        g.moveTo(fx(0.5 + s * 0.035), fy(0.12));
+        g.lineTo(fx(0.5 + s * 0.035), fy(0.6));
+        g.lineTo(fx(0.5 + s * 0.12), fy(0.97));
+        g.stroke();
+      }
+    };
+    side(-1);
+    side(1);
+  }
+  if (c.sash) {
+    g.fillStyle = c.sash;
+    g.beginPath();
+    g.moveTo(fx(0.33), fy(0.97));
+    g.lineTo(fx(0.42), fy(0.97));
+    g.lineTo(fx(0.7), fy(0.22));
+    g.lineTo(fx(0.61), fy(0.22));
+    g.closePath();
+    g.fill();
+  }
+  {
+    // top cap (shoulders / neckline): the outer garment colour all round
+    g.fillStyle = c.vest ?? c.base;
+    g.fillRect(0, 0, W, fy(0.95));
+  }
+  if (c.collar) {
+    g.fillStyle = c.collar;
+    g.beginPath();
+    g.moveTo(fx(0.4), fy(1));
+    g.lineTo(fx(0.5), fy(0.84));
+    g.lineTo(fx(0.6), fy(1));
+    g.closePath();
+    g.fill();
+  }
+  if (c.buttons) {
+    g.fillStyle = c.buttons;
+    for (const v of [0.72, 0.57, 0.42]) {
+      g.beginPath();
+      g.arc(fx(0.5), fy(v), 9, 0, Math.PI * 2);
+      g.fill();
+    }
+  }
+  if (c.scarf) {
+    g.fillStyle = c.scarf;
+    g.beginPath();
+    g.moveTo(fx(0.38), fy(1));
+    g.lineTo(fx(0.62), fy(1));
+    g.lineTo(fx(0.5), fy(0.72));
+    g.closePath();
+    g.fill();
+    g.strokeStyle = "rgba(0,0,0,0.25)";
+    g.lineWidth = 4;
+    g.stroke();
+  }
+  const t = new CanvasTexture(cv);
+  t.colorSpace = SRGBColorSpace;
+  t.anisotropy = 4;
+  costumeCache.set(key, t);
+  return t;
+};
+
+// ------------------------------------------------------------------ headgear
+const Headgear: React.FC<{ hat: NonNullable<Look["hat"]>; j: Joints; thick: number }> = ({ hat, j, thick }) => {
+  const R = j.headR;
+  const G = useMemo(() => {
+    const band = new CylinderGeometry(R * 0.93, R * 0.97, R * 0.26, 40, 1, true);
+    const bandHull = new CylinderGeometry(R * 0.93 + thick, R * 0.97 + thick, R * 0.26 + thick, 40, 1, true);
+    const peci = new CylinderGeometry(R * 0.78, R * 0.86, R * 0.55, 40, 1);
+    const peciHull = new CylinderGeometry(R * 0.78 + thick, R * 0.86 + thick, R * 0.55 + thick * 2, 40, 1);
+    const leaf = new ConeGeometry(R * 0.13, R * 0.55, 4, 1);
+    const knot = new SphereGeometry(R * 0.11, 16, 12);
+    const tail = new CylinderGeometry(R * 0.05, R * 0.07, R * 0.5, 8, 1);
+    tail.translate(0, -R * 0.25, 0);
+    const caping = new ConeGeometry(R * 1.7, R * 0.75, 36, 1, true);
+    // kerudung: a shell round the head leaving the face open (back, crown-front, chin) + a drape to the shoulders
+    const W0 = 0.98, LAT_TOP = 0.5, LAT_BOT = 0.84; // face window: lon ±56°, lat −48° … +29°
+    const shell = (r: number) => [
+      new SphereGeometry(r, 40, 24, Math.PI / 2 + W0, Math.PI * 2 - 2 * W0, 0, Math.PI * 0.8),
+      new SphereGeometry(r, 24, 10, Math.PI / 2 - W0, 2 * W0, 0, Math.PI / 2 - LAT_TOP),
+      new SphereGeometry(r, 24, 10, Math.PI / 2 - W0, 2 * W0, Math.PI / 2 + LAT_BOT, Math.PI * 0.8 - (Math.PI / 2 + LAT_BOT)),
+    ];
+    const veil = shell(R * 1.05), veilHull = shell(R * 1.05 + thick);
+    const drape = new CylinderGeometry(R * 0.82, R * 1.18, R * 0.55, 32, 1, true);
+    const crown = new SphereGeometry(R * 1.03, 32, 12, 0, Math.PI * 2, 0, 1.05);
+    const crownHull = new SphereGeometry(R * 1.03 + thick, 32, 12, 0, Math.PI * 2, 0, 1.05);
+    const brim = new CylinderGeometry(R * 0.62, R * 0.62, R * 0.05, 28, 1, false, -Math.PI / 2, Math.PI);
+    const bun = new SphereGeometry(R * 0.36, 20, 14);
+    return { band, bandHull, peci, peciHull, leaf, knot, tail, caping, veil, veilHull, drape, crown, crownHull, brim, bun };
+  }, [R, thick]);
+  useEffect(() => () => Object.values(G).flat().forEach((g) => g.dispose()), [G]);
+  const at = (lift: number, fwd = 0) => add(add(j.head, j.headUp, lift * R), j.headFwd, fwd * R);
+  const B = (p: V3, s: V3 = [1, 1, 1]) => basis(p, j.headRight, j.headUp, j.headFwd, s);
+  const c1 = hat.color ?? "#c8352e", c2 = hat.color2 ?? "#e8b830";
+  if (hat.kind === "headband") {
+    return (
+      <group>
+        <M g={G.band} m={B(at(0.42))} material={flat(c1, 0.8)} />
+        <M g={G.bandHull} m={B(at(0.42))} material={mLine} shadow={false} />
+        <M g={G.knot} m={B(at(0.42, -0.96))} material={flat(c1, 0.8)} />
+        <M g={G.tail} m={basis(at(0.4, -1.0), j.headRight, nrm(add(j.headUp, j.headFwd, -0.6)), j.headFwd)} material={flat(c1, 0.8)} />
+      </group>
+    );
+  }
+  if (hat.kind === "peci") {
+    const p = at(0.74, -0.04);
+    return (
+      <group>
+        <M g={G.peci} m={B(p, [1, 1, 0.88])} material={flat(c1, 0.6)} />
+        <M g={G.peciHull} m={B(p, [1, 1, 0.88])} material={mLine} shadow={false} />
+      </group>
+    );
+  }
+  if (hat.kind === "crown") {
+    // Nias-style gold headdress: a band with one tall fern-like plume at the front and two short side plumes
+    const leaves = [-0.42, 0, 0.42];
+    return (
+      <group>
+        <M g={G.band} m={B(at(0.58), [1.0, 1.0, 1.0])} material={flat(c2, 0.35)} />
+        <M g={G.bandHull} m={B(at(0.58), [1.0, 1.0, 1.0])} material={mLine} shadow={false} />
+        {leaves.map((a, i) => {
+          const dir = nrm(add(add(j.headFwd, j.headRight, Math.sin(a) * 1.2), j.headUp, 0));
+          const base = add(add(j.head, j.headUp, R * 0.72), dir, R * 0.84);
+          const up = nrm(add(j.headUp, dir, 0.25));
+          const tall = i === 1 ? 1.55 : 0.8;
+          return <M key={i} g={G.leaf} m={basis(add(base, up, R * 0.22 * tall), nrm(cross(up, dir)), up, dir, [1.15, tall, 0.3])} material={flat(c2, 0.35)} />;
+        })}
+      </group>
+    );
+  }
+  if (hat.kind === "caping") return <M g={G.caping} m={B(at(1.0))} material={flat(c2, 0.8)} />;
+  if (hat.kind === "kerudung") {
+    const m = flat(hat.color ?? "#4f6fb8", 0.85);
+    return (
+      <group>
+        {G.veil.map((g, i) => <M key={i} g={g} m={B(j.head)} material={m} />)}
+        {G.veilHull.map((g, i) => <M key={"h" + i} g={g} m={B(j.head)} material={mLine} shadow={false} />)}
+        <M g={G.drape} m={basis(add(j.neck, j.up, 0.005), j.right, j.up, j.fwd)} material={m} />
+      </group>
+    );
+  }
+  if (hat.kind === "topi") {
+    const m = flat(hat.color ?? "#2e3f7a", 0.7);
+    return (
+      <group>
+        <M g={G.crown} m={B(add(j.head, j.headUp, R * 0.02))} material={m} />
+        <M g={G.crownHull} m={B(add(j.head, j.headUp, R * 0.02))} material={mLine} shadow={false} />
+        <M g={G.brim} m={basis(add(add(j.head, j.headUp, R * 0.5), j.headFwd, R * 0.62), j.headRight, nrm(add(j.headUp, j.headFwd, 0.18)), j.headFwd)} material={m} />
+      </group>
+    );
+  }
+  if (hat.kind === "blangkon") {
+    const m = flat(hat.color ?? "#6b3f22", 0.8);
+    return (
+      <group>
+        <M g={G.crown} m={B(add(j.head, j.headUp, R * 0.0), [1.02, 0.98, 1.02])} material={m} />
+        <M g={G.crownHull} m={B(add(j.head, j.headUp, R * 0.0), [1.02, 0.98, 1.02])} material={mLine} shadow={false} />
+        <M g={G.band} m={B(at(0.5), [1.04, 0.5, 1.04])} material={flat(hat.color2 ?? "#c9a24a", 0.6)} />
+        <M g={G.bun} m={B(add(add(j.head, j.headFwd, -R * 0.95), j.headUp, R * 0.1), [1, 0.8, 0.8])} material={m} />
+      </group>
+    );
+  }
+  return null;
+};
+
+// ------------------------------------------------------------------ the figure
+export type ToonProps = {
+  look: Look;
+  pose: Pose;
+  face: FaceState;
+  /** 0..1 face flush (laughing red, angry purple uses `flushColor`) */
+  flush?: number;
+  flushColor?: string;
+  pos?: V3;
+  rotY?: number;
+  /** texture size for the face decal (bigger for close-ups / finals) */
+  faceRes?: number;
+};
+
+export const Toon: React.FC<ToonProps> = ({ look, pose, face, flush = 0, flushColor = "#e24a3b", pos = [0, 0, 0], rotY = 0, faceRes = 1024 }) => {
+  const b = look.build ?? {};
+  const s = b.s ?? 1;
+  const j = solve(pose, b);
+  const thick = 0.0062 * s;
+  const R = j.headR;
+  const G = useMemo(() => {
+    const t = bakeTorso(j.torsoHalf, thick);
+    const decal = new SphereGeometry(R * 1.004, 64, 48, Math.PI / 2 - PATCH.lon, 2 * PATCH.lon, Math.PI / 2 - PATCH.lat, 2 * PATCH.lat);
+    const headHull = new SphereGeometry(R + thick, 40, 28);
+    const head = new SphereGeometry(R, 56, 40);
+    const shoe = new SphereGeometry(1, 20, 12);
+    const neck = new CylinderGeometry(0.75, 1, 1, 10, 1);
+    neck.translate(0, 0.5, 0);
+    const lace = new TorusGeometry(R * 0.62, R * 0.07, 10, 36);
+    const bun = new SphereGeometry(R * 0.36, 20, 14);
+    const bunHull = new SphereGeometry(R * 0.36 + thick, 20, 14);
+    // long garment: a flared tube from the hips to just below the knee (open at the bottom)
+    const sk = j.torsoHalf;
+    const skirt = new CylinderGeometry(sk[0] * 0.98, sk[0] * 1.32, 0.33 * s, 32, 1, true);
+    skirt.translate(0, -0.165 * s, 0);
+    const skirtHull = new CylinderGeometry(sk[0] * 0.98 + thick, sk[0] * 1.32 + thick, 0.33 * s, 32, 1, true);
+    skirtHull.translate(0, -0.165 * s, 0);
+    return { ...t, decal, headHull, head, shoe, neck, lace, bun, bunHull, skirt, skirtHull };
+  }, [j.torsoHalf[0], j.torsoHalf[1], j.torsoHalf[2], R, thick]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => Object.values(G).forEach((g) => g.dispose()), [G]);
+
+  const mats = useMemo(() => {
+    const body = new MeshStandardMaterial({ map: costumeTexture(look.costume), roughness: 0.82 });
+    const hairMap = hairTexture(look.hair ?? { color: "#2a1d16", style: "none" });
+    // the genre's heads read paper-white: a little self-light keeps them white in shade too
+    // matte (no specular): a glossy highlight turns the ink grey on the sunny side
+    const head = new MeshLambertMaterial({ map: hairMap, emissive: "#ffffff", emissiveMap: hairMap, emissiveIntensity: 0.16 });
+    const decal = new MeshLambertMaterial({ transparent: false, alphaTest: 0.5, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+    const skirt = new MeshStandardMaterial({ color: look.costume.base, roughness: 0.85, side: 2 });
+    return { body, head, decal, skirt };
+  }, [look.costume, look.hair]);
+  useEffect(() => () => Object.values(mats).forEach((m) => m.dispose()), [mats]);
+
+  mats.decal.map = faceTexture(look.face ?? {}, face, faceRes);
+  mats.decal.needsUpdate = true;
+  const fl = Math.max(0, Math.min(1, flush));
+  mats.head.color.copy(new Color("#ffffff").lerp(new Color(flushColor), fl));
+  mats.head.emissive.copy(new Color("#ffffff").lerp(new Color(flushColor), fl));
+
+  const headM = basis(j.head, j.headRight, j.headUp, j.headFwd);
+  // torso: lathe axis = torso up
+  const torsoM = basis(j.torso, j.right, j.up, j.fwd);
+  const lr = DIM.limbR * s;
+
+  const foot = (ankle: V3, side: 1 | -1) => {
+    const yaw = (pose.splay ?? 0.2) * side;
+    const f: V3 = [Math.sin(yaw), 0, Math.cos(yaw)];
+    const rt = cross([0, 1, 0], f);
+    return basis(add(add(ankle, f, 0.035 * s), [0, 1, 0], -0.012 * s), rt, [0, 1, 0], f, [0.03 * s, 0.022 * s, 0.062 * s]);
+  };
+  const hand = (el: V3, wr: V3) => {
+    const d = nrm([wr[0] - el[0], wr[1] - el[1], wr[2] - el[2]]);
+    const side = nrm(cross(d, [0, 1, 0.001]));
+    const up = nrm(cross(side, d));
+    return basis(add(wr, d, DIM.handR * s * 0.55), side, d, up, [DIM.handR * s * 0.95, DIM.handR * s * 1.15, DIM.handR * s * 0.75]);
+  };
+
+  return (
+    <group position={pos} rotation={[0, rotY, 0]}>
+      {/* torso + outline */}
+      <M g={G.body} m={torsoM} material={mats.body} />
+      <M g={G.hull} m={torsoM} material={mLine} shadow={false} />
+      {/* neck stick */}
+      <M g={G.neck} m={stick(add(j.neck, j.up, -0.03 * s), add(j.head, j.headUp, -R * 0.7), 0.011 * s)} material={mInk} />
+      {/* head */}
+      <M g={G.head} m={headM} material={mats.head} />
+      <M g={G.decal} m={headM} material={mats.decal} shadow={false} />
+      <M g={G.headHull} m={headM} material={mLine} shadow={false} />
+      {look.hat && look.hat.kind !== "none" ? <Headgear hat={look.hat} j={j} thick={thick} /> : null}
+      {look.hair?.style === "bun" && (!look.hat || look.hat.kind === "none") ? (
+        <group>
+          <M g={G.bun} m={basis(add(add(j.head, j.headFwd, -R * 0.78), j.headUp, R * 0.55), j.headRight, j.headUp, j.headFwd)} material={flat(look.hair.color, 0.7)} />
+          <M g={G.bunHull} m={basis(add(add(j.head, j.headFwd, -R * 0.78), j.headUp, R * 0.55), j.headRight, j.headUp, j.headFwd)} material={mLine} shadow={false} />
+        </group>
+      ) : null}
+      {look.costume.long ? (
+        <group>
+          <M g={G.skirt} m={basis(add(j.pelvis, j.up, -0.05 * s), [1, 0, 0], [0, 1, 0], [0, 0, 1])} material={mats.skirt} />
+          <M g={G.skirtHull} m={basis(add(j.pelvis, j.up, -0.05 * s), [1, 0, 0], [0, 1, 0], [0, 0, 1])} material={mLine} shadow={false} />
+        </group>
+      ) : null}
+      {look.necklace ? <M g={G.lace} m={basis(add(j.neck, j.up, -0.012 * s), j.right, j.fwd, nrm(cross(j.right, j.fwd)), [1, 1, 1])} material={flat(look.necklace, 0.35)} /> : null}
+      {/* arms */}
+      {([[j.shL, j.elbowL, j.wristL], [j.shR, j.elbowR, j.wristR]] as V3[][]).map(([sh, el, wr], i) => (
+        <group key={"a" + i}>
+          <M g={UNIT.cyl} m={stick(sh, el, lr)} material={mInk} />
+          <M g={UNIT.sph} m={basis(el, [1, 0, 0], [0, 1, 0], [0, 0, 1], [lr, lr, lr])} material={mInk} />
+          <M g={UNIT.cyl} m={stick(el, wr, lr)} material={mInk} />
+          <M g={UNIT.sph} m={hand(el, wr)} material={mInk} />
+        </group>
+      ))}
+      {/* legs */}
+      {([[j.hipL, j.kneeL, j.ankleL, 1], [j.hipR, j.kneeR, j.ankleR, -1]] as [V3, V3, V3, 1 | -1][]).map(([hp, kn, an, sd], i) => (
+        <group key={"l" + i}>
+          <M g={UNIT.cyl} m={stick(add(hp, j.up, 0.03 * s), kn, lr * 1.12)} material={mInk} />
+          <M g={UNIT.sph} m={basis(kn, [1, 0, 0], [0, 1, 0], [0, 0, 1], [lr * 1.12, lr * 1.12, lr * 1.12])} material={mInk} />
+          <M g={UNIT.cyl} m={stick(kn, an, lr * 1.12)} material={mInk} />
+          <M g={G.shoe} m={foot(an, sd)} material={mInk} />
+        </group>
+      ))}
+      {look.towel ? <M g={UNIT.sph} m={basis(add(add(j.shR, j.up, 0.01 * s), j.right, 0.03 * s), j.right, j.up, j.fwd, [0.05 * s, 0.02 * s, 0.1 * s])} material={flat(look.towel, 0.9)} /> : null}
+    </group>
+  );
+};
+
+/** Deterministic blink: closed for ~0.12 s every few seconds (seeded per character). */
+export const blinkAt = (t: number, seed = 1) => {
+  const period = 2.7 + (seed % 5) * 0.37;
+  const ph = (t + seed * 1.37) % period;
+  return ph < 0.06 ? 0.5 : ph < 0.13 ? 1 : ph < 0.18 ? 0.5 : 0;
+};
+
+/** Lip flap from word timings: open while a word is spoken, pulsing per syllable. */
+export const mouthAt = (t: number, words: { t0: number; t1: number; w: string }[]) => {
+  for (const w of words) {
+    if (t < w.t0 - 0.02 || t > w.t1 + 0.02) continue;
+    const syl = Math.max(1, (w.w.match(/[aiueo]/gi) ?? []).length);
+    const k = (t - w.t0) / Math.max(0.05, w.t1 - w.t0);
+    return 0.25 + 0.75 * Math.abs(Math.sin(Math.PI * k * syl));
+  }
+  return 0;
+};
+
+// keep Float32BufferAttribute referenced for tree-shaking safety in some bundlers
+void Float32BufferAttribute;

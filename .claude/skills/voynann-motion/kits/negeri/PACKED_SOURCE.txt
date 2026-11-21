@@ -1,0 +1,2117 @@
+VOYNANN Motion - packed source files of this folder. Do not edit by hand.
+The skill upload in the Claude app accepts at most 200 files, so the source files are packed here.
+`node <skill folder>/new-project.mjs <project folder> --kit=<style>` unpacks them into the project.
+Format: per file one line with four '=' signs, the byte length and the path, then exactly that many bytes.
+
+==== 1292 project/package.json
+{
+  "name": "voynann-negeri-project",
+  "version": "1.0.0",
+  "private": true,
+  "description": "VOYNANN Motion NEGERI project (Remotion + React Three Fiber): story.json (+ voice-over) -> one day of a 'bikin negara dari nol' participatory series (chibi host, comment cards, buildings rising, population counter), 9:16.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "scripts": {
+    "dev": "remotion studio",
+    "typecheck": "tsc --noEmit",
+    "check-env": "node scripts/check-env.mjs",
+    "make": "node scripts/make.mjs",
+    "library": "node scripts/make.mjs --library",
+    "menu": "node scripts/make.mjs --menu",
+    "look": "node scripts/make.mjs --look",
+    "smoke": "node scripts/make.mjs hari-1 --stills 2s,22s,33s --silent"
+  },
+  "dependencies": {
+    "@react-three/fiber": "9.8.2",
+    "@remotion/cli": "4.0.539",
+    "@remotion/google-fonts": "4.0.539",
+    "@remotion/three": "4.0.539",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "remotion": "4.0.539",
+    "three": "0.186.1",
+    "three-mesh-bvh": "0.9.16"
+  },
+  "devDependencies": {
+    "@remotion/bundler": "4.0.539",
+    "@remotion/renderer": "4.0.539",
+    "@types/react": "19.2.7",
+    "@types/three": "0.186.0",
+    "typescript": "5.9.3"
+  },
+  "overrides": {
+    "zod": "4.6.7"
+  }
+}
+
+==== 27693 project/scripts/make.mjs
+// NEGERI — "bikin negara dari nol" episode → film.
+//   node scripts/make.mjs --library                what exists: beats, buildings (+ aliases), plots, cast + card codes, actions, expressions, gags
+//   node scripts/make.mjs <id> --plan              compile stories/<id>/story.json (+ the series world): shot list + warnings
+//   node scripts/make.mjs <id> --stills auto       one still per shot → out/<id>/stills/_sheet.jpg (or --stills 2s,9.5s)
+//   node scripts/make.mjs <id> --preview           plan + sound + 540×960 preview (rendered at 2×, downscaled) + QA report
+//   node scripts/make.mjs <id> --final             plan + sound + QA gate + 1080×1920 @ 60 + delivery scan, then the day is
+//                                                  written into series/<name>/world.json (Day N+1 starts from it)
+//   node scripts/make.mjs <id> --commit            write the day into world.json without rendering (--no-commit skips it on --final)
+//   node scripts/make.mjs --look [kind,kind]       building look-dev sheet → out/_look/_sheet.jpg (library or a story's own buildings: <id> --look)
+// Characters (tokoh):
+//   node scripts/make.mjs --menu                   the buyer's character cards → out/_menu/kartu-tokoh-1|2|3.jpg
+//   node scripts/make.mjs <id> --cast              this episode's host + citizens → out/<id>/tokoh.jpg (validated)
+//   node scripts/make.mjs <id> --save-tokoh host[,budi] [--nama "Pak Pres"]   → tokoh/tokoh-<nama>.json
+//   story.json "host": { "tokoh": "pak-pres" } / "cast": { "budi": { "tokoh": "budi" } } use a saved file (+ "look" on top)
+// Voice: stories/<id>/vo.(mp3|wav|m4a) → word timings with whisper.cpp; without a voice the lines are paced.
+// Own buildings: stories/<id>/buildings.json or series/<name>/buildings.json (same format as the library; kept in world.json).
+// Flags: --silent (no sound), --no-music (voice + SFX only), --wide (16:9: only when asked), --no-qa, --force-qa.
+import fs from "node:fs";
+import path from "node:path";
+import { execFileSync, spawnSync } from "node:child_process";
+import { compile, paceLines, BEATS, GAGS, TIMES, ACTIONS } from "../src/negeri/compile.ts";
+import { ALIASES, BUILDINGS, buildingProblems } from "../src/negeri/buildings.ts";
+import { CAST, HOSTS, WARGA, MENU, lookProblems, menuText, mergeLook, resolveLook, tokohCode } from "../src/negeri/cast.ts";
+import { commitDay, newWorld, placeEpisode, resolveKind, stateBefore } from "../src/negeri/series.ts";
+import { PLOTS, SLOTS, SPECIAL } from "../src/kits/negeri/world/map.ts";
+import { EXPRS } from "../src/kits/negeri/chibi/exprs.ts";
+import { syncVo } from "./lib/vo.mjs";
+import { buildSound } from "./lib/negeri-sound.mjs";
+import { deliveryScan, sceneGate } from "./qa-gate.mjs";
+
+const args = process.argv.slice(2);
+const flag = (f) => args.includes(f);
+const val = (f) => (args.includes(f) ? args[args.indexOf(f) + 1] : undefined);
+const sh = (cmd, a) => { const r = spawnSync(cmd, a, { stdio: "inherit" }); if (r.status) process.exit(r.status); };
+const readJson = (f, what) => { try { return JSON.parse(fs.readFileSync(f, "utf8")); } catch (e) { console.error(`✗ ${what ?? f} is not valid JSON: ${e.message}`); process.exit(2); } };
+const rows = (a, n) => Array.from({ length: Math.ceil(a.length / n) }, (_, i) => a.slice(i * n, i * n + n));
+const slug = (x) => String(x).toLowerCase().normalize("NFKD").replace(/[̀-ͯ]/g, "").replace(/^tokoh-/, "").replace(/\.json$/, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+
+// ---------------------------------------------------------------- one-page renders (strips / views → JPGs)
+const renderSeq = (comp, props, dir) => {
+  fs.rmSync(dir, { recursive: true, force: true });
+  fs.mkdirSync(dir, { recursive: true });
+  const pf = path.join(dir, "_props.json");
+  fs.writeFileSync(pf, JSON.stringify(props));
+  sh("npx", ["remotion", "render", "src/index.ts", comp, dir, "--sequence", "--image-format=jpeg", "--jpeg-quality=92", `--props=${pf}`, "--concurrency=2", "--log=error"]);
+  fs.rmSync(pf, { force: true });
+  return fs.readdirSync(dir).filter((f) => /^element-\d+\.jpe?g$/.test(f)).sort((a, b) => parseInt(a.slice(8)) - parseInt(b.slice(8))).map((f) => path.join(dir, f));
+};
+const sheetOf = (files, W, H, out, labels) => {
+  const cols = Math.min(4, files.length), n = cols * Math.ceil(files.length / cols);
+  if (n < 1) return;
+  const make = (withText) => {
+    const pads = Array.from({ length: n - files.length }, () => ["-f", "lavfi", "-i", `color=c=black:s=${W}x${H}`]).flat();
+    const filter = Array.from({ length: n }, (_, i) => `[${i}:v]scale=${W}:${H},setsar=1${withText && labels && i < files.length ? `,drawtext=text='${labels[i]}':x=10:y=10:fontsize=34:fontcolor=yellow:box=1:boxcolor=black@0.6` : ""}[v${i}]`).join(";") + ";" +
+      Array.from({ length: n }, (_, i) => `[v${i}]`).join("") + `xstack=inputs=${n}:layout=` + Array.from({ length: n }, (_, i) => `${(i % cols) * W}_${Math.floor(i / cols) * H}`).join("|") + `,scale='min(2160,iw)':-2`;
+    execFileSync("ffmpeg", ["-v", "error", "-y", ...files.flatMap((f) => ["-i", f]), ...pads, "-filter_complex", filter, "-frames:v", "1", out], { stdio: ["ignore", "ignore", "ignore"] });
+  };
+  if (n === 1) { fs.copyFileSync(files[0], out); return; }
+  try { make(true); } catch { try { make(false); } catch { console.log("(contact sheet skipped: ffmpeg not available)"); } }
+};
+const renderCards = (groups, h, outDir, names) => {
+  const files = renderSeq("NegeriCard", { strips: groups.flat(), h }, path.join(outDir, "_strips"));
+  let k = 0;
+  const made = groups.map((g, gi) => {
+    const part = files.slice(k, (k += g.length)), to = path.join(outDir, names[gi]);
+    if (part.length === 1) fs.copyFileSync(part[0], to);
+    else execFileSync("ffmpeg", ["-v", "error", "-y", ...part.flatMap((f) => ["-i", f]), "-filter_complex", part.map((_, i) => `[${i}:v]`).join("") + `vstack=inputs=${part.length}`, "-q:v", "3", to]);
+    return to;
+  });
+  fs.rmSync(path.join(outDir, "_strips"), { recursive: true, force: true });
+  return made;
+};
+const BASE = { skin: "#c99270", hair: { style: "short", color: "#231a15" }, shirt: { color: "#3a74c4" }, pants: "#2f3b52", shoes: "#3a2a20", face: { brows: "thick" } };
+
+// ---------------------------------------------------------------- --menu
+if (flag("--menu")) {
+  const item = (k) => ({ look: resolveLook(k), code: tokohCode(k), name: k, pose: CAST[k].host ? "wave" : "stand" });
+  const card1 = [
+    { kind: "header", title: "KARTU TOKOH", lines: ["Pemimpin negara (P) = tokoh utama yang muncul tiap hari. Warga (T) = komentator.", "Ganti apa saja: kulit (S), rambut (R), penutup kepala (K), wajah (F),", "badan (B), motif (M), warna (W). Contoh: “Presidennya P2, kerudung W11.”", "“Warga @budi T1, topi K6 W1, kacamata.”"] },
+    { kind: "people", frame: "body", title: "PEMIMPIN (TOKOH UTAMA)", items: HOSTS.map(item) },
+    ...rows(WARGA.map(item), 7).map((items, i) => ({ kind: "people", frame: "body", title: i ? undefined : "WARGA SIAP PAKAI", items })),
+  ];
+  const hair = MENU.hair.map((o) => ({ look: { ...BASE, hair: { color: "#2a1a12", style: o.style } }, code: o.code, name: o.name, rotY: { bun: 1.9, long: 1.2 }[o.style] ?? 0.5 }));
+  const hats = MENU.hat.map((o) => ({ look: { ...BASE, hat: { kind: o.kind, color: { peci: "#1d1c22", kerudung: "#3f8f7a", mahkota: "#c8252f", caping: "#d9be7c", topi: "#d8412f", helm: "#f2a33a" }[o.kind] ?? "#1d1c22", color2: "#f0c43c" } }, code: o.code, name: o.name, rotY: 0.4 }));
+  const face = MENU.face.map((o) => ({ look: { ...BASE, face: { brows: "thick", ...o.face } }, code: o.code, name: o.name, rotY: 0.2, expr: "neutral" }));
+  const skin = MENU.skin.map((o) => ({ look: { ...BASE, skin: o.hex }, code: o.code, name: o.name, rotY: 0.25 }));
+  const card2 = [
+    { kind: "people", frame: "head", title: "RAMBUT · sebut juga warnanya", items: hair },
+    { kind: "people", frame: "head", title: "PENUTUP KEPALA · bisa diwarnai", items: hats },
+    { kind: "people", frame: "head", title: "WAJAH · boleh digabung", items: face },
+  ];
+  const build = MENU.build.map((o) => ({ look: { ...BASE, ...o.build }, code: o.code, name: o.name, rotY: 0.15 }));
+  const motif = MENU.motif.map((o) => ({ look: { ...BASE, shirt: { color: "#17696a", motif: o.motif, motifColor: "#e9d6a8" } }, code: o.code, name: o.name, rotY: 0.1 }));
+  const card3 = [
+    { kind: "people", frame: "head", title: "KULIT", items: skin },
+    { kind: "people", frame: "body", title: "BADAN · MOTIF BAJU", items: [...build, ...motif] },
+    { kind: "swatches", title: "WARNA · untuk baju, celana, rambut, penutup kepala, rompi…", colors: [...MENU.colors], lines: [
+      "Pakaian: " + MENU.clothes.map((c) => c.name).join(" · "),
+      "Sebut bagian + warna, mis. “rompi W2, celana W8”. Warna lain boleh, sebut namanya.",
+    ] },
+  ];
+  const made = renderCards([card1, card2, card3], 480, path.join("out", "_menu"), ["kartu-tokoh-1.jpg", "kartu-tokoh-2.jpg", "kartu-tokoh-3.jpg"]);
+  console.log("cards:\n  " + made.join("\n  ") + "\n\n" + menuText());
+  process.exit(0);
+}
+
+// ---------------------------------------------------------------- --library
+if (flag("--library")) {
+  console.log("BEATS (\"beat\" per line / beat):\n" + [
+    "  host       the host talks / reacts (do, expr, place, to, then)",
+    "  establish  wide shot of the host in the country (episode opener)",
+    "  rules      rule cards: FOLLOW = jadi WARGA, KOMEN TERATAS = aku/gue BANGUN (\"rules\" to change the text)",
+    "  counter    aerial over the settlement while the population counter rolls to \"population\" (tents / houses grow)",
+    "  comment    comment card(s): \"comment\": id or [ids] (the first = KOMEN TERATAS); the host reads his phone",
+    "  build      the building rises stage by stage with the build card (\"build\": id); the host stands by it",
+    "  reveal     close shot of the building's sign / name plate (\"build\": id)",
+    "  plates     one push-in per new name plate (\"plates\" of the episode + new commenter houses; a truck past them when the line is short)",
+    "  gag        citizens do something at a place: \"gag\": " + GAGS.join(" | ") + ", \"who\": [cast ids], \"n\": extra citizens, \"place\": building id / plaza / lawn",
+    "  night      time jump: dissolve + card (SEMALAM KEMUDIAN… / MALAM HARINYA…), \"time\": pagi (default) | malam | siang | sore",
+    "  cta        the end card (Besok bangun apa? KOMEN!), \"cta\": { line, button, sub }",
+    "  flyover    aerial orbit over the whole country with its name",
+  ].join("\n"));
+  console.log("\nBUILDINGS (\"builds\": [{ id, kind, by, name?, plot?, colors? }]):\n" + Object.entries(BUILDINGS).map(([k, b]) => `  ${k.padEnd(12)} ${b.size.join("×").padEnd(9)} ${b.special ? `[${b.special}] ` : ""}${b.about}  · stages: ${b.steps.map((s) => s.label).join(" › ")}`).join("\n"));
+  console.log("  aliases: " + Object.entries(ALIASES).map(([k, [kind, name]]) => `${k}→${kind} "${name}"`).join(", "));
+  console.log("\nPLOTS (nearest first; a build takes the smallest free one that fits):\n" + PLOTS.map((p) => `  ${p.id.padEnd(4)} ${p.cls.padEnd(3)} ${String(p.w + "×" + p.d).padEnd(7)} ${p.about}${p.pref ? `  (kept for ${p.pref.join("/")})` : ""}`).join("\n"));
+  console.log("  special places: " + Object.values(SPECIAL).map((s) => `${s.id} (${s.about})`).join("; "));
+  console.log(`  named-house slots: R1…R${SLOTS.length} along the main road (rumah builds + "plates")`);
+  console.log("\nCAST presets:\n" + Object.entries(CAST).map(([k, c]) => `  ${tokohCode(k).padEnd(4)}${k.padEnd(15)} ${c.about}`).join("\n"));
+  console.log("\n" + menuText());
+  const saved = fs.existsSync("tokoh") ? fs.readdirSync("tokoh").filter((f) => f.endsWith(".json")) : [];
+  console.log(saved.length ? `SAVED tokoh/: ${saved.join(", ")}` : "SAVED tokoh/: none");
+  const series = fs.existsSync("series") ? fs.readdirSync("series").filter((d) => fs.existsSync(path.join("series", d, "world.json"))) : [];
+  console.log(series.length ? `SERIES series/: ${series.map((d) => { const w = readJson(path.join("series", d, "world.json")); return `${d} (${w.country}, ${w.days.length} day(s), last day ${w.days.at(-1)?.day ?? "-"})`; }).join("; ")}` : "SERIES series/: none");
+  console.log(`\nACTIONS ("do"): ${ACTIONS.join(", ")}\n  (sit / sitTalk / sitEat / sitFwd / sleep / sleepHang are for gag citizens on seats; the host stands)`);
+  console.log(`EXPRESSIONS ("expr"): ${EXPRS.join(", ")}`);
+  console.log(`SHOTS ("shot", optional — the camera is automatic): wide, medium, close, low, orbit (a building), insert (a sign)    TIME: ${TIMES.join(", ")}    MOVE: push, pull, still, orbit, rise, track`);
+  process.exit(0);
+}
+
+// ---------------------------------------------------------------- --look (building look-dev, one page)
+const lookItems = (defs, only) => Object.entries(defs).filter(([k]) => !only || only.includes(k)).map(([kind, def]) => ({ kind, def, vars: { ...(def.params ?? {}), wall: def.params?.wall ?? "#f4e3c3", roof: def.params?.roof ?? "#c4553a", accent: def.params?.accent ?? "#1f5f4a", name: def.name, by: "@warga.baru", no: "002", country: "REPUBLIK KOMEN", flag1: "#d7262e", flag2: "#f7f5ef" } }));
+const idArg = args.find((a) => !a.startsWith("--") && ![val("--stills"), val("--save-tokoh"), val("--nama"), val("--look")].includes(a));
+if (flag("--look") && !idArg) {
+  const only = val("--look") && !val("--look").startsWith("--") ? val("--look").split(",") : null;
+  const items = lookItems(BUILDINGS, only);
+  const files = renderSeq("NegeriLook", { items, map: !only }, path.join("out", "_look"));
+  sheetOf(files, 720, 720, path.join("out", "_look", "_sheet.jpg"));
+  console.log(`look: ${files.length} views → out/_look/_sheet.jpg`);
+  process.exit(0);
+}
+
+// ---------------------------------------------------------------- the episode
+const id = idArg;
+if (!id) { console.error("usage: node scripts/make.mjs <id> --plan | --stills auto | --preview | --final   (or --library, --menu, --look)"); process.exit(1); }
+const dir = path.join("stories", id), out = path.join("out", id);
+const storyFile = path.join(dir, "story.json");
+if (!fs.existsSync(storyFile)) { console.error(`✗ missing ${storyFile}`); process.exit(1); }
+fs.mkdirSync(out, { recursive: true });
+const story = readJson(storyFile, storyFile);
+if (story.id && story.id !== id) console.log(`! story.json says id "${story.id}" — using the folder name "${id}"`);
+story.id = id;
+
+// series world
+const seriesDir = story.series ? path.join("series", slug(story.series)) : null;
+const worldFile = seriesDir ? path.join(seriesDir, "world.json") : null;
+let world = worldFile && fs.existsSync(worldFile) ? readJson(worldFile, worldFile) : null;
+if (seriesDir && !world) {
+  if (story.day !== 1) console.log(`! series "${story.series}" has no world.json yet — day ${story.day} starts from empty land (run day 1 first, or this becomes the first day)`);
+  world = newWorld(story);
+}
+// own buildings: series-level, then story-level
+const custom = { ...(world?.custom ?? {}) };
+for (const f of [seriesDir && path.join(seriesDir, "buildings.json"), path.join(dir, "buildings.json")].filter(Boolean)) {
+  if (!fs.existsSync(f)) continue;
+  const defs = readJson(f, f);
+  const bad = Object.entries(defs).flatMap(([k, d]) => buildingProblems(k, d));
+  if (bad.length) { console.error(`✗ ${f}:\n  ` + bad.join("\n  ")); process.exit(2); }
+  Object.assign(custom, defs);
+}
+
+// saved characters
+const savedTokoh = () => (fs.existsSync("tokoh") ? fs.readdirSync("tokoh").filter((f) => f.endsWith(".json")) : []);
+const expandTokoh = (e, who) => {
+  if (!e?.tokoh) return e;
+  const f = [path.join("tokoh", `tokoh-${slug(e.tokoh)}.json`), path.join("tokoh", `${slug(e.tokoh)}.json`), e.tokoh].find((x) => x.endsWith(".json") && fs.existsSync(x));
+  if (!f) { console.error(`✗ ${who}: saved tokoh "${e.tokoh}" not found in tokoh/ (have: ${savedTokoh().join(", ") || "none"}) — copy the buyer's tokoh-*.json there`); process.exit(2); }
+  const t = readJson(f, f);
+  if (!t.preset || !CAST[t.preset] || !t.look) { console.error(`✗ ${f}: needs "preset" (one of ${Object.keys(CAST).join(", ")}) and "look"`); process.exit(2); }
+  return { ...e, preset: t.preset, look: mergeLook(t.look, e.look), name: e.name ?? t.nama };
+};
+if (!story.host && world?.host) story.host = world.host;
+story.host = expandTokoh(story.host ?? { preset: "presiden" }, "host");
+for (const [cid, c] of Object.entries(story.cast ?? {})) story.cast[cid] = expandTokoh(c, `cast "${cid}"`);
+const people = () => ({ host: story.host, ...(story.cast ?? {}) });
+
+if (flag("--save-tokoh")) {
+  const ids = String(val("--save-tokoh") ?? "").split(",").filter(Boolean);
+  if (!ids.length) { console.error("usage: --save-tokoh host[,<castId>] [--nama \"Nama\"]"); process.exit(1); }
+  fs.mkdirSync("tokoh", { recursive: true });
+  for (const cid of ids) {
+    const c = people()[cid];
+    if (!c) { console.error(`✗ "${cid}" is not the host or in cast (have: host, ${Object.keys(story.cast ?? {}).join(", ")})`); process.exit(2); }
+    const look = resolveLook(c.preset ?? "presiden", c.look), bad = lookProblems(look);
+    if (bad.length) { console.error(`✗ ${cid}:\n  ` + bad.join("\n  ")); process.exit(2); }
+    const nama = (ids.length === 1 && val("--nama")) || c.name || (cid === "host" ? c.preset : c.handle?.replace(/^@/, "")) || cid;
+    const file = path.join("tokoh", `tokoh-${slug(nama)}.json`);
+    fs.writeFileSync(file, JSON.stringify({ voynann: "negeri-tokoh/1", nama, preset: c.preset ?? "presiden", look, dari: id, catatan: "Tokoh NEGERI tersimpan. Di video berikutnya cukup sebut namanya. Untuk proyek atau komputer lain: salin file ini ke folder tokoh/ di proyek itu." }, null, 2) + "\n");
+    console.log(`saved: ${file}   (story.json: ${cid === "host" ? `"host": { "tokoh": "${slug(nama)}" }` : `"cast": { "${cid}": { "tokoh": "${slug(nama)}" } }`})`);
+  }
+  if (!["--cast", "--plan", "--stills", "--preview", "--final", "--commit"].some(flag)) process.exit(0);
+}
+if (flag("--cast")) {
+  const ppl = Object.entries(people());
+  const bad = ppl.flatMap(([cid, c]) => (CAST[c.preset ?? "presiden"] ? lookProblems(resolveLook(c.preset ?? "presiden", c.look)).map((p) => `${cid}: ${p}`) : [`${cid}: preset "${c.preset}" does not exist`]));
+  if (bad.length) { console.error("✗ " + bad.join("\n  ")); process.exit(2); }
+  const items = ppl.map(([cid, c]) => ({ look: resolveLook(c.preset ?? "presiden", c.look), code: cid === "host" ? (c.name ?? "PEMIMPIN") : (c.handle ?? c.name ?? cid), name: c.tokoh ? "tokoh tersimpan" : `dari ${tokohCode(c.preset ?? "presiden")} ${c.preset ?? "presiden"}`, pose: cid === "host" ? "wave" : "stand" }));
+  const strips = [
+    ...rows(items, 4).map((its, i) => ({ kind: "people", frame: "body", title: i ? undefined : `TOKOH · ${story.title ?? id}`, items: its })),
+    ...rows(items, 4).map((its) => ({ kind: "people", frame: "head", items: its.map((x) => ({ ...x, rotY: 0.2 })) })),
+  ];
+  const [file] = renderCards([strips], 600, out, ["tokoh.jpg"]);
+  console.log(`cast card: ${file}`);
+  if (!["--plan", "--stills", "--preview", "--final", "--commit", "--look"].some(flag)) process.exit(0);
+}
+if (flag("--look")) {
+  const only = val("--look") && !val("--look").startsWith("--") ? val("--look").split(",") : Object.keys(custom);
+  const defs = { ...BUILDINGS, ...custom };
+  if (!only.length) { console.log("this story has no buildings.json — use --look without an id for the library"); process.exit(0); }
+  const files = renderSeq("NegeriLook", { items: lookItems(defs, only), map: false }, path.join(out, "look"));
+  sheetOf(files, 720, 720, path.join(out, "look", "_sheet.jpg"));
+  console.log(`look: ${files.length} views → ${path.join(out, "look", "_sheet.jpg")}`);
+  if (!["--plan", "--stills", "--preview", "--final", "--commit"].some(flag)) process.exit(0);
+}
+
+// ---------------------------------------------------------------- timing
+const texts = (story.lines ?? []).map((l) => l.text);
+const vo = ["vo.wav", "vo.mp3", "vo.m4a"].map((f) => path.join(dir, f)).find((f) => fs.existsSync(f));
+let lines, voice;
+if (vo) {
+  const cache = path.join(out, "timing.json");
+  const stamp = `${fs.statSync(vo).mtimeMs}|${texts.join("|")}`;
+  const c = fs.existsSync(cache) ? readJson(cache) : null;
+  if (c?.stamp === stamp && fs.existsSync(c.voice)) { lines = c.lines; voice = c.voice; console.log(`voice: ${vo} (timings cached)`); }
+  else {
+    const r = syncVo(vo, texts, path.join(out, "vo"));
+    lines = r.lines; voice = r.voice;
+    fs.writeFileSync(cache, JSON.stringify({ stamp, lines, voice }));
+    console.log(r.method === "whisper" ? `voice: ${vo} — whisper matched all but ${r.missed} word(s)` : `voice: ${vo} — whisper.cpp not found: sentences laid onto the speech runs (sentence starts ≈ exact, words paced)`);
+    if (r.missed > texts.join(" ").split(/\s+/).length * 0.15) console.log(`! many words not matched: is the recording this script?\n  heard: ${r.heard}`);
+  }
+} else {
+  lines = paceLines(texts);
+  console.log("voice: none yet — lines paced at 3 words/s (put the recording at " + path.join(dir, "vo.mp3") + ")");
+}
+
+// ---------------------------------------------------------------- plan
+const silent = flag("--silent"), wide = flag("--wide") || story.format === "landscape";
+const wantSound = !silent && (flag("--preview") || flag("--final"));
+const audio = wantSound ? `stories/${id}/mix.wav` : undefined;
+let plan;
+try { plan = compile(story, lines, world, { aspect: wide ? 16 / 9 : 9 / 16, audio, custom }); }
+catch (e) { console.error(`\n✗ ${e.message}`); process.exit(2); }
+const st = stateBefore(world, story.day, id);
+console.log(`\n"${plan.title}" — ${plan.country}, hari ${plan.day}: ${plan.shots.length} shots, ${plan.duration}s, warga ${st.population} → ${story.population}${seriesDir ? `, series ${seriesDir} (${st.builds.length} building(s), ${st.plates.length} named house(s) before today)` : ", one-off episode"}`);
+for (const b of plan.builds.filter((x) => x.day === story.day)) console.log(`   build ${b.id}: ${b.kind} "${b.name}" on ${b.plot}${b.by ? ` (request ${b.by})` : ""}${b.start !== undefined ? ` rising ${b.start.toFixed(1)}–${b.end.toFixed(1)} s` : ""}`);
+plan.shots.forEach((S, i) => {
+  const who = S.on.join("+") || "-";
+  console.log(`${String(i + 1).padStart(2)}  ${S.t0.toFixed(2).padStart(6)}–${S.t1.toFixed(2).padEnd(6)} ${S.beat.padEnd(9)} ${S.kind.padEnd(7)} on ${who.padEnd(12)} vis ${S.vis.toFixed(2)} ${S.time}${S.dissolve ? " dissolve" : ""}\n      ${lines[S.line].text.slice(0, 84)}`);
+});
+if (plan.warnings.length) console.log(`\n! ${plan.warnings.length} warning(s):\n  ` + plan.warnings.join("\n  "));
+else console.log("\nno warnings");
+
+if (wantSound) {
+  const r = buildSound(plan, { voice, outDir: path.join(out, "sound"), mixFile: path.join("public", audio), music: !flag("--no-music") });
+  console.log(`sound: public/${audio}  ${r.lufs} LUFS  ${r.peak} dBTP  (${r.events} cues, ${r.perMin}/min)`);
+}
+const tag = wide ? "-wide" : "";
+const propsFile = path.join(out, `props${tag}.json`);
+fs.writeFileSync(path.join(out, `plan${tag}.json`), JSON.stringify(plan));
+fs.writeFileSync(propsFile, JSON.stringify({ plan }));
+
+const commit = () => {
+  if (!worldFile) return;
+  const placed = placeEpisode(story, world, custom, (b) => (b.by ? (story.comments ?? []).find((c, i) => (c.id ?? `c${i + 1}`) === b.by || c.handle === b.by)?.handle ?? b.by : undefined));
+  if (placed.errors.length) { console.error("✗ not written to world.json:\n  " + placed.errors.join("\n  ")); return; }
+  const citizens = Object.fromEntries(Object.entries(story.cast ?? {}).filter(([, c]) => c.handle).map(([k, c]) => [k, c]));
+  let next = commitDay(world, story, placed, citizens);
+  const used = new Set(next.days.flatMap((d) => d.builds.map((b) => resolveKind(b.kind, custom)?.kind)));
+  next = { ...next, country: story.day === 1 && story.country ? story.country : next.country, host: story.host ?? next.host, custom: Object.fromEntries(Object.entries(custom).filter(([k]) => used.has(k))) };
+  fs.mkdirSync(seriesDir, { recursive: true });
+  fs.writeFileSync(worldFile, JSON.stringify(next, null, 2) + "\n");
+  const last = next.days[next.days.length - 1];
+  console.log(`\nseries: ${worldFile} — day ${story.day} written (days ${next.days.map((d) => d.day).join(", ")}; day ${last.day + 1} will start with ${last.population} warga and ${next.days.reduce((n, d) => n + d.builds.length, 0)} building(s))`);
+};
+if (flag("--commit") && !flag("--final")) commit();
+if (flag("--plan") || flag("--commit") && !flag("--final") && !flag("--stills") && !flag("--preview")) process.exit(plan.warnings.length ? 3 : 0);
+
+const comp = (k) => `Negeri${k}${wide ? "Wide" : ""}`;
+const gateDir = path.join(out, `qa-gate${tag}`);
+// the scene probe runs in one tab (several tabs can read a pose from another frame); a dissolve has two cut moments
+const cutsList = plan.shots.slice(1).flatMap((s) => (s.dissolve ? [s.t0, s.t0 + 0.5] : [s.t0]));
+const gate = { comp: comp("Preview"), cuts: cutsList, out: gateDir, props: propsFile, extra: ["--concurrency=1"] };
+if (flag("--stills")) {
+  let list = val("--stills");
+  const auto = !list || list === "auto" || list.startsWith("--");
+  if (auto) list = plan.shots.map((s) => `${((s.t0 + s.t1) / 2 + (s.beat === "build" && s.kind === "orbit" ? (s.t1 - s.t0) * 0.15 : 0)).toFixed(2)}s`).join(",");
+  const frames = list.split(",").map((t) => (t.endsWith("s") ? Math.round(parseFloat(t) * 30) : parseInt(t, 10)));
+  const sdir = path.join(out, `stills${tag}`);
+  const t0 = Date.now();
+  const files = renderSeq(wide ? "NegeriStillsWide" : "NegeriStills", { plan: { ...plan, audio: undefined }, frames }, sdir).map((f, i) => { const to = path.join(sdir, `f${String(frames[i]).padStart(4, "0")}${auto ? `-shot${i + 1}` : ""}.jpg`); fs.renameSync(f, to); return to; });
+  sheetOf(files, wide ? 960 : 540, wide ? 540 : 960, path.join(sdir, "_sheet.jpg"), files.map((_, i) => (auto ? i + 1 : frames[i])));
+  console.log(`stills: ${files.length} → ${path.join(sdir, "_sheet.jpg")}${auto ? "  (numbers = shots)" : ""}  [${((Date.now() - t0) / 1000).toFixed(0)} s]`);
+}
+if (flag("--preview")) {
+  const big = path.join(out, "_ss.mp4"), file = path.join(out, wide ? `${id}_preview_960x540.mp4` : `${id}_preview_540x960.mp4`);
+  const t0 = Date.now();
+  sh("npx", ["remotion", "render", "src/index.ts", comp("PreviewSS"), big, `--props=${propsFile}`, "--concurrency=3", "--crf=12", "--log=error"]);
+  execFileSync("ffmpeg", ["-v", "error", "-y", "-i", big, "-vf", wide ? "scale=960:540:flags=lanczos" : "scale=540:960:flags=lanczos", "-c:v", "libx264", "-crf", "17", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", file]);
+  fs.rmSync(big);
+  console.log(`\npreview: ${file}  [${((Date.now() - t0) / 1000).toFixed(0)} s]`);
+  if (!flag("--no-qa")) sceneGate({ ...gate, force: true });
+}
+if (flag("--final")) {
+  if (!flag("--no-qa")) sceneGate({ ...gate, force: flag("--force-qa") });
+  const file = path.join(out, wide ? `${id}_1920x1080_60fps.mp4` : `${id}_1080x1920_60fps.mp4`);
+  const t0 = Date.now();
+  sh("npx", ["remotion", "render", "src/index.ts", comp("Final"), file, `--props=${propsFile}`, "--concurrency=3", "--crf=16", "--log=error"]);
+  console.log(`\nfinal: ${file}  [${((Date.now() - t0) / 1000).toFixed(0)} s]`);
+  if (!flag("--no-qa") && deliveryScan({ file, cuts: gate.cuts, out: path.join(gateDir, "delivered") }) === "FAIL") {
+    console.error(`✗ the delivered film has a hard glitch (see ${path.join(gateDir, "delivered")}) — fix it before delivery`);
+    process.exitCode = 1;
+  } else if (!flag("--no-commit")) commit();
+}
+
+==== 113 project/src/index.ts
+import { registerRoot } from "remotion";
+import { RemotionRoot } from "./Root.tsx";
+
+registerRoot(RemotionRoot);
+
+==== 20363 project/src/kits/negeri/ui/UI.tsx
+// NEGERI UI kit — flat "papan pengumuman" cards: cream paper, ink border, hard offset shadow, Indonesian red + deep
+// green accents. No gradients, no glows. Laid out on a 1080 × 1920 frame (portrait) or 1920 × 1080 (landscape);
+// important text stays out of the top 8 % and the bottom 16 % (platform UI).
+
+import React from "react";
+import { backOut, clamp01, outCubic } from "../math.ts";
+import { F_DISPLAY, F_TEXT } from "../fonts.ts";
+import { commentLayout } from "./layout.ts";
+
+export const C = { ink: "#1b1b1b", paper: "#fffaf0", red: "#d7263d", green: "#1f5f4a", leaf: "#2f9e5b", grey: "#6b675f" };
+export type Lay = { w: number; h: number; wide: boolean };
+const card = (extra: React.CSSProperties = {}): React.CSSProperties => ({ background: C.paper, border: `5px solid ${C.ink}`, borderRadius: 22, boxShadow: `8px 8px 0 ${C.ink}`, ...extra });
+/** in/out envelope: 0 → 1 (eased in over `inD`), back to 0 over `outD` before t1 */
+export const env = (t: number, t0: number, t1: number, inD = 0.3, outD = 0.2) => (t < t0 || t > t1 ? 0 : Math.min(clamp01((t - t0) / inD), clamp01((t1 - t) / outD)));
+const inOut = (t: number, t0: number, t1: number, inD: number, outD: number, c = 1.3) => (t < t1 - outD ? backOut(clamp01((t - t0) / inD), c) : env(t, t0, t1, inD, outD));
+
+// ------------------------------------------------------------------ icons
+export const IconPerson: React.FC<{ size: number; color: string; plus?: boolean }> = ({ size, color, plus }) => (
+  <svg width={size} height={size} viewBox="0 0 48 48"><circle cx="20" cy="15" r="8.5" fill={color} /><path d="M5 42c0-9 6.5-15 15-15s15 6 15 15z" fill={color} />{plus && <path d="M37 10v14M30 17h14" stroke={color} strokeWidth="5" strokeLinecap="round" />}</svg>
+);
+export const IconChat: React.FC<{ size: number; color: string }> = ({ size, color }) => (
+  <svg width={size} height={size} viewBox="0 0 48 48"><path d="M6 9h36v24H20l-9 8v-8H6z" fill={color} /><path d="M13 18h22M13 25h14" stroke="#fffaf0" strokeWidth="4" strokeLinecap="round" /></svg>
+);
+export const IconHeart: React.FC<{ size: number; color: string }> = ({ size, color }) => (
+  <svg width={size} height={size} viewBox="0 0 48 48"><path d="M24 42S5 30 5 17.5C5 11 10 6 16 6c3.6 0 6.4 1.9 8 4.6C25.6 7.9 28.4 6 32 6c6 0 11 5 11 11.5C43 30 24 42 24 42z" fill={color} /></svg>
+);
+const IconHammer: React.FC<{ size: number; color: string }> = ({ size, color }) => (
+  <svg width={size} height={size} viewBox="0 0 48 48"><path d="M8 14l12-8 8 6-4 4 18 18-6 6-18-18-4 4z" fill={color} /></svg>
+);
+
+// ------------------------------------------------------------------ day chip + country
+export const DayChip: React.FC<{ t: number; day: number; country: string; at: number; L: Lay }> = ({ t, day, country, at, L }) => {
+  const a = clamp01((t - at) / 0.35);
+  if (a <= 0) return null;
+  const x = (1 - backOut(a, 1.2)) * -460;
+  const top = L.wide ? 92 : 168;
+  return (
+    <div style={{ position: "absolute", left: 48 + x, top, display: "flex", alignItems: "stretch" }}>
+      <div style={{ ...card({ borderRadius: "22px 0 0 22px", boxShadow: "none" }), background: C.red, color: "#fff", padding: "6px 22px 4px", display: "flex", alignItems: "baseline", gap: 12, borderRight: "none" }}>
+        <span style={{ fontFamily: F_TEXT, fontWeight: 800, fontSize: 34, letterSpacing: 2 }}>HARI</span>
+        <span style={{ fontFamily: F_DISPLAY, fontWeight: 700, fontSize: 72, lineHeight: 1 }}>{day}</span>
+      </div>
+      <div style={{ ...card({ borderRadius: "0 22px 22px 0" }), padding: "0 24px", display: "flex", alignItems: "center", maxWidth: 560 }}>
+        <span style={{ fontFamily: F_TEXT, fontWeight: 800, fontSize: country.length > 18 ? 28 : 34, color: C.green, letterSpacing: 0.5, whiteSpace: "nowrap" }}>{country.toUpperCase()}</span>
+      </div>
+    </div>
+  );
+};
+
+// ------------------------------------------------------------------ population counter (odometer digits, slide)
+const fmt = (n: number) => Math.round(n).toLocaleString("de-DE");
+/** value at time t: changes at most `hz` times per second; current + previous + slide phase */
+export const stepped = (f: (t: number) => number, t: number, hz = 10, slide = 0.08) => {
+  const k = Math.floor(t * hz);
+  return { cur: Math.round(f(k / hz)), prev: Math.round(f((k - 1) / hz)), ph: clamp01((t - k / hz) / slide) };
+};
+const Digits: React.FC<{ cur: string; prev: string; ph: number; size: number; color: string }> = ({ cur, prev, ph, size, color }) => {
+  const n = Math.max(cur.length, prev.length);
+  const c = cur.padStart(n, " "), p = prev.padStart(n, " ");
+  const e = outCubic(ph);
+  return (
+    <div style={{ display: "flex", height: size * 1.05, overflow: "hidden", fontFamily: F_DISPLAY, fontWeight: 700, fontSize: size, lineHeight: 1.05, color, fontVariantNumeric: "tabular-nums" }}>
+      {Array.from(c).map((ch, i) => {
+        const w = ch === "." ? size * 0.28 : ch === " " ? 0 : size * 0.6;
+        if (ch === p[i] || e >= 1) return <span key={i} style={{ width: w, textAlign: "center", display: "inline-block" }}>{ch}</span>;
+        return (
+          <span key={i} style={{ width: w, position: "relative", display: "inline-block", textAlign: "center" }}>
+            <span style={{ position: "absolute", left: 0, right: 0, top: (1 - e) * size * 1.05 }}>{ch}</span>
+            <span style={{ position: "absolute", left: 0, right: 0, top: -e * size * 1.05 }}>{p[i]}</span>
+          </span>
+        );
+      })}
+    </div>
+  );
+};
+export const Counter: React.FC<{ t: number; at: number; value: { cur: number; prev: number; ph: number }; big: number; L: Lay }> = ({ t, at, value, big, L }) => {
+  const a = clamp01((t - at) / 0.35);
+  if (a <= 0) return null;
+  const left = 48 + (1 - backOut(a, 1.2)) * -460, top = L.wide ? 210 : 290;
+  const w = 520, h = 150, sc = 1 + big * (L.wide ? 0.75 : 0.95);
+  const cx = L.w / 2, cy = L.wide ? 470 : 760;
+  const x = left + (cx - (w * sc) / 2 - left) * big, y = top + (cy - (h * sc) / 2 - top) * big;
+  return (
+    <div style={{ position: "absolute", left: x, top: y, width: w, height: h, transform: `scale(${sc})`, transformOrigin: "0 0" }}>
+      <div style={{ ...card(), width: w, height: h, boxSizing: "border-box", padding: "14px 24px", display: "flex", alignItems: "center", gap: 18 }}>
+        <div style={{ width: 84, height: 84, borderRadius: 18, background: C.green, display: "flex", alignItems: "center", justifyContent: "center", flex: "none" }}><IconPerson size={60} color="#fffaf0" /></div>
+        <div style={{ display: "flex", flexDirection: "column" }}>
+          <span style={{ fontFamily: F_TEXT, fontWeight: 800, fontSize: 30, letterSpacing: 2.5, color: C.red }}>POPULASI</span>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
+            <Digits cur={fmt(value.cur)} prev={fmt(value.prev)} ph={value.ph} size={68} color={C.ink} />
+            <span style={{ fontFamily: F_TEXT, fontWeight: 800, fontSize: 32, color: C.ink }}>warga</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ------------------------------------------------------------------ rule cards
+export const RuleCards: React.FC<{ t: number; t0: number; t1: number; rules: { icon: "follow" | "comment"; small: string; big: string }[]; L: Lay }> = ({ t, t0, t1, rules, L }) => (
+  <>
+    {rules.map((r, i) => {
+      const s = t0 + i * 0.3;
+      const a = env(t, s, t1, 0.35, 0.22);
+      if (a <= 0) return null;
+      const inn = inOut(t, s, t1, 0.35, 0.22);
+      const x = L.wide ? 1080 + (1 - inn) * 900 : 60 + (1 - inn) * -760, y = (L.wide ? 300 : 470) + i * 178;
+      return (
+        <div key={i} style={{ position: "absolute", left: x, top: y, ...card({ width: 760, height: 148, boxSizing: "border-box", display: "flex", alignItems: "center", gap: 24, padding: "0 26px" }) }}>
+          <div style={{ width: 96, height: 96, borderRadius: 20, background: r.icon === "follow" ? C.red : C.green, display: "flex", alignItems: "center", justifyContent: "center", flex: "none" }}>
+            {r.icon === "follow" ? <IconPerson size={70} color="#fffaf0" plus /> : <IconChat size={70} color="#fffaf0" />}
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+            <span style={{ fontFamily: F_TEXT, fontWeight: 800, fontSize: 30, letterSpacing: 2, color: C.grey }}>{r.small}</span>
+            <span style={{ fontFamily: F_DISPLAY, fontWeight: 700, fontSize: 62, lineHeight: 1, color: C.ink }}>{r.big}</span>
+          </div>
+        </div>
+      );
+    })}
+  </>
+);
+
+// ------------------------------------------------------------------ comment cards (the first is the winner)
+export type Comment = { handle: string; text: string; likes: string; avatar: string; ago: string };
+export const CommentCards: React.FC<{ t: number; t0: number; t1: number; comments: Comment[]; L: Lay }> = ({ t, t0, t1, comments, L }) => {
+  const g = commentLayout(comments, L.wide);
+  const left = L.wide ? 1000 : 70;
+  const a = env(t, t0, t1, 0.32, 0.2);
+  if (a <= 0) return null;
+  const inn = t < t1 - 0.2 ? backOut(clamp01((t - t0) / 0.32), 1.4) : 1;
+  const c = comments[0];
+  const b = env(t, t0 + 0.3, t1, 0.3, 0.2), innB = t < t1 - 0.2 ? backOut(clamp01((t - t0 - 0.3) / 0.3), 1.3) : 1;
+  return (
+    <>
+      <div style={{ position: "absolute", left, top: g.top + (1 - inn) * 90, width: g.W, opacity: Math.min(1, a * 1.5), transform: `scale(${0.9 + 0.1 * inn})`, transformOrigin: "50% 100%", ...card({ boxSizing: "border-box", padding: "26px 30px 24px" }) }}>
+        <div style={{ position: "absolute", top: -26, right: 34, background: C.red, color: "#fff", fontFamily: F_TEXT, fontWeight: 800, fontSize: 28, letterSpacing: 2, padding: "6px 18px", borderRadius: 14, border: `4px solid ${C.ink}` }}>KOMEN TERATAS</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
+          <div style={{ width: 74, height: 74, borderRadius: 37, background: c.avatar, border: `4px solid ${C.ink}`, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: F_DISPLAY, fontWeight: 700, fontSize: 42, color: "#fff", flex: "none" }}>{c.handle.replace("@", "").charAt(0).toUpperCase()}</div>
+          <span style={{ fontFamily: F_TEXT, fontWeight: 800, fontSize: 38, color: C.ink, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: g.W - 300 }}>{c.handle}</span>
+          <span style={{ fontFamily: F_TEXT, fontWeight: 700, fontSize: 30, color: C.grey, whiteSpace: "nowrap" }}>· {c.ago}</span>
+        </div>
+        <div style={{ fontFamily: F_DISPLAY, fontWeight: 600, fontSize: g.size, lineHeight: 1.08, color: C.ink, margin: "16px 0 14px 4px" }}>{c.text}</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <IconHeart size={40} color={C.red} />
+          <span style={{ fontFamily: F_TEXT, fontWeight: 800, fontSize: 32, color: C.ink }}>{c.likes}</span>
+          <span style={{ fontFamily: F_TEXT, fontWeight: 700, fontSize: 30, color: C.grey, marginLeft: 22 }}>Balas</span>
+        </div>
+      </div>
+      {g.others > 0 && b > 0 && (
+        <div style={{ position: "absolute", left: left + 30, top: g.othersTop + (1 - innB) * 60, width: g.W - 60, opacity: Math.min(1, b * 1.5), ...card({ boxSizing: "border-box", padding: "16px 22px", borderRadius: 18, boxShadow: `6px 6px 0 ${C.ink}` }) }}>
+          {comments.slice(1, 3).map((o, i) => (
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 14, height: 66 }}>
+              <div style={{ width: 46, height: 46, borderRadius: 23, background: o.avatar, border: `3px solid ${C.ink}`, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: F_DISPLAY, fontWeight: 700, fontSize: 26, color: "#fff", flex: "none" }}>{o.handle.replace("@", "").charAt(0).toUpperCase()}</div>
+              <span style={{ fontFamily: F_TEXT, fontWeight: 800, fontSize: 26, color: C.grey, whiteSpace: "nowrap" }}>{o.handle}</span>
+              <span style={{ fontFamily: F_DISPLAY, fontWeight: 600, fontSize: 34, color: C.ink, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", flex: 1 }}>{o.text}</span>
+              <IconHeart size={28} color={C.red} />
+              <span style={{ fontFamily: F_TEXT, fontWeight: 800, fontSize: 26, color: C.ink, whiteSpace: "nowrap" }}>{o.likes}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </>
+  );
+};
+
+// ------------------------------------------------------------------ build card (progress by stage)
+export const BuildCard: React.FC<{ t: number; t0: number; t1: number; name: string; by?: string; label: string; p: number; steps: string[]; L: Lay }> = ({ t, t0, t1, name, by, label, p, steps, L }) => {
+  const a = env(t, t0, t1, 0.3, 0.2);
+  if (a <= 0) return null;
+  const inn = inOut(t, t0, t1, 0.3, 0.2, 1.2);
+  const done = p >= 1;
+  const W = L.wide ? 860 : 940, left = L.wide ? 60 : 70, top = L.wide ? 640 : 1265;
+  return (
+    <div style={{ position: "absolute", left, top: top + (1 - inn) * 380, width: W, ...card({ boxSizing: "border-box", padding: "22px 30px 26px" }) }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+        <div style={{ width: 64, height: 64, borderRadius: 16, background: done ? C.leaf : C.red, display: "flex", alignItems: "center", justifyContent: "center", flex: "none" }}><IconHammer size={44} color="#fffaf0" /></div>
+        <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+          <span style={{ fontFamily: F_TEXT, fontWeight: 800, fontSize: 26, letterSpacing: 2.5, color: C.grey }}>{done ? "SELESAI DIBANGUN" : "MEMBANGUN"}</span>
+          <span style={{ fontFamily: F_DISPLAY, fontWeight: 700, fontSize: name.length > 16 ? 46 : 58, lineHeight: 1, color: C.ink, whiteSpace: "nowrap" }}>{name}</span>
+        </div>
+        <span style={{ marginLeft: "auto", fontFamily: F_DISPLAY, fontWeight: 700, fontSize: 56, color: done ? C.leaf : C.ink, fontVariantNumeric: "tabular-nums" }}>{Math.round(p * 100)}%</span>
+      </div>
+      <div style={{ display: "flex", gap: 8, marginTop: 18 }}>
+        {steps.map((s, i) => {
+          const f = clamp01(p * steps.length - i);
+          return <div key={i} style={{ flex: 1, height: 26, borderRadius: 8, border: `4px solid ${C.ink}`, background: "#e8e1d2", overflow: "hidden" }}><div style={{ width: `${f * 100}%`, height: "100%", background: done ? C.leaf : C.green }} /></div>;
+        })}
+      </div>
+      <div style={{ display: "flex", justifyContent: "space-between", marginTop: 12 }}>
+        <span style={{ fontFamily: F_TEXT, fontWeight: 800, fontSize: 30, color: C.ink }}>{label}</span>
+        {by ? <span style={{ fontFamily: F_TEXT, fontWeight: 700, fontSize: 30, color: C.grey }}>request {by}</span> : null}
+      </div>
+    </div>
+  );
+};
+
+// ------------------------------------------------------------------ speech bubble / caption card
+/** Words in a caption: ALL-CAPS words (≥ 2 letters) are the punch words, in red. */
+const Words: React.FC<{ text: string }> = ({ text }) => (
+  <>{text.split(/(\s+)/).map((w, i) => (/^[^a-z]*[A-Z]{2,}[^a-z]*$/.test(w) ? <span key={i} style={{ color: C.red }}>{w}</span> : <React.Fragment key={i}>{w}</React.Fragment>))}</>
+);
+export const Bubble: React.FC<{ text: string; x: number; y: number; w: number; tail?: number | null; scale?: number; size: number }> = ({ text, x, y, w, tail, scale = 1, size }) => (
+  <div style={{ position: "absolute", left: x, top: y, width: w, transform: `scale(${scale})`, transformOrigin: tail != null ? `${tail - x}px 100%` : "50% 50%" }}>
+    <div style={{ ...card({ borderRadius: 34, padding: "18px 28px 20px", boxSizing: "border-box", textAlign: "center" }), fontFamily: F_DISPLAY, fontWeight: 700, fontSize: size, lineHeight: 1.06, color: C.ink }}><Words text={text} /></div>
+    {tail != null && (
+      <svg width="70" height="60" viewBox="0 0 70 60" style={{ position: "absolute", left: tail - x - 35, top: "calc(100% - 6px)" }}>
+        <path d="M10 0 L35 52 L56 0 Z" fill={C.paper} stroke={C.ink} strokeWidth="5" strokeLinejoin="round" />
+        <rect x="6" y="-6" width="56" height="9" fill={C.paper} />
+      </svg>
+    )}
+  </div>
+);
+
+// ------------------------------------------------------------------ labels
+export const Tag: React.FC<{ t: number; t0: number; t1: number; text: string; top: number }> = ({ t, t0, t1, text, top }) => {
+  const a = env(t, t0, t1, 0.25, 0.2);
+  if (a <= 0) return null;
+  const s = inOut(t, t0, t1, 0.25, 0.2, 1.4);
+  return (
+    <div style={{ position: "absolute", left: 0, right: 0, top, display: "flex", justifyContent: "center" }}>
+      <div style={{ transform: `scale(${s})`, background: C.green, color: "#fff", border: `5px solid ${C.ink}`, borderRadius: 18, boxShadow: `7px 7px 0 ${C.ink}`, padding: "8px 26px 10px", fontFamily: F_TEXT, fontWeight: 800, fontSize: 40, letterSpacing: 2 }}>{text}</div>
+    </div>
+  );
+};
+/** a commenter's handle over a citizen's head */
+export const NameTag: React.FC<{ text: string; x: number; y: number; a: number }> = ({ text, x, y, a }) => (
+  <div style={{ position: "absolute", left: x, top: y, transform: `translate(-50%, -100%) scale(${0.6 + 0.4 * a})`, opacity: a, background: C.paper, border: `4px solid ${C.ink}`, borderRadius: 14, padding: "4px 14px 6px", fontFamily: F_TEXT, fontWeight: 800, fontSize: 30, color: C.ink, whiteSpace: "nowrap", boxShadow: `4px 4px 0 ${C.ink}` }}>{text}</div>
+);
+export const Zzz: React.FC<{ t: number; x: number; y: number; a: number }> = ({ t, x, y, a }) => (
+  <>
+    {[0, 1, 2].map((i) => {
+      const ph = (t / 1.5 + i / 3) % 1;
+      return <div key={i} style={{ position: "absolute", left: x - 30 - ph * 90 + i * 4, top: y - ph * 110, opacity: Math.sin(Math.PI * ph) * a, fontFamily: F_DISPLAY, fontWeight: 700, fontSize: 52 + ph * 30, color: "#ffffff", WebkitTextStroke: `9px ${C.ink}`, paintOrder: "stroke fill" }}>z</div>;
+    })}
+  </>
+);
+export const Title: React.FC<{ t: number; t0: number; t1: number; text: string; sub: string; L: Lay }> = ({ t, t0, t1, text, sub, L }) => {
+  const a = env(t, t0, t1, 0.35, 0.25);
+  if (a <= 0) return null;
+  const s = inOut(t, t0, t1, 0.35, 0.25, 1.3);
+  return (
+    <div style={{ position: "absolute", left: L.wide ? 1000 : 0, right: L.wide ? 60 : 0, top: L.wide ? 300 : 480, display: "flex", flexDirection: "column", alignItems: "center", gap: 18 }}>
+      <div style={{ transform: `scale(${s})`, ...card({ padding: "14px 36px 18px" }), fontFamily: F_DISPLAY, fontWeight: 700, fontSize: text.length > 16 ? 64 : 80, color: C.green, whiteSpace: "nowrap" }}>{text}</div>
+      <div style={{ opacity: a, background: C.red, color: "#fff", border: `5px solid ${C.ink}`, borderRadius: 16, padding: "8px 24px 10px", fontFamily: F_TEXT, fontWeight: 800, fontSize: 36, letterSpacing: 1.5 }}>{sub}</div>
+    </div>
+  );
+};
+
+// ------------------------------------------------------------------ CTA
+export const CTA: React.FC<{ t: number; t0: number; line: string; button: string; sub: string; L: Lay }> = ({ t, t0, line, button, sub, L }) => {
+  const a = clamp01((t - t0) / 0.32), b = clamp01((t - t0 - 0.28) / 0.32), c = clamp01((t - t0 - 0.5) / 0.3);
+  if (a <= 0) return null;
+  return (
+    <div style={{ position: "absolute", left: L.wide ? 980 : 0, right: L.wide ? 40 : 0, top: L.wide ? 250 : 455, display: "flex", flexDirection: "column", alignItems: "center", gap: 34 }}>
+      <div style={{ transform: `scale(${backOut(a, 1.3)})`, ...card({ padding: "18px 40px 22px" }), fontFamily: F_DISPLAY, fontWeight: 700, fontSize: line.length > 20 ? 64 : 80, color: C.ink, whiteSpace: "nowrap" }}>{line}</div>
+      <div style={{ transform: `scale(${b > 0 ? backOut(b, 1.8) : 0})`, background: C.red, color: "#fff", border: `6px solid ${C.ink}`, borderRadius: 30, boxShadow: `10px 10px 0 ${C.ink}`, padding: "10px 56px 16px", display: "flex", alignItems: "center", gap: 22 }}>
+        <IconChat size={84} color="#fffaf0" />
+        <span style={{ fontFamily: F_DISPLAY, fontWeight: 700, fontSize: 118, lineHeight: 1 }}>{button}</span>
+      </div>
+      <div style={{ opacity: c, transform: `translateY(${(1 - outCubic(c)) * 20}px)`, background: C.green, color: "#fff", border: `5px solid ${C.ink}`, borderRadius: 16, padding: "8px 24px 10px", fontFamily: F_TEXT, fontWeight: 800, fontSize: 36, letterSpacing: 1 }}>{sub}</div>
+    </div>
+  );
+};
+
+==== 58370 project/src/negeri/buildings.ts
+// NEGERI building library — every building is DATA: labelled build STEPS (shown on the build card as stages), each a
+// list of PARTS (simple low-poly shapes) or MACROS (walls with a door and windows, a roof, posts, a fence, stairs,
+// a scaffold, trees, lamps, benches). The same format works in JSON, so a buyer's own building (DPR, waterboom,
+// menara pandang…) is a buildings.json next to the story — no engine change. Pure TypeScript (node + browser).
+//
+// Local frame: origin = centre of the footprint on the ground, FRONT = +z (it faces the road / the plaza), metres.
+// pos = BOTTOM centre for box / cyl / cone / prism / hip; centre for sphere / blob; rod = a → b. rot in degrees.
+// Colours may be tokens "{wall}", "{roof}", "{accent}" — filled from the build entry's "colors" (or the defaults in
+// "params"). Sign text may use {name} (the build's display name), {by} (the requester), {no} (house number),
+// {country} (the country).
+
+import type { V3 } from "../kits/negeri/math.ts";
+
+export type Anim = "drop" | "grow" | "pop" | "slide";
+type Common = { color?: string; anim?: Anim; axis?: "x" | "y" | "z"; temp?: boolean; glass?: boolean; water?: boolean; rot?: V3 };
+export type PartSpec = Common & (
+  | { shape: "box"; size: V3; pos: V3 }
+  | { shape: "cyl"; r: number; r2?: number; h: number; pos: V3; seg?: number }
+  | { shape: "cone"; r: number; h: number; pos: V3; seg?: number }
+  | { shape: "sphere"; r: number; pos: V3; half?: boolean; scale?: V3 }
+  | { shape: "blob"; r: number; pos: V3; scale?: V3 }
+  | { shape: "prism"; w: number; h: number; l: number; pos: V3 }
+  | { shape: "hip"; w: number; d: number; h: number; ridge?: number; pos: V3 }
+  | { shape: "rod"; a: V3; b: V3; r: number }
+  | { shape: "sign"; size: V3; pos: V3; text: string; sub?: string; bg?: string; ink?: string; subInk?: string }
+);
+export type MacroSpec =
+  | { macro: "walls"; w: number; d: number; h: number; y?: number; at?: [number, number]; color: string; base?: { h: number; color: string }; trim?: string;
+      door?: { x?: number; w?: number; h?: number; color?: string; side?: "front" | "back" }; windows?: { n?: number; w?: number; h?: number; y?: number; sides?: ("front" | "back" | "left" | "right")[]; frame?: string; glass?: string } }
+  | { macro: "roof"; type: "gable" | "hip" | "pyramid" | "flat" | "mono" | "joglo"; w: number; d: number; y: number; at?: [number, number]; rise?: number; over?: number; color: string; ridge?: "x" | "z" }
+  | { macro: "posts"; w: number; d: number; h: number; y?: number; at?: [number, number]; r?: number; nx?: number; nz?: number; color: string; round?: boolean }
+  | { macro: "fence"; w: number; d: number; h?: number; y?: number; gap?: number; color: string; open?: ("front" | "back" | "left" | "right")[] }
+  | { macro: "stairs"; w: number; d: number; h: number; n?: number; pos: [number, number]; yaw?: number; color: string }
+  | { macro: "scaffold"; w: number; d: number; h: number }
+  | { macro: "tree"; kind?: "round" | "beringin" | "cemara" | "bush"; pos: [number, number]; s?: number }
+  | { macro: "lamp"; pos: [number, number]; h?: number; color?: string }
+  | { macro: "bench"; pos: [number, number]; y?: number; yaw?: number; w?: number; color?: string };
+export type StepSpec = { label: string; dur?: number; parts: (PartSpec | MacroSpec)[] };
+/** A seat: surface point (local), facing (deg), legs hanging (bench) or forward (bale / mat). */
+export type Seat = { p: V3; yaw: number; legs: "hang" | "fwd" };
+export type BuildingDef = {
+  about: string;
+  /** display name on the build card and sign ({name}); a build entry may give its own */
+  name: string;
+  /** footprint w (along x) × d (along z), metres, and height (camera framing) */
+  size: [number, number];
+  h: number;
+  /** "slot" = a named house on the main road; others = the fixed special places in the map */
+  special?: "slot" | "gate" | "bridge" | "road" | "station" | "field";
+  params?: Record<string, string>;
+  steps: StepSpec[];
+  seats?: Seat[];
+  /** where a queue starts (in front of a counter / door), local x, z */
+  front?: [number, number];
+  /** temp parts (scaffold) leave over this many seconds at the end */
+  strike?: number;
+  /** aliases resolve to this kind with another name */
+};
+
+// ------------------------------------------------------------------ colours
+const C = {
+  stone: "#b9b1a4", stone2: "#a7a299", wood: "#7a5638", wood2: "#8c6542", bamboo: "#c9b06a", bamboo2: "#b59b55",
+  zinc: "#9eabb3", zinc2: "#8796a0", white: "#f4f1ea", cream: "#efe6d2", tile: "#b8573a", tile2: "#a34a33", red: "#d1262e",
+  green: "#2f7d55", glass: "#5d7a8c", frame: "#f2ede4", door: "#6b4a33", dark: "#3a3a3a", grass: "#78b04a", grass2: "#6aa443",
+  steel: "#7d8a93", asphalt: "#4a4d52", water: "#7fc4d8", sand: "#d9c49a", leaf: "#5c9440", leaf2: "#6aa548",
+};
+const goodsColors = ["#e94b3c", "#f2c230", "#3d8fd1", "#3fa65b", "#f08a2c", "#ffffff", "#a05bc8"];
+/** a row of small coloured boxes (snacks, goods) */
+const goods = (x0: number, x1: number, y: number, z: number, n: number, seed = 0, depth = 0.14): PartSpec[] =>
+  Array.from({ length: n }, (_, i) => ({ shape: "box", size: [((x1 - x0) / n) * 0.78, 0.18 + ((i + seed) % 3) * 0.05, depth], pos: [x0 + ((i + 0.5) * (x1 - x0)) / n, y, z], color: goodsColors[(i + seed) % goodsColors.length], anim: "pop" }) as PartSpec);
+
+// ------------------------------------------------------------------ the library
+const POS_RONDA: BuildingDef = (() => {
+  const PX = 1.0, PZ = 0.62, RIDGE = 2.4, PLATE = 2.0, SLOPE = (RIDGE - PLATE) / PZ, EAVE = 0.92;
+  const y1 = PLATE - (EAVE - PZ) * SLOPE, a = Math.atan2(RIDGE - y1, EAVE), len = Math.hypot(EAVE, RIDGE - y1), th = 0.026;
+  const panel = (s: 1 | -1): PartSpec => ({ shape: "box", size: [2.7, th, len], pos: [0, (RIDGE + y1) / 2 - th / 2 + Math.cos(a) * th * 0.5 + 0.001, (s * EAVE) / 2 + s * Math.sin(a) * th * 0.5], rot: [(s * a * 180) / Math.PI, 0, 0], color: s > 0 ? C.zinc : C.zinc2 });
+  const post = (x: number, z: number): PartSpec => ({ shape: "box", size: [0.1, 1.8, 0.1], pos: [x, 0.12, z], color: C.wood });
+  const foot = (x: number, z: number): PartSpec => ({ shape: "box", size: [0.2, 0.12, 0.2], pos: [x, 0, z], color: C.stone2, anim: "pop" });
+  return {
+    about: "pos ronda: bamboo bale on posts, zinc roof, kentongan", name: "POS RONDA", size: [3.0, 2.2], h: 2.5, strike: 0.35,
+    seats: [{ p: [-0.6, 0.532, -0.45], yaw: 0, legs: "fwd" }, { p: [0.6, 0.532, -0.45], yaw: 0, legs: "fwd" }],
+    front: [0, 1.4],
+    steps: [
+      { label: "PERANCAH", dur: 0.6, parts: [{ macro: "scaffold", w: 2.96, d: 2.24, h: 2.75 }] },
+      { label: "TIANG", dur: 0.8, parts: [foot(-PX, PZ), foot(PX, PZ), foot(-PX, -PZ), foot(PX, -PZ), post(-PX, PZ), post(PX, PZ), post(-PX, -PZ), post(PX, -PZ)] },
+      { label: "BALE BAMBU", dur: 0.9, parts: [
+        { shape: "box", size: [1.9, 0.08, 0.08], pos: [0, 0.38, PZ], color: C.wood2 }, { shape: "box", size: [1.9, 0.08, 0.08], pos: [0, 0.38, -PZ], color: C.wood2 },
+        { shape: "box", size: [0.08, 0.08, 1.14], pos: [PX, 0.38, 0], color: C.wood2 }, { shape: "box", size: [0.08, 0.08, 1.14], pos: [-PX, 0.38, 0], color: C.wood2 },
+        { shape: "box", size: [1.9, 0.06, 1.16], pos: [0, 0.46, 0], color: C.bamboo },
+        ...Array.from({ length: 9 }, (_, k) => ({ shape: "box", size: [1.9, 0.012, 0.03], pos: [0, 0.52, -0.52 + k * 0.13], color: C.bamboo2 }) as PartSpec),
+        { shape: "box", size: [1.9, 0.26, 0.04], pos: [0, 0.52, -PZ + 0.02], color: "#c2a362" }, { shape: "box", size: [1.9, 0.05, 0.05], pos: [0, 0.78, -PZ + 0.02], color: C.bamboo2 },
+      ] },
+      { label: "ATAP SENG", dur: 1, parts: [
+        { shape: "box", size: [2.3, 0.08, 0.08], pos: [0, 1.9, PZ], color: C.wood }, { shape: "box", size: [2.3, 0.08, 0.08], pos: [0, 1.9, -PZ], color: C.wood },
+        { shape: "box", size: [0.08, 0.08, 1.16], pos: [PX, 1.9, 0], color: C.wood }, { shape: "box", size: [0.08, 0.08, 1.16], pos: [-PX, 1.9, 0], color: C.wood },
+        { shape: "box", size: [0.06, 0.4, 0.06], pos: [PX, 1.98, 0], color: C.wood }, { shape: "box", size: [0.06, 0.4, 0.06], pos: [-PX, 1.98, 0], color: C.wood },
+        { shape: "box", size: [2.5, 0.07, 0.07], pos: [0, RIDGE - 0.07, 0], color: C.wood }, panel(1), panel(-1),
+        { shape: "box", size: [2.74, 0.05, 0.16], pos: [0, RIDGE + 0.005, 0], color: "#7f8c95" },
+      ] },
+      { label: "KENTONGAN", dur: 0.7, parts: [
+        { shape: "rod", a: [PX + 0.05, 1.56, PZ], b: [PX + 0.12, 1.47, PZ], r: 0.008, color: "#3b2e22", anim: "pop" },
+        { shape: "cyl", r: 0.065, h: 0.42, pos: [PX + 0.12, 1.04, PZ], color: "#9a6a3c", anim: "pop" },
+        { shape: "box", size: [0.024, 0.26, 0.02], pos: [PX + 0.12, 1.12, PZ + 0.062], color: "#2b1d12", anim: "pop" },
+        { shape: "rod", a: [-0.36, 1.9, PZ + 0.055], b: [-0.36, 1.71, PZ + 0.055], r: 0.012, color: "#3b2e22", anim: "pop" },
+        { shape: "rod", a: [0.36, 1.9, PZ + 0.055], b: [0.36, 1.71, PZ + 0.055], r: 0.012, color: "#3b2e22", anim: "pop" },
+        { shape: "sign", size: [0.95, 0.24, 0.03], pos: [0, 1.48, PZ + 0.055], text: "{name}", bg: "#f4efe2", ink: "#1d1d1d", anim: "pop" },
+      ] },
+    ],
+  };
+})();
+
+const WARUNG: BuildingDef = (() => {
+  const W = 2.6, D = 2.0;
+  const shelf = (y: number, seed: number): PartSpec[] => [{ shape: "box", size: [W - 0.3, 0.04, 0.3], pos: [0, y, -D / 2 + 0.3], color: "#7d5434" }, ...goods(-1.05, 1.05, y + 0.04, -D / 2 + 0.3, 9, seed)];
+  const ar = Math.atan2(0.35, D + 0.7);
+  return {
+    about: "warung: wooden kiosk, counter with jars, snacks on shelves, zinc roof, bench", name: "WARUNG", size: [3.2, 3.4], h: 2.9,
+    params: { accent: "#f2c230" }, strike: 0.3,
+    seats: [{ p: [-0.45, 0.4, D / 2 + 0.6], yaw: 0, legs: "hang" }, { p: [0.45, 0.4, D / 2 + 0.6], yaw: 0, legs: "hang" }],
+    front: [0.2, D / 2 + 1.2],
+    steps: [
+      { label: "LANTAI", dur: 0.6, parts: [{ shape: "box", size: [W + 0.1, 0.14, D + 0.1], pos: [0, 0, 0], color: C.stone, anim: "pop" }] },
+      { label: "RANGKA", dur: 0.9, parts: [
+        { shape: "box", size: [W, 2.25, 0.08], pos: [0, 0.14, -D / 2 + 0.04], color: "#a8774b", anim: "grow" },
+        { shape: "box", size: [0.08, 2.25, D], pos: [-W / 2 + 0.04, 0.14, 0], color: "#9c6c43", anim: "grow" },
+        { shape: "box", size: [0.08, 2.25, D], pos: [W / 2 - 0.04, 0.14, 0], color: "#9c6c43", anim: "grow" },
+        { shape: "box", size: [0.09, 2.1, 0.09], pos: [-W / 2 + 0.06, 0.14, D / 2 - 0.05], color: "#7d5434" },
+        { shape: "box", size: [0.09, 2.1, 0.09], pos: [W / 2 - 0.06, 0.14, D / 2 - 0.05], color: "#7d5434" },
+        { shape: "box", size: [W, 0.1, 0.1], pos: [0, 2.25, D / 2 - 0.05], color: "#7d5434" },
+      ] },
+      { label: "ETALASE", dur: 0.9, parts: [
+        { shape: "box", size: [W - 0.16, 0.92, 0.32], pos: [0, 0.14, D / 2 - 0.2], color: "#c4905a", anim: "grow" },
+        { shape: "box", size: [W - 0.1, 0.06, 0.42], pos: [0, 1.06, D / 2 - 0.2], color: "#7d5434" },
+        ...[0, 1, 2].map((i) => ({ shape: "cyl", r: 0.1, h: 0.24, pos: [-0.6 + i * 0.32, 1.12, D / 2 - 0.2], color: i === 1 ? "#f2c230" : "#e8e4da", anim: "pop" }) as PartSpec),
+        ...shelf(1.15, 0), ...shelf(1.6, 2),
+      ] },
+      { label: "ATAP SENG", dur: 0.8, parts: [{ shape: "box", size: [W + 0.4, 0.04, Math.hypot(D + 0.7, 0.35)], pos: [0, 2.39 + 0.155, 0.35], rot: [(ar * 180) / Math.PI, 0, 0], color: C.zinc }] },
+      { label: "JAJANAN", dur: 0.7, parts: [
+        ...["#e94b3c", "#f2c230", "#3d8fd1", "#3fa65b", "#f08a2c", "#a05bc8"].map((c, i) => ({ shape: "box", size: [0.11, 0.62, 0.02], pos: [-1.0 + i * 0.4, 1.63, D / 2 + 0.01], color: c, anim: "pop" }) as PartSpec),
+        { macro: "bench", pos: [0, D / 2 + 0.6], w: 1.6, color: "#8a5a38" },
+      ] },
+      { label: "PAPAN", dur: 0.6, parts: [{ shape: "sign", size: [1.5, 0.36, 0.05], pos: [0, 2.46, D / 2 + 0.12], rot: [-8, 0, 0], text: "{name}", bg: "{accent}", ink: "#1d1d1d", anim: "pop" }] },
+    ],
+  };
+})();
+
+/** rumah warga — the commenter's house with a name plate (goes to a named-house slot on the main road). */
+const RUMAH: BuildingDef = {
+  about: "rumah warga: small house + name plate with the commenter's handle (named-house slot)", name: "RUMAH WARGA", size: [3.2, 3.2], h: 3.4, special: "slot",
+  params: { wall: "#f4e3c3", roof: "#c4553a" }, strike: 0.3,
+  front: [-0.55, 2.2],
+  steps: [
+    { label: "PONDASI", dur: 0.6, parts: [{ shape: "box", size: [3.16, 0.22, 3.16], pos: [0, 0, 0], color: C.stone, anim: "pop" }, { shape: "box", size: [0.9, 0.12, 0.35], pos: [-0.55, 0, 1.75], color: C.stone, anim: "pop" }] },
+    { label: "DINDING", dur: 1, parts: [{ macro: "walls", w: 3, d: 3, h: 2.1, y: 0.22, color: "{wall}", door: { x: -0.55, w: 0.78, h: 1.55, color: C.door }, windows: { n: 1, w: 0.74, h: 0.6, y: 0.83, sides: ["front", "right"], frame: C.frame, glass: C.glass } }] },
+    { label: "ATAP", dur: 1, parts: [
+      { shape: "prism", w: 3.7, h: 1.25, l: 3.5, pos: [0, 2.32, 0], rot: [0, 90, 0], color: "{roof}" },
+      { shape: "box", size: [3.56, 0.12, 0.18], pos: [0, 3.5, 0], color: "#e7e0d6" },
+    ] },
+    { label: "PAPAN NAMA", dur: 0.7, parts: [
+      { shape: "box", size: [0.07, 1.2, 0.07], pos: [0.62, 0, 2.62], rot: [0, 54, 0], color: "#6e4a2e", anim: "grow" },
+      { shape: "sign", size: [1.08, 0.46, 0.045], pos: [0.67, 0.95, 2.65], rot: [0, 54, 0], sub: "WARGA No. {no}", text: "{by}", bg: "#fffaf0", ink: "#1b1b1b", subInk: "#c8252f", anim: "pop" },
+    ] },
+  ],
+};
+
+const TENDA: BuildingDef = {
+  about: "tenda posko: big canvas tent on poles, ropes and stakes, sign", name: "TENDA POSKO", size: [4.2, 3.6], h: 2.7, params: { accent: "#2f6fb3" },
+  front: [0, 2.4],
+  steps: [
+    { label: "TIANG", dur: 0.8, parts: [
+      ...[-1.9, 1.9].flatMap((x) => [-1.5, 1.5].map((z) => ({ shape: "cyl", r: 0.04, h: 1.7, pos: [x, 0, z], color: C.steel }) as PartSpec)),
+      { shape: "cyl", r: 0.05, h: 2.55, pos: [-1.9, 0, 0], color: C.steel }, { shape: "cyl", r: 0.05, h: 2.55, pos: [1.9, 0, 0], color: C.steel },
+    ] },
+    { label: "TERPAL", dur: 1.1, parts: [
+      { shape: "prism", w: 3.2, h: 0.85, l: 4.0, pos: [0, 1.7, 0], rot: [0, 90, 0], color: "{accent}", anim: "drop" },
+      { shape: "box", size: [4.0, 1.7, 0.04], pos: [0, 0, -1.58], color: "{accent}", anim: "grow" },
+      { shape: "box", size: [0.04, 1.7, 3.2], pos: [-1.98, 0, 0], color: "{accent}", anim: "grow" },
+      { shape: "box", size: [0.04, 1.7, 3.2], pos: [1.98, 0, 0], color: "{accent}", anim: "grow" },
+    ] },
+    { label: "PATOK", dur: 0.6, parts: [
+      ...[-2.6, 2.6].flatMap((x) => [-1.9, 1.9].map((z) => ({ shape: "rod", a: [x * 0.73, 1.7, z * 0.79], b: [x, 0.02, z], r: 0.01, color: "#e9e2d0", anim: "grow" }) as PartSpec)),
+      { shape: "box", size: [1.6, 0.75, 0.8], pos: [0.6, 0, -0.8], color: "#c9a774", anim: "pop" }, { shape: "box", size: [0.7, 0.5, 0.5], pos: [-1.1, 0, -1.0], color: "#8c6542", anim: "pop" },
+    ] },
+    { label: "PAPAN", dur: 0.6, parts: [{ shape: "sign", size: [1.6, 0.36, 0.04], pos: [0, 1.88, 1.62], rot: [-28, 0, 0], text: "{name}", bg: "#fffaf0", ink: "{accent}", anim: "pop" }] },
+  ],
+};
+
+const MUSALA: BuildingDef = {
+  about: "musala: square prayer house on a plinth, two-tier pyramid roof with a small dome, porch", name: "MUSALA", size: [8.2, 9.2], h: 7.6,
+  params: { wall: "#f3efe4", roof: "#2f7d55", accent: "#2f7d55" }, strike: 0.4,
+  seats: [{ p: [-1.6, 0.92, 3.55], yaw: 0, legs: "hang" }, { p: [1.6, 0.92, 3.55], yaw: 0, legs: "hang" }],
+  front: [0, 4.9],
+  steps: [
+    { label: "PONDASI", dur: 0.7, parts: [{ shape: "box", size: [7.6, 0.5, 8.4], pos: [0, 0, 0], color: C.stone, anim: "pop" }, { macro: "stairs", w: 2.4, d: 0.9, h: 0.5, n: 3, pos: [0, 4.6], color: C.stone2 }] },
+    { label: "PERANCAH", dur: 0.5, parts: [{ macro: "scaffold", w: 7.0, d: 6.4, h: 4.2 }] },
+    { label: "DINDING", dur: 1.1, parts: [{ macro: "walls", w: 6.0, d: 5.6, h: 3.0, y: 0.5, color: "{wall}", trim: "{accent}", door: { w: 1.3, h: 2.2, color: "#6b4a33" }, windows: { n: 2, w: 0.9, h: 1.3, y: 0.8, sides: ["front", "left", "right"], frame: "{accent}", glass: C.glass } }] },
+    { label: "TERAS", dur: 0.8, parts: [
+      { macro: "posts", w: 6.6, d: 1.6, h: 2.7, y: 0.5, r: 0.12, nx: 4, nz: 1, at: [0, 3.6], color: "#f3efe4", round: true },
+      { shape: "box", size: [7.0, 0.14, 2.3], pos: [0, 3.2, 3.95], color: "{roof}" },
+      { shape: "box", size: [1.2, 0.42, 0.4], pos: [-1.6, 0.5, 3.55], color: C.wood2, anim: "pop" }, { shape: "box", size: [1.2, 0.42, 0.4], pos: [1.6, 0.5, 3.55], color: C.wood2, anim: "pop" },
+    ] },
+    { label: "ATAP", dur: 1.1, parts: [{ macro: "roof", type: "joglo", w: 6.0, d: 5.6, y: 3.5, rise: 2.4, over: 0.5, color: "{roof}" }] },
+    { label: "KUBAH", dur: 0.8, parts: [
+      { shape: "cyl", r: 0.55, h: 0.35, pos: [0, 5.95, 0], color: "#f3efe4", anim: "pop" },
+      { shape: "sphere", r: 0.6, pos: [0, 6.3, 0], half: true, color: "#e2b54a", anim: "pop" },
+      { shape: "cyl", r: 0.04, h: 0.6, pos: [0, 6.85, 0], color: "#e2b54a", anim: "grow" }, { shape: "sphere", r: 0.09, pos: [0, 7.5, 0], color: "#e2b54a", anim: "pop" },
+      { shape: "sign", size: [2.2, 0.5, 0.06], pos: [0, 2.72, 4.92], text: "{name}", bg: "#fffaf0", ink: "{accent}", anim: "pop" },
+    ] },
+  ],
+};
+
+const SEKOLAH: BuildingDef = {
+  about: "sekolah: long one-storey school, three classrooms, red-tile roof, flagpole, fence", name: "SEKOLAH", size: [14, 10.4], h: 6.4,
+  params: { wall: "#f4f1ea", roof: "#b8573a", accent: "#a3262e" }, strike: 0.4,
+  front: [-4.6, 5.0],
+  steps: [
+    { label: "PONDASI", dur: 0.6, parts: [{ shape: "box", size: [13, 0.4, 6.6], pos: [0, 0, -1.4], color: C.stone, anim: "pop" }, { shape: "box", size: [13, 0.3, 1.8], pos: [0, 0, 2.6], color: C.stone2, anim: "pop" }] },
+    { label: "PERANCAH", dur: 0.5, parts: [{ macro: "scaffold", w: 13.2, d: 7.0, h: 4.2 }] },
+    { label: "DINDING", dur: 1.1, parts: [
+      { macro: "walls", w: 12.6, d: 5.6, h: 3.0, y: 0.4, at: [0, -1.0], color: "{wall}", trim: "{accent}", windows: { n: 5, w: 1.0, h: 1.2, y: 0.9, sides: ["front", "back"], frame: "{accent}", glass: C.glass } },
+      ...[-4.2, 0, 4.2].map((x) => ({ shape: "box", size: [0.9, 2.0, 0.06], pos: [x, 0.4, 1.83], color: "#6b4a33", anim: "pop" }) as PartSpec),
+    ] },
+    { label: "SELASAR", dur: 0.7, parts: [{ macro: "posts", w: 12.2, d: 1.5, h: 3.0, y: 0.4, r: 0.1, nx: 7, nz: 1, at: [0, 2.55], color: "#f4f1ea" }] },
+    { label: "ATAP", dur: 1.0, parts: [
+      { shape: "prism", w: 9.0, h: 2.2, l: 13.6, pos: [0, 3.4, -0.7], rot: [0, 90, 0], color: "{roof}" },
+    ] },
+    { label: "TIANG BENDERA", dur: 0.7, parts: [
+      { macro: "fence", w: 13.9, d: 10.2, h: 0.75, gap: 3, color: "#e6e1d6", open: ["front"] },
+      { shape: "cyl", r: 0.05, h: 6.0, pos: [3.0, 0, 4.1], color: "#d8d5ce", anim: "grow" },
+      { shape: "box", size: [0.9, 0.3, 0.02], pos: [3.47, 5.4, 4.1], color: "{flag1}", anim: "pop" }, { shape: "box", size: [0.9, 0.3, 0.02], pos: [3.47, 5.1, 4.1], color: "{flag2}", anim: "pop" },
+      { shape: "sign", size: [3.4, 0.6, 0.06], pos: [-2.3, 2.55, 1.86], text: "{name}", bg: "#fffaf0", ink: "{accent}", anim: "pop" },
+    ] },
+  ],
+};
+
+const PUSKESMAS: BuildingDef = {
+  about: "puskesmas: white clinic, green trim, entrance canopy, green plus sign", name: "PUSKESMAS", size: [11, 9], h: 5.0,
+  params: { wall: "#f6f6f2", roof: "#5f6b72", accent: "#2f9e6b" }, strike: 0.4,
+  front: [0, 4.4],
+  steps: [
+    { label: "PONDASI", dur: 0.6, parts: [{ shape: "box", size: [10, 0.35, 6.4], pos: [0, 0, -0.8], color: C.stone, anim: "pop" }, { macro: "stairs", w: 2.6, d: 0.8, h: 0.35, n: 2, pos: [0, 2.8], color: C.stone2 }] },
+    { label: "PERANCAH", dur: 0.4, parts: [{ macro: "scaffold", w: 10.2, d: 6.6, h: 4.0 }] },
+    { label: "DINDING", dur: 1.1, parts: [{ macro: "walls", w: 9.6, d: 5.8, h: 3.2, y: 0.35, at: [0, -0.8], color: "{wall}", trim: "{accent}", door: { w: 1.6, h: 2.2, color: "#7aa7b8" }, windows: { n: 3, w: 1.1, h: 1.1, y: 1.0, sides: ["front", "left", "right"], frame: "{accent}", glass: C.glass } }] },
+    { label: "ATAP", dur: 0.8, parts: [{ macro: "roof", type: "flat", w: 9.6, d: 5.8, y: 3.55, at: [0, -0.8], over: 0.25, color: "{roof}" }, { shape: "box", size: [9.9, 0.45, 6.1], pos: [0, 3.75, -0.8], color: "{accent}" }] },
+    { label: "KANOPI", dur: 0.8, parts: [
+      { macro: "posts", w: 3.4, d: 1.7, h: 2.6, y: 0, r: 0.08, nx: 2, nz: 1, at: [0, 3.05], color: "#e9e9e4" },
+      { shape: "box", size: [3.8, 0.16, 2.1], pos: [0, 2.6, 3.0], color: "{accent}" },
+    ] },
+    { label: "PAPAN", dur: 0.6, parts: [
+      { shape: "sign", size: [3.0, 0.55, 0.06], pos: [0, 2.76, 4.06], text: "{name}", bg: "#fffaf0", ink: "{accent}", anim: "pop" },
+      { shape: "box", size: [0.7, 0.22, 0.06], pos: [3.4, 2.8, 2.13], color: "{accent}", anim: "pop" }, { shape: "box", size: [0.22, 0.7, 0.06], pos: [3.4, 2.56, 2.14], color: "{accent}", anim: "pop" },
+    ] },
+  ],
+};
+
+const LAPANGAN: BuildingDef = {
+  about: "lapangan / alun-alun: grass pitch with lines and goals, two big shade trees, low fence, small stand", name: "LAPANGAN", size: [19.6, 13.6], h: 6,
+  params: { accent: "#2f7d55" }, strike: 0.2,
+  seats: [{ p: [-6.6, 0.55, -5.4], yaw: 0, legs: "hang" }, { p: [-5.8, 0.55, -5.4], yaw: 0, legs: "hang" }, { p: [-5.0, 0.55, -5.4], yaw: 0, legs: "hang" }],
+  front: [0, 7.4],
+  steps: [
+    { label: "RUMPUT", dur: 1.0, parts: [{ shape: "box", size: [18, 0.05, 11], pos: [0, 0, 0.6], color: "#6fb34a", anim: "grow", axis: "x" }] },
+    { label: "GARIS", dur: 0.8, parts: [
+      { shape: "box", size: [16, 0.012, 0.1], pos: [0, 0.05, 5.1], color: "#ffffff", anim: "grow", axis: "x" }, { shape: "box", size: [16, 0.012, 0.1], pos: [0, 0.05, -3.9], color: "#ffffff", anim: "grow", axis: "x" },
+      { shape: "box", size: [0.1, 0.012, 9.1], pos: [-8, 0.05, 0.6], color: "#ffffff", anim: "grow", axis: "z" }, { shape: "box", size: [0.1, 0.012, 9.1], pos: [8, 0.05, 0.6], color: "#ffffff", anim: "grow", axis: "z" },
+      { shape: "box", size: [0.1, 0.012, 9.1], pos: [0, 0.05, 0.6], color: "#ffffff", anim: "grow", axis: "z" },
+    ] },
+    { label: "GAWANG", dur: 0.8, parts: [-7.9, 7.9].flatMap((x) => [
+      { shape: "box", size: [0.08, 1.6, 0.08], pos: [x, 0.05, -0.6], color: "#ffffff" }, { shape: "box", size: [0.08, 1.6, 0.08], pos: [x, 0.05, 1.8], color: "#ffffff" },
+      { shape: "box", size: [0.08, 0.08, 2.48], pos: [x, 1.63, 0.6], color: "#ffffff" },
+    ] as PartSpec[]) },
+    { label: "POHON", dur: 0.8, parts: [{ macro: "tree", kind: "beringin", pos: [-7.6, 6.2], s: 1 }, { macro: "tree", kind: "beringin", pos: [7.6, 6.2], s: 1 }] },
+    { label: "TRIBUN", dur: 0.8, parts: [
+      { shape: "box", size: [3.2, 0.5, 0.6], pos: [-5.8, 0, -5.6], color: "#c9c3b6", anim: "pop" }, { shape: "box", size: [3.2, 0.9, 0.6], pos: [-5.8, 0, -6.2], color: "#bdb6a8", anim: "pop" },
+      { macro: "fence", w: 19.4, d: 13.4, h: 0.55, gap: 4, color: "#e6e1d6", open: ["front"] },
+      { shape: "sign", size: [3.0, 0.6, 0.08], pos: [5.8, 0.55, 6.7], text: "{name}", bg: "#fffaf0", ink: "{accent}", anim: "pop" },
+      { shape: "box", size: [0.08, 0.6, 0.08], pos: [4.6, 0, 6.66], color: "#6e4a2e", anim: "grow" }, { shape: "box", size: [0.08, 0.6, 0.08], pos: [7.0, 0, 6.66], color: "#6e4a2e", anim: "grow" },
+    ] },
+  ],
+};
+
+const ISTANA: BuildingDef = {
+  about: "istana / kantor presiden: white pendopo palace on a plinth, columns, tiered joglo roof, flagpole, sign", name: "ISTANA", size: [15.6, 9.8], h: 9.2,
+  params: { wall: "#f6f3ea", roof: "#9c4a30", accent: "#1f5f4a" }, strike: 0.4,
+  front: [0, 5.1],
+  steps: [
+    { label: "PONDASI", dur: 0.7, parts: [{ shape: "box", size: [14.6, 0.7, 7.6], pos: [0, 0, -0.8], color: "#d8d2c6", anim: "pop" }, { macro: "stairs", w: 4.2, d: 1.4, h: 0.7, n: 4, pos: [0, 3.65], color: "#cfc8ba" }] },
+    { label: "PERANCAH", dur: 0.5, parts: [{ macro: "scaffold", w: 14.8, d: 8.0, h: 5.6 }] },
+    { label: "DINDING", dur: 1.0, parts: [{ macro: "walls", w: 11.0, d: 5.0, h: 3.6, y: 0.7, at: [0, -0.8], color: "{wall}", trim: "{accent}", door: { w: 1.8, h: 2.4, color: "#7a5236" }, windows: { n: 4, w: 1.0, h: 1.8, y: 0.9, sides: ["front", "left", "right"], frame: "{accent}", glass: C.glass } }] },
+    { label: "TIANG", dur: 0.8, parts: [{ macro: "posts", w: 13.6, d: 6.6, h: 3.9, y: 0.7, r: 0.17, nx: 8, nz: 4, at: [0, -0.8], color: "#ffffff", round: true }] },
+    { label: "ATAP", dur: 1.2, parts: [{ macro: "roof", type: "joglo", w: 13.6, d: 6.6, y: 4.6, at: [0, -0.8], rise: 3.6, over: 0.6, color: "{roof}" }] },
+    { label: "BENDERA", dur: 0.8, parts: [
+      { shape: "cyl", r: 0.06, h: 8.0, pos: [-5.8, 0, 4.6], color: "#d8d5ce", anim: "grow" },
+      { shape: "box", size: [1.3, 0.42, 0.02], pos: [-5.12, 7.35, 4.6], color: "{flag1}", anim: "pop" }, { shape: "box", size: [1.3, 0.42, 0.02], pos: [-5.12, 6.93, 4.6], color: "{flag2}", anim: "pop" },
+      { shape: "sign", size: [4.0, 0.62, 0.08], pos: [0, 3.25, 1.76], text: "{name}", bg: "#fffaf0", ink: "{accent}", anim: "pop" },
+    ] },
+  ],
+};
+
+const PASAR: BuildingDef = (() => {
+  const stall = (x: number, z: number, seed: number): PartSpec[] => [
+    { shape: "box", size: [2.2, 0.8, 1.0], pos: [x, 0.25, z], color: "#a8774b", anim: "pop" },
+    ...goods(x - 0.95, x + 0.95, 1.05, z, 5, seed, 0.6),
+  ];
+  return {
+    about: "pasar: covered market hall on steel posts, two-tier zinc roof, stalls with goods, sign", name: "PASAR", size: [14, 11.4], h: 7.2,
+    params: { roof: "#c0563a", accent: "#c0563a" }, strike: 0.3,
+    front: [0, 5.8],
+    steps: [
+      { label: "LANTAI", dur: 0.6, parts: [{ shape: "box", size: [13.6, 0.25, 10.4], pos: [0, 0, 0], color: "#c9c3b6", anim: "grow", axis: "x" }] },
+      { label: "TIANG", dur: 0.8, parts: [{ macro: "posts", w: 13.0, d: 9.6, h: 4.0, y: 0.25, r: 0.13, nx: 6, nz: 4, color: C.steel }] },
+      { label: "ATAP", dur: 1.2, parts: [
+        { shape: "prism", w: 11.2, h: 1.6, l: 14.2, pos: [0, 4.25, 0], rot: [0, 90, 0], color: "{roof}" },
+        { shape: "box", size: [14.2, 0.9, 1.2], pos: [0, 5.3, 0], color: "#e9e4da" },
+        { shape: "prism", w: 3.2, h: 1.0, l: 14.0, pos: [0, 6.2, 0], rot: [0, 90, 0], color: "{roof}" },
+      ] },
+      { label: "LAPAK", dur: 1.2, parts: [...stall(-4.2, 2.6, 0), ...stall(0, 2.6, 2), ...stall(4.2, 2.6, 4), ...stall(-4.2, -1.8, 1), ...stall(0, -1.8, 3), ...stall(4.2, -1.8, 5)] },
+      { label: "PAPAN", dur: 0.6, parts: [{ shape: "sign", size: [4.2, 0.8, 0.08], pos: [0, 4.4, 5.55], text: "{name}", bg: "#fffaf0", ink: "{accent}", anim: "pop" }] },
+    ],
+  };
+})();
+
+const KANTOR: BuildingDef = {
+  about: "kantor: generic two-storey civic office (name it: DPR, kantor polisi, pengadilan, kantor pos, bank…)", name: "KANTOR", size: [13.6, 9.6], h: 9.0,
+  params: { wall: "#efe6d2", roof: "#7c3b2e", accent: "#2b4f7e" }, strike: 0.4,
+  front: [0, 4.9],
+  steps: [
+    { label: "PONDASI", dur: 0.6, parts: [{ shape: "box", size: [13.4, 0.45, 7.4], pos: [0, 0, -0.6], color: C.stone, anim: "pop" }, { macro: "stairs", w: 3.4, d: 1.0, h: 0.45, n: 3, pos: [0, 3.6], color: C.stone2 }] },
+    { label: "PERANCAH", dur: 0.5, parts: [{ macro: "scaffold", w: 13.6, d: 7.8, h: 7.2 }] },
+    { label: "LANTAI 1", dur: 0.9, parts: [{ macro: "walls", w: 12.4, d: 6.4, h: 3.1, y: 0.45, color: "{wall}", door: { w: 1.8, h: 2.4, color: "#6f8fa0" }, windows: { n: 4, w: 1.2, h: 1.3, y: 0.8, sides: ["front", "left", "right"], frame: "{accent}", glass: C.glass } }] },
+    { label: "LANTAI 2", dur: 0.9, parts: [{ macro: "walls", w: 12.4, d: 6.4, h: 3.0, y: 3.55, color: "{wall}", trim: "{accent}", windows: { n: 5, w: 1.2, h: 1.3, y: 0.8, sides: ["front", "left", "right"], frame: "{accent}", glass: C.glass } }] },
+    { label: "TIANG", dur: 0.7, parts: [{ macro: "posts", w: 5.2, d: 1.8, h: 5.9, y: 0.45, r: 0.18, nx: 4, nz: 1, color: "#ffffff", round: true }, { shape: "box", size: [5.8, 0.3, 2.3], pos: [0, 6.35, 3.85], color: "{wall}" }] },
+    { label: "ATAP", dur: 0.9, parts: [{ macro: "roof", type: "hip", w: 12.4, d: 6.4, y: 6.55, rise: 2.0, over: 0.45, color: "{roof}" }, { shape: "prism", w: 6.0, h: 1.0, l: 2.4, pos: [0, 6.65, 3.85], color: "{roof}" }] },
+    { label: "PAPAN", dur: 0.6, parts: [{ shape: "sign", size: [5.0, 0.7, 0.08], pos: [0, 3.18, 3.26], text: "{name}", bg: "#fffaf0", ink: "{accent}", anim: "pop" }] },
+  ],
+};
+
+const TANDON: BuildingDef = {
+  about: "menara air / tandon: water tank on a braced steel tower with a ladder", name: "MENARA AIR", size: [3.0, 3.0], h: 8.2,
+  params: { accent: "#3f86c6" },
+  front: [0, 2.2],
+  steps: [
+    { label: "PONDASI", dur: 0.5, parts: [-1.1, 1.1].flatMap((x) => [-1.1, 1.1].map((z) => ({ shape: "box", size: [0.45, 0.3, 0.45], pos: [x, 0, z], color: C.stone2, anim: "pop" }) as PartSpec)) },
+    { label: "KAKI BESI", dur: 1.0, parts: [
+      ...[-1.0, 1.0].flatMap((x) => [-1.0, 1.0].map((z) => ({ shape: "rod", a: [x * 1.1, 0.3, z * 1.1], b: [x * 0.75, 5.6, z * 0.75], r: 0.07, color: C.steel, anim: "grow" }) as PartSpec)),
+      ...[1.8, 3.6].flatMap((y) => { const k = 1.1 - (0.35 * (y - 0.3)) / 5.3; return [[-1, -1, 1, -1], [1, -1, 1, 1], [1, 1, -1, 1], [-1, 1, -1, -1]].map(([ax, az, bx, bz]) => ({ shape: "rod", a: [ax * k, y, az * k], b: [bx * k, y, bz * k], r: 0.04, color: "#6b7780", anim: "grow" }) as PartSpec); }),
+    ] },
+    { label: "TANGKI", dur: 1.0, parts: [
+      { shape: "box", size: [2.0, 0.15, 2.0], pos: [0, 5.6, 0], color: "#6b7780" },
+      { shape: "cyl", r: 0.95, h: 1.9, pos: [0, 5.75, 0], color: "{accent}", seg: 16 },
+      { shape: "cone", r: 1.0, h: 0.45, pos: [0, 7.65, 0], color: "#2f6fa8", seg: 16 },
+    ] },
+    { label: "TANGGA", dur: 0.6, parts: [
+      { shape: "rod", a: [-0.2, 0.3, 1.25], b: [-0.2, 5.6, 0.95], r: 0.025, color: "#5b6670", anim: "grow" }, { shape: "rod", a: [0.2, 0.3, 1.25], b: [0.2, 5.6, 0.95], r: 0.025, color: "#5b6670", anim: "grow" },
+      { shape: "rod", a: [0.6, 0.3, 0.6], b: [0.6, 5.7, 0.6], r: 0.06, color: "#d9d4ca", anim: "grow" },
+      { shape: "sign", size: [1.3, 0.3, 0.04], pos: [0, 6.45, 0.97], text: "{name}", bg: "#fffaf0", ink: "{accent}", anim: "pop" },
+    ] },
+  ],
+};
+
+const TAMAN: BuildingDef = {
+  about: "taman: small park with paths, trees, benches, a fountain and lamps", name: "TAMAN", size: [9.4, 9.4], h: 5,
+  params: { accent: "#2f7d55" },
+  seats: [{ p: [-2.6, 0.4, 1.1], yaw: 90, legs: "hang" }, { p: [-2.6, 0.4, -0.1], yaw: 90, legs: "hang" }, { p: [2.6, 0.4, 0.5], yaw: -90, legs: "hang" }],
+  front: [0, 5.2],
+  steps: [
+    { label: "RUMPUT", dur: 0.8, parts: [{ shape: "box", size: [9, 0.06, 9], pos: [0, 0, 0], color: "#74b44c", anim: "grow", axis: "z" }] },
+    { label: "JALAN SETAPAK", dur: 0.7, parts: [
+      { shape: "box", size: [1.4, 0.03, 9], pos: [0, 0.06, 0], color: C.sand, anim: "grow", axis: "z" }, { shape: "box", size: [9, 0.03, 1.4], pos: [0, 0.061, 0.5], color: C.sand, anim: "grow", axis: "x" },
+    ] },
+    { label: "POHON", dur: 0.9, parts: [{ macro: "tree", kind: "round", pos: [-3.2, -3.0], s: 0.9 }, { macro: "tree", kind: "cemara", pos: [3.3, -3.2], s: 1 }, { macro: "tree", kind: "round", pos: [3.2, 3.4], s: 0.75 }, { macro: "tree", kind: "bush", pos: [-3.4, 3.4], s: 1 }, { macro: "tree", kind: "bush", pos: [3.6, -0.9], s: 0.8 }] },
+    { label: "BANGKU", dur: 0.7, parts: [{ macro: "bench", pos: [-2.6, 0.5], yaw: 90, w: 2.4, color: "#8a5a38" }, { macro: "bench", pos: [2.6, 0.5], yaw: -90, w: 1.6, color: "#8a5a38" }] },
+    { label: "AIR MANCUR", dur: 0.8, parts: [
+      { shape: "cyl", r: 1.1, h: 0.45, pos: [0, 0.06, 0.5], color: "#c9c3b6", seg: 14 }, { shape: "cyl", r: 0.95, h: 0.02, pos: [0, 0.48, 0.5], color: C.water, seg: 14, water: true },
+      { shape: "cyl", r: 0.12, h: 0.8, pos: [0, 0.45, 0.5], color: "#c9c3b6" }, { shape: "cyl", r: 0.4, h: 0.1, pos: [0, 1.2, 0.5], color: "#c9c3b6", seg: 12 },
+      { macro: "lamp", pos: [-0.9, 4.0] }, { macro: "lamp", pos: [0.9, -3.8] },
+      { shape: "sign", size: [1.8, 0.4, 0.05], pos: [2.2, 0.55, 4.55], text: "{name}", bg: "#fffaf0", ink: "{accent}", anim: "pop" },
+      { shape: "box", size: [0.06, 0.55, 0.06], pos: [1.5, 0, 4.52], color: "#6e4a2e", anim: "grow" }, { shape: "box", size: [0.06, 0.55, 0.06], pos: [2.9, 0, 4.52], color: "#6e4a2e", anim: "grow" },
+    ] },
+  ],
+};
+
+const KOLAM: BuildingDef = {
+  about: "kolam: stone-rimmed pond with lily pads, a small gazebo and a wooden deck", name: "KOLAM", size: [9.4, 9.0], h: 4,
+  params: { accent: "#2f6fa8" },
+  seats: [{ p: [2.9, 0.62, -2.6], yaw: 200, legs: "hang" }],
+  front: [-2.0, 4.8],
+  steps: [
+    { label: "GALIAN", dur: 0.8, parts: [
+      { shape: "box", size: [7.6, 0.25, 0.5], pos: [-0.5, 0, 3.1], color: C.stone2, anim: "pop" }, { shape: "box", size: [7.6, 0.25, 0.5], pos: [-0.5, 0, -3.1], color: C.stone2, anim: "pop" },
+      { shape: "box", size: [0.5, 0.25, 5.7], pos: [-4.05, 0, 0], color: C.stone2, anim: "pop" }, { shape: "box", size: [0.5, 0.25, 5.7], pos: [3.05, 0, 0], color: C.stone2, anim: "pop" },
+      { shape: "box", size: [6.6, 0.05, 5.7], pos: [-0.5, 0, 0], color: "#6e8f6a", anim: "grow", axis: "x" },
+    ] },
+    { label: "AIR", dur: 0.8, parts: [{ shape: "box", size: [6.6, 0.12, 5.7], pos: [-0.5, 0.05, 0], color: C.water, anim: "grow", axis: "z", water: true }] },
+    { label: "TERATAI", dur: 0.6, parts: [[-2.4, 1.2], [-1.6, -1.4], [0.8, 1.8], [1.6, -0.6], [-0.4, 0.2]].map(([x, z], i) => ({ shape: "cyl", r: 0.28 + (i % 2) * 0.08, h: 0.03, pos: [x, 0.18, z], color: "#4f9a3a", seg: 8, anim: "pop" }) as PartSpec) },
+    { label: "GAZEBO", dur: 1.0, parts: [
+      { shape: "box", size: [2.4, 0.4, 2.4], pos: [3.4, 0, -2.6], color: C.wood2, anim: "pop" },
+      { macro: "posts", w: 2.1, d: 2.1, h: 2.0, y: 0.4, r: 0.07, color: C.wood, nx: 2, nz: 2, at: [3.4, -2.6] },
+      { shape: "hip", w: 3.0, d: 3.0, h: 1.2, pos: [3.4, 2.4, -2.6], color: "#8c3b2e" },
+      { shape: "box", size: [1.6, 0.22, 0.4], pos: [3.4, 0.4, -2.0], color: C.wood, anim: "pop" },
+      { shape: "sign", size: [1.6, 0.36, 0.05], pos: [-2.0, 0.5, 3.75], text: "{name}", bg: "#fffaf0", ink: "{accent}", anim: "pop" },
+      { shape: "box", size: [0.06, 0.5, 0.06], pos: [-2.6, 0, 3.72], color: "#6e4a2e", anim: "grow" }, { shape: "box", size: [0.06, 0.5, 0.06], pos: [-1.4, 0, 3.72], color: "#6e4a2e", anim: "grow" },
+    ] },
+  ],
+};
+
+const GAPURA: BuildingDef = {
+  about: "gapura: red-white gate over the main road with the country's name", name: "GAPURA", size: [6.8, 1.2], h: 4.2, special: "gate",
+  params: { accent: "#1f5f4a" },
+  steps: [
+    { label: "TIANG", dur: 1.0, parts: [-2.25, 2.25].flatMap((x) => [
+      { shape: "box", size: [0.95, 0.35, 0.95], pos: [x, 0, 0], color: "#d8d2c6", anim: "pop" },
+      { shape: "box", size: [0.7, 2.6, 0.7], pos: [x, 0.35, 0], color: "#f6f3ec", anim: "grow" },
+      ...[0.75, 1.55, 2.35].map((y) => ({ shape: "box", size: [0.74, 0.22, 0.74], pos: [x, y, 0], color: "{flag1}", anim: "pop" }) as PartSpec),
+    ] as PartSpec[]) },
+    { label: "PUNCAK", dur: 0.8, parts: [-2.25, 2.25].flatMap((x) => [
+      { shape: "box", size: [0.95, 0.2, 0.95], pos: [x, 2.95, 0], color: "#f6f3ec" }, { shape: "box", size: [0.66, 0.28, 0.66], pos: [x, 3.15, 0], color: "{flag1}" },
+      { shape: "cone", r: 0.42, h: 0.55, pos: [x, 3.43, 0], seg: 4, rot: [0, 45, 0], color: "#f6f3ec" },
+    ] as PartSpec[]) },
+    { label: "PAPAN", dur: 0.8, parts: [
+      { shape: "box", size: [4.2, 0.32, 0.42], pos: [0, 2.62, 0], color: "{flag1}" },
+      { shape: "sign", size: [3.4, 0.62, 0.08], pos: [0, 2.94, 0.12], text: "{country}", bg: "#f7f3ea", ink: "{accent}", anim: "pop" },
+    ] },
+  ],
+};
+
+const JALAN: BuildingDef = {
+  about: "jalan aspal: the main road is paved (gravel → asphalt → white dashes), from the gate to the river", name: "JALAN ASPAL", size: [3.6, 60], h: 1, special: "road",
+  steps: [
+    { label: "MERATAKAN", dur: 0.9, parts: [{ shape: "box", size: [3.4, 0.03, 158], pos: [0, 0.015, 0], color: "#bfb39c", anim: "grow", axis: "z" }] },
+    { label: "ASPAL", dur: 1.2, parts: [{ shape: "box", size: [3.3, 0.03, 158], pos: [0, 0.045, 0], color: C.asphalt, anim: "grow", axis: "z" }] },
+    { label: "MARKA", dur: 1.0, parts: Array.from({ length: 40 }, (_, k) => ({ shape: "box", size: [0.12, 0.012, 1.6], pos: [0, 0.075, 77 - k * 3.95], color: "#f4f1e8", anim: "pop" }) as PartSpec) },
+  ],
+};
+
+const JEMBATAN: BuildingDef = {
+  about: "jembatan: concrete bridge over the river on the main road, railings and lamps", name: "JEMBATAN", size: [5, 16], h: 3, special: "bridge",
+  params: { accent: "#c8252f" },
+  steps: [
+    { label: "PILAR", dur: 0.9, parts: [-2.2, 2.2].flatMap((z) => [-1.6, 1.6].map((x) => ({ shape: "box", size: [0.6, 1.3, 0.6], pos: [x, -0.4, z], color: "#a9a49a", anim: "grow" }) as PartSpec)) },
+    { label: "BALOK", dur: 0.8, parts: [
+      { shape: "box", size: [0.5, 0.4, 10.4], pos: [-1.6, 0.5, 0], color: "#9c978d", anim: "grow", axis: "z" }, { shape: "box", size: [0.5, 0.4, 10.4], pos: [1.6, 0.5, 0], color: "#9c978d", anim: "grow", axis: "z" },
+    ] },
+    { label: "LANTAI", dur: 1.0, parts: [
+      { shape: "box", size: [4.2, 0.22, 10.4], pos: [0, 0.9, 0], color: "#8f8a80", anim: "grow", axis: "z" },
+      { shape: "box", size: [4.2, 0.9, 3.0], pos: [0, 0, 6.6], color: "#8f8a80", anim: "pop", rot: [0, 0, 0] },
+      { shape: "box", size: [4.2, 0.9, 3.0], pos: [0, 0, -6.6], color: "#8f8a80", anim: "pop" },
+      { shape: "box", size: [3.3, 0.02, 10.4], pos: [0, 1.12, 0], color: C.asphalt, anim: "grow", axis: "z" },
+    ] },
+    { label: "PAGAR", dur: 0.9, parts: [-2.05, 2.05].flatMap((x) => [
+      { shape: "box", size: [0.12, 0.12, 10.4], pos: [x, 1.9, 0], color: "{accent}", anim: "grow", axis: "z" },
+      ...Array.from({ length: 6 }, (_, k) => ({ shape: "box", size: [0.12, 0.8, 0.12], pos: [x, 1.12, -5 + k * 2], color: "#f4f1e8", anim: "pop" }) as PartSpec),
+    ] as PartSpec[]) },
+    { label: "LAMPU", dur: 0.6, parts: [{ macro: "lamp", pos: [-2.05, -5.1], h: 3.2 }, { macro: "lamp", pos: [2.05, 5.1], h: 3.2 },
+      { shape: "sign", size: [1.8, 0.36, 0.05], pos: [0, 2.15, 5.3], text: "{name}", bg: "#fffaf0", ink: "{accent}", anim: "pop" },
+      { shape: "box", size: [0.08, 1.05, 0.08], pos: [-0.85, 1.12, 5.26], color: "#5b6670", anim: "grow" }, { shape: "box", size: [0.08, 1.05, 0.08], pos: [0.85, 1.12, 5.26], color: "#5b6670", anim: "grow" },
+    ] },
+  ],
+};
+
+const STASIUN: BuildingDef = {
+  about: "stasiun kecil: platform with a canopy, a rail line along the corridor, a little two-car train", name: "STASIUN", size: [22, 7], h: 5, special: "station",
+  params: { accent: "#e07b2a", wall: "#f3eadb" },
+  seats: [{ p: [-4.0, 1.42, 0.3], yaw: 0, legs: "hang" }, { p: [-3.2, 1.42, 0.3], yaw: 0, legs: "hang" }],
+  front: [6.0, 3.6],
+  steps: [
+    { label: "REL", dur: 1.0, parts: [
+      { shape: "box", size: [210, 0.12, 2.6], pos: [34, 0, -6], color: "#9e968a", anim: "grow", axis: "x" },
+      { shape: "box", size: [210, 0.1, 0.08], pos: [34, 0.12, -5.3], color: "#6d6a66", anim: "grow", axis: "x" }, { shape: "box", size: [210, 0.1, 0.08], pos: [34, 0.12, -6.7], color: "#6d6a66", anim: "grow", axis: "x" },
+    ] },
+    { label: "PERON", dur: 0.8, parts: [{ shape: "box", size: [20, 1.0, 4.0], pos: [0, 0, -2.6], color: "#c9c3b6", anim: "grow", axis: "x" }, { shape: "box", size: [20, 0.04, 0.3], pos: [0, 1.0, -4.4], color: "#f2c230", anim: "grow", axis: "x" }] },
+    { label: "ATAP", dur: 1.0, parts: [
+      { macro: "posts", w: 16, d: 2.2, h: 2.6, y: 1.0, r: 0.1, nx: 5, nz: 2, color: "#5b6670" },
+      { shape: "box", size: [17, 0.16, 3.4], pos: [0, 3.6, -2.6], color: "{accent}" },
+      { macro: "walls", w: 4.6, d: 2.4, h: 2.4, y: 1.0, color: "{wall}", door: { w: 0.9, h: 1.9, color: C.door }, windows: { n: 1, w: 0.8, h: 0.8, y: 0.8, sides: ["front"], frame: "{accent}", glass: C.glass } },
+      { shape: "box", size: [1.6, 0.42, 0.4], pos: [-3.6, 1.0, 0.25], color: C.wood2, anim: "pop" },
+    ] },
+    { label: "KERETA", dur: 1.0, parts: [
+      { shape: "box", size: [7.5, 2.3, 2.3], pos: [-2.0, 0.42, -6], color: "#f4f1ea", anim: "slide" }, { shape: "box", size: [7.5, 0.4, 2.36], pos: [-2.0, 1.0, -6], color: "{accent}", anim: "slide" },
+      { shape: "box", size: [7.5, 2.3, 2.3], pos: [5.8, 0.42, -6], color: "#f4f1ea", anim: "slide" }, { shape: "box", size: [7.5, 0.4, 2.36], pos: [5.8, 1.0, -6], color: "{accent}", anim: "slide" },
+      ...[-4.6, -2.6, -0.6, 3.2, 5.2, 7.2].map((x) => ({ shape: "box", size: [1.3, 0.7, 2.34], pos: [x, 1.6, -6], color: C.glass, glass: true, anim: "slide" }) as PartSpec),
+    ] },
+    { label: "PAPAN", dur: 0.5, parts: [{ shape: "sign", size: [3.0, 0.55, 0.06], pos: [0, 3.0, -0.6], text: "{name}", bg: "#fffaf0", ink: "{accent}", anim: "pop" }] },
+  ],
+};
+
+const BANDARA: BuildingDef = {
+  about: "bandara mini: runway with markings, a small terminal, a control tower, a small propeller plane", name: "BANDARA", size: [80, 24], h: 9, special: "field",
+  params: { accent: "#2b6cb0", wall: "#f3f1ea" },
+  front: [-20, 10],
+  steps: [
+    { label: "LANDASAN", dur: 1.2, parts: [{ shape: "box", size: [74, 0.05, 8], pos: [0, 0, -4], color: "#55585d", anim: "grow", axis: "x" }] },
+    { label: "MARKA", dur: 0.8, parts: Array.from({ length: 14 }, (_, k) => ({ shape: "box", size: [2.6, 0.012, 0.3], pos: [-33 + k * 5, 0.05, -4], color: "#f4f1e8", anim: "pop" }) as PartSpec) },
+    { label: "TERMINAL", dur: 1.0, parts: [
+      { macro: "walls", w: 12, d: 6, h: 3.4, y: 0, color: "{wall}", trim: "{accent}", door: { w: 2.0, h: 2.4, color: "#7aa7b8" }, windows: { n: 4, w: 1.4, h: 1.4, y: 1.0, sides: ["front", "back"], frame: "{accent}", glass: C.glass } },
+      { macro: "roof", type: "flat", w: 12, d: 6, y: 3.4, over: 0.5, color: "#6f7a82" },
+    ] },
+    { label: "MENARA", dur: 0.9, parts: [
+      { shape: "box", size: [2.0, 6.5, 2.0], pos: [9, 0, 0], color: "{wall}", anim: "grow" },
+      { shape: "box", size: [3.0, 1.6, 3.0], pos: [9, 6.5, 0], color: C.glass, glass: true }, { shape: "box", size: [3.4, 0.3, 3.4], pos: [9, 8.1, 0], color: "{accent}" },
+    ] },
+    { label: "PESAWAT", dur: 1.0, parts: [
+      { shape: "cyl", r: 0.75, r2: 0.65, h: 7.0, pos: [-14, 1.15, -4], rot: [0, 0, 90], color: "#f4f1ea", anim: "slide" },
+      { shape: "box", size: [1.6, 0.18, 11], pos: [-16.6, 1.6, -4], color: "#f4f1ea", anim: "slide" },
+      { shape: "box", size: [0.9, 1.5, 0.16], pos: [-20.4, 1.4, -4], color: "{accent}", anim: "slide" }, { shape: "box", size: [0.9, 0.12, 3.6], pos: [-20.4, 1.5, -4], color: "#f4f1ea", anim: "slide" },
+      { shape: "cone", r: 0.62, h: 0.9, pos: [-14, 1.15, -4], rot: [0, 0, -90], color: "{accent}", anim: "slide" },
+      { shape: "box", size: [0.1, 0.9, 0.9], pos: [-13.0, 1.4, -4], color: "#3a3a3a", anim: "slide" },
+      { shape: "cyl", r: 0.12, h: 1.0, pos: [-16.4, 0.15, -4.9], color: "#3a3a3a", anim: "slide" }, { shape: "cyl", r: 0.12, h: 1.0, pos: [-16.4, 0.15, -3.1], color: "#3a3a3a", anim: "slide" },
+      { shape: "sign", size: [3.4, 0.6, 0.08], pos: [0, 2.4, 3.05], text: "{name}", bg: "#fffaf0", ink: "{accent}", anim: "pop" },
+    ] },
+  ],
+};
+
+export const BUILDINGS: Record<string, BuildingDef> = {
+  tenda: TENDA, rumah: RUMAH, "pos-ronda": POS_RONDA, warung: WARUNG, musala: MUSALA, sekolah: SEKOLAH, puskesmas: PUSKESMAS,
+  lapangan: LAPANGAN, istana: ISTANA, pasar: PASAR, kantor: KANTOR, jalan: JALAN, jembatan: JEMBATAN, "menara-air": TANDON,
+  taman: TAMAN, kolam: KOLAM, gapura: GAPURA, stasiun: STASIUN, bandara: BANDARA,
+};
+/** Other words a buyer / comment may use → [kind, display name]. */
+export const ALIASES: Record<string, [string, string]> = {
+  "kantor-presiden": ["istana", "KANTOR PRESIDEN"], "alun-alun": ["lapangan", "ALUN-ALUN"], tandon: ["menara-air", "TANDON AIR"],
+  dpr: ["kantor", "GEDUNG DPR"], "kantor-polisi": ["kantor", "KANTOR POLISI"], pengadilan: ["kantor", "PENGADILAN"], "kantor-pos": ["kantor", "KANTOR POS"],
+  "balai-desa": ["kantor", "BALAI DESA"], "rumah-sakit": ["puskesmas", "RUMAH SAKIT"], masjid: ["musala", "MASJID"], posko: ["tenda", "TENDA POSKO"],
+  "lapangan-bola": ["lapangan", "LAPANGAN BOLA"], "pos-kamling": ["pos-ronda", "POS KAMLING"], toko: ["warung", "TOKO"], rumah_warga: ["rumah", "RUMAH WARGA"],
+};
+
+// ------------------------------------------------------------------ expansion: macros → pieces
+export type Piece = (PartSpec & { anim: Anim; axis: "x" | "y" | "z"; step: number; color: string; tpl?: string });
+const D2R = Math.PI / 180;
+
+const sideFrame = (side: string, w: number, d: number) => {
+  // returns origin of the face, along-axis, length, and rotation (deg) so a box's local z points out of the face
+  switch (side) {
+    case "back": return { o: [0, -d / 2] as [number, number], along: [1, 0] as [number, number], len: w, rot: 180 };
+    case "left": return { o: [w / 2, 0] as [number, number], along: [0, -1] as [number, number], len: d, rot: 90 };
+    case "right": return { o: [-w / 2, 0] as [number, number], along: [0, 1] as [number, number], len: d, rot: -90 };
+    default: return { o: [0, d / 2] as [number, number], along: [1, 0] as [number, number], len: w, rot: 0 };
+  }
+};
+
+const shift = (parts: PartSpec[], at?: [number, number]): PartSpec[] => {
+  if (!at || (!at[0] && !at[1])) return parts;
+  return parts.map((q) => (q.shape === "rod" ? { ...q, a: [q.a[0] + at[0], q.a[1], q.a[2] + at[1]] as V3, b: [q.b[0] + at[0], q.b[1], q.b[2] + at[1]] as V3 } : { ...q, pos: [q.pos[0] + at[0], q.pos[1], q.pos[2] + at[1]] as V3 }));
+};
+const expandMacro = (m: MacroSpec): PartSpec[] => {
+  if ((m.macro === "walls" || m.macro === "roof" || m.macro === "posts") && m.at) return shift(expandMacro({ ...m, at: undefined } as MacroSpec), m.at);
+  switch (m.macro) {
+    case "walls": {
+      const y = m.y ?? 0, out: PartSpec[] = [];
+      let by = y;
+      if (m.base) { out.push({ shape: "box", size: [m.w + 0.2, m.base.h, m.d + 0.2], pos: [0, y, 0], color: m.base.color, anim: "pop" }); by += m.base.h; }
+      out.push({ shape: "box", size: [m.w, m.h, m.d], pos: [0, by, 0], color: m.color, anim: "grow" });
+      if (m.trim) out.push({ shape: "box", size: [m.w + 0.08, 0.16, m.d + 0.08], pos: [0, by + m.h - 0.16, 0], color: m.trim, anim: "drop" });
+      const door = m.door;
+      if (door) {
+        const f = sideFrame(door.side ?? "front", m.w, m.d), x = door.x ?? 0, dw = door.w ?? 0.9, dh = door.h ?? 1.9;
+        out.push({ shape: "box", size: [dw, dh, 0.06], pos: [f.o[0] + f.along[0] * x, by, f.o[1] + f.along[1] * x + (f.rot === 0 ? 0.02 : f.rot === 180 ? -0.02 : 0)], rot: [0, f.rot, 0], color: door.color ?? C.door, anim: "pop" });
+      }
+      const W = m.windows;
+      if (W) {
+        const n = W.n ?? 2, ww = W.w ?? 0.8, wh = W.h ?? 0.7, wy = by + (W.y ?? 1.0);
+        for (const side of W.sides ?? ["front"]) {
+          const f = sideFrame(side, m.w, m.d);
+          const dx = door && (door.side ?? "front") === side ? door.x ?? 0 : null, dwh = door ? (door.w ?? 0.9) / 2 + ww / 2 + 0.25 : 0;
+          const k = Math.max(n, 1), span = f.len - 1.0, m2 = k + (dx !== null ? 1 : 0);
+          let cands = Array.from({ length: m2 }, (_, j) => -span / 2 + ((j + 0.5) * span) / m2);
+          if (dx !== null) { const near = cands.reduce((bi, x, i) => (Math.abs(x - dx) < Math.abs(cands[bi] - dx) ? i : bi), 0); cands = cands.filter((x, i) => i !== near && Math.abs(x - dx) > dwh * 0.8); }
+          for (const x of cands.slice(0, k)) {
+            const out1 = f.rot === 0 ? [0, 0.025] : f.rot === 180 ? [0, -0.025] : f.rot === 90 ? [0.025, 0] : [-0.025, 0];
+            const px = f.o[0] + f.along[0] * x, pz = f.o[1] + f.along[1] * x;
+            out.push({ shape: "box", size: [ww + 0.14, wh + 0.14, 0.04], pos: [px + out1[0] * 0.4, wy - 0.07, pz + out1[1] * 0.4], rot: [0, f.rot, 0], color: W.frame ?? C.frame, anim: "pop" });
+            out.push({ shape: "box", size: [ww, wh, 0.04], pos: [px + out1[0] * 1.0, wy, pz + out1[1] * 1.0], rot: [0, f.rot, 0], color: W.glass ?? C.glass, glass: true, anim: "pop" });
+          }
+        }
+      }
+      return out;
+    }
+    case "roof": {
+      const over = m.over ?? 0.35, rise = m.rise ?? 1.2, W = m.w + 2 * over, D = m.d + 2 * over;
+      switch (m.type) {
+        case "gable": return [(m.ridge ?? "x") === "x" ? { shape: "prism", w: D, h: rise, l: W, pos: [0, m.y, 0], rot: [0, 90, 0], color: m.color } : { shape: "prism", w: W, h: rise, l: D, pos: [0, m.y, 0], color: m.color }];
+        case "hip": return [{ shape: "hip", w: W, d: D, h: rise, ridge: Math.max(0, Math.abs(W - D) * 0.9), pos: [0, m.y, 0], color: m.color }];
+        case "pyramid": return [{ shape: "hip", w: W, d: D, h: rise, ridge: 0, pos: [0, m.y, 0], color: m.color }];
+        case "flat": return [{ shape: "box", size: [W, 0.2, D], pos: [0, m.y, 0], color: m.color }];
+        case "mono": { const a = Math.atan2(rise, D); return [{ shape: "box", size: [W, 0.12, Math.hypot(D, rise)], pos: [0, m.y + rise / 2 - 0.06, 0], rot: [(a * 180) / Math.PI, 0, 0], color: m.color }]; }
+        case "joglo": return [
+          { shape: "hip", w: W, d: D, h: rise * 0.42, ridge: Math.abs(W - D) * 0.6, pos: [0, m.y, 0], color: m.color },
+          { shape: "box", size: [W * 0.5, rise * 0.14, D * 0.5], pos: [0, m.y + rise * 0.36, 0], color: "#e9e2d0" },
+          { shape: "hip", w: W * 0.56, d: D * 0.56, h: rise * 0.6, ridge: Math.abs(W - D) * 0.3, pos: [0, m.y + rise * 0.48, 0], color: m.color },
+        ];
+      }
+      return [];
+    }
+    case "posts": {
+      const out: PartSpec[] = [], nx = Math.max(2, m.nx ?? 2), nz = Math.max(1, m.nz ?? 2), r = m.r ?? 0.08, y = m.y ?? 0;
+      const add = (x: number, z: number) => out.push(m.round ? { shape: "cyl", r, h: m.h, pos: [x, y, z], color: m.color, seg: 10, anim: "drop" } : { shape: "box", size: [r * 2, m.h, r * 2], pos: [x, y, z], color: m.color, anim: "drop" });
+      for (let i = 0; i < nx; i++) {
+        const x = -m.w / 2 + (i * m.w) / (nx - 1);
+        if (nz === 1) { add(x, m.d / 2); continue; }
+        add(x, m.d / 2); add(x, -m.d / 2);
+      }
+      for (let j = 1; j < nz - 1; j++) { const z = -m.d / 2 + (j * m.d) / (nz - 1); add(-m.w / 2, z); add(m.w / 2, z); }
+      return out;
+    }
+    case "fence": {
+      const out: PartSpec[] = [], h = m.h ?? 0.8, y = m.y ?? 0, gap = m.gap ?? 0, open = new Set(m.open ?? []);
+      const side = (name: "front" | "back" | "left" | "right") => {
+        const f = sideFrame(name, m.w, m.d);
+        const segs: [number, number][] = open.has(name) && gap > 0 ? [[-f.len / 2, -gap / 2], [gap / 2, f.len / 2]] : [[-f.len / 2, f.len / 2]];
+        for (const [a, b] of segs) {
+          const mid = (a + b) / 2, L = b - a;
+          const px = f.o[0] + f.along[0] * mid, pz = f.o[1] + f.along[1] * mid;
+          out.push({ shape: "box", size: [L, 0.07, 0.07], pos: [px, y + h - 0.07, pz], rot: [0, f.rot, 0], color: m.color, anim: "grow", axis: "x" });
+          out.push({ shape: "box", size: [L, 0.06, 0.06], pos: [px, y + h * 0.45, pz], rot: [0, f.rot, 0], color: m.color, anim: "grow", axis: "x" });
+          const n = Math.max(1, Math.round(L / 1.6));
+          for (let i = 0; i <= n; i++) { const s = a + (i * L) / n; out.push({ shape: "box", size: [0.08, h, 0.08], pos: [f.o[0] + f.along[0] * s, y, f.o[1] + f.along[1] * s], color: m.color, anim: "pop" }); }
+        }
+      };
+      (["front", "back", "left", "right"] as const).forEach(side);
+      return out;
+    }
+    case "stairs": {
+      const n = Math.max(1, m.n ?? 3), out: PartSpec[] = [], yaw = m.yaw ?? 0;
+      for (let i = 0; i < n; i++) {
+        const sh = (m.h * (i + 1)) / n, sd = (m.d * (n - i)) / n;
+        const off = (m.d - sd) / 2;
+        const c = Math.cos(yaw * D2R), s = Math.sin(yaw * D2R);
+        const lz = -off;
+        out.push({ shape: "box", size: [m.w, sh, sd], pos: [m.pos[0] + lz * s, 0, m.pos[1] + lz * c], rot: [0, yaw, 0], color: m.color, anim: "pop" });
+      }
+      return out;
+    }
+    case "scaffold": {
+      const X = m.w / 2, Z = m.d / 2, r = 0.028, out: PartSpec[] = [];
+      for (const x of [-X, X]) for (const z of [-Z, Z]) out.push({ shape: "rod", a: [x, 0, z], b: [x, m.h, z], r, color: C.bamboo, anim: "grow", temp: true });
+      const levels = Math.max(2, Math.round(m.h / 1.15));
+      for (let k = 1; k <= levels; k++) {
+        const y = (k * m.h) / (levels + 0.25);
+        for (const z of [-Z, Z]) out.push({ shape: "rod", a: [-X - 0.08, y, z + 0.06 * Math.sign(z)], b: [X + 0.08, y, z + 0.06 * Math.sign(z)], r, color: C.bamboo2, anim: "grow", temp: true });
+        for (const x of [-X, X]) out.push({ shape: "rod", a: [x + 0.06 * Math.sign(x), y + 0.06, -Z - 0.08], b: [x + 0.06 * Math.sign(x), y + 0.06, Z + 0.08], r, color: C.bamboo2, anim: "grow", temp: true });
+      }
+      return out;
+    }
+    case "tree": {
+      const s = m.s ?? 1, [x, z] = m.pos;
+      switch (m.kind ?? "round") {
+        case "beringin": return [
+          { shape: "cyl", r: 0.32 * s, r2: 0.42 * s, h: 2.6 * s, pos: [x, 0, z], color: "#6e5640", anim: "grow" },
+          { shape: "blob", r: 2.4 * s, pos: [x, 3.9 * s, z], scale: [1.25, 0.72, 1.25], color: "#4f8a3a", anim: "pop" },
+          { shape: "blob", r: 1.6 * s, pos: [x + 1.3 * s, 3.4 * s, z + 0.6 * s], scale: [1, 0.75, 1], color: "#5c9440", anim: "pop" },
+          { shape: "blob", r: 1.5 * s, pos: [x - 1.2 * s, 3.5 * s, z - 0.7 * s], scale: [1, 0.75, 1], color: "#468035", anim: "pop" },
+        ];
+        case "cemara": return [
+          { shape: "cyl", r: 0.12 * s, h: 1.0 * s, pos: [x, 0, z], color: "#6e5640", anim: "grow" },
+          { shape: "cone", r: 1.0 * s, h: 1.8 * s, pos: [x, 0.8 * s, z], color: "#3f7a45", seg: 7, anim: "pop" },
+          { shape: "cone", r: 0.78 * s, h: 1.6 * s, pos: [x, 1.8 * s, z], color: "#468a4c", seg: 7, anim: "pop" },
+          { shape: "cone", r: 0.5 * s, h: 1.3 * s, pos: [x, 2.8 * s, z], color: "#4f9655", seg: 7, anim: "pop" },
+        ];
+        case "bush": return [{ shape: "blob", r: 0.55 * s, pos: [x, 0.4 * s, z], scale: [1.2, 0.8, 1], color: "#5f9a40", anim: "pop" }, { shape: "blob", r: 0.4 * s, pos: [x + 0.5 * s, 0.3 * s, z + 0.1 * s], scale: [1, 0.8, 1], color: "#6aa846", anim: "pop" }];
+        default: return [
+          { shape: "cyl", r: 0.14 * s, r2: 0.2 * s, h: 2.4 * s, pos: [x, 0, z], color: "#7d5d42", anim: "grow" },
+          { shape: "blob", r: 1.4 * s, pos: [x, 3.3 * s, z], scale: [1, 0.85, 1], color: "#5c9440", anim: "pop" },
+          { shape: "blob", r: 0.95 * s, pos: [x + 0.85 * s, 2.9 * s, z + 0.3 * s], scale: [1, 0.85, 1], color: "#6aa548", anim: "pop" },
+        ];
+      }
+    }
+    case "lamp": {
+      const h = m.h ?? 3.0, [x, z] = m.pos, c = m.color ?? "#3f4a52";
+      return [
+        { shape: "cyl", r: 0.05, h, pos: [x, 0, z], color: c, anim: "grow" },
+        { shape: "box", size: [0.5, 0.06, 0.06], pos: [x + 0.2, h - 0.06, z], color: c, anim: "pop" },
+        { shape: "box", size: [0.26, 0.14, 0.2], pos: [x + 0.42, h - 0.2, z], color: "#f6e7b0", glass: true, anim: "pop" },
+      ];
+    }
+    case "bench": {
+      const w = m.w ?? 1.6, yaw = m.yaw ?? 0, c = m.color ?? "#8a5a38", [x, z] = m.pos, by = m.y ?? 0;
+      const cs = Math.cos(yaw * D2R), sn = Math.sin(yaw * D2R);
+      const at = (lx: number, lz: number): [number, number] => [x + lx * cs + lz * sn, z - lx * sn + lz * cs];
+      const out: PartSpec[] = [{ shape: "box", size: [w, 0.06, 0.38], pos: [x, by + 0.34, z], rot: [0, yaw, 0], color: c, anim: "pop" }];
+      for (const lx of [-w / 2 + 0.12, w / 2 - 0.12]) for (const lz of [-0.12, 0.12]) { const p = at(lx, lz); out.push({ shape: "box", size: [0.06, 0.34, 0.06], pos: [p[0], by, p[1]], rot: [0, yaw, 0], color: "#6e4529", anim: "pop" }); }
+      return out;
+    }
+  }
+};
+
+const DEFAULT_ANIM: Record<string, Anim> = { box: "drop", cyl: "drop", cone: "drop", sphere: "pop", blob: "pop", prism: "drop", hip: "drop", rod: "grow", sign: "pop" };
+/** Fill colour tokens / text tokens. */
+export const fill = (s: string | undefined, vars: Record<string, string>) => (s ?? "").replace(/\{(\w+)\}/g, (m, k) => vars[k] ?? m);
+
+/** A building's pieces in build order, with colour tokens resolved. */
+export const expand = (def: BuildingDef, vars: Record<string, string>): Piece[] => {
+  const out: Piece[] = [];
+  def.steps.forEach((st, si) => {
+    for (const p of st.parts) {
+      const parts = "macro" in p ? expandMacro(p) : [p];
+      for (const q of parts) {
+        const color = fill(q.color ?? "#cccccc", vars);
+        const extra = q.shape === "sign" ? { bg: fill(q.bg ?? "#fffaf0", vars), ink: fill(q.ink ?? "#1b1b1b", vars), subInk: fill(q.subInk ?? "#c8252f", vars), text: fill(q.text, vars), sub: q.sub ? fill(q.sub, vars) : undefined, tpl: q.text } : {};
+        out.push({ ...q, ...extra, color, anim: q.anim ?? DEFAULT_ANIM[q.shape] ?? "drop", axis: q.axis ?? "y", step: si } as Piece);
+      }
+    }
+  });
+  return out;
+};
+
+/** Validate a building definition (buyer's buildings.json), plain messages. */
+export const buildingProblems = (kind: string, def: unknown): string[] => {
+  const p: string[] = [];
+  const d = def as Partial<BuildingDef>;
+  if (!d || typeof d !== "object") return [`building "${kind}" must be an object`];
+  if (typeof d.name !== "string") p.push(`building "${kind}": "name" (the sign / card text) is missing`);
+  if (!Array.isArray(d.size) || d.size.length !== 2) p.push(`building "${kind}": "size": [width, depth] in metres is missing`);
+  if (typeof d.h !== "number") p.push(`building "${kind}": "h" (height in metres) is missing`);
+  if (!Array.isArray(d.steps) || !d.steps.length) p.push(`building "${kind}": "steps" (at least one { "label", "parts": [...] }) is missing`);
+  const SH = ["box", "cyl", "cone", "sphere", "blob", "prism", "hip", "rod", "sign"], MA = ["walls", "roof", "posts", "fence", "stairs", "scaffold", "tree", "lamp", "bench"];
+  (d.steps ?? []).forEach((st, i) => {
+    if (typeof st.label !== "string") p.push(`building "${kind}" step ${i + 1}: "label" missing (shown on the build card, e.g. "ATAP")`);
+    (st.parts ?? []).forEach((q, j) => {
+      const where = `building "${kind}" step ${i + 1} part ${j + 1}`;
+      if ("macro" in q) { if (!MA.includes(q.macro)) p.push(`${where}: macro "${q.macro}" unknown (have: ${MA.join(", ")})`); }
+      else if (!SH.includes((q as PartSpec).shape)) p.push(`${where}: shape "${(q as PartSpec).shape}" unknown (have: ${SH.join(", ")})`);
+      else if ((q as PartSpec).shape !== "rod" && !Array.isArray((q as { pos?: V3 }).pos)) p.push(`${where}: "pos" [x, y, z] missing`);
+    });
+  });
+  return p;
+};
+
+==== 55709 project/src/negeri/compile.ts
+// NEGERI director — compiles one episode (stories/<id>/story.json) + the series world into a Plan: cut times on the
+// spoken words, what every beat shows (host talking, rule cards, the population counter rolling, a comment card, a
+// building rising stage by stage, its sign, name plates, a citizen gag, a time jump, the CTA, a flyover), where the
+// host and the citizens stand and what they do, and an automatic camera per shot. Pure TypeScript.
+
+import { EXPRS } from "../kits/negeri/chibi/exprs.ts";
+import { POSES, SEATED_POSES, type PoseName } from "../kits/negeri/chibi/rig.ts";
+import { add3, fwdOf, rightOf, toWorld, type V3 } from "../kits/negeri/math.ts";
+import { dwellingsFor, LOTS, MAP, PALETTE, PLOTS, SLOTS, SPECIAL, TENT_RANK, TOTAL_TENTS, TREES, upgradeFor } from "../kits/negeri/world/map.ts";
+import { expand, type BuildingDef } from "./buildings.ts";
+import { CAST, extraLook, lookProblems, resolveLook } from "./cast.ts";
+import { inside as insideBox, solveBuilding, solvePeople, solveSign, type Env, type Frame, type Solve, type Subj } from "./camera.ts";
+import { DEFAULT_FLAG, placeEpisode, resolveKind, stateBefore, type Placed } from "./series.ts";
+import { bandP, colW, freeOf } from "../kits/negeri/ui/layout.ts";
+import type {
+  AKey, BeatKind, BeatSpec, CastEntry, GagKind, LineSpec, PActor, PBuild, Plan, POverlay, PPlate, PProp, PShot, SeriesWorld, ShotKind, Story, TimeOfDay, Timed, Word,
+} from "./types.ts";
+
+export const LEAD = 0.06;
+export const BEATS: BeatKind[] = ["host", "establish", "rules", "counter", "comment", "build", "reveal", "plates", "gag", "night", "cta", "flyover"];
+export const GAGS: GagKind[] = ["sleep", "sit", "chat", "eat", "queue", "argue", "celebrate", "watch"];
+export const TIMES: TimeOfDay[] = ["sore", "pagi", "siang", "malam"];
+export const ACTIONS = Object.keys(POSES) as PoseName[];
+const SHOTS: ShotKind[] = ["wide", "medium", "close", "low", "aerial", "insert", "orbit", "truck"];
+const norm = (w: string) => w.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9-]/g, "");
+const fmtNum = (n: number | string | undefined) => (typeof n === "number" ? Math.round(n).toLocaleString("de-DE") : n ?? "");
+const AVATARS = ["#3f86c6", "#e8743b", "#4f9a5a", "#7a68b8", "#d24b4b", "#2fa3a0", "#e2b23a"];
+
+// ------------------------------------------------------------------ timing without a voice
+export const paceWords = (text: string, t0: number, t1: number): Word[] => {
+  const raw = text.split(/\s+/).filter(Boolean);
+  const weights = raw.map((w) => 0.55 + w.replace(/[,.?!"“”]/g, "").length * 0.085 + (/[,.?!]["”]?$/.test(w) ? 0.5 : 0));
+  const tot = weights.reduce((x, y) => x + y, 0);
+  let acc = 0;
+  return raw.map((w, i) => { const t = t0 + ((t1 - t0) * acc) / tot; acc += weights[i]; return { w, t }; });
+};
+/** Gen-Z host pace (fast, chatty) for previews before the voice exists. */
+export const paceLines = (texts: string[], wps = 3.0, gap = 0.3, start = 0.3): Timed[] => {
+  let t = start;
+  return texts.map((text) => {
+    const n = text.split(/\s+/).length;
+    const commas = (text.match(/,/g) ?? []).length, stops = (text.slice(0, -1).match(/[.?!]/g) ?? []).length;
+    const d = Math.max(1.0, n / wps + commas * 0.14 + stops * 0.28);
+    const line = { text, t0: t, t1: t + d, words: paceWords(text, t, t + d) };
+    t += d + gap;
+    return line;
+  });
+};
+
+// ------------------------------------------------------------------ places
+const placeOfPlot = (id: string): { pos: V3; yaw: number; w: number; d: number } | null => {
+  const p = PLOTS.find((x) => x.id === id) ?? SPECIAL[id];
+  if (p) return { pos: p.pos, yaw: p.yaw, w: p.w, d: p.d };
+  const s = SLOTS.find((x) => x.id === id);
+  return s ? { pos: s.pos, yaw: s.yaw, w: 3.2, d: 3.2 } : null;
+};
+/** the boxes a standing building blocks (for the camera) */
+const buildingBoxes = (b: { pos: V3; yaw: number; def: BuildingDef; id: string }) => {
+  const sp = b.def.special;
+  const local: { c: [number, number]; w: number; d: number; y0: number; h: number }[] =
+    sp === "road" ? [] :
+    sp === "field" ? [{ c: [0, 0], w: 12.5, d: 6.5, y0: 0, h: 4 }, { c: [9, 0], w: 3.4, d: 3.4, y0: 0, h: 8.6 }] :
+    sp === "station" ? [{ c: [0, -2.6], w: 20, d: 4.2, y0: 0, h: 3.8 }, { c: [1.9, -6], w: 16, d: 2.5, y0: 0, h: 2.9 }] :
+    sp === "bridge" ? [{ c: [0, 0], w: 4.4, d: 10.4, y0: -0.4, h: 2.0 }] :
+    sp === "gate" ? [{ c: [-2.25, 0], w: 1.0, d: 1.0, y0: 0, h: 4.0 }, { c: [2.25, 0], w: 1.0, d: 1.0, y0: 0, h: 4.0 }, { c: [0, 0], w: 5.4, d: 0.5, y0: 2.6, h: 0.9 }] :
+    [{ c: [0, 0], w: b.def.size[0] * 0.92, d: b.def.size[1] * 0.92, y0: 0, h: b.def.h }];
+  // turned boxes in the building's own frame (an axis-aligned box around a turned building would swallow its front yard)
+  return local.map((L) => {
+    const c = toWorld([L.c[0], 0, L.c[1]], b.pos, b.yaw);
+    return { min: [-L.w / 2, L.y0, -L.d / 2] as V3, max: [L.w / 2, L.y0 + L.h, L.d / 2] as V3, yaw: b.yaw, c, id: b.id };
+  });
+};
+
+export type CompileOpts = { aspect: number; audio?: string; custom?: Record<string, BuildingDef>; tail?: number };
+
+/** Compile an episode. Throws an Error listing every problem in plain language when it cannot be built. */
+export const compile = (story: Story, lines: Timed[], world: SeriesWorld | null, opts: CompileOpts): Plan => {
+  const errors: string[] = [], warnings: string[] = [];
+  const custom = { ...(world?.custom ?? {}), ...(opts.custom ?? {}) };
+  const wide = opts.aspect > 1;
+  if (!Number.isInteger(story.day) || story.day < 1) errors.push(`"day" must be a whole number ≥ 1 (got ${JSON.stringify(story.day)})`);
+  if (typeof story.population !== "number" || story.population < 1) errors.push(`"population" (citizens at the end of this episode) must be a number ≥ 1`);
+  if (!story.lines?.length) errors.push(`"lines" is empty — one line per sentence of the voice-over`);
+  const country = story.country ?? world?.country ?? "Republik Komen";
+  const flag = story.flag ?? world?.flag ?? DEFAULT_FLAG;
+  const voice = story.voice ?? world?.voice ?? "aku";
+
+  // ---------------------------------------------------------------- people
+  const hostEntry: CastEntry = story.host ?? world?.host ?? { preset: "presiden" };
+  const castIds = Object.keys(story.cast ?? {});
+  const lookOf = (e: CastEntry, who: string) => {
+    const preset = e.preset ?? "presiden";
+    if (!CAST[preset]) { errors.push(`${who}: preset "${preset}" does not exist (have: ${Object.keys(CAST).join(", ")})`); return resolveLook("presiden"); }
+    const look = resolveLook(preset, e.look);
+    for (const p of lookProblems(look as unknown as Record<string, unknown>)) errors.push(`${who}: ${p}`);
+    return look;
+  };
+  const hostLook = lookOf(hostEntry, "host");
+  const castLooks = Object.fromEntries(castIds.map((id) => [id, lookOf(story.cast![id], `cast "${id}"`)]));
+  if (castIds.includes("host")) errors.push(`cast: "host" is reserved for the leader — give the citizen another id`);
+
+  // ---------------------------------------------------------------- comments + builds
+  const comments = (story.comments ?? []).map((c, i) => ({ ...c, id: c.id ?? `c${i + 1}` }));
+  comments.forEach((c) => { if (!c.handle || !c.text) errors.push(`comment ${c.id}: needs "handle" and "text"`); });
+  const commentOf = (ref: string | number) => (typeof ref === "number" ? comments[ref - 1] : comments.find((c) => c.id === ref || c.handle.toLowerCase() === String(ref).toLowerCase()));
+  const byOf = (b: { by?: string }) => (b.by ? (commentOf(b.by)?.handle ?? b.by) : undefined);
+  const placed: Placed = placeEpisode(story, world, custom, byOf);
+  errors.push(...placed.errors);
+  warnings.push(...placed.warnings);
+  // the name plates this episode shows (new plates + new commenter houses; else the newest two)
+  const showPlates: { slot: string; handle: string }[] = [
+    ...placed.plates.map((p) => ({ slot: p.slot, handle: p.handle })),
+    ...placed.builds.filter((b) => b.kind === "rumah").map((b) => ({ slot: b.plot, handle: b.by ?? "@warga" })),
+  ];
+  if (!showPlates.length) { const old = stateBefore(world, story.day, story.id).plates.slice(-2); showPlates.push(...old.map((p) => ({ slot: p.slot, handle: p.handle }))); }
+  const ids = new Set<string>();
+  for (const b of story.builds ?? []) { if (ids.has(b.id)) errors.push(`build id "${b.id}" is used twice`); ids.add(b.id); if (castIds.includes(b.id)) errors.push(`build id "${b.id}" is also a cast id — use different ids`); }
+
+  // ---------------------------------------------------------------- words
+  const words = lines.flatMap((l, li) => l.words.map((w, i) => ({ w: w.w, t0: w.t, t1: l.words[i + 1]?.t ?? l.t1, line: li })));
+  const wordTime = (li: number, at: string | number, from: number, where: string): { t: number; i: number } => {
+    const L = lines[li];
+    if (typeof at === "number") return { t: L.t0 + at, i: from };
+    const [txt, nth] = at.split("#");
+    let seen = 0;
+    for (let i = Math.max(0, from); i < L.words.length; i++) if (norm(L.words[i].w).startsWith(norm(txt)) && ++seen >= (nth ? +nth : 1)) return { t: L.words[i].t, i };
+    errors.push(`${where}: the word "${at}" is not in line ${li + 1} ("${L.text.slice(0, 60)}…")`);
+    return { t: L.t0, i: from };
+  };
+
+  // ---------------------------------------------------------------- beats (times)
+  type B = { spec: BeatSpec; kind: BeatKind; line: number; t0: number; wi: number; auto?: boolean; sub: number };
+  const beats: B[] = [];
+  story.lines.forEach((ls: LineSpec, li) => {
+    const L = lines[li];
+    if (!L) { errors.push(`line ${li + 1} has no timing (does the voice-over match the script?)`); return; }
+    const { text: _t, beats: bs, ...lineDefaults } = ls;
+    void _t;
+    const specs: BeatSpec[] = bs?.length ? bs.map((b, i) => (i === 0 ? { ...lineDefaults, ...b, cast: { ...(ls.cast ?? {}), ...(b.cast ?? {}) } } : { beat: b.beat ?? ls.beat, ...b })) : [lineDefaults];
+    let from = 0;
+    specs.forEach((b, i) => {
+      const kind = (b.beat ?? ls.beat ?? "host") as BeatKind;
+      if (i === 0) { beats.push({ spec: b, kind, line: li, t0: li === 0 ? 0 : L.t0 - LEAD, wi: 0, sub: 0 }); return; }
+      if (b.at === undefined) { errors.push(`line ${li + 1}, beat ${i + 1}: give "at" (the word the cut lands on)`); return; }
+      const w = wordTime(li, b.at, from, `line ${li + 1}, beat ${i + 1}`);
+      from = w.i + 1;
+      beats.push({ spec: b, kind, line: li, t0: w.t - LEAD, wi: w.i, sub: 0 });
+    });
+    // automatic cuts inside a long single-beat line (the genre cuts every ~2 s)
+    const k0 = (ls.beat ?? "host") as BeatKind;
+    // a plates line: one shot per new name plate (when each gets ≥ 0.95 s), cut on the nearest words
+    if (!bs?.length && k0 === "plates") {
+      const nPl = Math.min(4, showPlates.length), dur = L.t1 + 0.4 - L.t0;
+      if (nPl > 1 && dur / nPl >= 0.95) {
+        let prevI = 0;
+        for (let k = 1; k < nPl; k++) {
+          const tt = L.t0 + (dur * k) / nPl;
+          let bi = -1, bd = 9;
+          L.words.forEach((w, i) => { if (i > prevI && Math.abs(w.t - tt) < bd) { bd = Math.abs(w.t - tt); bi = i; } });
+          if (bi < 0) continue;
+          prevI = bi;
+          beats.push({ spec: {}, kind: "plates", line: li, t0: L.words[bi].t - LEAD, wi: bi, auto: true, sub: k });
+        }
+      }
+    }
+    if (!bs?.length && k0 !== "counter" && k0 !== "plates" && k0 !== "flyover") {
+      const dur = L.t1 - L.t0, n = Math.round(dur / 2.1);
+      if (n >= 2) {
+        let prevI = 0;
+        for (let k = 1; k < n; k++) {
+          const tt = L.t0 + (dur * k) / n;
+          let bi = -1, bd = 9;
+          L.words.forEach((w, i) => { if (i > prevI + 1 && Math.abs(w.t - tt) < bd && L.t1 - w.t > 0.9) { bd = Math.abs(w.t - tt); bi = i; } });
+          if (bi < 0) continue;
+          prevI = bi;
+          beats.push({ spec: {}, kind: k0, line: li, t0: L.words[bi].t - LEAD, wi: bi, auto: true, sub: k });
+        }
+      }
+    }
+  });
+  beats.sort((a, b) => a.t0 - b.t0);
+  const endsCta = beats.length && beats[beats.length - 1].kind === "cta";
+  const duration = +((lines[lines.length - 1]?.t1 ?? 1) + (opts.tail ?? (endsCta ? 1.6 : 1.1))).toFixed(3);
+  for (let i = beats.length - 1; i > 0; i--) {
+    const end = beats[i + 1]?.t0 ?? duration;
+    if (end - beats[i].t0 < 0.85 || beats[i].t0 - beats[i - 1].t0 < 0.85) {
+      if (!beats[i].auto && beats[i - 1].auto && beats[i].t0 - beats[i - 1].t0 < 0.85) { beats.splice(i - 1, 1); continue; }
+      if (!beats[i].auto) warnings.push(`line ${beats[i].line + 1}: a cut at ${beats[i].t0.toFixed(2)} s makes a shot shorter than 0.85 s — merged into the shot before`);
+      const keep = beats[i - 1];
+      keep.spec = { ...beats[i].spec, ...keep.spec, cast: { ...(keep.spec.cast ?? {}), ...(beats[i].spec.cast ?? {}) } };
+      beats.splice(i, 1);
+    }
+  }
+
+  // ---------------------------------------------------------------- validation of beats
+  const buildIds = new Set((story.builds ?? []).map((b) => b.id));
+  beats.forEach((b) => {
+    const where = `line ${b.line + 1}${b.auto ? "" : b.spec.at !== undefined ? ` (cut at "${b.spec.at}")` : ""}`;
+    const s = b.spec;
+    if (!BEATS.includes(b.kind)) errors.push(`${where}: beat "${b.kind}" does not exist (have: ${BEATS.join(", ")})`);
+    if (s.shot && !SHOTS.includes(s.shot)) errors.push(`${where}: shot "${s.shot}" does not exist (have: ${SHOTS.join(", ")})`);
+    if (s.time && !TIMES.includes(s.time)) errors.push(`${where}: time "${s.time}" does not exist (have: ${TIMES.join(", ")})`);
+    if (s.do && !ACTIONS.includes(s.do as PoseName)) errors.push(`${where}: host action "${s.do}" does not exist (have: ${ACTIONS.join(", ")})`);
+    if (s.expr && !EXPRS.includes(s.expr as never)) errors.push(`${where}: host expression "${s.expr}" does not exist (have: ${EXPRS.join(", ")})`);
+    for (const th of s.then ?? []) { if (th.do && !ACTIONS.includes(th.do as PoseName)) errors.push(`${where}: then → action "${th.do}" does not exist`); if (th.expr && !EXPRS.includes(th.expr as never)) errors.push(`${where}: then → expression "${th.expr}" does not exist`); }
+    for (const [id, a] of Object.entries(s.cast ?? {})) {
+      if (!castIds.includes(id)) errors.push(`${where}: "${id}" is not in "cast" (have: ${castIds.join(", ") || "none"})`);
+      if (a.do && !ACTIONS.includes(a.do as PoseName)) errors.push(`${where}: ${id} — action "${a.do}" does not exist`);
+      if (a.expr && !EXPRS.includes(a.expr as never)) errors.push(`${where}: ${id} — expression "${a.expr}" does not exist`);
+    }
+    if (b.kind === "comment" && !b.auto) {
+      const refs = ([] as (string | number)[]).concat(s.comment ?? 1);
+      for (const r of refs) if (!commentOf(r)) errors.push(`${where}: comment "${r}" is not in "comments" (have: ${comments.map((c) => c.id).join(", ") || "none"})`);
+    }
+    if ((b.kind === "build" || b.kind === "reveal") && !b.auto) {
+      if (!s.build && (story.builds?.length ?? 0) !== 1) errors.push(`${where}: give "build": "<id>" (have: ${[...buildIds].join(", ") || "none"})`);
+      else if (s.build && !buildIds.has(s.build)) errors.push(`${where}: build "${s.build}" is not in "builds" (have: ${[...buildIds].join(", ") || "none"})`);
+    }
+    if (b.kind === "gag" && !b.auto) {
+      if (!s.gag) errors.push(`${where}: a gag beat needs "gag" (have: ${GAGS.join(", ")})`);
+      else if (!GAGS.includes(s.gag)) errors.push(`${where}: gag "${s.gag}" does not exist (have: ${GAGS.join(", ")})`);
+      for (const w of s.who ?? []) if (!castIds.includes(w)) errors.push(`${where}: who → "${w}" is not in "cast"`);
+      if (!(s.who?.length) && !s.n) errors.push(`${where}: a gag needs people: "who": [cast ids] and/or "n": number of extra citizens`);
+    }
+  });
+  if (errors.length) throw new Error("the episode cannot be built yet:\n  - " + errors.join("\n  - "));
+
+  // ---------------------------------------------------------------- the world at the start
+  const st = stateBefore(world, story.day, story.id);
+  if (world && st.lastDay && story.day > st.lastDay + 1) warnings.push(`the series has no day ${st.lastDay + 1}…${story.day - 1}: this episode starts from day ${st.lastDay}'s country`);
+  const popFrom = Math.max(1, st.population), popTo = story.population;
+  if (popTo < popFrom) warnings.push(`population ${popTo} is lower than yesterday's ${popFrom} — the counter will roll down`);
+  type LiveB = { id: string; kind: string; def: BuildingDef; pos: V3; yaw: number; plot: string; name: string; by?: string; vars: Record<string, string>; day: number; start?: number; end?: number; isNew: boolean };
+  const varsFor = (b: { kind: string; name: string; by?: string; colors?: Record<string, string>; no?: number; plot: string }, def: BuildingDef): Record<string, string> => {
+    const slotI = SLOTS.findIndex((s) => s.id === b.plot);
+    const dflt: Record<string, string> = def.special === "slot" ? { wall: PALETTE.WALL[(slotI + 2) % PALETTE.WALL.length], roof: PALETTE.ROOF[(slotI * 5 + 1) % PALETTE.ROOF.length] } : {};
+    return { ...(def.params ?? {}), ...dflt, ...(b.colors ?? {}), name: b.name, by: b.by ?? "", no: String(b.no ?? 0).padStart(3, "0"), country: country.toUpperCase(), flag1: flag[0], flag2: flag[1] };
+  };
+  const live: LiveB[] = [];
+  for (const b of st.builds) {
+    const r = resolveKind(b.kind, custom);
+    if (!r) { warnings.push(`world: building "${b.kind}" (day ${b.day}) is unknown here — copy its buildings.json; it is left out`); continue; }
+    const pl = placeOfPlot(b.plot)!;
+    live.push({ id: `${b.id}@${b.day}`, kind: r.kind, def: r.def, pos: pl.pos, yaw: pl.yaw, plot: b.plot, name: b.name, by: b.by, vars: varsFor(b, r.def), day: b.day, isNew: false });
+  }
+  for (const b of placed.builds) {
+    // a new build on an occupied plot replaces the old one
+    const i = live.findIndex((x) => x.plot === b.plot && b.plot !== "road");
+    if (i >= 0) live.splice(i, 1);
+    const pl = placeOfPlot(b.plot)!;
+    live.push({ id: b.id, kind: b.kind, def: b.def, pos: pl.pos, yaw: pl.yaw, plot: b.plot, name: b.name, by: b.by, vars: varsFor(b, b.def), day: story.day, isNew: true });
+  }
+  const liveOf = (id: string) => live.find((x) => x.id === id) ?? live.find((x) => x.kind === id || x.name.toLowerCase() === id.toLowerCase() || x.plot === id);
+
+  // ---------------------------------------------------------------- runs → overlays, windows
+  type Run = { kind: BeatKind; i0: number; i1: number; t0: number; t1: number; spec: BeatSpec };
+  const runs: Run[] = [];
+  const sameRun = (r: Run, b: B) => {
+    if (r.kind !== b.kind || b.kind === "gag" && !b.auto || b.kind === "host" || b.kind === "establish") return b.auto && r.kind === b.kind;
+    if (b.auto) return true;
+    if (b.kind === "build" || b.kind === "reveal") return (b.spec.build ?? r.spec.build) === r.spec.build;
+    if (b.kind === "comment") return b.spec.comment === undefined || JSON.stringify(b.spec.comment) === JSON.stringify(r.spec.comment);
+    return b.kind !== "night";
+  };
+  beats.forEach((b, i) => {
+    const t1 = beats[i + 1]?.t0 ?? duration;
+    const last = runs[runs.length - 1];
+    if (last && sameRun(last, b)) { last.i1 = i; last.t1 = t1; b.sub = i - last.i0; }
+    else { runs.push({ kind: b.kind, i0: i, i1: i, t0: b.t0, t1, spec: b.spec }); b.sub = 0; }
+  });
+  const overlays: POverlay[] = [];
+  const counterRun = runs.find((r) => r.kind === "counter");
+  const pop = { from: popFrom, to: popTo, t0: counterRun ? counterRun.t0 + 0.15 : 0, t1: counterRun ? Math.max(counterRun.t0 + 0.9, counterRun.t1 - 0.3) : 0 };
+  if (!counterRun) pop.from = popTo;
+  else if (counterRun.spec.count && counterRun.spec.count !== popTo) warnings.push(`counter beat: "count" ${counterRun.spec.count} differs from "population" ${popTo} — the story's population is used (it is what the series remembers)`);
+  const tags: { t0: number; t1: number; text: string }[] = [];
+  for (const r of runs) {
+    const s = r.spec;
+    if (r.kind === "rules") overlays.push({ kind: "rules", t0: r.t0 + 0.12, t1: r.t1 - 0.04, rules: [
+      { icon: "follow", small: s.rules?.[0]?.small ?? (voice === "gue" ? "LO FOLLOW" : "KAMU FOLLOW"), big: s.rules?.[0]?.big ?? "= jadi WARGA" },
+      { icon: "comment", small: s.rules?.[1]?.small ?? "KOMEN TERATAS", big: s.rules?.[1]?.big ?? (voice === "gue" ? "= gue BANGUN" : "= aku BANGUN") },
+    ] });
+    if (r.kind === "comment") {
+      const refs = ([] as (string | number)[]).concat(s.comment ?? 1).slice(0, 3);
+      overlays.push({ kind: "comment", t0: r.t0 + 0.1, t1: r.t1 - 0.04, comments: refs.map((ref, k) => { const c = commentOf(ref)!; return { handle: c.handle, text: c.text, likes: String(fmtNum(c.likes ?? "")), ago: c.ago ?? `${1 + k} jam`, avatar: c.avatar ?? AVATARS[(comments.indexOf(c) + k) % AVATARS.length] }; }) });
+    }
+    if (r.kind === "build") overlays.push({ kind: "build", t0: r.t0 + 0.1, t1: r.t1 - 0.04, build: s.build ?? story.builds![0].id });
+    if (r.kind === "counter") overlays.push({ kind: "bigcounter", t0: r.t0, t1: r.t1 });
+    if (r.kind === "cta") overlays.push({ kind: "cta", t0: r.t0 + 0.12, t1: duration, line: s.cta?.line ?? "Besok bangun apa?", button: s.cta?.button ?? "KOMEN!", sub: s.cta?.sub ?? `komen teratas = HARI ${story.day + 1}` });
+    if (r.kind === "flyover") overlays.push({ kind: "title", t0: r.t0 + 0.2, t1: r.t1 - 0.05, text: country.toUpperCase(), sub: `HARI ${story.day} · ${fmtNum(popTo)} WARGA` });
+    if (r.kind === "night") tags.push({ t0: r.t0 + 0.35, t1: r.t1 - 0.05, text: s.tag ?? ({ malam: "MALAM HARINYA…", pagi: "SEMALAM KEMUDIAN…", siang: "SIANGNYA…", sore: "SORENYA…" } as const)[s.time ?? "pagi"] });
+  }
+  beats.forEach((b, i) => { if (b.spec.tag && b.kind !== "night") tags.push({ t0: b.t0 + 0.12, t1: (beats[i + 1]?.t0 ?? duration) - 0.05, text: b.spec.tag }); });
+  for (const tg of tags) overlays.push({ kind: "tag", ...tg });
+  // build windows
+  for (const b of live.filter((x) => x.isNew)) {
+    const r = runs.find((x) => x.kind === "build" && (x.spec.build ?? story.builds![0].id) === b.id);
+    if (r) { b.start = r.t0 + 0.15; b.end = Math.max(b.start + 1.2, r.t1 - 0.35); }
+    else warnings.push(`build "${b.id}" has no build beat — it stands from the first shot (add a line with "beat": "build" to show it rising)`);
+  }
+
+  // ---------------------------------------------------------------- plates
+  const platesRun = runs.find((r) => r.kind === "plates");
+  const plates: PPlate[] = [];
+  for (const p of st.plates) { const s = SLOTS.find((x) => x.id === p.slot)!; plates.push({ handle: p.handle, no: p.no, slot: p.slot, pos: s.pos, yaw: s.yaw, colors: varsFor({ kind: "rumah", name: "", plot: p.slot, colors: p.colors }, resolveKind("rumah")!.def), appear: -1 }); }
+  placed.plates.forEach((p, k) => {
+    const s = SLOTS.find((x) => x.id === p.slot)!;
+    const appear = counterRun && (!platesRun || counterRun.t0 < platesRun.t0) ? pop.t0 + (pop.t1 - pop.t0) * 0.35 + k * 0.1 : platesRun ? platesRun.t0 : 0;
+    plates.push({ handle: p.handle, no: p.no, slot: p.slot, pos: s.pos, yaw: s.yaw, colors: varsFor({ kind: "rumah", name: "", plot: p.slot, colors: p.colors }, resolveKind("rumah")!.def), appear });
+  });
+  if (platesRun && !placed.plates.length && !live.some((b) => b.isNew && b.kind === "rumah")) warnings.push(`a plates beat but no new "plates" this episode — it shows the newest named houses`);
+
+  // ---------------------------------------------------------------- dwellings over time (camera blockers)
+  const popAt = (t: number) => (t <= pop.t0 ? pop.from : t >= pop.t1 ? pop.to : pop.from + (pop.to - pop.from) * ((t - pop.t0) / Math.max(0.01, pop.t1 - pop.t0)));
+  const up = upgradeFor(pop.from);
+
+  // ---------------------------------------------------------------- actors
+  const D2R = Math.PI / 180;
+  type AS = { pos?: V3; yaw: number; pose: PoseName; expr: string; target?: V3; prop?: "phone" | "bowl"; chatter?: boolean; gone: boolean; seat?: string };
+  const host: AS = { pos: MAP.home.pos, yaw: MAP.home.yaw, pose: "talk", expr: "happy", gone: false };
+  const W: Record<string, AS> = Object.fromEntries(castIds.map((id) => [id, { yaw: 0, pose: "stand", expr: "neutral", gone: false } as AS]));
+  const extras: { id: string; spec: ReturnType<typeof extraLook> }[] = [];
+  const keys: Record<string, AKey[]> = { host: [] };
+  const props: PProp[] = [];
+  const frontSpot = (b: LiveB, side = 1, out = 1.5): { pos: V3; yaw: number } => {
+    const sp = b.def.special;
+    const local: [number, number, number] =
+      sp === "road" ? [-2.9 * side, 6.5 - b.pos[2] + 0 * out, -0.9] :
+      sp === "bridge" ? [2.4 * side, 9.6, 0.25] :
+      sp === "field" ? [-4 + 1.5 * side, 6, 0.2] :
+      sp === "station" ? [8 + 1.2 * side, 2.6, 0.2] :
+      sp === "gate" ? [3.6 * side, 3.2, 0.3] :
+      [Math.min(b.def.size[0] / 2 - 0.3, 1.7) * side, b.def.size[1] / 2 + out, 0.35];
+    const pos = toWorld([local[0], 0, local[1]], b.pos, b.yaw);
+    return { pos, yaw: b.yaw + local[2] * side };
+  };
+  const placeHost = (name: string | undefined, where: string): { pos: V3; yaw: number } | null => {
+    if (!name || name === "plaza" || name === "home" || name === "rumah-presiden") return { pos: MAP.home.pos, yaw: MAP.home.yaw };
+    if (name === "lawn" || name === "lapangan-depan") return { pos: [0, 0, 12.5], yaw: 0 };
+    if (name === "jalan") return { pos: [10.75, 0, 4], yaw: 0 };
+    if (castIds.includes(name) && W[name].pos) { const p = W[name].pos!; return { pos: add3(p, rightOf(W[name].yaw), -1.1), yaw: W[name].yaw - 0.4 }; }
+    const b = liveOf(name);
+    if (b) return frontSpot(b, 1);
+    warnings.push(`${where}: place "${name}" is not a building, a citizen or plaza / lawn / jalan — the host stays where they are`);
+    return null;
+  };
+  const pushKey = (id: string, s: AS, t: number) => {
+    const list = (keys[id] ??= []);
+    if (s.gone) { if (list.length && !list[list.length - 1].gone) list.push({ t, pos: s.pos ?? [0, 0, 0], yaw: s.yaw, pose: s.pose, expr: s.expr as AKey["expr"], gone: true }); return; }
+    if (!s.pos) return;
+    list.push({ t, pos: s.pos, yaw: s.yaw, pose: s.pose, expr: s.expr as AKey["expr"], target: s.target, prop: s.prop, chatter: s.chatter });
+  };
+  /** a point (person / building / place) in an actor's own frame, for point / present / argue */
+  const targetLocal = (from: AS, to: string | undefined): V3 | undefined => {
+    if (!to || !from.pos) return undefined;
+    let p: V3 | undefined;
+    if (to === "host") p = host.pos ? add3(host.pos, [0, 0.9, 0]) : undefined;
+    else if (W[to]?.pos) p = add3(W[to].pos!, [0, 0.9, 0]);
+    else { const b = liveOf(to); if (b) p = add3(b.pos, [0, Math.min(2.5, b.def.h * 0.5), 0]); }
+    if (!p) return undefined;
+    const x = p[0] - from.pos[0], y = p[1] - from.pos[1], z = p[2] - from.pos[2], c = Math.cos(from.yaw), s = Math.sin(from.yaw);
+    return [x * c - z * s, y, x * s + z * c];
+  };
+  const HOST_DEFAULT: Record<BeatKind, { do: PoseName; expr: string }> = {
+    host: { do: "talk", expr: "happy" }, establish: { do: "wave", expr: "happy" }, rules: { do: "pointCam", expr: "happy" }, counter: { do: "shocked", expr: "shocked" },
+    comment: { do: "read", expr: "smug" }, build: { do: "proud", expr: "proud" }, reveal: { do: "present", expr: "happy" }, plates: { do: "talk", expr: "happy" },
+    gag: { do: "facepalm", expr: "annoyed" }, night: { do: "stand", expr: "neutral" }, cta: { do: "wave", expr: "happy" }, flyover: { do: "proud", expr: "proud" },
+  };
+
+  // gag layout: people around a building (seats, a queue at its front, a crowd) or on a mat on the plaza
+  const gagLayout = (gag: GagKind, ids: string[], placeName: string | undefined, t: number) => {
+    const b = placeName && placeName !== "plaza" && placeName !== "lawn" ? liveOf(placeName) : undefined;
+    if (placeName && !b && placeName !== "plaza" && placeName !== "lawn") warnings.push(`gag: place "${placeName}" is not a standing building — the gag happens on the plaza`);
+    const anchor = b ? { pos: b.pos, yaw: b.yaw } : placeName === "lawn" ? { pos: [-1.5, 0, 13.5] as V3, yaw: 0.15 } : { pos: [-2.6, 0, 4.4] as V3, yaw: 0.25 };
+    const seats = b?.def.seats ?? [];
+    const needSeat = gag === "sleep" || gag === "sit" || gag === "chat" || gag === "eat";
+    const frontL: [number, number] = b ? (b.def.front ?? [0, b.def.size[1] / 2 + 1.2]) : [0, 0];
+    const at = (x: number, z: number): V3 => toWorld([x, 0, z], anchor.pos, anchor.yaw);
+    const res: { id: string; pos: V3; yaw: number; pose: PoseName; expr: string; prop?: "phone" | "bowl"; chatter?: boolean; target?: string }[] = [];
+    let mat = false;
+    ids.forEach((id, k) => {
+      if (needSeat && b && seats[k]) {
+        const s = seats[k], yaw = anchor.yaw + s.yaw * D2R, hang = s.legs === "hang";
+        const p = toWorld(s.p, anchor.pos, anchor.yaw), f = fwdOf(yaw);
+        const pos: V3 = hang ? [p[0] + f[0] * 0.1, p[1], p[2] + f[2] * 0.1] : p;
+        const pose: PoseName = gag === "sleep" && k === 0 ? (hang ? "sleepHang" : "sleep") : gag === "eat" ? (hang ? "sitEat" : "sitFwd") : hang ? (gag === "chat" ? "sitTalk" : "sit") : "sitFwd";
+        res.push({ id, pos, yaw, pose, expr: pose.startsWith("sleep") ? "sleep" : gag === "eat" ? "happy" : gag === "chat" ? "talk" : "neutral", prop: gag === "eat" ? "bowl" : undefined, chatter: gag === "chat" });
+        return;
+      }
+      if (needSeat) {
+        // no (free) seat: sit on a mat — on the plaza, or in front of the building
+        mat = true;
+        const onMat = ids.filter((_, i) => !(b && seats[i])), mi = onMat.indexOf(id);
+        const x = (mi - (onMat.length - 1) / 2) * 0.75, pos = b ? at(frontL[0] + x, frontL[1] + 1.4) : at(x, 0.1);
+        pos[1] = 0.02;
+        const pose: PoseName = gag === "sleep" && k === 0 ? "sleep" : gag === "eat" ? "sitFwd" : "sitFwd";
+        res.push({ id, pos, yaw: anchor.yaw, pose, expr: pose === "sleep" ? "sleep" : gag === "eat" ? "happy" : gag === "chat" ? "talk" : "neutral", prop: gag === "eat" ? "bowl" : undefined, chatter: gag === "chat" });
+        return;
+      }
+      const fx = frontL[0], fz = frontL[1];
+      if (gag === "queue") res.push({ id, pos: at(fx + 0.12 * Math.sin(k * 1.7), fz + k * 0.8), yaw: anchor.yaw + Math.PI + 0.12 * Math.sin(k * 2.3), pose: k === 0 ? "stand" : k % 3 === 2 ? "read" : "queue", expr: k === 0 ? "happy" : k % 2 ? "annoyed" : "neutral", prop: k % 3 === 2 ? "phone" : undefined });
+      else if (gag === "argue") { const side = k % 2 ? -1 : 1; res.push({ id, pos: at(fx + side * 0.75 + (k >> 1) * 2.0, fz + 0.4), yaw: anchor.yaw + side * (-Math.PI / 2), pose: "argue", expr: "angry", chatter: true, target: ids[k ^ 1] }); }
+      else {
+        const n = ids.length, row = Math.floor(k / 6), i = k % 6, m = Math.min(6, n - row * 6);
+        const x = fx + (i - (m - 1) / 2) * 0.85, z = fz + 0.6 + row * 0.9 + Math.abs(i - (m - 1) / 2) * 0.12;
+        const cheer = gag === "celebrate";
+        res.push({ id, pos: at(x, z), yaw: anchor.yaw + (cheer ? 0 : Math.PI) + (i - (m - 1) / 2) * 0.12, pose: cheer ? (k % 3 === 1 ? "clap" : "cheer") : k % 2 ? "talk" : "stand", expr: cheer ? (k % 2 ? "laugh" : "happy") : "shocked", chatter: !cheer && k % 2 === 1 });
+      }
+    });
+    if (mat) props.push({ id: `tikar${props.length}`, kind: "tikar", pos: b ? at(frontL[0], frontL[1] + 1.5) : at(0, 0.1), yaw: anchor.yaw, t0: t, t1: 1e9 });
+    // keep clear of the host
+    // keep the standing group clear of the host: slide the whole group sideways (its formation stays)
+    const standing = res.filter((r) => !SEATED_POSES.has(r.pose));
+    if (host.pos && standing.some((r) => Math.hypot(r.pos[0] - host.pos![0], r.pos[2] - host.pos![2]) < 1.4)) {
+      const rr = rightOf(anchor.yaw);
+      const c = standing.reduce((acc, r) => add3(acc, r.pos, 1 / standing.length), [0, 0, 0] as V3);
+      const side = ((c[0] - host.pos[0]) * rr[0] + (c[2] - host.pos[2]) * rr[2]) >= 0 ? 1 : -1;
+      for (let k = 1; k <= 12; k++) {
+        const off = add3([0, 0, 0], rr, side * 0.25 * k);
+        if (standing.every((r) => Math.hypot(r.pos[0] + off[0] - host.pos![0], r.pos[2] + off[2] - host.pos![2]) >= 1.4)) { for (const r of standing) r.pos = add3(r.pos, off); break; }
+      }
+    }
+    // a seated / mat gag next to the host: the host steps aside instead (on the next cut)
+    if (host.pos && res.some((r) => SEATED_POSES.has(r.pose) && Math.hypot(r.pos[0] - host.pos![0], r.pos[2] - host.pos![2]) < 1.4)) hostAside = true;
+    return res;
+  };
+
+  type ShotPlan = { b: B; bi: number; t0: number; t1: number; kind: ShotKind; on: string[]; subjKind: "people" | "building" | "sign" | "aerial" | "plates" | "plate" | "area" | "flyover"; time: TimeOfDay; dissolve: boolean };
+  const shotPlans: ShotPlan[] = [];
+  let shotGag: string[] = [];
+  let hostAside = false;
+  let gagFront = "";
+  const gagKindByLine: Record<number, string> = {};
+  let gagKindNow = "";
+  let curTime: TimeOfDay = story.time ?? "sore";
+  let gagN = 0;
+  beats.forEach((b, bi) => {
+    const s = b.spec, t0 = b.t0, t1 = beats[bi + 1]?.t0 ?? duration, where = `line ${b.line + 1}`;
+    const fresh = !b.auto; // authored beats set state; automatic cuts only move the camera
+    // ---- host
+    if (fresh) {
+      const dflt = HOST_DEFAULT[b.kind];
+      let place = b.kind === "gag" ? undefined : s.place;
+      if (!place && (b.kind === "build" || b.kind === "reveal") && b.sub === 0) place = s.build ?? story.builds?.[0]?.id;
+      if (place) { const p = placeHost(place, where); if (p) { host.pos = p.pos; host.yaw = p.yaw; } }
+      const newDo = (s.do as PoseName) ?? (b.sub === 0 ? dflt.do : host.pose);
+      host.pose = newDo;
+      host.expr = s.expr ?? (s.do ? host.expr : dflt.expr);
+      host.prop = host.pose === "read" ? "phone" : host.pose === "eat" || host.pose === "sitEat" ? "bowl" : undefined;
+      const tgt = s.to ?? (host.pose === "present" || host.pose === "point" ? (b.kind === "build" || b.kind === "reveal" ? s.build ?? story.builds?.[0]?.id : undefined) : undefined);
+      host.target = targetLocal(host, tgt) ?? (host.pose === "present" || host.pose === "point" ? [-1.4, 0.9, 0.8] : undefined);
+      if (SEATED_POSES.has(host.pose)) { warnings.push(`${where}: the host cannot sit in this version (seated poses are for gag citizens) — standing`); host.pose = "stand"; }
+      pushKey("host", host, t0);
+      for (const th of s.then ?? []) {
+        const tt = typeof th.at === "number" ? t0 + th.at : wordTime(b.line, th.at, b.wi, `${where}: then`).t;
+        if (th.do) host.pose = th.do as PoseName;
+        if (th.expr) host.expr = th.expr;
+        host.prop = host.pose === "read" ? "phone" : undefined;
+        pushKey("host", host, tt - LEAD);
+      }
+      // ---- citizens named in this beat
+      for (const [id, a] of Object.entries(s.cast ?? {})) {
+        const w = W[id];
+        if (a.gone) { w.gone = true; pushKey(id, w, t0); continue; }
+        w.gone = false;
+        if (a.place) {
+          const bb = liveOf(a.place);
+          if (bb) { const p = frontSpot(bb, -1, 1.8); w.pos = p.pos; w.yaw = p.yaw - 0.7; }
+          else if (a.place === "host" && host.pos) { w.pos = add3(add3(host.pos, rightOf(host.yaw), 1.2), fwdOf(host.yaw), 0.2); w.yaw = host.yaw + 0.5; }
+          else if (a.place === "plaza") { w.pos = [-1.6, 0, 3.2]; w.yaw = 0.3; }
+          else warnings.push(`${where}: ${id} — place "${a.place}" is not a building / host / plaza`);
+        }
+        if (!w.pos) { w.pos = host.pos ? add3(add3(host.pos, rightOf(host.yaw), 1.2), fwdOf(host.yaw), 0.2) : [1.2, 0, 0.2]; w.yaw = host.yaw + 0.5; }
+        if (a.do) w.pose = a.do as PoseName;
+        if (a.expr) w.expr = a.expr;
+        w.target = targetLocal(w, a.to);
+        w.prop = w.pose === "read" ? "phone" : w.pose === "eat" || w.pose === "sitEat" ? "bowl" : undefined;
+        pushKey(id, w, t0);
+      }
+      // ---- a gag
+      if (b.kind === "gag" && s.gag) {
+        const ids = [...(s.who ?? [])];
+        for (let k = 0; k < (s.n ?? 0); k++) { const id = `warga${++gagN}`; extras.push({ id, spec: extraLook(gagN * 3 + k) }); W[id] = { yaw: 0, pose: "stand", expr: "neutral", gone: false }; ids.push(id); }
+        // a gag's "place" is where it happens (the host keeps his own spot)
+        const lay = gagLayout(s.gag, ids, s.place, t0);
+        for (const r of lay) {
+          const w = W[r.id];
+          Object.assign(w, { pos: r.pos, yaw: r.yaw, pose: r.pose, expr: r.expr, prop: r.prop, chatter: r.chatter, gone: false });
+          w.target = r.target ? targetLocal(w, r.target) ?? [0, 1, 1.2] : undefined;
+        }
+        // argue: aim at each other after both are placed
+        for (const r of lay) if (r.target) W[r.id].target = targetLocal(W[r.id], r.target);
+        for (const r of lay) pushKey(r.id, W[r.id], t0);
+        // people from an earlier gag standing where this one happens leave (on this cut) instead of overlapping
+        for (const [oid, w] of Object.entries(W)) {
+          if (ids.includes(oid) || w.gone || !w.pos) continue;
+          if (lay.some((r) => Math.hypot(r.pos[0] - w.pos![0], r.pos[2] - w.pos![2]) < 1.3)) { w.gone = true; pushKey(oid, w, t0); }
+        }
+        if (hostAside && host.pos) {
+          // move the host 1.8 m away from the sitters, keep facing
+          const c = lay.reduce((acc, r) => add3(acc, r.pos, 1 / lay.length), [0, 0, 0] as V3);
+          const dx = host.pos[0] - c[0], dz = host.pos[2] - c[2], d = Math.hypot(dx, dz) || 1;
+          host.pos = [c[0] + (dx / d) * 2.0, 0, c[2] + (dz / d) * 2.0];
+          pushKey("host", host, t0);
+          hostAside = false;
+        }
+      }
+    }
+    // ---- time of day
+    if (s.time && fresh) curTime = s.time;
+    else if (b.kind === "night" && fresh) curTime = "pagi";
+    // ---- shot kind + subject
+    let kind: ShotKind;
+    let subjKind: ShotPlan["subjKind"] = "people";
+    let on: string[] = ["host"];
+    const gagIds = Object.keys(W).filter((id) => W[id].pos && !W[id].gone && keys[id]?.length && keys[id][keys[id].length - 1].t >= t0 - 0.01 && keys[id][keys[id].length - 1].t <= t0 + 0.01);
+    switch (b.kind) {
+      case "counter": kind = "aerial"; subjKind = "aerial"; on = []; break;
+      case "plates": {
+        const runLen = beats.filter((x) => x.line === b.line && x.kind === "plates").length;
+        if (showPlates.length && (runLen > 1 || showPlates.length === 1)) { kind = "insert"; subjKind = "plate"; on = [`plate:${showPlates[Math.min(b.sub, showPlates.length - 1)].handle}`]; }
+        else { kind = "truck"; subjKind = "plates"; on = []; }
+        break;
+      }
+      case "flyover": kind = "aerial"; subjKind = "flyover"; on = []; break;
+      case "night": kind = b.sub % 2 ? "medium" : "wide"; subjKind = b.sub % 2 ? "people" : "area"; on = b.sub % 2 ? ["host"] : []; break;
+      case "build": {
+        const id = (beats.slice(0, bi + 1).reverse().find((x) => x.kind === "build" && x.spec.build)?.spec.build) ?? story.builds![0].id;
+        // authored build beats show the building; automatic cuts inside a long line alternate to the host
+        if (s.shot && s.shot !== "orbit" && s.shot !== "wide") { kind = s.shot; on = ["host"]; }
+        else if (b.auto && b.sub % 2 === 1) { kind = b.sub % 4 === 1 ? "medium" : "close"; on = ["host"]; }
+        else { kind = "orbit"; subjKind = "building"; on = [id]; }
+        break;
+      }
+      case "reveal": {
+        const id = s.build ?? beats.slice(0, bi + 1).reverse().find((x) => x.spec.build)?.spec.build ?? story.builds![0].id;
+        if (b.sub % 2 && !s.shot) { kind = "medium"; on = ["host"]; } else { kind = s.shot ?? "insert"; subjKind = kind === "insert" ? "sign" : kind === "orbit" ? "building" : "people"; on = kind === "insert" || kind === "orbit" ? [id] : ["host"]; }
+        break;
+      }
+      case "gag": {
+        const people = gagIds.length ? gagIds : Object.keys(W).filter((id) => W[id].pos && !W[id].gone);
+        const cyc = b.sub % 3;
+        if (cyc === 1 && people.length) { kind = "close"; on = [people[0]]; }
+        else if (cyc === 2) { kind = "medium"; on = ["host"]; }
+        else { kind = s.shot ?? (people.length > 3 ? "wide" : "medium"); on = people.length ? (kind === "close" ? people.slice(0, 1) : people.slice(0, 8)) : ["host"]; }
+        if (fresh) { shotGag = on; const gb = s.place ? liveOf(s.place) : undefined; gagFront = gb && !gb.def.special ? gb.id : ""; gagKindByLine[b.line] = s.gag ?? ""; }
+        else if (cyc === 0) on = shotGag.length ? shotGag : on;
+        // the group shot of a gag at a building keeps the building in the picture (the queue is AT the warung)
+        if (cyc === 0 && gagFront && !s.shot) on = [`front:${gagFront}`, ...on];
+        break;
+      }
+      case "establish": kind = s.shot ?? "wide"; break;
+      case "rules": kind = s.shot ?? (b.sub % 2 ? "close" : "medium"); break;
+      case "comment": kind = s.shot ?? (b.sub % 2 ? "close" : "medium"); break;
+      case "cta": kind = s.shot ?? (b.sub % 2 ? "close" : "medium"); break;
+      default: kind = s.shot ?? (bi === 0 ? "wide" : (["medium", "close", "medium", "low", "medium", "wide"] as ShotKind[])[(bi + b.sub) % 6]);
+    }
+    if (s.shot === "orbit" && b.kind !== "build") { const bb = liveOf(s.build ?? story.builds?.[0]?.id ?? ""); if (bb) { kind = "orbit"; subjKind = "building"; on = [bb.id]; } }
+    shotPlans.push({ b, bi, t0, t1, kind, on, subjKind, time: curTime, dissolve: (!!s.dissolve && fresh) || (b.kind === "night" && fresh && b.sub === 0) });
+  });
+
+  // ---------------------------------------------------------------- actors in the plan
+  const actors: PActor[] = [];
+  actors.push({ id: "host", spec: hostLook, host: true, seed: 1, keys: keys.host });
+  castIds.forEach((id, k) => { if (keys[id]?.length) actors.push({ id, spec: castLooks[id], label: story.cast![id].handle, seed: 2 + k, keys: keys[id] }); });
+  extras.forEach((x, k) => { if (keys[x.id]?.length) actors.push({ id: x.id, spec: x.spec, seed: 20 + k, keys: keys[x.id] }); });
+  const stateAt = (id: string, t: number): AKey | null => { const ks = actors.find((a) => a.id === id)?.keys ?? []; let r: AKey | null = null; for (const k of ks) if (k.t <= t + 1e-3) r = k; return r && !(r as { gone?: boolean }).gone ? r : null; };
+
+  // ---------------------------------------------------------------- cameras
+  const frameAt = (t0: number, t1: number): Frame => {
+    const act = overlays.filter((o) => o.t0 < t1 - 0.05 && o.t1 > t0 + 0.05 && o.kind !== "tag");
+    if (!wide) { const f = freeOf(0.235, 0.84, act.map((o) => bandP(o)).filter(Boolean) as [number, number][]); return { x: 0.5, y: (f[0] + f[1]) / 2, fx: 0.92, fy: f[1] - f[0] }; }
+    const f = freeOf(0.03, 0.97, act.map((o) => colW(o)).filter(Boolean) as [number, number][]);
+    return { x: (f[0] + f[1]) / 2, y: 0.52, fx: f[1] - f[0], fy: 0.72 };
+  };
+  const pbuilds = (t: number) => live.filter((b) => b.start === undefined || t >= b.start);
+  const envAt = (t: number, skip: Set<string>, near: V3, inside: V3[] = []): Env => {
+    const boxes: Env["boxes"] = [];
+    for (const b of pbuilds(t)) boxes.push(...buildingBoxes({ pos: b.pos, yaw: b.yaw, def: b.def, id: b.id }));
+    for (const p of plates) if (p.appear <= t) {
+      const c = p.pos;
+      boxes.push({ min: [c[0] - 1.8, 0, c[2] - 1.8], max: [c[0] + 1.8, 3.6, c[2] + 1.8], id: `plate:${p.handle}` });
+    }
+    const n = dwellingsFor(popAt(t));
+    for (let i = 0; i < n; i++) {
+      const L = LOTS[i];
+      if (Math.hypot(L.pos[0] - near[0], L.pos[2] - near[2]) > 60) continue;
+      const house = L.kind === "house" || TENT_RANK[i] < up * TOTAL_TENTS;
+      const r = house ? 1.75 : 1.15, h = house ? 3.4 : 1.35;
+      boxes.push({ min: [L.pos[0] - r, 0, L.pos[2] - r], max: [L.pos[0] + r, h, L.pos[2] + r] });
+    }
+    // the host's first tent and the flag pole
+    boxes.push({ min: [MAP.tent.pos[0] - 1.05, 0, MAP.tent.pos[2] - 1.2], max: [MAP.tent.pos[0] + 1.05, 1.35, MAP.tent.pos[2] + 1.2] });
+    boxes.push({ min: [MAP.flag[0] - 0.08, 0, MAP.flag[2] - 0.08], max: [MAP.flag[0] + 0.08, 5.5, MAP.flag[2] + 0.08] });
+    const spheres: Env["spheres"] = [];
+    for (const tr of TREES.round) spheres.push({ c: [tr.pos[0], 3.2 * tr.s, tr.pos[2]], r: 1.6 * tr.s });
+    for (const tr of TREES.round) boxes.push({ min: [tr.pos[0] - 0.2, 0, tr.pos[2] - 0.2], max: [tr.pos[0] + 0.2, 2.6 * tr.s, tr.pos[2] + 0.2] });
+    for (const tr of TREES.coco) { spheres.push({ c: [tr.pos[0] + 0.7, 6.4 * tr.s, tr.pos[2]], r: 2.0 * tr.s }); boxes.push({ min: [tr.pos[0] - 0.2, 0, tr.pos[2] - 0.2], max: [tr.pos[0] + 0.45, 5.6 * tr.s, tr.pos[2] + 0.2] }); }
+    for (const a of actors) {
+      if (skip.has(a.id)) continue;
+      const k = stateAt(a.id, t);
+      if (!k) continue;
+      const sc = a.spec.scale ?? 1, seated = SEATED_POSES.has(k.pose);
+      spheres.push({ c: [k.pos[0], k.pos[1] + (seated ? 0.55 : 0.92) * sc, k.pos[2]], r: 0.3 * sc, id: a.id });
+      spheres.push({ c: [k.pos[0], k.pos[1] + (seated ? 0.2 : 0.45) * sc, k.pos[2]], r: 0.24 * sc, id: a.id });
+    }
+    for (const p of props) if (p.t0 <= t) boxes.push({ min: [p.pos[0] - 0.9, 0, p.pos[2] - 0.7], max: [p.pos[0] + 0.9, 0.03, p.pos[2] + 0.7] });
+    // people sitting in a building (a pos ronda bale, a gazebo) are not hidden by its own box
+    const keep = boxes.filter((bx) => !inside.some((q) => insideBox([q[0], Math.min(q[1] + 0.3, bx.max[1] - 0.01), q[2]], bx, 0.15)));
+    return { boxes: keep, spheres };
+  };
+  const bounds = { min: [-110, 0, -175] as V3, max: [150, 80, 95] as V3 };
+  const shots: PShot[] = [];
+  let prevAz: number | undefined, prevId: string | undefined;
+  for (const sp of shotPlans) {
+    const { t0, t1, b } = sp;
+    const tm = (t0 + t1) / 2;
+    const frame = frameAt(t0, t1);
+    const o = { aspect: opts.aspect, frame, prevAz, prevId, side: b.spec.side, move: b.spec.move, bounds };
+    let sol: Solve;
+    let linear = false;
+    const where = `line ${b.line + 1} (${t0.toFixed(1)} s, ${b.kind} ${sp.kind}${sp.on.length ? ` on ${sp.on.join("+")}` : ""})`;
+    gagKindNow = gagKindByLine[b.line] ?? "";
+    if (sp.subjKind === "people") {
+      // a seated person reads like a standing one 35 cm lower, framed a little wider (the seat is part of the joke)
+      const subs: Subj[] = sp.on.map((id) => {
+        if (id.startsWith("front:")) {
+          // a stand-in subject for the gag group at a building: at the group's centre, "facing" where the camera should be
+          // (argue / celebrate / sit: in front of the building; queue: from the side, so the line and the counter both read)
+          const fb = live.find((x) => x.id === id.slice(6))!;
+          const ppl = sp.on.filter((x) => !x.startsWith("front:")).map((x) => stateAt(x, tm)).filter(Boolean) as AKey[];
+          const c = ppl.length ? ppl.reduce((acc, k) => add3(acc, k.pos, 1 / ppl.length), [0, 0, 0] as V3) : toWorld([0, 0, fb.def.size[1] / 2 + 1], fb.pos, fb.yaw);
+          const toB = add3(toWorld([0, 0, fb.def.size[1] / 2], fb.pos, fb.yaw), c, -1);
+          const g = gagKindNow;
+          const p: V3 = g === "queue" ? add3(c, toB, 0.45) : add3(c, toB, 0.2);
+          return { id, type: "person", p: [p[0], 0, p[2]], face: fb.yaw + (g === "queue" ? 0.6 : 0), s: g === "queue" || g === "celebrate" ? 1.5 : 1.15, skip: sp.on } as Subj;
+        }
+        const k = stateAt(id, tm);
+        const standIn = sp.on.some((x) => x.startsWith("front:")); const sc = actors.find((a) => a.id === id)?.spec.scale ?? 1; const seated = k && SEATED_POSES.has(k.pose); return k ? ({ id, type: "person", p: seated ? [k.pos[0], k.pos[1] - 0.5 * sc, k.pos[2]] : k.pos, face: k.yaw, s: seated ? sc * 1.25 : sc, noFace: standIn && gagKindNow === "queue" } as Subj) : null; }).filter(Boolean) as Subj[];
+      if (!subs.length) subs.push({ id: "host", type: "person", p: host.pos ?? [0, 0, 0], face: 0, s: hostLook.scale ?? 1 });
+      const near = (subs[0] as { p: V3 }).p;
+      sol = solvePeople(sp.kind === "aerial" || sp.kind === "orbit" || sp.kind === "insert" || sp.kind === "truck" ? "medium" : sp.kind, subs, envAt(tm, new Set(), near, subs.filter((q) => !q.id.startsWith("front:")).map((q) => (q as { p: V3 }).p)), o);
+    } else if (sp.subjKind === "building" || sp.subjKind === "area") {
+      const bb = sp.subjKind === "area" ? null : liveOf(sp.on[0]);
+      const subj: Subj = bb ? { id: bb.id, type: "building", c: bb.pos, yaw: bb.yaw, w: bb.def.special === "road" ? 6 : bb.def.size[0], d: bb.def.special === "road" ? 26 : bb.def.size[1], h: bb.def.special === "road" ? 2 : bb.def.h }
+        : { id: "area", type: "building", c: host.pos ? [host.pos[0], 0, host.pos[2] - 4] : [0, 0, -4], yaw: host.yaw ?? 0, w: 18, d: 14, h: 4 };
+      if (bb?.def.special === "road") (subj as { c: V3 }).c = [10.75, 0, 8];
+      if (bb?.def.special === "station") (subj as { c: V3 }).c = toWorld([0, 0, -3.5], bb.pos, bb.yaw);
+      if (bb?.def.special === "field") { Object.assign(subj, { c: toWorld([-6, 0, -1], bb.pos, bb.yaw), w: 34, d: 14, h: 6 }); }
+      const skip = new Set([subj.id, ...sp.on]);
+      sol = solveBuilding(subj as Extract<Subj, { type: "building" }>, envAt(tm, skip, (subj as { c: V3 }).c), o, sp.subjKind === "area" ? 8 : 12, []);
+    } else if (sp.subjKind === "sign") {
+      const bb = liveOf(sp.on[0])!;
+      const pcs = expand(bb.def, bb.vars);
+      const sg = pcs.find((p) => p.shape === "sign" && /\{(name|country|by)\}/.test(p.tpl ?? "")) ?? pcs.find((p) => p.shape === "sign");
+      if (!sg || sg.shape !== "sign") { sol = solveBuilding({ id: bb.id, type: "building", c: bb.pos, yaw: bb.yaw, w: bb.def.size[0], d: bb.def.size[1], h: bb.def.h }, envAt(tm, new Set([bb.id]), bb.pos), o); }
+      else {
+        const ry = (sg.rot?.[1] ?? 0) * D2R;
+        const c = toWorld([sg.pos[0] + Math.sin(ry) * sg.size[2] / 2, sg.pos[1] + sg.size[1] / 2, sg.pos[2] + Math.cos(ry) * sg.size[2] / 2], bb.pos, bb.yaw);
+        sol = solveSign({ id: bb.id, type: "sign", c, yaw: bb.yaw + ry, w: sg.size[0], h: sg.size[1] }, envAt(tm, new Set([bb.id]), c), o);
+      }
+    } else if (sp.subjKind === "plate") {
+      const handle = sp.on[0].slice(6), sh = showPlates.find((p) => p.handle === handle)!, slot = SLOTS.find((x) => x.id === sh.slot)!;
+      const c = toWorld([0.67 + Math.sin(54 * D2R) * 0.03, 0.95 + 0.23, 2.65 + Math.cos(54 * D2R) * 0.03], slot.pos, slot.yaw);
+      sol = solveSign({ id: sp.on[0], type: "sign", c, yaw: slot.yaw + 54 * D2R, w: 1.08, h: 0.46 }, envAt(tm, new Set(sp.on), c), { ...o, move: b.spec.move ?? "push" });
+    } else if (sp.subjKind === "aerial") {
+      // over the growing settlement
+      const n0 = dwellingsFor(pop.from), n1 = Math.max(n0 + 1, dwellingsFor(pop.to));
+      const pick = LOTS.slice(n1 - n0 > 30 ? n0 : 0, n1);
+      const cx = pick.reduce((s, l) => s + l.pos[0], 0) / Math.max(1, pick.length), cz = pick.reduce((s, l) => s + l.pos[2], 0) / Math.max(1, pick.length);
+      const ds = pick.map((l) => Math.hypot(l.pos[0] - cx, l.pos[2] - cz)).sort((a, c) => a - c);
+      const R = Math.max(14, ds[Math.floor(ds.length * 0.85)] ?? 14);
+      const c: V3 = [cx * 0.7, 0, cz * 0.75];
+      const az = -0.35 + (b.sub % 2) * 0.5;
+      const at = (k: number, el: number): V3 => [c[0] + Math.sin(az) * Math.cos(el) * R * k, R * k * Math.sin(el), c[2] + Math.cos(az) * Math.cos(el) * R * k];
+      const fr = frame;
+      const posA = at(wide ? 1.0 : 1.25, 0.5), posB = at(wide ? 1.45 : 1.8, 0.66);
+      const tg = (p: V3): V3 => { const d = Math.hypot(p[0] - c[0], p[1] - c[1], p[2] - c[2]), tv = Math.tan((42 * D2R) / 2); return [c[0], c[1] + d * tv * (2 * fr.y - 1) * 0.9, c[2]]; };
+      sol = { a: { pos: posA, target: tg(posA), fov: 42 }, b: { pos: posB, target: tg(posB), fov: 42 }, vis: 1, az, box: Math.min(70, R * 1.8) };
+    } else if (sp.subjKind === "flyover") {
+      const pts = [...live.map((x) => x.pos), ...LOTS.slice(0, dwellingsFor(popTo)).map((l) => l.pos), [0, 0, 0] as V3];
+      const cx = pts.reduce((s, p) => s + p[0], 0) / pts.length, cz = pts.reduce((s, p) => s + p[2], 0) / pts.length;
+      const R = Math.max(26, Math.max(...pts.map((p) => Math.hypot(p[0] - cx, p[2] - cz))) * 0.85);
+      const c: V3 = [cx, 0, cz], fov = 42;
+      const az0 = -0.55, az1 = -0.05, r = R * (wide ? 1.15 : 1.5), h = R * 0.85;
+      const P = (az: number): V3 => [c[0] + Math.sin(az) * r, h, c[2] + Math.cos(az) * r];
+      const tv = Math.tan((fov * D2R) / 2), dd = Math.hypot(r, h);
+      const tgt: V3 = [c[0], dd * tv * (2 * frame.y - 1) * 0.8, c[2]];
+      sol = { a: { pos: P(az0), target: tgt, fov }, b: { pos: P(az1), target: tgt, fov }, vis: 1, az: az0, box: Math.min(90, R * 1.6), orbit: { c, r, h, az0, az1, fov, target: [0, 0, 0] } };
+    } else {
+      // plates: a constant-speed truck past the newest named houses, each plate crossing the centre
+      const newest = plates.filter((p) => p.appear >= 0);
+      const row = (newest.length ? newest : plates.slice(-3));
+      const first = row[0] ?? { pos: SLOTS[0].pos, yaw: SLOTS[0].yaw };
+      const sameRow = row.filter((p) => p.yaw === first.yaw);
+      const plate = (p: { pos: V3; yaw: number }) => toWorld([0.67, 1.18, 2.65], p.pos, p.yaw);
+      const nl: V3 = [Math.sin(54 * D2R), 0, Math.cos(54 * D2R)];
+      const nW: V3 = [nl[0] * Math.cos(first.yaw) + nl[2] * Math.sin(first.yaw), 0, nl[2] * Math.cos(first.yaw) - nl[0] * Math.sin(first.yaw)];
+      const look: V3 = [-nW[0], 0, -nW[2]];
+      const ordered = [...sameRow].sort((p, q) => (plate(p)[0] - plate(q)[0]) * look[0] + (plate(p)[2] - plate(q)[2]) * look[2]);
+      const pA = plate(ordered[0] ?? first), pB = plate(ordered[ordered.length - 1] ?? first);
+      const dist = wide ? 4.2 : 3.4;
+      const camA = add3(add3(pA, nW, dist), [0, 0.12, 0]);
+      const travel = Math.hypot(pB[0] - pA[0], pB[2] - pA[2]);
+      const dir: V3 = travel > 0.1 ? [(pB[0] - pA[0]) / travel, 0, (pB[2] - pA[2]) / travel] : [-look[2], 0, look[0]];
+      const span = Math.max(travel + 1.6, (t1 - t0) * 1.4);
+      const startPos = add3(camA, dir, -0.8), endPos = add3(startPos, dir, span);
+      const tA = add3(startPos, look, dist), tB = add3(endPos, look, dist);
+      tA[1] -= 0.12; tB[1] -= 0.12;
+      sol = { a: { pos: startPos, target: tA, fov: 38 }, b: { pos: endPos, target: tB, fov: 38 }, vis: 1, az: 0, box: 12 };
+      linear = true;
+      void sameRow;
+    }
+    if (sol.note || sol.vis < 0.75) warnings.push(`${where}: the camera could not see clearly${sol.note ? ` (${sol.note})` : ""} — move people apart, pick another place or shot`);
+    prevAz = sol.az; prevId = sp.on[0];
+    const tgt = sol.a.target;
+    shots.push({
+      i: shots.length, t0: +t0.toFixed(3), t1: +t1.toFixed(3), line: b.line, beat: b.kind, kind: sp.kind, a: sol.a, b: sol.b, linear, orbit: sol.orbit,
+      shadowAt: [tgt[0], 0, tgt[2]], shadowBox: sol.box, time: sp.time, dissolve: sp.dissolve, vis: +sol.vis.toFixed(2), on: sp.on,
+    });
+  }
+
+  // ---------------------------------------------------------------- builds for the plan
+  const pb: PBuild[] = live.map((b) => ({ id: b.id, kind: b.kind, name: b.name, by: b.by, plot: b.plot, pos: b.pos, yaw: b.yaw, vars: b.vars, start: b.start, end: b.end, day: b.day }));
+  for (const b of live.filter((x) => x.isNew && x.kind === "rumah")) {
+    const slot = SLOTS.find((s) => s.id === b.plot)!;
+    plates.push({ handle: b.by ?? "@warga", no: Number(b.vars.no), slot: b.plot, pos: slot.pos, yaw: slot.yaw, colors: b.vars, appear: b.start ?? 0, byBuild: b.id });
+  }
+  const customUsed = Object.fromEntries(Object.entries(custom).filter(([k]) => live.some((b) => b.kind === k)));
+  return {
+    id: story.id, title: story.title ?? `Hari ${story.day}`, day: story.day, country, flag, voice, duration, aspect: opts.aspect, pop,
+    builds: pb, plates, props, custom: customUsed, actors, shots, overlays, words, lines, audio: opts.audio, warnings,
+  };
+};

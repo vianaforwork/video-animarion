@@ -1,0 +1,2665 @@
+VOYNANN Motion - packed source files of this folder. Do not edit by hand.
+The skill upload in the Claude app accepts at most 200 files, so the source files are packed here.
+`node <skill folder>/new-project.mjs <project folder> --kit=<style>` unpacks them into the project.
+Format: per file one line with four '=' signs, the byte length and the path, then exactly that many bytes.
+
+==== 41 project/.gitignore
+node_modules
+out
+.gl-mode
+public/stories
+
+==== 14495 project/scripts/lib/negeri-sound.mjs
+// NEGERI sound from a Plan — original synth, no samples, no meme sounds.
+// Music: a bright "city builder" bed, 112 bpm in C (I–V–vi–IV): plucked bass, soft kick + finger snap, a marimba
+// melody on the pentatonic, a bamboo-ish shaker, a light pad; hi-hats join while something is being built; night
+// shots keep only the pad + crickets; a landing chord at the end.
+// SFX follow the plan: a soft air move on cuts, a "bloop" when a card pops in, a two-tone notification for comments,
+// a riser while the counter rolls + a ding when it lands, wooden knocks per build stage + a little fanfare when it is
+// done, ticks as name plates pass, a snore / claps / bonks for gags, a whoosh on time jumps, a chime on the CTA.
+// Mix: −14 LUFS / −1.5 dBTP; the music ducks under the voice.
+import fs from "node:fs";
+import path from "node:path";
+import { execFileSync, spawnSync } from "node:child_process";
+
+export const buildSound = (plan, { voice, outDir, mixFile, music = true }) => {
+  const DUR = plan.duration, SR = 48000, N = Math.ceil(DUR * SR);
+  const mk = () => [new Float32Array(N), new Float32Array(N)];
+  let seed = 1607;
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const add = (buf, t, pan, len, fn) => {
+    const i0 = Math.max(0, Math.round(t * SR)), n = Math.min(N - i0, Math.round(len * SR));
+    const gl = Math.cos(((pan + 1) * Math.PI) / 4), gr = Math.sin(((pan + 1) * Math.PI) / 4);
+    for (let i = 0; i < n; i++) { const v = fn(i / SR, i); buf[0][i0 + i] += v * gl; buf[1][i0 + i] += v * gr; }
+  };
+  const hz = (m) => 440 * Math.pow(2, (m - 69) / 12);
+  const shotAt = (t) => plan.shots.find((s) => t >= s.t0 && t < s.t1) ?? plan.shots[plan.shots.length - 1];
+  const nightAt = (t) => shotAt(t).time === "malam";
+  const building = (t) => plan.builds.some((b) => b.start !== undefined && t >= b.start && t <= b.end);
+
+  // ---------------------------------------------------------------- music
+  const mus = mk();
+  if (music) {
+    const beat = 60 / 112, bar = beat * 4;
+    const CH = [[48, 52, 55, 60], [43, 47, 50, 55], [45, 48, 52, 57], [41, 45, 48, 53]];
+    const PENTA = [72, 74, 76, 79, 81, 84, 86];
+    const fade = (t) => Math.min(1, Math.max(0, (DUR - 0.35 - t) / 1.4)) * Math.min(1, t / 0.4);
+    const bars = Math.ceil(DUR / bar);
+    for (let b = 0; b < bars; b++) {
+      const c = CH[b % 4], t0 = b * bar;
+      const night = nightAt(t0 + 0.1);
+      const full = night ? 0 : 1;
+      // pluck bass: 1, 2&, 3, 4&
+      if (!night) for (const [bt, m] of [[0, c[0] - 12], [1.5, c[0] - 12], [2, c[0] - 5], [3.5, c[0] - 10]]) {
+        const f = hz(m);
+        add(mus, t0 + bt * beat, -0.05, 0.4, (t) => (Math.sin(2 * Math.PI * f * t) + 0.4 * Math.sin(4 * Math.PI * f * t)) * 0.08 * Math.min(1, t / 0.004) * Math.exp(-t * 8) * fade(t0 + t));
+      }
+      // soft kick on 1 and 3, snap on 2 and 4
+      for (const bt of [0, 2]) if (full) add(mus, t0 + bt * beat, 0, 0.25, (t) => Math.sin(2 * Math.PI * (48 + 70 * Math.exp(-t * 30)) * t) * Math.exp(-t * 16) * 0.11 * fade(t0 + t));
+      for (const bt of [1, 3]) if (full) { let lp = 0; add(mus, t0 + bt * beat, 0.15, 0.09, (t) => { const n = rnd() * 2 - 1; lp += (n - lp) * 0.55; return (n - lp) * 0.07 * Math.exp(-t * 55) * fade(t0 + t); }); }
+      // marimba melody (8ths, with rests), sparser at night
+      for (let e = 0; e < 8; e++) {
+        if (rnd() > (night ? 0.18 : 0.62)) continue;
+        const pool = PENTA.filter((p) => c.some((x) => (p - x) % 12 === 0) || rnd() < 0.3);
+        const m = pool[Math.floor(rnd() * pool.length)] ?? 76;
+        const f = hz(m), vel = (e % 4 === 0 ? 0.055 : 0.04) * (0.8 + rnd() * 0.35), pan = (rnd() - 0.5) * 0.7;
+        add(mus, t0 + (e * beat) / 2 + (rnd() - 0.5) * 0.008, pan, 0.7, (t) => (Math.sin(2 * Math.PI * f * t) * Math.exp(-t * 9) + 0.3 * Math.sin(2 * Math.PI * f * 3.95 * t) * Math.exp(-t * 34)) * vel * Math.min(1, t / 0.002) * fade(t0 + t));
+      }
+      // pad
+      for (const [k, m] of c.entries()) add(mus, t0, (k - 1.5) * 0.25, bar + 0.4, (t) => (Math.sin(2 * Math.PI * hz(m + 12) * t) + 0.3 * Math.sin(2 * Math.PI * hz(m + 12) * 1.003 * t)) * 0.0075 * Math.min(1, t / 0.6) * Math.min(1, (bar + 0.4 - t) / 0.5) * fade(t0 + t));
+      // bamboo shaker on the off-beats; hi-hats while building
+      for (let e = 1; e < 8; e += 2) if (full) { let lp = 0; add(mus, t0 + (e * beat) / 2, 0.35, 0.07, (t) => { const n = rnd() * 2 - 1; lp += (n - lp) * 0.75; return (n - lp) * 0.02 * Math.exp(-t * 60) * fade(t0 + t); }); }
+      for (let e = 0; e < 16; e++) { const tt = t0 + (e * beat) / 4; if (!building(tt)) continue; let hp = 0, prev = 0; add(mus, tt, -0.3, 0.04, (t) => { const n = rnd() * 2 - 1; hp = 0.9 * (hp + n - prev); prev = n; return hp * 0.012 * (e % 2 ? 0.6 : 1) * Math.exp(-t * 90); }); }
+    }
+    const endT = Math.max(0, DUR - 1.9);
+    for (const m of [48, 55, 60, 64, 67, 72]) add(mus, endT, 0, 1.9, (t) => Math.sin(2 * Math.PI * hz(m) * t) * 0.026 * Math.min(1, t / 0.02) * Math.exp(-t * 1.6));
+  }
+
+  // ---------------------------------------------------------------- SFX
+  const sfx = mk();
+  const events = [];
+  const ev = (t, what) => events.push(`${t.toFixed(2)} ${what}`);
+  const noise = (t, len, gain, lpK, hpK, env, pan = 0) => { let lp = 0, hp = 0; add(sfx, t, pan, len, (x) => { const n = rnd() * 2 - 1; lp += (n - lp) * lpK; hp += (lp - hp) * hpK; return (lp - hp) * gain * env(x); }); };
+  const air = (t) => noise(t - 0.1, 0.26, 0.05, 0.05, 0.002, (x) => Math.sin(Math.PI * Math.min(1, x / 0.26)) ** 2);
+  const whoosh = (t) => noise(t - 0.2, 0.8, 0.13, 0.08, 0.01, (x) => Math.sin(Math.PI * Math.min(1, x / 0.8)) ** 2, 0.2);
+  const bloop = (t, m = 76) => add(sfx, t, 0.1, 0.16, (x) => Math.sin(2 * Math.PI * hz(m) * x * (1 + 0.6 * x / 0.16)) * 0.05 * Math.min(1, x / 0.004) * Math.exp(-x * 22));
+  const notif = (t) => { for (const [k, m] of [[0, 84], [1, 91]]) add(sfx, t + k * 0.09, 0.2, 0.5, (x) => Math.sin(2 * Math.PI * hz(m) * x) * 0.04 * Math.min(1, x / 0.003) * Math.exp(-x * 9)); };
+  const ding = (t, m = 88) => { for (const [k, mm] of [m, m + 7, m + 12].entries()) add(sfx, t + k * 0.035, 0.15, 1.1, (x) => Math.sin(2 * Math.PI * hz(mm) * x) * (0.035 - k * 0.008) * Math.min(1, x / 0.003) * Math.exp(-x * 4.5)); };
+  const knock = (t, f = 190, g = 0.12, pan = 0) => add(sfx, t, pan, 0.3, (x) => (Math.sin(2 * Math.PI * f * x * (1 + 0.6 * Math.exp(-x * 60))) * Math.exp(-x * 24) + (rnd() * 2 - 1) * 0.25 * Math.exp(-x * 140)) * g * Math.min(1, x / 0.002));
+  const fanfare = (t) => { for (const [k, m] of [[0, 72], [1, 76], [2, 79], [3, 84]]) add(sfx, t + k * 0.08, 0.1, 0.6, (x) => (Math.sin(2 * Math.PI * hz(m) * x) + 0.25 * Math.sin(4 * Math.PI * hz(m) * x)) * 0.03 * Math.min(1, x / 0.004) * Math.exp(-x * 5)); };
+  const tick = (t) => add(sfx, t, -0.1, 0.12, (x) => Math.sin(2 * Math.PI * 1900 * x) * Math.exp(-x * 60) * 0.035);
+  const riser = (t, len) => { let lp = 0; add(sfx, t, 0, len, (x) => { const n = rnd() * 2 - 1; lp += (n - lp) * (0.02 + 0.2 * (x / len)); const f = 300 + 900 * (x / len) ** 2; return (lp * 0.06 + Math.sin(2 * Math.PI * f * x) * 0.012) * Math.min(1, x / 0.2) * Math.min(1, (len - x) / 0.08); }); };
+  const snore = (t) => { for (let k = 0; k < 2; k++) noise(t + k * 1.1, 0.7, 0.07, 0.03, 0.01, (x) => Math.sin(Math.PI * x / 0.7) ** 2 * (0.6 + 0.4 * Math.sin(x * 2 * Math.PI * 28)), -0.2); };
+  const claps = (t, n) => { for (let k = 0; k < n; k++) { let lp = 0; add(sfx, t + k * 0.21 + rnd() * 0.04, (rnd() - 0.5) * 0.8, 0.08, (x) => { const z = rnd() * 2 - 1; lp += (z - lp) * 0.5; return (z - lp) * 0.05 * Math.exp(-x * 50); }); } };
+  const bonk = (t, m) => add(sfx, t, 0, 0.25, (x) => Math.sin(2 * Math.PI * hz(m) * x * (1 - 0.3 * x)) * Math.exp(-x * 14) * 0.06);
+  const chime = (t) => { for (const [k, m] of [[0, 79], [1, 86]]) add(sfx, t + k * 0.12, 0, 1.2, (x) => Math.sin(2 * Math.PI * hz(m) * x) * 0.035 * Math.min(1, x / 0.004) * Math.exp(-x * 3.5)); };
+  const chirp = (t) => { for (let k = 0; k < 3; k++) add(sfx, t + k * 0.13, 0.4, 0.09, (x) => Math.sin(2 * Math.PI * (3200 + 1800 * Math.sin(Math.PI * x / 0.09)) * x) * 0.012 * Math.sin(Math.PI * x / 0.09)); };
+
+  for (const o of plan.overlays) {
+    if (o.kind === "rules") { o.rules.forEach((_, k) => { bloop(o.t0 + k * 0.3, 74 + k * 3); ev(o.t0 + k * 0.3, "card"); }); }
+    if (o.kind === "comment") { notif(o.t0 + 0.02); ev(o.t0, "comment"); o.comments.slice(1).forEach((_, k) => { bloop(o.t0 + 0.22 * (k + 1), 72); ev(o.t0, "card"); }); }
+    if (o.kind === "build" || o.kind === "tag" || o.kind === "title") { bloop(o.t0, o.kind === "tag" ? 79 : 74); ev(o.t0, `${o.kind} card`); }
+    if (o.kind === "cta") { bloop(o.t0, 76); chime(o.t0 + 0.32); ev(o.t0, "cta"); }
+  }
+  if (plan.pop.t1 > plan.pop.t0) { riser(plan.pop.t0, plan.pop.t1 - plan.pop.t0); ding(plan.pop.t1, 91); ev(plan.pop.t0, "counter riser"); ev(plan.pop.t1, "ding"); }
+  for (const b of plan.builds) {
+    if (b.start === undefined) continue;
+    const len = b.end - b.start, n = Math.max(2, Math.min(5, Math.round(len / 0.9)));
+    for (let k = 0; k < n; k++) { knock(b.start + 0.12 + (len * k) / n, 160 + (k % 3) * 30, 0.11, 0.3 - k * 0.1); ev(b.start + (len * k) / n, "knock"); }
+    fanfare(b.end + 0.05); ev(b.end, "fanfare");
+  }
+  for (const S of plan.shots) if (S.beat === "plates" && S.kind === "truck") {
+    const n = Math.max(1, Math.min(5, plan.plates.filter((p) => p.appear >= 0).length || 3));
+    for (let k = 0; k < n; k++) { tick(S.t0 + ((S.t1 - S.t0) * (k + 0.6)) / (n + 0.4)); ev(S.t0, "plate tick"); }
+  }
+  // gags: what the citizens do in the first shot of each gag
+  const seenGag = new Set();
+  for (const S of plan.shots) {
+    if (S.beat !== "gag") continue;
+    const people = plan.actors.filter((a) => !a.host && a.keys.some((k) => Math.abs(k.t - S.t0) < 0.02));
+    if (!people.length || seenGag.has(S.line)) continue;
+    seenGag.add(S.line);
+    const poses = people.map((a) => a.keys.find((k) => Math.abs(k.t - S.t0) < 0.02).pose);
+    if (poses.some((p) => p.startsWith("sleep"))) { snore(S.t0 + 0.35); ev(S.t0, "snore"); }
+    if (poses.some((p) => p === "cheer" || p === "clap")) { claps(S.t0 + 0.2, 6); fanfare(S.t0 + 0.1); ev(S.t0, "claps"); }
+    if (poses.some((p) => p === "argue")) { bonk(S.t0 + 0.3, 62); bonk(S.t0 + 0.75, 58); ev(S.t0, "bonks"); }
+  }
+  // cuts: a whoosh on time jumps, a soft air move on the others unless another cue already marks the cut
+  const cueT = events.map((e) => parseFloat(e));
+  plan.shots.forEach((S, i) => {
+    if (!i) return;
+    if (S.dissolve) { whoosh(S.t0); ev(S.t0, "whoosh"); }
+    else if (!cueT.some((t) => Math.abs(t - S.t0) < 0.35)) { air(S.t0); ev(S.t0, "air"); }
+  });
+  // night: crickets while it is night; morning after a time jump: a few bird chirps
+  const nightOn = new Float32Array(N);
+  { let on = 0; const step = 1 / (0.6 * SR); for (let i = 0; i < N; i += 1) { const want = nightAt(i / SR) ? 1 : 0; on += Math.max(-step, Math.min(step, want - on)); nightOn[i] = on; } }
+  if (nightOn.some((v) => v > 0)) {
+    ev(0, "crickets");
+    for (let t = 0; t < DUR; t += 0.55 + rnd() * 0.4) {
+      const i = Math.round(t * SR);
+      if (!nightOn[i]) continue;
+      const f = 4300 + rnd() * 500, g = 0.009 * nightOn[i];
+      add(sfx, t, (rnd() - 0.5) * 1.2, 0.18, (x) => Math.sin(2 * Math.PI * f * x) * (0.5 + 0.5 * Math.sin(2 * Math.PI * 38 * x)) * g * Math.sin(Math.PI * x / 0.18));
+    }
+  }
+  for (const S of plan.shots) if (S.beat === "night" && S.dissolve && S.time === "pagi") { chirp(S.t0 + 0.6); chirp(S.t0 + 1.3); ev(S.t0, "birds"); }
+
+  // ---------------------------------------------------------------- write + mix
+  const wav = (file, buf) => {
+    const data = Buffer.alloc(N * 4);
+    for (let i = 0; i < N; i++) for (let c = 0; c < 2; c++) data.writeInt16LE(Math.round(Math.max(-1, Math.min(1, buf[c][i])) * 32767), i * 4 + c * 2);
+    const h = Buffer.alloc(44);
+    h.write("RIFF", 0); h.writeUInt32LE(36 + data.length, 4); h.write("WAVEfmt ", 8); h.writeUInt32LE(16, 16); h.writeUInt16LE(1, 20); h.writeUInt16LE(2, 22);
+    h.writeUInt32LE(SR, 24); h.writeUInt32LE(SR * 4, 28); h.writeUInt16LE(4, 32); h.writeUInt16LE(16, 34); h.write("data", 36); h.writeUInt32LE(data.length, 40);
+    fs.writeFileSync(file, Buffer.concat([h, data]));
+  };
+  fs.mkdirSync(outDir, { recursive: true });
+  fs.mkdirSync(path.dirname(mixFile), { recursive: true });
+  const mf = path.join(outDir, "music.wav"), sf = path.join(outDir, "sfx.wav");
+  wav(mf, mus);
+  wav(sf, sfx);
+  const tail = `apad=whole_dur=${DUR},atrim=0:${DUR},loudnorm=I=-14:TP=-1.5:LRA=11,aresample=48000[out]`;
+  const filter = voice
+    ? ["[0:a]highpass=f=70,acompressor=threshold=-20dB:ratio=2.5:attack=8:release=140:makeup=3,asplit=2[v][vk]", "[1:a]volume=1.0[m]", "[m][vk]sidechaincompress=threshold=0.03:ratio=6:attack=25:release=420[md]", "[2:a]volume=0.9[s]", `[v][md][s]amix=inputs=3:normalize=0:duration=longest,${tail}`].join(";")
+    : ["[0:a]volume=1.4[m]", "[1:a]volume=1.0[s]", `[m][s]amix=inputs=2:normalize=0:duration=longest,${tail}`].join(";");
+  execFileSync("ffmpeg", ["-y", "-v", "error", ...(voice ? ["-i", voice] : []), "-i", mf, "-i", sf, "-filter_complex", filter, "-map", "[out]", "-ac", "2", mixFile]);
+  // one-pass loudnorm can land short of −14 when peaks limit it (no voice, punchy SFX): a measured second pass fixes it
+  const measure = () => spawnSync("ffmpeg", ["-hide_banner", "-i", mixFile, "-af", "loudnorm=I=-14:TP=-1.5:LRA=11:print_format=json", "-f", "null", "-"], { encoding: "utf8" }).stderr;
+  const j1 = JSON.parse((measure().match(/\{[\s\S]*\}/) ?? ["{}"])[0]);
+  if (j1.input_i && Math.abs(parseFloat(j1.input_i) + 14) > 0.4) {
+    const tmp = mixFile.replace(/\.wav$/, ".pass1.wav");
+    fs.renameSync(mixFile, tmp);
+    const ln = `loudnorm=I=-14:TP=-1.5:LRA=11:measured_I=${j1.input_i}:measured_TP=${j1.input_tp}:measured_LRA=${j1.input_lra}:measured_thresh=${j1.input_thresh}:offset=${j1.target_offset}:linear=true`;
+    execFileSync("ffmpeg", ["-y", "-v", "error", "-i", tmp, "-af", `${ln},alimiter=limit=0.84:level=false,aresample=48000`, "-ac", "2", mixFile]);
+    fs.rmSync(tmp, { force: true });
+  }
+  const m = spawnSync("ffmpeg", ["-hide_banner", "-i", mixFile, "-af", "loudnorm=print_format=summary", "-f", "null", "-"], { encoding: "utf8" }).stderr;
+  return { lufs: (m.match(/Input Integrated:\s+(-?[\d.]+)/) ?? [])[1], peak: (m.match(/Input True Peak:\s+(-?[\d.]+)/) ?? [])[1], events: events.length, perMin: Math.round((events.length / DUR) * 60) };
+};
+
+==== 24253 project/src/kits/negeri/chibi/Chibi.tsx
+// Chibi — the NEGERI toon figure, a pure function of (spec, pose, face).
+//   head: big skin sphere + projected 2D face decal (face.ts) + ears + a 3D hair shell + hat (peci, cap)
+//   torso: a bean (lathe) wearing a painted shirt (batik motif, placket, buttons, lanyard strap) and trouser band
+//   limbs: chunky capsules (sleeves / trousers), ball hands (index finger for pointing), soled shoes
+// Cel-shaded (MeshToonMaterial, soft 3-step ramp) so it reads as a clean game character, no outlines.
+
+import React, { useMemo } from "react";
+import {
+  BoxGeometry, BufferGeometry, CanvasTexture, ConeGeometry, CylinderGeometry, DataTexture, Float32BufferAttribute, LatheGeometry, Matrix4,
+  MeshToonMaterial, NearestFilter, PlaneGeometry, Quaternion, RedFormat, SphereGeometry, SRGBColorSpace, Vector2, Vector3, type Material,
+} from "three";
+import { faceTexture, PATCH, type FaceState } from "./face.ts";
+import { beanR, DIM, solve, type Joints, type Pose, type V3 } from "./rig.ts";
+import type { ChibiSpec, HairStyle } from "./spec.ts";
+
+// ------------------------------------------------------------------ materials
+export const RAMP = (() => {
+  const d = new Uint8Array([120, 190, 235, 255]);
+  const t = new DataTexture(d, 4, 1, RedFormat);
+  t.minFilter = NearestFilter;
+  t.magFilter = NearestFilter;
+  t.generateMipmaps = false;
+  t.needsUpdate = true;
+  return t;
+})();
+const matCache = new Map<string, MeshToonMaterial>();
+export const toon = (color: string) => {
+  let m = matCache.get(color);
+  if (!m) matCache.set(color, (m = new MeshToonMaterial({ color, gradientMap: RAMP })));
+  return m;
+};
+
+// ------------------------------------------------------------------ small vector helpers
+const Yv = new Vector3(0, 1, 0);
+const add = (a: V3, b: V3, s = 1): V3 => [a[0] + b[0] * s, a[1] + b[1] * s, a[2] + b[2] * s];
+const sub = (a: V3, b: V3): V3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const nrm = (a: V3): V3 => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; };
+const lerp3 = (a: V3, b: V3, t: number): V3 => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+const stick = (a: V3, b: V3, r: number) => {
+  const A = new Vector3(...a), B = new Vector3(...b);
+  const d = B.clone().sub(A);
+  const L = Math.max(1e-5, d.length());
+  const q = new Quaternion().setFromUnitVectors(Yv, d.normalize());
+  return new Matrix4().compose(A, q, new Vector3(r, L, r));
+};
+const basis = (p: V3, x: V3, y: V3, z: V3, s: V3 = [1, 1, 1]) => {
+  const m = new Matrix4().makeBasis(new Vector3(...x), new Vector3(...y), new Vector3(...z));
+  m.scale(new Vector3(...s));
+  m.setPosition(...p);
+  return m;
+};
+
+const UNIT = {
+  sph: new SphereGeometry(1, 28, 20),
+  cyl: (() => { const g = new CylinderGeometry(1, 1, 1, 14, 1); g.translate(0, 0.5, 0); return g; })(),
+  half: new SphereGeometry(1, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2),
+  box: new BoxGeometry(1, 1, 1),
+};
+
+const M: React.FC<{ g: BufferGeometry; m: Matrix4; material: Material; shadow?: boolean }> = ({ g, m, material, shadow = true }) => (
+  <mesh geometry={g} material={material} matrix={m} matrixAutoUpdate={false} castShadow={shadow} receiveShadow />
+);
+
+// ------------------------------------------------------------------ torso (bean lathe, front at u = 0.5)
+const torsoCache = new Map<string, BufferGeometry>();
+const torsoGeo = (half: V3) => {
+  const key = half.map((x) => x.toFixed(4)).join(",");
+  const hit = torsoCache.get(key);
+  if (hit) return hit;
+  const pts: Vector2[] = [];
+  const n = 26;
+  for (let i = 0; i <= n; i++) { const v = -1 + (2 * i) / n; pts.push(new Vector2(beanR(v), v)); }
+  const g = new LatheGeometry(pts, 40);
+  g.rotateY(Math.PI);
+  const p = g.getAttribute("position");
+  for (let i = 0; i < p.count; i++) p.setXYZ(i, p.getX(i) * half[0], p.getY(i) * half[1], p.getZ(i) * half[2]);
+  g.computeVertexNormals();
+  torsoCache.set(key, g);
+  return g;
+};
+
+// ------------------------------------------------------------------ shirt texture
+const shirtCache = new Map<string, CanvasTexture>();
+const shirtTexture = (s: ChibiSpec) => {
+  const key = JSON.stringify([s.shirt, s.pants, s.lanyard, s.sarung, s.vest, s.apron, s.sash, s.skin]);
+  const hit = shirtCache.get(key);
+  if (hit) return hit;
+  const W = 1024, H = 512;
+  const cv = document.createElement("canvas");
+  cv.width = W; cv.height = H;
+  const g = cv.getContext("2d")!;
+  const fy = (v: number) => (1 - v) * H; // v 0 = bottom … 1 = top
+  g.fillStyle = s.shirt.color;
+  g.fillRect(0, 0, W, H);
+  const mc = s.shirt.motifColor ?? "#ffffff";
+  if (s.shirt.motif === "kawung") {
+    // kawung: four oval petals around a centre, on a diagonal grid
+    const step = 56;
+    for (let y = -step; y < H + step; y += step) for (let x = -step; x < W + step; x += step) {
+      const ox = ((y / step) % 2) * (step / 2);
+      const cx = x + ox, cy = y;
+      g.fillStyle = mc;
+      for (let k = 0; k < 4; k++) {
+        const a = (k * Math.PI) / 2 + Math.PI / 4;
+        g.beginPath();
+        g.ellipse(cx + Math.cos(a) * 11, cy + Math.sin(a) * 11, 10, 5.5, a, 0, Math.PI * 2);
+        g.fill();
+      }
+      g.fillStyle = s.shirt.color;
+      g.beginPath(); g.arc(cx, cy, 3, 0, Math.PI * 2); g.fill();
+      g.fillStyle = mc;
+      g.beginPath(); g.arc(cx + step / 2, cy, 2.4, 0, Math.PI * 2); g.fill();
+    }
+  } else if (s.shirt.motif === "parang") {
+    g.strokeStyle = mc; g.lineWidth = 9;
+    for (let x = -H; x < W + H; x += 46) { g.beginPath(); g.moveTo(x, H); g.lineTo(x + H, 0); g.stroke(); }
+  } else if (s.shirt.motif === "stripes") {
+    g.fillStyle = mc;
+    for (let y = 18; y < H; y += 46) g.fillRect(0, y, W, 16);
+  } else if (s.shirt.motif === "dots") {
+    g.fillStyle = mc;
+    for (let y = 10; y < H; y += 38) for (let x = ((y / 38) % 2) * 19; x < W; x += 38) { g.beginPath(); g.arc(x, y, 5, 0, Math.PI * 2); g.fill(); }
+  }
+  // open vest: both sides painted, the shirt shows down the front
+  if (s.vest) {
+    g.fillStyle = s.vest;
+    g.fillRect(0, fy(1), W * 0.5 - 70, fy(0.2) - fy(1));
+    g.fillRect(W * 0.5 + 70, fy(1), W * 0.5 - 70, fy(0.2) - fy(1));
+  }
+  if (s.apron) {
+    g.fillStyle = s.apron;
+    g.fillRect(W * 0.5 - 150, fy(0.72), 300, fy(-0.05) - fy(0.72));
+    g.fillRect(W * 0.5 - 150, fy(0.36), 300, 10);
+  }
+  if (s.sash) {
+    g.strokeStyle = s.sash; g.lineWidth = 46; g.lineCap = "butt";
+    g.beginPath(); g.moveTo(W * 0.5 - 150, fy(1.05)); g.lineTo(W * 0.5 + 170, fy(0.18)); g.stroke();
+  }
+  // placket + buttons (front centre u = 0.5)
+  if (s.shirt.buttons) {
+    g.fillStyle = s.shirt.collar ?? s.shirt.color;
+    g.fillRect(W * 0.5 - 13, fy(1), 26, fy(0.2) - fy(1));
+    g.fillStyle = s.shirt.buttons;
+    for (const v of [0.86, 0.66, 0.46, 0.28]) { g.beginPath(); g.arc(W * 0.5, fy(v), 7, 0, Math.PI * 2); g.fill(); }
+  }
+  // collar: a V at the top front
+  if (s.shirt.collar) {
+    g.fillStyle = s.shirt.collar;
+    g.beginPath();
+    g.moveTo(W * 0.5 - 120, fy(1)); g.lineTo(W * 0.5, fy(0.82)); g.lineTo(W * 0.5 + 120, fy(1)); g.closePath(); g.fill();
+    g.fillStyle = s.skin;
+    g.beginPath();
+    g.moveTo(W * 0.5 - 60, fy(1)); g.lineTo(W * 0.5, fy(0.9)); g.lineTo(W * 0.5 + 60, fy(1)); g.closePath(); g.fill();
+  }
+  // lanyard strap: a V from the collar down to the card (card is 3D, centre at v ≈ 0.55)
+  if (s.lanyard) {
+    g.strokeStyle = s.lanyard.strap; g.lineWidth = 14; g.lineCap = "round";
+    g.beginPath(); g.moveTo(W * 0.5 - 72, fy(1.0)); g.lineTo(W * 0.5 - 14, fy(0.66)); g.stroke();
+    g.beginPath(); g.moveTo(W * 0.5 + 72, fy(1.0)); g.lineTo(W * 0.5 + 14, fy(0.66)); g.stroke();
+    g.beginPath(); g.moveTo(W * 0.5 - 72, fy(1.0)); g.lineTo(W * 0.5 - 200, fy(1.0)); g.stroke();
+  }
+  // trouser / sarung band + belt
+  const low = s.shirt.tunic ? s.shirt.color : s.sarung ? s.sarung.color : s.pants;
+  g.fillStyle = low;
+  if (!s.shirt.tunic) g.fillRect(0, fy(0.2), W, H - fy(0.2));
+  if (s.shirt.tunic) {
+    g.fillStyle = "rgba(0,0,0,0.16)";
+    g.fillRect(0, fy(0.07), W, 10);
+  } else if (s.sarung) {
+    g.fillStyle = s.sarung.check;
+    for (let x = 0; x < W; x += 48) g.fillRect(x, fy(0.2), 14, H - fy(0.2));
+    g.fillRect(0, fy(0.12), W, 12);
+  } else {
+    g.fillStyle = "rgba(0,0,0,0.28)";
+    g.fillRect(0, fy(0.215), W, 14);
+  }
+  const t = new CanvasTexture(cv);
+  t.colorSpace = SRGBColorSpace;
+  t.anisotropy = 4;
+  shirtCache.set(key, t);
+  return t;
+};
+
+// ------------------------------------------------------------------ ID card
+const cardCache = new Map<string, CanvasTexture>();
+const cardTexture = (l: NonNullable<ChibiSpec["lanyard"]>) => {
+  const key = JSON.stringify(l);
+  const hit = cardCache.get(key);
+  if (hit) return hit;
+  const W = 200, H = 260;
+  const cv = document.createElement("canvas");
+  cv.width = W; cv.height = H;
+  const g = cv.getContext("2d")!;
+  g.fillStyle = l.card ?? "#ffffff"; g.fillRect(0, 0, W, H);
+  g.fillStyle = l.strap; g.fillRect(0, 0, W, 56);
+  g.fillStyle = "#ffffff"; g.fillRect(0, 56, W, 10);
+  g.fillStyle = "#d9cdb8"; g.fillRect(56, 84, 88, 96);
+  g.fillStyle = "#8a6a52"; g.beginPath(); g.arc(100, 120, 24, 0, Math.PI * 2); g.fill();
+  g.fillRect(70, 150, 60, 30);
+  g.fillStyle = "#1b1b1b";
+  g.font = "800 30px sans-serif";
+  g.textAlign = "center";
+  g.fillText(l.text, W / 2, 228, W - 16);
+  const t = new CanvasTexture(cv);
+  t.colorSpace = SRGBColorSpace;
+  cardCache.set(key, t);
+  return t;
+};
+
+// ------------------------------------------------------------------ hair shell (head-local: x left of figure = +x, y up, z front)
+const D2R = Math.PI / 180;
+type Edge = { top: (lon: number) => number; bottom: (lon: number) => number };
+const lerpT = (a: number, b: number, t: number) => a + (b - a) * Math.min(1, Math.max(0, t));
+const edges = (style: HairStyle): Edge | null => {
+  const back = (front: number, side: number, rear: number) => (lon: number) => {
+    const a = Math.abs(lon);
+    return a < 35 ? front : a < 100 ? lerpT(front, side, (a - 35) / 65) : lerpT(side, rear, (a - 100) / 80);
+  };
+  switch (style) {
+    case "bald": return { top: (lon) => { const a = Math.abs(lon); return a < 80 ? -24 : lerpT(-24, 8, (a - 80) / 30); }, bottom: () => -30 };
+    case "short": return { top: () => 90, bottom: back(36, 2, -36) };
+    case "spiky": return { top: () => 90, bottom: back(34, 4, -34) };
+    case "fringe": return { top: () => 90, bottom: (lon) => { const a = Math.abs(lon); const base = back(25, 0, -38)(lon); return a < 60 ? base + Math.abs(((lon / 9) % 2) - 1) * 6 - 2 : base; } };
+    case "bun": return { top: () => 90, bottom: back(34, -6, -40) };
+    case "long": return { top: () => 90, bottom: back(34, -48, -72) };
+  }
+};
+const hairCache = new Map<string, BufferGeometry>();
+const hairGeo = (style: HairStyle, R: number) => {
+  const key = style + R.toFixed(4);
+  const hit = hairCache.get(key);
+  if (hit) return hit;
+  const e = edges(style)!;
+  const NL = 96, NV = 14;
+  const pos: number[] = [];
+  const idx: number[] = [];
+  const at = (lonDeg: number, latDeg: number, k: number) => {
+    const lo = lonDeg * D2R, la = latDeg * D2R;
+    return [Math.sin(lo) * Math.cos(la) * k, Math.sin(la) * k, Math.cos(lo) * Math.cos(la) * k];
+  };
+  const rows = NV + 2; // outer rows + the inward lip
+  for (let i = 0; i <= NL; i++) {
+    const lon = -180 + (360 * i) / NL;
+    const top = e.top(lon), bot = e.bottom(lon);
+    for (let j = 0; j <= NV; j++) {
+      const lat = top + ((bot - top) * j) / NV;
+      const puff = 1.045 + 0.025 * (1 - j / NV);
+      pos.push(...at(lon, lat, R * puff));
+    }
+    // lip: tuck the edge back to the scalp so the shell has thickness and no see-through rim
+    pos.push(...at(lon, bot, R * 0.995));
+  }
+  for (let i = 0; i < NL; i++) for (let j = 0; j < rows - 1; j++) {
+    const a = i * rows + j, b = (i + 1) * rows + j;
+    idx.push(a, a + 1, b, b, a + 1, b + 1);
+  }
+  const g = new BufferGeometry();
+  g.setAttribute("position", new Float32BufferAttribute(pos, 3));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  hairCache.set(key, g);
+  return g;
+};
+
+// ------------------------------------------------------------------ the figure
+export type ChibiProps = {
+  spec: ChibiSpec;
+  pose: Pose;
+  face: FaceState;
+  /** world placement */
+  at?: V3;
+  rotY?: number;
+  faceRes?: number;
+};
+
+/** Solve a pose (exported for contact maths in scenes). */
+export const solveChibi = (spec: ChibiSpec, pose: Pose): Joints => solve(pose, spec.scale ?? 1, spec.belly ?? 1);
+
+/** Hand-to-face poses: put the right hand on the face (palm), the chin or the brow of the solved head. */
+export const withHead = (spec: ChibiSpec, pose: Pose, where: "palm" | "chin" | "brow"): Pose => {
+  const j = solveChibi(spec, pose);
+  const s = spec.scale ?? 1, hr = DIM.handR * s, R = j.headR;
+  let hand: V3;
+  if (where === "palm") hand = add(add(add(j.head, j.headFwd, R + hr * 0.75), j.headUp, 0.03 * s), j.headRight, -0.07 * s);
+  else {
+    const d = where === "chin" ? nrm(add(add([0, 0, 0], j.headFwd, 0.62), j.headUp, -0.8)) : nrm(add(add(add([0, 0, 0], j.headFwd, 0.7), j.headUp, 0.42), j.headRight, -0.6));
+    hand = add(j.head, d, where === "chin" ? R + hr * 0.8 : R * 1.08 + hr * 0.9);
+  }
+  return { ...pose, handR: [hand[0] / s, hand[1] / s, hand[2] / s] };
+};
+/** @deprecated use withHead(spec, pose, "palm") */
+export const withFacepalm = (spec: ChibiSpec, pose: Pose): Pose => withHead(spec, pose, "palm");
+
+// ------------------------------------------------------------------ hats
+const kerudungCache = new Map<string, BufferGeometry>();
+const kerudungGeo = (R: number) => {
+  const key = R.toFixed(4);
+  const hit = kerudungCache.get(key);
+  if (hit) return hit;
+  const NL = 96, NV = 16, pos: number[] = [], idx: number[] = [];
+  const bottom = (lon: number) => { const a = Math.abs(lon); return a < 46 ? 28 : a < 78 ? lerpT(28, -62, (a - 46) / 32) : -66; };
+  const at = (lonDeg: number, latDeg: number, k: number) => { const lo = lonDeg * D2R, la = latDeg * D2R; return [Math.sin(lo) * Math.cos(la) * k, Math.sin(la) * k, Math.cos(lo) * Math.cos(la) * k]; };
+  const rows = NV + 2;
+  for (let i = 0; i <= NL; i++) {
+    const lon = -180 + (360 * i) / NL, bot = bottom(lon);
+    for (let j = 0; j <= NV; j++) { const lat = 90 + ((bot - 90) * j) / NV; pos.push(...at(lon, lat, R * (1.075 + 0.02 * (1 - j / NV)))); }
+    pos.push(...at(lon, bot, R * 0.99));
+  }
+  for (let i = 0; i < NL; i++) for (let j = 0; j < rows - 1; j++) { const a = i * rows + j, b = (i + 1) * rows + j; idx.push(a, a + 1, b, b, a + 1, b + 1); }
+  const g = new BufferGeometry();
+  g.setAttribute("position", new Float32BufferAttribute(pos, 3));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  kerudungCache.set(key, g);
+  return g;
+};
+const drapeCache = new Map<string, BufferGeometry>();
+/** the kerudung's drape over the neck and shoulders (torso frame, y from the neck down to the shoulders) */
+const drapeGeo = (top: number, bot: number, r0: number, r1: number) => {
+  const key = [top, bot, r0, r1].map((x) => x.toFixed(4)).join(",");
+  const hit = drapeCache.get(key);
+  if (hit) return hit;
+  const pts: Vector2[] = [];
+  for (let i = 0; i <= 8; i++) { const t = i / 8; pts.push(new Vector2(r0 + (r1 - r0) * Math.pow(t, 0.8), top + (bot - top) * t)); }
+  pts.push(new Vector2(r1 * 0.94, bot - 0.004));
+  const g = new LatheGeometry(pts.reverse(), 32);
+  drapeCache.set(key, g);
+  return g;
+};
+const CROWN = (() => {
+  const g = new CylinderGeometry(1, 1, 1, 24, 1, true);
+  g.translate(0, 0.5, 0);
+  return g;
+})();
+const BRIM = new CylinderGeometry(1, 1, 1, 24, 1, false, -Math.PI / 2, Math.PI);
+const CAPING = new ConeGeometry(1, 1, 28, 1, false);
+
+export const Chibi: React.FC<ChibiProps> = ({ spec, pose, face, at = [0, 0, 0], rotY = 0, faceRes = 768 }) => {
+  const s = spec.scale ?? 1;
+  const j = solveChibi(spec, pose);
+  const R = j.headR;
+  const G = useMemo(() => ({
+    torso: torsoGeo(j.torsoHalf),
+    decal: new SphereGeometry(R * 1.003, 56, 44, Math.PI / 2 - PATCH.lon, 2 * PATCH.lon, Math.PI / 2 - PATCH.lat, 2 * PATCH.lat),
+    hair: hairGeo(spec.hair.style, R),
+    peci: new CylinderGeometry(R * 0.8, R * 0.866, R * 0.5, 40),
+    card: new PlaneGeometry(0.1 * s, 0.13 * s),
+  }), [R, s, spec.hair.style, j.torsoHalf[0], j.torsoHalf[1], j.torsoHalf[2]]); // eslint-disable-line react-hooks/exhaustive-deps
+  const mats = useMemo(() => {
+    const shirt = new MeshToonMaterial({ map: shirtTexture(spec), gradientMap: RAMP });
+    const decal = new MeshToonMaterial({ gradientMap: RAMP, transparent: false, alphaTest: 0.5, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+    const card = spec.lanyard ? new MeshToonMaterial({ map: cardTexture(spec.lanyard), gradientMap: RAMP }) : null;
+    return { shirt, decal, card };
+  }, [JSON.stringify(spec)]); // eslint-disable-line react-hooks/exhaustive-deps
+  mats.decal.map = faceTexture(spec, face, faceRes);
+  mats.decal.needsUpdate = true;
+
+  const skin = toon(spec.skin);
+  const hairM = toon(spec.hair.color);
+  const sleeve = toon(spec.shirt.color);
+  const legs = toon(spec.sarung ? spec.sarung.color : spec.pants);
+  const shoeM = toon(spec.shoes);
+  const soleM = toon("#3a332e");
+
+  const headM = basis(j.head, j.headRight, j.headUp, j.headFwd);
+  const torsoM = basis(j.torso, j.right, j.up, j.fwd);
+  const parts: React.ReactNode[] = [];
+  let k = 0;
+  const P = (g: BufferGeometry, m: Matrix4, material: Material, shadow = true) => parts.push(<M key={k++} g={g} m={m} material={material} shadow={shadow} />);
+  const fingers: React.ReactNode[] = [];
+
+  // torso + neck
+  P(G.torso, torsoM, mats.shirt);
+  P(UNIT.cyl, stick(add(j.neck, j.up, -0.05 * s), add(j.neck, j.headUp, 0.08 * s), 0.055 * s), skin);
+  // head
+  P(UNIT.sph, basis(j.head, j.headRight, j.headUp, j.headFwd, [R, R, R]), skin);
+  P(G.decal, headM, mats.decal, false);
+  for (const sd of [-1, 1]) {
+    const ear = add(add(j.head, j.headRight, sd * R * 0.95), j.headUp, -0.035 * s);
+    P(UNIT.sph, basis(ear, j.headRight, j.headUp, j.headFwd, [0.035 * s, 0.06 * s, 0.045 * s]), skin);
+  }
+  const hat = spec.hat?.kind ?? "none";
+  const hatC = spec.hat?.color ?? "#1d1c22", hatC2 = spec.hat?.color2 ?? "#e2b54a";
+  if (hat !== "kerudung") {
+    if (G.hair) P(G.hair, headM, hairM);
+    if (spec.hair.style === "spiky" && hat !== "helm" && hat !== "topi") {
+      for (let i = 0; i < 7; i++) {
+        const lon = (-66 + i * 22) * D2R, lat = (58 - Math.abs(i - 3) * 6) * D2R;
+        const d = nrm(add(add(add([0, 0, 0], j.headRight, Math.sin(lon) * Math.cos(lat)), j.headUp, Math.sin(lat)), j.headFwd, Math.cos(lon) * Math.cos(lat)));
+        const base = add(j.head, d, R * 0.96);
+        const tip = add(base, nrm(add(add(d, j.headFwd, -0.7), j.headUp, 0.2)), R * 0.36);
+        P(SPIKE, stick(base, tip, R * 0.12), hairM);
+      }
+    }
+    if (spec.hair.style === "bun" && hat !== "helm" && hat !== "caping") {
+      const b = add(add(j.head, j.headUp, R * 0.62), j.headFwd, -R * 0.78);
+      P(UNIT.sph, basis(b, j.headRight, j.headUp, j.headFwd, [R * 0.36, R * 0.36, R * 0.36]), hairM);
+    }
+  }
+  const onTop = (k: number) => add(j.head, j.headUp, R * k);
+  if (hat === "peci") P(G.peci, basis(onTop(0.82), j.headRight, j.headUp, j.headFwd), toon(hatC));
+  if (hat === "kerudung") {
+    P(kerudungGeo(R), headM, toon(hatC));
+    P(drapeGeo((DIM.torsoUp + 0.012) * s, (DIM.shoulderUp - 0.035) * s, 0.078 * s, 0.205 * s * (spec.belly ?? 1)), basis(j.pelvis, j.right, j.up, j.fwd), toon(hatC));
+  }
+  if (hat === "mahkota") {
+    const base = onTop(0.68);
+    P(CROWN, basis(base, j.headRight, j.headUp, j.headFwd, [R * 0.74, R * 0.3, R * 0.74]), toon(hatC2));
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      const c = add(add(add(base, j.headUp, R * 0.3), j.headRight, Math.sin(a) * R * 0.66), j.headFwd, Math.cos(a) * R * 0.66);
+      P(SPIKE, basis(c, j.headRight, j.headUp, j.headFwd, [R * 0.11, R * 0.24, R * 0.11]), toon(hatC2));
+    }
+    P(UNIT.sph, basis(add(add(base, j.headUp, R * 0.15), j.headFwd, R * 0.75), j.headRight, j.headUp, j.headFwd, [R * 0.07, R * 0.07, R * 0.05]), toon(hatC));
+  }
+  if (hat === "caping") P(CAPING, basis(onTop(0.86), j.headRight, j.headUp, j.headFwd, [R * 1.75, R * 0.55, R * 1.75]), toon(spec.hat?.color ?? "#d9be7c"));
+  if (hat === "topi" || hat === "helm") {
+    const k = hat === "helm" ? 1.13 : 1.09;
+    P(UNIT.half, basis(add(j.head, j.headUp, R * 0.04), j.headRight, j.headUp, j.headFwd, [R * k, R * k * 0.98, R * k]), toon(hatC));
+    if (hat === "topi") P(BRIM, basis(add(add(j.head, j.headUp, R * 0.1), j.headFwd, R * 0.9), j.headRight, j.headUp, j.headFwd, [R * 0.62, R * 0.05, R * 0.7]), toon(hatC2 === "#e2b54a" ? hatC : hatC2));
+    else {
+      P(UNIT.cyl, basis(add(j.head, j.headUp, R * 0.02), j.headRight, j.headUp, j.headFwd, [R * 1.26, R * 0.05, R * 1.26]), toon(hatC));
+      P(UNIT.box, basis(add(j.head, j.headUp, R * 1.08), j.headRight, j.headUp, j.headFwd, [R * 0.16, R * 0.14, R * 1.5]), toon(hatC));
+    }
+  }
+  // lanyard card on the chest (flat card at the widest part of the bean, a hair off the surface)
+  if (spec.lanyard && mats.card) {
+    const v = 0.08;
+    const z = beanR(v) * j.torsoHalf[2] + 0.007 * s;
+    const c = add(add(j.torso, j.up, v * j.torsoHalf[1]), j.fwd, z);
+    P(G.card, basis(c, j.right, j.up, j.fwd), mats.card, false);
+  }
+  // arms
+  for (const side of ["L", "R"] as const) {
+    const sh = side === "L" ? j.shL : j.shR, el = side === "L" ? j.elbowL : j.elbowR, wr = side === "L" ? j.wristL : j.wristR;
+    const ar = DIM.armR * s, fr = DIM.foreR * s, hr = DIM.handR * s;
+    P(UNIT.sph, basis(sh, j.right, j.up, j.fwd, [ar * 1.12, ar * 1.12, ar * 1.12]), sleeve);
+    if (spec.shirt.long) {
+      P(UNIT.cyl, stick(sh, el, ar), sleeve);
+      P(UNIT.sph, basis(el, j.right, j.up, j.fwd, [ar * 0.98, ar * 0.98, ar * 0.98]), sleeve);
+      P(UNIT.cyl, stick(el, lerp3(el, wr, 0.62), fr * 1.12), sleeve);
+      P(UNIT.cyl, stick(lerp3(el, wr, 0.5), wr, fr * 0.9), skin);
+    } else {
+      P(UNIT.cyl, stick(sh, lerp3(sh, el, 0.7), ar * 1.12), sleeve);
+      P(UNIT.cyl, stick(sh, el, ar * 0.86), skin);
+      P(UNIT.sph, basis(el, j.right, j.up, j.fwd, [ar * 0.86, ar * 0.86, ar * 0.86]), skin);
+      P(UNIT.cyl, stick(el, wr, fr), skin);
+    }
+    P(UNIT.sph, basis(wr, j.right, j.up, j.fwd, [hr, hr, hr]), skin);
+    // the pointing finger grows out of the hand (fingerK 0..1 from the pose blend); drawn last with fixed keys so
+    // adding it never renumbers the other parts
+    const fk = side === "L" ? pose.fingerLk ?? (pose.fingerL ? 1 : 0) : pose.fingerRk ?? (pose.fingerR ? 1 : 0);
+    if (fk > 0.02) {
+      const d = nrm(sub(wr, el));
+      const a = add(wr, d, hr * 0.5), b = add(wr, d, hr * 0.5 + (hr * 0.5 + 0.06 * s) * fk);
+      const r = 0.019 * s * Math.min(1, 0.4 + fk);
+      fingers.push(<M key={`f${side}0`} g={UNIT.cyl} m={stick(a, b, r)} material={skin} />);
+      fingers.push(<M key={`f${side}1`} g={UNIT.sph} m={basis(b, j.right, j.up, j.fwd, [r, r, r])} material={skin} />);
+    }
+  }
+  // legs + shoes
+  const yaw = Math.atan2(j.fwd[0], j.fwd[2]);
+  for (const side of ["L", "R"] as const) {
+    const hp = side === "L" ? j.hipL : j.hipR, kn = side === "L" ? j.kneeL : j.kneeR, an = side === "L" ? j.ankleL : j.ankleR;
+    const lr = DIM.legR * s, srr = DIM.shinR * s;
+    P(UNIT.sph, basis(hp, j.right, j.up, j.fwd, [lr, lr, lr]), legs);
+    P(UNIT.cyl, stick(hp, kn, lr), legs);
+    P(UNIT.sph, basis(kn, j.right, j.up, j.fwd, [lr * 0.95, lr * 0.95, lr * 0.95]), legs);
+    P(UNIT.cyl, stick(kn, an, srr), legs);
+    const sp = (pose.splay ?? 0.25) * (side === "L" ? 1 : -1) * 0.5;
+    const fy = yaw + sp;
+    const fwdF: V3 = [Math.sin(fy), 0, Math.cos(fy)];
+    const rightF: V3 = [Math.cos(fy), 0, -Math.sin(fy)];
+    const groundY = an[1] - DIM.ankle * s;
+    const c = add(an, fwdF, 0.035 * s);
+    P(UNIT.box, basis([c[0], groundY + 0.012 * s, c[2]], rightF, [0, 1, 0], fwdF, [0.13 * s, 0.024 * s, 0.205 * s]), soleM);
+    P(UNIT.half, basis([c[0], groundY + 0.022 * s, c[2]], rightF, [0, 1, 0], fwdF, [0.064 * s, 0.072 * s, 0.1 * s]), shoeM);
+  }
+
+  return (
+    <group position={at} rotation={[0, rotY, 0]}>
+      {parts}
+      {fingers}
+    </group>
+  );
+};
+
+const SPIKE = (() => { const g = new CylinderGeometry(0, 1, 1, 8, 1); g.translate(0, 0.5, 0); return g; })();
+
+==== 14981 project/src/kits/negeri/chibi/rig.ts
+// NEGERI chibi rig — pure maths (no React/three). Big head (≈ 42 % of the height), bean torso, short chunky limbs.
+// Posed from targets (pelvis, torso lean, hand + foot targets); elbows / knees come from two-bone IK so hands land
+// where they are told (hips, face, a card) and feet stay on the ground. Adapted from the CERDIK rig.
+// Local frame: the figure faces +z, up is +y, its LEFT side is +x.
+
+export type V3 = [number, number, number];
+
+export type Pose = {
+  pelvis: V3;
+  /** torso lean forward (+) / back (−), side lean to its left (+), twist to its left (+) — radians */
+  pitch: number;
+  roll?: number;
+  twist?: number;
+  /** head: nod down (+), turn to its left (+), tilt to its left (+) */
+  nod?: number;
+  turn?: number;
+  tilt?: number;
+  handL: V3;
+  handR: V3;
+  footL: V3;
+  footR: V3;
+  splay?: number;
+  elbowOut?: number;
+  kneeOut?: number;
+  /** index finger out on the right / left hand (pointing) */
+  fingerR?: boolean;
+  fingerL?: boolean;
+  /** finger length 0..1 while blending between a pointing and a non-pointing pose */
+  fingerRk?: number;
+  fingerLk?: number;
+};
+
+export const DIM = {
+  headR: 0.27, neck: 0.015,
+  torsoUp: 0.3, torsoBelow: 0.07, shoulderUp: 0.225, shoulderW: 0.14,
+  torsoW: 0.165, torsoD: 0.135,
+  upper: 0.15, fore: 0.14, handR: 0.056, armR: 0.05, foreR: 0.043,
+  hipW: 0.078, thigh: 0.165, shin: 0.155, ankle: 0.055, legR: 0.064, shinR: 0.058,
+};
+export const PY = 0.362;
+
+const add = (a: V3, b: V3): V3 => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+const sub = (a: V3, b: V3): V3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const mul = (a: V3, s: number): V3 => [a[0] * s, a[1] * s, a[2] * s];
+const dot = (a: V3, b: V3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const cross = (a: V3, b: V3): V3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const len = (a: V3) => Math.hypot(a[0], a[1], a[2]);
+const norm = (a: V3): V3 => { const l = len(a) || 1; return [a[0] / l, a[1] / l, a[2] / l]; };
+
+export const ik2 = (root: V3, target: V3, a: number, b: number, pole: V3): [V3, V3] => {
+  let d = sub(target, root);
+  let L = len(d);
+  const max = (a + b) * 0.999, min = Math.abs(a - b) + 1e-3;
+  if (L < 1e-6) { d = [0, -1, 0]; L = 1e-6; }
+  const dir = mul(d, 1 / L);
+  const Lc = Math.min(max, Math.max(min, L));
+  const x = (a * a - b * b + Lc * Lc) / (2 * Lc);
+  const h = Math.sqrt(Math.max(0, a * a - x * x));
+  let bend = sub(pole, mul(dir, dot(pole, dir)));
+  if (len(bend) < 1e-5) bend = cross(dir, [1, 0, 0]);
+  bend = norm(bend);
+  const mid = add(add(root, mul(dir, x)), mul(bend, h));
+  return [mid, add(root, mul(dir, Lc))];
+};
+
+export type Joints = {
+  pelvis: V3; chest: V3; neck: V3; head: V3; up: V3; right: V3; fwd: V3; headUp: V3; headFwd: V3; headRight: V3;
+  hipL: V3; hipR: V3; kneeL: V3; kneeR: V3; ankleL: V3; ankleR: V3;
+  shL: V3; shR: V3; elbowL: V3; elbowR: V3; wristL: V3; wristR: V3;
+  torso: V3; torsoHalf: V3; headR: number; s: number;
+};
+
+const rotX = (v: V3, a: number): V3 => [v[0], v[1] * Math.cos(a) - v[2] * Math.sin(a), v[1] * Math.sin(a) + v[2] * Math.cos(a)];
+const rotY = (v: V3, a: number): V3 => [v[0] * Math.cos(a) + v[2] * Math.sin(a), v[1], -v[0] * Math.sin(a) + v[2] * Math.cos(a)];
+const rotZ = (v: V3, a: number): V3 => [v[0] * Math.cos(a) - v[1] * Math.sin(a), v[0] * Math.sin(a) + v[1] * Math.cos(a), v[2]];
+
+/** Torso surface radius factor at normalised height v (−1 bottom … 1 top): the bean profile. */
+export const beanR = (v: number) => {
+  const p = 2.4;
+  let r = Math.pow(Math.max(0, 1 - Math.pow(Math.abs(v), p)), 1 / p);
+  r *= 1 - 0.1 * Math.max(0, v) + 0.04 * Math.max(0, -v);
+  return Math.max(1e-3, r);
+};
+
+export const solve = (p: Pose, s = 1, belly = 1): Joints => {
+  const D = DIM, HR = D.headR * s;
+  if (s !== 1) {
+    const S = (v: V3): V3 => [v[0] * s, v[1] * s, v[2] * s];
+    p = { ...p, pelvis: S(p.pelvis), handL: S(p.handL), handR: S(p.handR), footL: S(p.footL), footR: S(p.footR) };
+  }
+  const tw = p.twist ?? 0, rl = p.roll ?? 0;
+  const tf = (v: V3) => rotZ(rotX(rotY(v, tw), p.pitch), -rl);
+  const up = tf([0, 1, 0]), right = tf([1, 0, 0]), fwd = tf([0, 0, 1]);
+  const pelvis = p.pelvis;
+  const chest = add(pelvis, mul(up, D.shoulderUp * s));
+  const neck = add(pelvis, mul(up, D.torsoUp * s));
+  const hf = (v: V3) => tf(rotX(rotZ(rotY(v, p.turn ?? 0), -(p.tilt ?? 0)), p.nod ?? 0));
+  const headUp = hf([0, 1, 0]), headFwd = hf([0, 0, 1]), headRight = hf([1, 0, 0]);
+  const head = add(neck, mul(headUp, D.neck * s + HR * 0.86));
+  const hipL = add(pelvis, mul(right, D.hipW * s));
+  const hipR = add(pelvis, mul(right, -D.hipW * s));
+  const ko = p.kneeOut ?? 0.1;
+  const [kneeL, ankleL] = ik2(hipL, p.footL, D.thigh * s, D.shin * s, [ko, 0.2, 1]);
+  const [kneeR, ankleR] = ik2(hipR, p.footR, D.thigh * s, D.shin * s, [-ko, 0.2, 1]);
+  const shL = add(chest, mul(right, D.shoulderW * s * belly)), shR = add(chest, mul(right, -D.shoulderW * s * belly));
+  const eo = p.elbowOut ?? 0.6;
+  const poleL = add(add(mul(right, eo * 1.6), mul(up, -1)), mul(fwd, -0.4));
+  const poleR = add(add(mul(right, -eo * 1.6), mul(up, -1)), mul(fwd, -0.4));
+  const [elbowL, wristL] = ik2(shL, p.handL, D.upper * s, D.fore * s, poleL);
+  const [elbowR, wristR] = ik2(shR, p.handR, D.upper * s, D.fore * s, poleR);
+  const torsoHalf: V3 = [D.torsoW * s * belly, ((D.torsoUp + D.torsoBelow) * s) / 2, D.torsoD * s * belly];
+  const torso = add(pelvis, mul(up, ((D.torsoUp - D.torsoBelow) * s) / 2));
+  return { pelvis, chest, neck, head, up, right, fwd, headUp, headFwd, headRight, hipL, hipR, kneeL, kneeR, ankleL, ankleR, shL, shR, elbowL, elbowR, wristL, wristR, torso, torsoHalf, headR: HR, s };
+};
+
+const mixN = (a: number | undefined, b: number | undefined, t: number, d = 0) => (a ?? d) + ((b ?? d) - (a ?? d)) * t;
+const mixV = (a: V3, b: V3, t: number): V3 => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+export const mixPose = (a: Pose, b: Pose, t: number): Pose => {
+  if (t <= 0) return a;
+  if (t >= 1) return b;
+  return {
+    pelvis: mixV(a.pelvis, b.pelvis, t), pitch: mixN(a.pitch, b.pitch, t), roll: mixN(a.roll, b.roll, t), twist: mixN(a.twist, b.twist, t),
+    nod: mixN(a.nod, b.nod, t), turn: mixN(a.turn, b.turn, t), tilt: mixN(a.tilt, b.tilt, t),
+    handL: mixV(a.handL, b.handL, t), handR: mixV(a.handR, b.handR, t), footL: mixV(a.footL, b.footL, t), footR: mixV(a.footR, b.footR, t),
+    splay: mixN(a.splay, b.splay, t, 0.25), elbowOut: mixN(a.elbowOut, b.elbowOut, t, 0.6), kneeOut: mixN(a.kneeOut, b.kneeOut, t, 0.1),
+    fingerR: t < 0.5 ? a.fingerR : b.fingerR, fingerL: t < 0.5 ? a.fingerL : b.fingerL,
+    fingerRk: (a.fingerRk ?? (a.fingerR ? 1 : 0)) * (1 - t) + (b.fingerRk ?? (b.fingerR ? 1 : 0)) * t,
+    fingerLk: (a.fingerLk ?? (a.fingerL ? 1 : 0)) * (1 - t) + (b.fingerLk ?? (b.fingerL ? 1 : 0)) * t,
+  };
+};
+
+// ------------------------------------------------------------------ pose library (s = 1)
+const A = DIM.ankle;
+const FEET = { footL: [0.085, A, 0.01] as V3, footR: [-0.085, A, -0.01] as V3 };
+const W = DIM.handR;
+/** hand centre on the side of the bean torso at local height y (pelvis-relative frame of a straight torso) */
+const hip = (side: 1 | -1, y = PY + 0.05, belly = 1): V3 => {
+  const D = DIM, c = PY + (D.torsoUp - D.torsoBelow) / 2, hh = (D.torsoUp + D.torsoBelow) / 2;
+  const r = beanR((y - c) / hh) * D.torsoW * belly;
+  return [side * (r + W * 0.85), y, 0.02];
+};
+
+const SEATED = (lean = -0.05): Pick<Pose, "pelvis" | "pitch"> => ({ pelvis: [0, 0.075, 0], pitch: lean });
+/** legs over a bench edge (root = the seat point, pelvis 7.5 cm above it, thighs forward, shins down) */
+const LEGS_HANG = { footL: [0.09, 0.075 - DIM.shin + 0.005, DIM.thigh + 0.02] as V3, footR: [-0.09, 0.075 - DIM.shin + 0.005, DIM.thigh + 0.03] as V3, splay: 0.3, kneeOut: 0.12 };
+/** legs straight forward on the surface (a bale, a mat, the ground) */
+const LEGS_FWD = { footL: [0.09, 0.057, 0.34] as V3, footR: [-0.09, 0.057, 0.33] as V3, splay: 0.5 };
+
+export const POSES = {
+  stand: (): Pose => ({ pelvis: [0, PY, 0], pitch: 0.02, handL: [0.3, 0.36, 0.03], handR: [-0.3, 0.36, 0.03], ...FEET, elbowOut: 0.5 }),
+  /** talking: the right hand gestures softly in front (ph = time · speed) */
+  talk: (ph = 0): Pose => ({ pelvis: [0, PY, 0], pitch: 0.03, nod: 0.02 * Math.sin(ph * 0.7), tilt: 0.04 * Math.sin(ph * 0.45), handL: [0.3, 0.37, 0.03], handR: [-0.24 - 0.02 * Math.sin(ph), 0.55 + 0.035 * Math.sin(ph * 1.3), 0.21], ...FEET, elbowOut: 0.7 }),
+  /** wave with the right hand; ph = wave phase (radians) */
+  wave: (ph = 0): Pose => ({
+    pelvis: [0, PY, 0], pitch: -0.03, tilt: 0.06 * Math.sin(ph), nod: -0.05,
+    handL: [0.3, 0.36, 0.03], handR: [-0.41 - 0.05 * Math.sin(ph), 1.0, 0.08], ...FEET, elbowOut: 1.2,
+  }),
+  /** point at the camera (straight ahead) with the right index finger */
+  pointCam: (): Pose => ({ pelvis: [0, PY, 0.01], pitch: 0.06, nod: 0.02, turn: 0.05, handL: hip(1), handR: [-0.27, 0.74, 0.3], ...FEET, elbowOut: 0.9, fingerR: true }),
+  /** point at a local target with the right index finger */
+  point: (target: V3 = [-1.5, 1.0, 1.5]): Pose => {
+    const sh: V3 = [-DIM.shoulderW, PY + DIM.shoulderUp, 0];
+    const d = norm(sub(target, sh));
+    const hand = add(sh, mul(d, (DIM.upper + DIM.fore) * 0.97));
+    return { pelvis: [0, PY, 0], pitch: 0.0, turn: Math.max(-0.5, Math.min(0.5, Math.atan2(d[0], d[2]) * 0.5)), handL: [0.3, 0.36, 0.03], handR: hand, ...FEET, elbowOut: 0.4, fingerR: true };
+  },
+  /** open hand toward a target at waist-chest height ("ini dia!") */
+  present: (target: V3 = [-1.5, 0.8, 1.0]): Pose => {
+    const sh: V3 = [-DIM.shoulderW, PY + DIM.shoulderUp, 0];
+    const d = norm(sub([target[0], Math.min(target[1], 0.75), target[2]], sh));
+    const hand = add(sh, mul(d, (DIM.upper + DIM.fore) * 0.93));
+    return { pelvis: [0, PY, 0], pitch: -0.02, nod: -0.04, turn: Math.max(-0.45, Math.min(0.45, Math.atan2(d[0], d[2]) * 0.45)), handL: hip(1), handR: [hand[0], Math.max(0.42, hand[1] - 0.04), hand[2]], ...FEET, elbowOut: 0.5 };
+  },
+  /** hands on hips, chest out, chin up */
+  proud: (): Pose => ({ pelvis: [0, PY, 0], pitch: -0.07, nod: -0.12, handL: hip(1), handR: hip(-1), footL: [0.11, A, 0.02], footR: [-0.11, A, -0.02], elbowOut: 1.6, splay: 0.35 }),
+  /** both hands up beside the cheeks, leaning back */
+  shocked: (): Pose => ({ pelvis: [0, PY - 0.01, -0.01], pitch: -0.12, nod: -0.06, handL: [0.37, 0.98, 0.1], handR: [-0.37, 0.98, 0.1], footL: [0.1, A, 0.03], footR: [-0.1, A, -0.04], elbowOut: 1.4, splay: 0.3 }),
+  /** reading something held up (a phone / card) */
+  read: (): Pose => ({ pelvis: [0, PY, 0], pitch: 0.03, nod: 0.2, handL: [0.085, 0.64, 0.3], handR: [-0.085, 0.64, 0.3], ...FEET, elbowOut: 0.6 }),
+  /** facepalm (right hand on the face) — the hand target is set by Chibi's withHead() from the solved head */
+  facepalm: (): Pose => ({ pelvis: [0, PY, 0], pitch: 0.08, nod: 0.32, turn: -0.08, tilt: -0.08, handL: hip(1), handR: [-0.05, 0.9, 0.3], ...FEET, elbowOut: 0.9 }),
+  /** thinking: right hand at the chin (set by withHead), left arm across */
+  think: (): Pose => ({ pelvis: [0, PY, 0], pitch: 0.02, nod: -0.06, turn: 0.12, tilt: 0.1, handL: [-0.02, 0.5, 0.2], handR: [-0.05, 0.8, 0.3], ...FEET, elbowOut: 0.7 }),
+  /** salute (hormat): right hand at the brow (set by withHead) */
+  salute: (): Pose => ({ pelvis: [0, PY, 0], pitch: -0.04, nod: -0.04, handL: [0.29, 0.36, 0.03], handR: [-0.2, 1.0, 0.2], ...FEET, elbowOut: 1.5 }),
+  /** both arms up, a little bounce (ph = time · speed) */
+  cheer: (ph = 0): Pose => {
+    const b = 0.5 - 0.5 * Math.cos(ph);
+    return { pelvis: [0, PY - 0.025 * b, 0], pitch: -0.06, nod: -0.1, handL: [0.33 + 0.03 * Math.sin(ph), 1.1, 0.07], handR: [-0.33 - 0.03 * Math.sin(ph + 1), 1.1, 0.07], ...FEET, elbowOut: 1.1, splay: 0.35 };
+  },
+  /** palms up, shoulders up ("ya gimana dong") */
+  shrug: (): Pose => ({ pelvis: [0, PY, 0], pitch: -0.02, tilt: 0.14, nod: -0.05, handL: [0.36, 0.52, 0.14], handR: [-0.36, 0.52, 0.14], ...FEET, elbowOut: 0.9 }),
+  /** clapping in front of the chest (ph = time · speed) */
+  clap: (ph = 0): Pose => { const o = 0.5 + 0.5 * Math.cos(ph); return { pelvis: [0, PY, 0], pitch: 0.02, nod: -0.04, handL: [0.062 + 0.07 * o, 0.6, 0.25], handR: [-0.062 - 0.07 * o, 0.6, 0.25], ...FEET, elbowOut: 0.8 }; },
+  /** arguing: lean in, point at the other one, hand shaking (ph) */
+  argue: (target: V3 = [0, 1.0, 2.0], ph = 0): Pose => {
+    const sh: V3 = [-DIM.shoulderW, PY + DIM.shoulderUp, 0];
+    const d = norm(sub(target, sh));
+    const hand = add(sh, mul(d, (DIM.upper + DIM.fore) * 0.92));
+    return { pelvis: [0, PY, 0.01], pitch: 0.12, nod: -0.05 + 0.03 * Math.sin(ph * 1.7), handL: hip(1), handR: [hand[0], hand[1] + 0.03 * Math.sin(ph * 2.2), hand[2]], ...FEET, elbowOut: 0.6, fingerR: true };
+  },
+  /** waiting in a queue: hands together in front, small sway (ph) */
+  queue: (ph = 0): Pose => ({ pelvis: [0.006 * Math.sin(ph * 0.6), PY, 0], pitch: 0.03, tilt: 0.04 * Math.sin(ph * 0.6), handL: [0.075, 0.42, 0.16], handR: [-0.075, 0.42, 0.16], ...FEET, elbowOut: 0.5 }),
+  /** eating standing: bowl in the left hand, spoon hand stirring (ph) */
+  eat: (ph = 0): Pose => ({ pelvis: [0, PY, 0], pitch: 0.06, nod: 0.18, handL: [0.07, 0.5, 0.24], handR: [-0.07 + 0.015 * Math.sin(ph), 0.57 + 0.03 * (0.5 - 0.5 * Math.cos(ph)), 0.24], ...FEET, elbowOut: 0.6 }),
+  // ---- seated (root = the seat point)
+  sit: (): Pose => ({ ...SEATED(), handL: [0.11, 0.13, 0.13], handR: [-0.11, 0.13, 0.13], ...LEGS_HANG, elbowOut: 0.45 }),
+  sitTalk: (ph = 0): Pose => ({ ...SEATED(), nod: 0.02 * Math.sin(ph * 0.7), handL: [0.11, 0.13, 0.13], handR: [-0.2, 0.33 + 0.03 * Math.sin(ph * 1.3), 0.22], ...LEGS_HANG, elbowOut: 0.6 }),
+  sitEat: (ph = 0): Pose => ({ ...SEATED(0.04), nod: 0.2, handL: [0.07, 0.25, 0.22], handR: [-0.07 + 0.015 * Math.sin(ph), 0.32 + 0.03 * (0.5 - 0.5 * Math.cos(ph)), 0.22], ...LEGS_HANG, elbowOut: 0.55 }),
+  sitFwd: (): Pose => ({ ...SEATED(-0.1), handL: [0.12, 0.12, 0.16], handR: [-0.12, 0.12, 0.17], ...LEGS_FWD, elbowOut: 0.5 }),
+  /** asleep sitting, slumped (on a bale / mat; legs forward) */
+  sleep: (): Pose => ({ pelvis: [0, 0.075, 0], pitch: -0.12, nod: 0.34, tilt: 0.3, turn: 0.12, handL: [0.1, 0.19, 0.15], handR: [-0.1, 0.19, 0.16], ...LEGS_FWD, elbowOut: 0.5 }),
+  /** asleep on a bench (legs hanging) */
+  sleepHang: (): Pose => ({ ...SEATED(-0.08), nod: 0.36, tilt: 0.28, turn: 0.1, handL: [0.1, 0.15, 0.13], handR: [-0.1, 0.15, 0.14], ...LEGS_HANG, elbowOut: 0.45 }),
+} as const;
+export type PoseName = keyof typeof POSES;
+/** poses whose right hand goes to the face (filled in from the solved head) */
+export const HEAD_HAND: Partial<Record<PoseName, "palm" | "chin" | "brow">> = { facepalm: "palm", think: "chin", salute: "brow" };
+/** seated poses (root at the seat surface) */
+export const SEATED_POSES = new Set<PoseName>(["sit", "sitTalk", "sitEat", "sitFwd", "sleep", "sleepHang"]);
+
+==== 11198 project/src/kits/negeri/Stage.tsx
+// NEGERI Stage — warm late-afternoon light for a clean low-poly game world (forked from the CERDIK/BEDAH Stage).
+// One warm sun with soft shadows, a sky/ground hemisphere fill, a flat sky dome with a few soft cumulus, light haze.
+// Chain: MSAA scene → NaN guard → GTAO (contact shadows) → neutral tone map → light grade.
+// Deliberately NO bloom, no lens flare, no vignette, no grain (house taste: flat real colours, clean light).
+
+import React, { useLayoutEffect, useMemo } from "react";
+import { useFrame, useThree } from "@react-three/fiber";
+import {
+  BackSide, Color, DirectionalLight, FogExp2, HalfFloatType, HemisphereLight, Mesh, NeutralToneMapping, Object3D,
+  PerspectiveCamera, ShaderMaterial, SphereGeometry, Vector3, WebGLRenderTarget,
+} from "three";
+import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
+import { GTAOPass } from "three/examples/jsm/postprocessing/GTAOPass.js";
+import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
+import { ShaderPass } from "three/examples/jsm/postprocessing/ShaderPass.js";
+import type { Shot, V3 } from "./cam.ts";
+
+export type Look = {
+  /** direction TOWARD the sun */
+  sun: { dir: V3; color: string; intensity: number };
+  hemi: { sky: string; ground: string; intensity: number };
+  fog: { color: string; density: number };
+  sky: { zenith: string; horizon: string; cover: number; cloud: string; shade: string };
+  exposure: number;
+  ao: number;
+  grade: { contrast: number; sat: number; tint: string };
+};
+
+/** Late afternoon (≈ 16:30): warm low sun from the front-right, soft blue fill. */
+export const SORE: Look = {
+  sun: { dir: [0.62, 0.5, 0.6], color: "#ffe3c0", intensity: 2.9 },
+  hemi: { sky: "#cfe0f2", ground: "#a59a6a", intensity: 1.35 },
+  fog: { color: "#e6e0cc", density: 0.0017 },
+  sky: { zenith: "#5b9bd8", horizon: "#f2e2c4", cover: 0.26, cloud: "#fffaf2", shade: "#e6dde0" },
+  exposure: 1.0,
+  ao: 0.9,
+  grade: { contrast: 0.1, sat: 1.02, tint: "#fffaf3" },
+};
+/** Morning (≈ 07:00): low clean sun from the front-left, cool fill. */
+export const PAGI: Look = {
+  sun: { dir: [-0.62, 0.42, 0.58], color: "#fff0da", intensity: 2.7 },
+  hemi: { sky: "#d6e5f4", ground: "#9aa070", intensity: 1.4 },
+  fog: { color: "#e7ecee", density: 0.0016 },
+  sky: { zenith: "#68a6df", horizon: "#f1ece0", cover: 0.22, cloud: "#ffffff", shade: "#e3e6ec" },
+  exposure: 1.0, ao: 0.9,
+  grade: { contrast: 0.08, sat: 1.0, tint: "#fbfcff" },
+};
+/** Midday: high sun, short shadows, bright. */
+export const SIANG: Look = {
+  sun: { dir: [0.28, 0.88, 0.36], color: "#fffaf0", intensity: 2.6 },
+  hemi: { sky: "#d5e6f6", ground: "#a3a070", intensity: 1.45 },
+  fog: { color: "#e3eaee", density: 0.0014 },
+  sky: { zenith: "#4f93d6", horizon: "#dbe9f2", cover: 0.3, cloud: "#ffffff", shade: "#e2e7ee" },
+  exposure: 0.98, ao: 0.85,
+  grade: { contrast: 0.08, sat: 1.02, tint: "#ffffff" },
+};
+/** Night: moonlight + a bright blue fill (kept readable: the delivery scan rejects near-black frames); windows glow warm. */
+export const MALAM: Look = {
+  sun: { dir: [-0.45, 0.62, 0.5], color: "#c4d2ff", intensity: 1.15 },
+  hemi: { sky: "#4a619a", ground: "#2e3446", intensity: 1.75 },
+  fog: { color: "#2f3d60", density: 0.0022 },
+  sky: { zenith: "#18264a", horizon: "#435a8a", cover: 0.14, cloud: "#5a6d96", shade: "#43557c" },
+  exposure: 1.55, ao: 0.75,
+  grade: { contrast: 0.06, sat: 0.95, tint: "#eef2ff" },
+};
+export const LOOKS: Record<string, Look> = { sore: SORE, pagi: PAGI, siang: SIANG, malam: MALAM };
+
+const SkyShader = {
+  uniforms: {
+    uZenith: { value: new Color() }, uHorizon: { value: new Color() }, uSunDir: { value: new Vector3(0, 1, 0) },
+    uCover: { value: 0.5 }, uCloud: { value: new Color() }, uShade: { value: new Color() }, uTime: { value: 0 },
+  },
+  vertexShader: /* glsl */ `varying vec3 vDir; void main(){ vDir = normalize(position); vec4 p = projectionMatrix * modelViewMatrix * vec4(position, 1.0); gl_Position = p.xyww; }`,
+  fragmentShader: /* glsl */ `
+    precision highp float;
+    uniform vec3 uZenith; uniform vec3 uHorizon; uniform vec3 uSunDir; uniform float uCover; uniform vec3 uCloud; uniform vec3 uShade; uniform float uTime;
+    varying vec3 vDir;
+    float hash(vec2 p){ vec3 q = fract(vec3(p.xyx) * vec3(0.1031, 0.1030, 0.0973)); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
+    float vn(vec2 p){ vec2 i = floor(p), f = fract(p); vec2 u = f * f * (3.0 - 2.0 * f);
+      return mix(mix(hash(i), hash(i + vec2(1, 0)), u.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), u.x), u.y); }
+    float dens(vec2 p){
+      float base = 0.58 * vn(p * vec2(0.5, 0.62)) + 0.30 * vn(p * 1.05 + 7.3) + 0.12 * vn(p * 2.3 + 3.1);
+      float bil = 0.0, a = 0.5; vec2 q = p * 2.6;
+      for (int i = 0; i < 3; i++){ bil += a * abs(2.0 * vn(q) - 1.0); q = q * 2.07 + vec2(3.7, 1.3); a *= 0.5; }
+      return base - bil * 0.2 + 0.07;
+    }
+    void main(){
+      vec3 d = normalize(vDir);
+      float h = max(d.y, 0.0);
+      vec3 c = mix(uHorizon, uZenith, 1.0 - exp(-h * 3.2));
+      if (d.y > 0.0) {
+        vec2 p = d.xz / (d.y + 0.3) * 2.2 + vec2(uTime * 0.01, uTime * 0.003);
+        float n = dens(p);
+        float cov = 1.0 - uCover;
+        // crisp-edged (game-like) cloud masses, two flat tones: lit top, shaded belly
+        float a = smoothstep(cov, cov + 0.03, n);
+        if (a > 0.0) {
+          vec2 toSun = normalize(uSunDir.xz + vec2(1e-4)) * 0.25;
+          float lit = step(dens(p + toSun), n + 0.02);
+          vec3 cc = mix(uShade, uCloud, lit);
+          a *= smoothstep(0.02, 0.12, d.y);
+          c = mix(c, cc, a);
+        }
+      }
+      gl_FragColor = vec4(c, 1.0);
+    }`,
+};
+
+const GradeShader = {
+  uniforms: { tDiffuse: { value: null }, uTint: { value: new Color("#fff") }, uContrast: { value: 0.1 }, uSat: { value: 1 } },
+  vertexShader: /* glsl */ `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+  fragmentShader: /* glsl */ `
+    uniform sampler2D tDiffuse; uniform vec3 uTint; uniform float uContrast; uniform float uSat; varying vec2 vUv;
+    void main(){
+      vec4 c = texture2D(tDiffuse, vUv);
+      c.rgb *= uTint;
+      c.rgb = mix(c.rgb, c.rgb * c.rgb * (3.0 - 2.0 * c.rgb), uContrast);
+      float l = dot(c.rgb, vec3(0.2126, 0.7152, 0.0722));
+      c.rgb = mix(vec3(l), c.rgb, uSat);
+      gl_FragColor = vec4(clamp(c.rgb, 0.0, 1.0), 1.0);
+    }`,
+};
+
+const SanitizeShader = {
+  uniforms: { tDiffuse: { value: null } },
+  vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: `uniform sampler2D tDiffuse; varying vec2 vUv;
+    void main() { vec4 c = texture2D(tDiffuse, vUv); if (any(isnan(c)) || any(isinf(c))) c = vec4(0.0, 0.0, 0.0, 1.0); gl_FragColor = vec4(clamp(c.rgb, 0.0, 32.0), 1.0); }`,
+};
+
+export const Stage: React.FC<{ shot: Shot; look: Look; t: number; children: React.ReactNode }> = ({ shot, look, t, children }) => {
+  const { gl, scene, camera, size } = useThree();
+
+  const rig = useMemo(() => {
+    const target = new Object3D();
+    const sun = new DirectionalLight("#fff", 3);
+    sun.target = target;
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(4096, 4096);
+    sun.shadow.radius = 3;
+    sun.shadow.bias = -0.0004;
+    sun.shadow.normalBias = 0.025;
+    const hemi = new HemisphereLight("#fff", "#444", 1);
+    const uniforms = Object.fromEntries(Object.entries(SkyShader.uniforms).map(([k, v]) => [k, { value: (v.value as { clone?: () => unknown }).clone ? (v.value as { clone: () => unknown }).clone() : v.value }]));
+    const sky = new Mesh(new SphereGeometry(1, 48, 24), new ShaderMaterial({ ...SkyShader, uniforms, side: BackSide, depthWrite: false, fog: false }));
+    sky.frustumCulled = false;
+    sky.renderOrder = -10;
+    return { target, sun, hemi, sky };
+  }, []);
+
+  const chain = useMemo(() => {
+    const w = size.width, h = size.height;
+    const rt = new WebGLRenderTarget(w, h, { type: HalfFloatType, samples: 8 });
+    const composer = new EffectComposer(gl, rt);
+    composer.setPixelRatio(1);
+    composer.setSize(w, h);
+    composer.addPass(new RenderPass(scene, camera));
+    composer.addPass(new ShaderPass(SanitizeShader));
+    const gtao = new GTAOPass(scene, camera, w, h);
+    gtao.updateGtaoMaterial({ radius: 0.45, distanceExponent: 1.3, thickness: 1.0, scale: 1.0, samples: 16, distanceFallOff: 1.0, screenSpaceRadius: false });
+    gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, rings: 2, samples: 16 });
+    composer.addPass(gtao);
+    composer.addPass(new OutputPass());
+    const grade = new ShaderPass(GradeShader);
+    composer.addPass(grade);
+    return { composer, gtao, grade };
+  }, [gl, scene, camera, size.width, size.height]);
+
+  useLayoutEffect(() => {
+    gl.toneMapping = NeutralToneMapping;
+    gl.shadowMap.autoUpdate = false;
+  }, [gl]);
+
+  useFrame(() => {
+    const L = look;
+    const cam = camera as PerspectiveCamera;
+    cam.position.set(...shot.pos);
+    cam.up.set(Math.sin(shot.roll ?? 0), Math.cos(shot.roll ?? 0), 0);
+    cam.lookAt(...shot.target);
+    cam.fov = shot.fov;
+    cam.near = 0.08;
+    cam.far = 2000;
+    cam.updateProjectionMatrix();
+    cam.updateMatrixWorld();
+
+    const at = shot.shadowAt ?? shot.target;
+    const box = shot.shadowBox ?? 10;
+    const dir = new Vector3(...L.sun.dir).normalize();
+    rig.target.position.set(...at);
+    rig.target.updateMatrixWorld();
+    rig.sun.position.set(at[0] + dir.x * 80, at[1] + dir.y * 80, at[2] + dir.z * 80);
+    rig.sun.color.set(L.sun.color);
+    rig.sun.intensity = L.sun.intensity;
+    const sc = rig.sun.shadow.camera;
+    sc.left = -box; sc.right = box; sc.top = box; sc.bottom = -box;
+    sc.near = 1;
+    sc.far = 200;
+    sc.updateProjectionMatrix();
+    rig.sun.updateMatrixWorld();
+    rig.hemi.color.set(L.hemi.sky);
+    rig.hemi.groundColor.set(L.hemi.ground);
+    rig.hemi.intensity = L.hemi.intensity;
+
+    const fog = scene.fog as FogExp2 | null;
+    if (!fog) scene.fog = new FogExp2(L.fog.color, L.fog.density);
+    else { fog.color.set(L.fog.color); fog.density = L.fog.density; }
+
+    rig.sky.position.copy(cam.position);
+    rig.sky.scale.setScalar(cam.far * 0.9);
+    rig.sky.updateMatrixWorld();
+    const su = (rig.sky.material as ShaderMaterial).uniforms;
+    su.uZenith.value.set(L.sky.zenith);
+    su.uHorizon.value.set(L.sky.horizon);
+    su.uSunDir.value.copy(dir);
+    su.uCover.value = L.sky.cover;
+    su.uCloud.value.set(L.sky.cloud);
+    su.uShade.value.set(L.sky.shade);
+    su.uTime.value = t;
+
+    gl.toneMappingExposure = L.exposure;
+    chain.gtao.blendIntensity = L.ao;
+    const g = chain.grade.uniforms;
+    g.uTint.value.set(L.grade.tint);
+    g.uContrast.value = L.grade.contrast;
+    g.uSat.value = L.grade.sat;
+    gl.shadowMap.needsUpdate = true;
+    chain.composer.render();
+  }, 1);
+
+  return (
+    <>
+      <primitive object={rig.target} />
+      <primitive object={rig.sun} />
+      <primitive object={rig.hemi} />
+      <primitive object={rig.sky} />
+      {children}
+    </>
+  );
+};
+
+==== 12120 project/src/kits/negeri/world/Building.tsx
+// NEGERI building renderer — draws a building definition (src/negeri/buildings.ts) at a plot.
+//   finished: one merged vertex-coloured mesh + one glass mesh (windows glow warm at night) + its sign boards
+//   building: every piece arrives on its own (drop / grow / pop / slide) in step order inside the build window;
+//             scaffold pieces leave after the last step. A pure function of time.
+
+import React, { useMemo } from "react";
+import { BufferGeometry, CanvasTexture, Euler, Float32BufferAttribute, Matrix4, MeshBasicMaterial, MeshStandardMaterial, Quaternion, SRGBColorSpace, Vector3 } from "three";
+import { backOut, outCubic, type V3 } from "../math.ts";
+import { F_DISPLAY, F_TEXT } from "../fonts.ts";
+import { blob, box, colorize, cone, cyl, merge, prism, rod } from "./geo.ts";
+import { expand, type BuildingDef, type Piece } from "../../../negeri/buildings.ts";
+
+export const WMAT = new MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.9, metalness: 0 });
+const GLASS_DAY = new MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.35, metalness: 0 });
+const GLASS_NIGHT = new MeshBasicMaterial({ color: "#ffd479" });
+export const glassMat = (night: boolean) => (night ? GLASS_NIGHT : GLASS_DAY);
+
+// ------------------------------------------------------------------ text boards
+const texCache = new Map<string, CanvasTexture>();
+/** A sign face: main text fitted to the board (+ an optional small line above it). */
+export const signTexture = (o: { text: string; sub?: string; bg: string; ink: string; subInk?: string; w: number; h: number }) => {
+  const key = JSON.stringify(o);
+  const hit = texCache.get(key);
+  if (hit) return hit;
+  const H = 256, W = Math.max(256, Math.round((H * o.w) / o.h));
+  const cv = document.createElement("canvas");
+  cv.width = W; cv.height = H;
+  const g = cv.getContext("2d")!;
+  g.fillStyle = o.bg; g.fillRect(0, 0, W, H);
+  const bw = Math.round(H * 0.06);
+  g.strokeStyle = o.ink; g.lineWidth = bw; g.strokeRect(bw / 2, bw / 2, W - bw, H - bw);
+  g.textAlign = "center"; g.textBaseline = "middle";
+  const fit = (txt: string, font: (s: number) => string, max: number, maxW: number) => { let s = max; g.font = font(s); while (s > 12 && g.measureText(txt).width > maxW) { s -= 2; g.font = font(s); } return s; };
+  if (o.sub) {
+    const s1 = fit(o.sub, (s) => `800 ${s}px ${F_TEXT}`, H * 0.2, W * 0.86);
+    g.fillStyle = o.subInk ?? "#c8252f"; g.font = `800 ${s1}px ${F_TEXT}`; g.fillText(o.sub, W / 2, H * 0.3);
+    const s2 = fit(o.text, (s) => `800 ${s}px ${F_TEXT}`, H * 0.4, W * 0.88);
+    g.fillStyle = o.ink; g.font = `800 ${s2}px ${F_TEXT}`; g.fillText(o.text, W / 2, H * 0.64);
+  } else {
+    const s = fit(o.text, (q) => `700 ${q}px ${F_DISPLAY}`, H * 0.62, W * 0.88);
+    g.fillStyle = o.ink; g.font = `700 ${s}px ${F_DISPLAY}`; g.fillText(o.text, W / 2, H * 0.53);
+  }
+  const t = new CanvasTexture(cv);
+  t.colorSpace = SRGBColorSpace;
+  t.anisotropy = 8;
+  texCache.set(key, t);
+  return t;
+};
+const edgeMats = new Map<string, MeshStandardMaterial>();
+const edgeMat = (c: string) => { let m = edgeMats.get(c); if (!m) edgeMats.set(c, (m = new MeshStandardMaterial({ color: c, roughness: 0.9 }))); return m; };
+const faceMats = new Map<CanvasTexture, MeshStandardMaterial>();
+const faceMat = (t: CanvasTexture) => { let m = faceMats.get(t); if (!m) faceMats.set(t, (m = new MeshStandardMaterial({ map: t, roughness: 0.85 }))); return m; };
+export const Board: React.FC<{ size: V3; tex: CanvasTexture; edge: string }> = ({ size, tex, edge }) => {
+  const e = edgeMat(edge), f = faceMat(tex);
+  return (
+    <mesh material={[e, e, e, e, f, e]} castShadow receiveShadow>
+      <boxGeometry args={size} />
+    </mesh>
+  );
+};
+
+// ------------------------------------------------------------------ piece geometry (local to the piece origin)
+const D2R = Math.PI / 180;
+const hipGeo = (w: number, d: number, h: number, ridge: number, color: string) => {
+  const x = w / 2, z = d / 2, r = Math.min(ridge, w) / 2;
+  const v = [
+    -x, 0, z, x, 0, z, r, h, 0, -x, 0, z, r, h, 0, -r, h, 0, // front
+    x, 0, -z, -x, 0, -z, -r, h, 0, x, 0, -z, -r, h, 0, r, h, 0, // back
+    -x, 0, -z, -x, 0, z, -r, h, 0, // left
+    x, 0, z, x, 0, -z, r, h, 0, // right
+    -x, 0, -z, x, 0, -z, x, 0, z, -x, 0, -z, x, 0, z, -x, 0, z, // bottom
+  ];
+  const g = new BufferGeometry();
+  g.setAttribute("position", new Float32BufferAttribute(v, 3));
+  g.computeVertexNormals();
+  return colorize(g, color);
+};
+/** geometry of one piece, centred on its pivot (bottom centre / centre), plus the pivot's transform */
+type PG = { geo: BufferGeometry | null; pos: V3; quat: Quaternion; len: number; sign?: { size: V3; tex: CanvasTexture; edge: string } };
+const pieceGeo = (p: Piece): PG => {
+  const q = new Quaternion();
+  if (p.rot) q.setFromEuler(new Euler(p.rot[0] * D2R, p.rot[1] * D2R, p.rot[2] * D2R));
+  switch (p.shape) {
+    case "box": return { geo: box(p.size, [0, p.size[1] / 2, 0], p.color), pos: p.pos, quat: q, len: Math.max(...p.size) };
+    case "cyl": return { geo: cyl(p.r, p.r2 ?? p.r, p.h, [0, p.h / 2, 0], p.color, p.seg ?? 10), pos: p.pos, quat: q, len: p.h };
+    case "cone": return { geo: cone(p.r, p.h, [0, p.h / 2, 0], p.color, p.seg ?? 8), pos: p.pos, quat: q, len: p.h };
+    case "sphere": {
+      const g = blob(p.r, [0, 0, 0], p.color, p.scale ?? [1, 1, 1], 1, 3);
+      if (p.half) { const pa = g.getAttribute("position"); for (let i = 0; i < pa.count; i++) if (pa.getY(i) < 0) pa.setY(i, 0); g.computeVertexNormals(); }
+      return { geo: g, pos: p.pos, quat: q, len: p.r * 2 };
+    }
+    case "blob": return { geo: blob(p.r, [0, 0, 0], p.color, p.scale ?? [1, 1, 1], 1, 5), pos: p.pos, quat: q, len: p.r * 2 };
+    case "prism": return { geo: prism(p.w, p.h, p.l, [0, 0, 0], p.color), pos: p.pos, quat: q, len: Math.max(p.w, p.l) };
+    case "hip": return { geo: hipGeo(p.w, p.d, p.h, p.ridge ?? 0, p.color), pos: p.pos, quat: q, len: Math.max(p.w, p.d) };
+    case "rod": {
+      const A = new Vector3(...p.a), B = new Vector3(...p.b);
+      const d = B.clone().sub(A);
+      const L = d.length();
+      q.setFromUnitVectors(new Vector3(0, 1, 0), d.normalize());
+      return { geo: rod([0, 0, 0], [0, L, 0], p.r, p.color, 7), pos: p.a, quat: q, len: L };
+    }
+    case "sign": {
+      const tex = signTexture({ text: p.text, sub: p.sub, bg: p.bg ?? "#fffaf0", ink: p.ink ?? "#1b1b1b", subInk: p.subInk, w: p.size[0], h: p.size[1] });
+      return { geo: null, pos: p.pos, quat: q, len: p.size[0], sign: { size: p.size, tex, edge: p.ink ?? "#1b1b1b" } };
+    }
+  }
+};
+
+// ------------------------------------------------------------------ finished building (merged)
+type Finished = { solid: BufferGeometry | null; glass: BufferGeometry | null; signs: { pos: V3; quat: Quaternion; size: V3; tex: CanvasTexture; edge: string }[] };
+const finishedCache = new Map<string, Finished>();
+const finished = (key: string, pieces: Piece[]): Finished => {
+  const hit = finishedCache.get(key);
+  if (hit) return hit;
+  const solid: BufferGeometry[] = [], glass: BufferGeometry[] = [], signs: Finished["signs"] = [];
+  for (const p of pieces) {
+    if (p.temp) continue;
+    const g = pieceGeo(p);
+    if (g.sign) { signs.push({ pos: [g.pos[0], g.pos[1] + g.sign.size[1] / 2, g.pos[2]], quat: g.quat, ...g.sign }); continue; }
+    if (!g.geo) continue;
+    g.geo.applyMatrix4(new Matrix4().compose(new Vector3(...g.pos), g.quat, new Vector3(1, 1, 1)));
+    (p.glass ? glass : solid).push(g.geo);
+  }
+  const f = { solid: solid.length ? merge(solid) : null, glass: glass.length ? merge(glass) : null, signs };
+  finishedCache.set(key, f);
+  return f;
+};
+
+// ------------------------------------------------------------------ the building
+export type BuildingProps = {
+  def: BuildingDef;
+  vars: Record<string, string>;
+  pos: V3;
+  yaw: number;
+  t: number;
+  /** build window (film seconds); undefined = standing */
+  start?: number;
+  end?: number;
+  /** grow-in time for a house that appears (named houses) */
+  appear?: number;
+  night: boolean;
+};
+export const Building: React.FC<BuildingProps> = ({ def, vars, pos, yaw, t, start, end, appear, night }) => {
+  const key = useMemo(() => JSON.stringify([def.name, def.size, def.steps.length, vars]), [def, vars]);
+  const pieces = useMemo(() => expand(def, vars), [key]); // eslint-disable-line react-hooks/exhaustive-deps
+  const strike = def.strike ?? 0.35;
+  const building = start !== undefined && end !== undefined && t < end + strike + 0.05;
+  const timeline = useMemo(() => {
+    if (start === undefined || end === undefined) return null;
+    const total = Math.max(0.6, end - start);
+    const wsum = def.steps.reduce((s, x) => s + (x.dur ?? 1), 0);
+    let acc = start;
+    const stepAt = def.steps.map((x) => { const d = ((x.dur ?? 1) / wsum) * total; const r = { t0: acc, d }; acc += d; return r; });
+    const byStep = new Map<number, number>();
+    const counts = new Map<number, number>();
+    for (const p of pieces) counts.set(p.step, (counts.get(p.step) ?? 0) + 1);
+    return pieces.map((p) => {
+      const k = byStep.get(p.step) ?? 0;
+      byStep.set(p.step, k + 1);
+      const S = stepAt[p.step], n = counts.get(p.step) ?? 1;
+      const t0 = S.t0 + (k / n) * S.d * 0.72;
+      const A = Math.min(0.42, Math.max(0.2, S.d * 0.32));
+      return { p, g: pieceGeo(p), t0, A, tOut: p.temp ? end + (k / n) * strike * 0.6 : undefined };
+    });
+  }, [pieces, start, end]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (start !== undefined && t < start) return null;
+  const gIn = appear !== undefined ? Math.min(1, Math.max(0, (t - appear) / 0.35)) : 1;
+  if (gIn <= 0) return null;
+  if (!building || !timeline) {
+    const f = finished(key, pieces);
+    const sy = gIn >= 1 ? 1 : Math.max(1e-4, backOut(gIn, 1.4));
+    return (
+      <group position={pos} rotation={[0, yaw, 0]} scale={[1, sy, 1]}>
+        {f.solid && <mesh geometry={f.solid} material={WMAT} castShadow receiveShadow />}
+        {f.glass && <mesh geometry={f.glass} material={glassMat(night)} castShadow={false} receiveShadow />}
+        {f.signs.map((s, i) => <group key={i} position={s.pos} quaternion={s.quat}><Board size={s.size} tex={s.tex} edge={s.edge} /></group>)}
+      </group>
+    );
+  }
+  return (
+    <group position={pos} rotation={[0, yaw, 0]}>
+      {timeline.map(({ p, g, t0, A, tOut }, i) => {
+        let u = (t - t0) / A;
+        if (u <= 0) return null;
+        u = Math.min(1, u);
+        let out = 1;
+        if (tOut !== undefined && t > tOut) { out = 1 - outCubic(Math.min(1, (t - tOut) / 0.25)); if (out <= 0.001) return null; }
+        let dy = 0, dx = 0, dz = 0, slide = 0, sx = 1, sy = 1, sz = 1;
+        const e = outCubic(u);
+        if (p.anim === "drop") { dy = (1 - e) * 1.6; const k = 0.35 + 0.65 * outCubic(Math.min(1, u / 0.4)); sx = sy = sz = k; }
+        else if (p.anim === "grow") { const k = Math.max(1e-4, e); if (p.axis === "x") { sx = k; dx = -(1 - k) * g.len * 0.5; } else if (p.axis === "z") { sz = k; dz = (1 - k) * g.len * 0.5; } else sy = k; }
+        else if (p.anim === "pop") { const k = Math.max(1e-4, backOut(u, 1.6)); sx = sy = sz = k; }
+        else if (p.anim === "slide") slide = -(1 - e) * 9;
+        sy *= out;
+        const [px, py, pz] = g.pos;
+        if (g.sign) return (
+          <group key={i} position={[px + slide, py + dy, pz]} quaternion={g.quat} scale={[sx, Math.max(1e-4, sy), sz]}>
+            <group position={[0, g.sign.size[1] / 2, 0]}><Board size={g.sign.size} tex={g.sign.tex} edge={g.sign.edge} /></group>
+          </group>
+        );
+        if (!g.geo) return null;
+        // grow along x / z keeps one end fixed: the offset is along the piece's own axis
+        const off = new Vector3(dx, 0, dz).applyQuaternion(g.quat);
+        return (
+          <group key={i} position={[px + off.x + slide, py + dy + off.y, pz + off.z]} quaternion={g.quat} scale={[sx, Math.max(1e-4, sy), sz]}>
+            <mesh geometry={g.geo} material={p.glass ? glassMat(night) : WMAT} castShadow={!p.glass} receiveShadow />
+          </group>
+        );
+      })}
+    </group>
+  );
+};
+
+==== 12436 project/src/kits/negeri/world/map.ts
+// NEGERI map — pure data (node + browser). One fixed country template every series grows on:
+//   the plaza ("titik nol": the host's flag and first tent), a lawn in front of it for the camera, dirt roads,
+//   a rice field to the west, a river in the north (bridge plot where the main road meets it), a rail corridor,
+//   an open field in the east (mini airport), building PLOTS in fixed places (assigned to builds in order,
+//   nearest first), NAMED-HOUSE slots along the main road (one per commenter who gets a house + name plate),
+//   and LOTS: every other free spot, filled with tents / houses as the population grows (nearest the plaza first).
+// Everything is deterministic, so a world.json (population + builds + plates) is enough to rebuild any day.
+// Metres; +x east, +z south (the camera's default side), yaw 0 = facing +z.
+
+import { rng, type V3 } from "../math.ts";
+
+export type Rect = { x0: number; x1: number; z0: number; z1: number };
+export const inRect = (r: Rect, x: number, z: number, pad = 0) => x > r.x0 - pad && x < r.x1 + pad && z > r.z0 - pad && z < r.z1 + pad;
+
+export type PlotClass = "S" | "M" | "L" | "XL";
+/** A building plot: centre, facing (yaw), frontage w × depth d (in its own frame), size class, preferred kinds. */
+export type Plot = { id: string; pos: V3; yaw: number; w: number; d: number; cls: PlotClass; pref?: string[]; about: string };
+export type Slot = { id: string; pos: V3; yaw: number };
+
+const H = Math.PI / 2;
+export const MAP = {
+  home: { pos: [0, 0, 0] as V3, yaw: 0 },
+  flag: [-1.9, 0, -3.6] as V3,
+  tent: { pos: [1.7, 0, -3.3] as V3, yaw: -0.35 },
+  plaza: { x0: -8, x1: 8, z0: -8, z1: 8 } as Rect,
+  /** kept open (no lots): the camera's side of the plaza */
+  lawn: { x0: -10, x1: 8.5, z0: 8, z1: 24 } as Rect,
+  roads: [
+    { id: "main", x0: 9, x1: 12.5, z0: -96, z1: 62 },
+    { id: "main-n", x0: 9, x1: 12.5, z0: -170, z1: -108 },
+    { id: "north", x0: -62, x1: 70, z0: -22.5, z1: -19 },
+    { id: "north2", x0: -30, x1: 70, z0: -52, z1: -48.5 },
+    { id: "west", x0: -28, x1: -24.5, z0: -92, z1: 40 },
+    { id: "east", x0: 38, x1: 41.5, z0: -92, z1: 40 },
+  ] as (Rect & { id: string })[],
+  sawah: { x0: -96, x1: -32, z0: -150, z1: 62 } as Rect,
+  river: { x0: -300, x1: 300, z0: -106, z1: -98 } as Rect,
+  rail: { z: -86, x0: -70, x1: 140, band: 3 },
+  field: { x0: 50, x1: 132, z0: -82, z1: -56 } as Rect,
+  /** where dwellings may grow */
+  lotArea: { x0: -30, x1: 95, z0: -92, z1: 40 } as Rect,
+};
+
+export const PLOTS: Plot[] = [
+  { id: "S1", pos: [-5.2, 0, 1.4], yaw: 0.5, w: 4.6, d: 4.0, cls: "S", about: "plaza, left of the host" },
+  { id: "S2", pos: [5.6, 0, 1.8], yaw: -0.5, w: 4.6, d: 4.0, cls: "S", about: "plaza, right of the host" },
+  { id: "S3", pos: [-5.4, 0, -4.8], yaw: 0.35, w: 4.6, d: 4.0, cls: "S", about: "plaza, back left" },
+  { id: "S4", pos: [5.4, 0, -4.6], yaw: -0.35, w: 4.6, d: 4.0, cls: "S", about: "plaza, back right" },
+  { id: "N0", pos: [0, 0, -13.6], yaw: 0, w: 16, d: 10, cls: "L", pref: ["istana", "kantor-presiden"], about: "head of the plaza (north), facing it" },
+  { id: "W1", pos: [-16.5, 0, -1.5], yaw: H, w: 14, d: 12, cls: "L", pref: ["musala", "masjid"], about: "west of the plaza, facing it" },
+  { id: "E1", pos: [19.5, 0, 2], yaw: -H, w: 12, d: 10, cls: "M", about: "across the main road, east of the plaza" },
+  { id: "W0", pos: [-16.5, 0, -14], yaw: H, w: 10, d: 10, cls: "M", about: "north-west corner of the plaza" },
+  { id: "E3", pos: [19.5, 0, -11.5], yaw: -H, w: 12, d: 10, cls: "M", about: "across the main road, north-east" },
+  { id: "W2", pos: [-16.5, 0, 13.5], yaw: H, w: 14, d: 12, cls: "L", about: "south-west of the plaza" },
+  { id: "E2", pos: [19.5, 0, 16], yaw: -H, w: 12, d: 10, cls: "M", about: "across the main road, south-east" },
+  { id: "X1", pos: [-12, 0, -36], yaw: 0, w: 20, d: 14, cls: "XL", pref: ["lapangan", "pasar"], about: "big plot north of the plaza road" },
+  { id: "N2", pos: [28, 0, -32], yaw: 0, w: 14, d: 12, cls: "L", about: "north-east, on the plaza road" },
+  { id: "X2", pos: [-13, 0, 33.5], yaw: 0, w: 20, d: 14, cls: "XL", about: "big plot south-west" },
+  { id: "E4", pos: [28, 0, 32], yaw: 0, w: 14, d: 12, cls: "L", about: "south-east" },
+  { id: "M5", pos: [-12, 0, -59], yaw: 0, w: 14, d: 12, cls: "L", about: "far north-west, on the second road" },
+  { id: "M6", pos: [28, 0, -60], yaw: 0, w: 14, d: 12, cls: "L", about: "far north-east, on the second road" },
+];
+/** Fixed places for the special builds (they do not use plots). */
+export const SPECIAL: Record<string, Plot> = {
+  gate: { id: "gate", pos: [10.75, 0, 30], yaw: 0, w: 7, d: 1.4, cls: "M", about: "over the main road, south entrance" },
+  bridge: { id: "bridge", pos: [10.75, 0, -102], yaw: 0, w: 5, d: 14, cls: "M", about: "where the main road meets the river" },
+  road: { id: "road", pos: [10.75, 0, -17], yaw: 0, w: 3.5, d: 158, cls: "XL", about: "the main road (z −96 … 62)" },
+  station: { id: "station", pos: [24, 0, -80], yaw: 0, w: 22, d: 6, cls: "L", about: "by the rail corridor (north)" },
+  field: { id: "field", pos: [91, 0, -69], yaw: 0, w: 80, d: 24, cls: "XL", about: "the open field in the east" },
+};
+
+/** Named-house slots (a house + name plate per commenter), in the order they fill. */
+export const SLOTS: Slot[] = (() => {
+  const out: Slot[] = [];
+  for (let k = 0; k < 14; k++) out.push({ id: `R${out.length + 1}`, pos: [15.3, 0, -26.5 - 4.8 * k], yaw: -H });
+  for (let k = 0; k < 14; k++) out.push({ id: `R${out.length + 1}`, pos: [6.2, 0, -26.5 - 4.8 * k], yaw: H });
+  for (let k = 0; k < 6; k++) out.push({ id: `R${out.length + 1}`, pos: [15.3, 0, 35 + 4.8 * k], yaw: -H });
+  for (let k = 0; k < 6; k++) out.push({ id: `R${out.length + 1}`, pos: [6.2, 0, 35 + 4.8 * k], yaw: H });
+  return out;
+})();
+
+/** the plot's front yard (where the host stands and citizens gather): kept free of dwellings */
+export const inApron = (p: Plot, x: number, z: number, pad = 0) => {
+  const dx = x - p.pos[0], dz = z - p.pos[2], c = Math.cos(p.yaw), s = Math.sin(p.yaw);
+  const lx = dx * c - dz * s, lz = dx * s + dz * c;
+  return Math.abs(lx) < p.w / 2 + 1 + pad && lz > p.d / 2 && lz < p.d / 2 + 6 + pad;
+};
+/** Is (x, z) inside a plot's footprint (+pad)? */
+export const inPlot = (p: Plot, x: number, z: number, pad = 0) => {
+  const dx = x - p.pos[0], dz = z - p.pos[2], c = Math.cos(p.yaw), s = Math.sin(p.yaw);
+  const lx = dx * c - dz * s, lz = dx * s + dz * c;
+  return Math.abs(lx) < p.w / 2 + pad && Math.abs(lz) < p.d / 2 + pad;
+};
+
+// ------------------------------------------------------------------ trees (also blockers for lots)
+export type TreeSpot = { pos: V3; rotY: number; v: number; s: number };
+export const TREES = (() => {
+  const r = rng(77);
+  const coco: TreeSpot[] = [
+    { pos: [-7.4, 0, -1.6], rotY: 2.6, v: 0, s: 1 },
+    { pos: [-8.6, 0, 6.8], rotY: 0.4, v: 1, s: 1 },
+    { pos: [7.6, 0, 8.4], rotY: 3.6, v: 2, s: 0.95 },
+    { pos: [-3.6, 0, 22.5], rotY: 1.2, v: 1, s: 1 },
+    { pos: [3.4, 0, 21.0], rotY: 2.2, v: 0, s: 0.9 },
+  ];
+  // a palm row along the rice field
+  for (let i = 0; i < 30; i++) coco.push({ pos: [-30.2 - r() * 1.2, 0, 40 - i * 4.4 - r() * 1.5], rotY: r() * 6.28, v: i % 3, s: 0.9 + r() * 0.25 });
+  const round: TreeSpot[] = [
+    { pos: [-9.6, 0, 16.5], rotY: 0.3, v: 0, s: 1 },
+    { pos: [7.8, 0, 13.5], rotY: 1.3, v: 1, s: 0.9 },
+  ];
+  // the country's edge: trees outside the lot area (east beyond the field road, south, north beyond the river)
+  for (let i = 0; i < 90; i++) {
+    const a = r() * Math.PI * 2, d = 120 + r() * 90;
+    const x = 30 + Math.cos(a) * d, z = -30 + Math.sin(a) * d;
+    if (x < -30) continue;
+    if (inRect(MAP.river, x, z, 6) || inRect(MAP.field, x, z, 8)) continue;
+    (i % 2 ? round : coco).push({ pos: [x, 0, z], rotY: r() * 6.28, v: i % 3 % (i % 2 ? 2 : 3), s: 0.9 + r() * 0.4 });
+  }
+  // a few between the field and the east lots
+  for (let i = 0; i < 14; i++) round.push({ pos: [45 + r() * 4, 0, -50 + i * 6 + r() * 2], rotY: r() * 6.28, v: i % 2, s: 0.8 + r() * 0.3 });
+  return { coco, round };
+})();
+
+// ------------------------------------------------------------------ lots (dwellings)
+export type Lot = { kind: "tent" | "house"; pos: V3; rotY: number; color: string; roof: string; rank: number };
+const TENT = ["#e8743b", "#3f86c6", "#e2b23a", "#4f9a5a", "#d24b4b", "#7a68b8", "#f0f0ea", "#2fa3a0"];
+const WALL = ["#f4e3c3", "#f1efe8", "#dfeee2", "#f6d8d0", "#e3e6f2", "#f3ead2", "#e8d6b8"];
+const ROOF = ["#c4553a", "#b8743a", "#a8463a", "#3f7f8f", "#8a5a44", "#c86a3c"];
+export const PALETTE = { TENT, WALL, ROOF };
+
+export const blocked = (x: number, z: number, pad: number) =>
+  !inRect(MAP.lotArea, x, z, -pad) ||
+  inRect(MAP.plaza, x, z, pad + 1) || inRect(MAP.lawn, x, z, pad) ||
+  MAP.roads.some((rd) => inRect(rd, x, z, pad + 0.4)) ||
+  inRect(MAP.sawah, x, z, pad + 1) || inRect(MAP.river, x, z, pad + 4) || inRect(MAP.field, x, z, pad + 2) ||
+  Math.abs(z - MAP.rail.z) < MAP.rail.band + pad ||
+  PLOTS.some((p) => inPlot(p, x, z, pad + 0.6) || inApron(p, x, z, pad)) ||
+  Object.values(SPECIAL).some((p) => p.id !== "road" && p.id !== "field" && inPlot(p, x, z, pad + 1.5)) ||
+  SLOTS.some((s) => Math.hypot(s.pos[0] - x, s.pos[2] - z) < 2.5 + pad);
+
+export const LOTS: Lot[] = (() => {
+  const r = rng(2026);
+  const taken: { x: number; z: number; rad: number }[] = [];
+  const free = (x: number, z: number, rad: number) => taken.every((t) => Math.hypot(t.x - x, t.z - z) > t.rad + rad);
+  for (const t of [...TREES.coco, ...TREES.round]) taken.push({ x: t.pos[0], z: t.pos[2], rad: 0.9 });
+  const out: Lot[] = [];
+  // face the nearest road edge
+  const facing = (x: number, z: number) => {
+    let best = { d: 1e9, rot: 0 };
+    for (const rd of MAP.roads) {
+      if (z > rd.z0 && z < rd.z1) { const d = x < rd.x0 ? rd.x0 - x : x > rd.x1 ? x - rd.x1 : 0; if (d < best.d) best = { d, rot: x < rd.x0 ? H : -H }; }
+      if (x > rd.x0 && x < rd.x1) { const d = z < rd.z0 ? rd.z0 - z : z > rd.z1 ? z - rd.z1 : 0; if (d < best.d) best = { d, rot: z < rd.z0 ? 0 : Math.PI }; }
+    }
+    return best;
+  };
+  // 1) houses along the road fronts
+  for (const rd of MAP.roads) {
+    const along = rd.z1 - rd.z0 > rd.x1 - rd.x0;
+    const L = along ? rd.z1 - rd.z0 : rd.x1 - rd.x0;
+    for (let k = 2.4; k < L; k += 4.8) for (const side of [-1, 1]) {
+      const off = 3.7;
+      const x = along ? (side < 0 ? rd.x0 - off : rd.x1 + off) : rd.x0 + k;
+      const z = along ? rd.z0 + k : side < 0 ? rd.z0 - off : rd.z1 + off;
+      const jx = x + (r() - 0.5) * 0.3, jz = z + (r() - 0.5) * 0.3;
+      if (blocked(jx, jz, 1.9) || !free(jx, jz, 2.3)) continue;
+      taken.push({ x: jx, z: jz, rad: 2.3 });
+      const rot = along ? (side < 0 ? H : -H) : side < 0 ? 0 : Math.PI;
+      out.push({ kind: "house", pos: [jx, 0, jz], rotY: rot, color: WALL[out.length % WALL.length], roof: ROOF[Math.floor(r() * ROOF.length)], rank: 0 });
+    }
+  }
+  // 2) the tent camp filling the blocks
+  for (let z = MAP.lotArea.z1; z > MAP.lotArea.z0; z -= 3.3) for (let x = MAP.lotArea.x0; x < MAP.lotArea.x1; x += 3.1) {
+    const jx = x + (r() - 0.5) * 1.0, jz = z + (r() - 0.5) * 1.0;
+    if (blocked(jx, jz, 1.25) || !free(jx, jz, 1.4)) continue;
+    if (r() < 0.12) continue;
+    const f = facing(jx, jz);
+    taken.push({ x: jx, z: jz, rad: 1.4 });
+    out.push({ kind: "tent", pos: [jx, 0, jz], rotY: f.rot + (r() - 0.5) * 0.7, color: TENT[Math.floor(r() * TENT.length)], roof: "#ffffff", rank: 0 });
+  }
+  for (const d of out) d.rank = Math.hypot(d.pos[0] - 2, (d.pos[2] + 6) * 1.15) + r() * 7;
+  return out.sort((a, b) => a.rank - b.rank);
+})();
+
+/** How many dwellings a population shows (sub-linear: big numbers keep growing without filling the map at once). */
+export const dwellingsFor = (population: number) => Math.min(LOTS.length, Math.max(0, Math.round(260 * Math.pow(Math.max(0, population - 1) / 12480, 0.7))));
+/** Share of the tents (nearest the centre first) that have become small houses at this population. */
+export const upgradeFor = (population: number) => Math.max(0, Math.min(1, Math.log(Math.max(1, population) / 30000) / Math.log(40)));
+
+/** For every lot: its rank among the tents (nearest first), so the same tents always upgrade to houses first. */
+export const TENT_RANK: number[] = (() => { let k = 0; return LOTS.map((l) => (l.kind === "tent" ? k++ : -1)); })();
+export const TOTAL_TENTS = TENT_RANK.reduce((m, r) => Math.max(m, r + 1), 0);
+
+==== 16410 project/src/kits/negeri/world/World.tsx
+// NEGERI world — terrain, rice field, river, mountains, trees, roads, the flag and the host's first tent, the
+// settlement (instanced tents / houses that grow with the population), standing and rising buildings, named houses.
+// Everything is a pure function of time + the plan's world data.
+
+import React, { useLayoutEffect, useMemo, useRef } from "react";
+import { BufferGeometry, Color, ConeGeometry, CylinderGeometry, DoubleSide, Float32BufferAttribute, InstancedMesh, Matrix4, MeshStandardMaterial, Object3D, PlaneGeometry, Quaternion, Vector3 } from "three";
+import { backOut, outCubic, rng, type V3 } from "../math.ts";
+import { box, boxOn, bushGeo, coconutGeo, cone, cyl, houseRoofGeo, merge, prism, rockGeo, roundTreeGeo, tentGeo } from "./geo.ts";
+import { LOTS, MAP, TENT_RANK, TOTAL_TENTS, TREES, type Lot } from "./map.ts";
+import { Building, glassMat, WMAT } from "./Building.tsx";
+import { BUILDINGS, type BuildingDef } from "../../../negeri/buildings.ts";
+
+export { WMAT };
+
+// ------------------------------------------------------------------ terrain
+const flatZone = (x: number, z: number) => x > -120 && x < 160 && z > -190 && z < 110;
+const heightAt = (x: number, z: number) => {
+  const S = MAP.sawah;
+  if (x > S.x0 + 2 && x < S.x1 - 0.5 && z > S.z0 && z < S.z1) return -0.22;
+  if (flatZone(x, z)) return 0;
+  const ex = Math.max(0, -120 - x, x - 160), ez = Math.max(0, -190 - z, z - 110);
+  const e = Math.hypot(ex, ez);
+  const n = Math.sin(x * 0.031) * Math.cos(z * 0.027) + 0.5 * Math.sin(x * 0.071 + z * 0.05);
+  return Math.min(1, e / 70) ** 1.6 * (10 + 8 * n) + e * 0.05;
+};
+const Terrain: React.FC = () => {
+  const geo = useMemo(() => {
+    const g = new PlaneGeometry(1000, 1000, 200, 200).toNonIndexed();
+    g.rotateX(-Math.PI / 2);
+    const p = g.getAttribute("position");
+    for (let i = 0; i < p.count; i++) p.setY(i, heightAt(p.getX(i), p.getZ(i)));
+    const r = rng(9);
+    const col = new Float32Array(p.count * 3);
+    const greens = ["#8cbf5a", "#84b852", "#93c562", "#88bb57"].map((c) => new Color(c));
+    const far = new Color("#7aa86a");
+    for (let i = 0; i < p.count; i += 3) {
+      const cy = (p.getY(i) + p.getY(i + 1) + p.getY(i + 2)) / 3;
+      const c = greens[Math.floor(r() * greens.length)].clone();
+      if (cy > 0.5) c.lerp(far, Math.min(1, cy / 20));
+      if (cy < -0.05) c.set("#7f9a5a");
+      for (let v = 0; v < 3; v++) { col[(i + v) * 3] = c.r; col[(i + v) * 3 + 1] = c.g; col[(i + v) * 3 + 2] = c.b; }
+    }
+    g.setAttribute("color", new Float32BufferAttribute(col, 3));
+    g.deleteAttribute("uv");
+    g.computeVertexNormals();
+    return g;
+  }, []);
+  return <mesh geometry={geo} material={WMAT} receiveShadow />;
+};
+
+const roadMat = new MeshStandardMaterial({ color: "#d9bf91", roughness: 1, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
+const Roads: React.FC = () => (
+  <>
+    {MAP.roads.map((r, i) => (
+      <mesh key={i} position={[(r.x0 + r.x1) / 2, 0.012 + i * 0.002, (r.z0 + r.z1) / 2]} rotation={[-Math.PI / 2, 0, 0]} material={roadMat} receiveShadow>
+        <planeGeometry args={[r.x1 - r.x0, r.z1 - r.z0]} />
+      </mesh>
+    ))}
+  </>
+);
+
+const River: React.FC = () => {
+  const R = MAP.river;
+  const banks = useMemo(() => merge([
+    box([R.x1 - R.x0, 0.1, 1.4], [0, 0.05, R.z0 - 0.5], "#d6c79c"),
+    box([R.x1 - R.x0, 0.1, 1.4], [0, 0.05, R.z1 + 0.5], "#d6c79c"),
+  ]), [R]);
+  return (
+    <>
+      <mesh position={[0, 0.035, (R.z0 + R.z1) / 2]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+        <planeGeometry args={[R.x1 - R.x0, R.z1 - R.z0 + 0.4]} />
+        <meshStandardMaterial color="#6fb5cc" roughness={0.3} metalness={0} />
+      </mesh>
+      <mesh geometry={banks} material={WMAT} receiveShadow />
+    </>
+  );
+};
+
+const Sawah: React.FC = () => {
+  const { dikes, tufts, water } = useMemo(() => {
+    const S = MAP.sawah;
+    const x0 = S.x0 + 4, x1 = S.x1 - 1, z0 = -130, z1 = 56;
+    const parts: BufferGeometry[] = [];
+    const cw = 7.5, cd = 6;
+    for (let x = x1; x > x0; x -= cw) parts.push(box([0.5, 0.36, z1 - z0], [x, -0.04, (z0 + z1) / 2], "#89a95a"));
+    for (let z = z1; z > z0; z -= cd) parts.push(box([x1 - x0, 0.36, 0.5], [(x0 + x1) / 2, -0.04, z], "#89a95a"));
+    const r = rng(5);
+    const pts: Matrix4[] = [];
+    const q = new Quaternion(), sv = new Vector3();
+    for (let x = x1 - 0.55; x > x0; x -= 0.66) for (let z = z1 - 0.55; z > z0; z -= 0.66) {
+      const lx = (x1 - x) % cw, lz = (z1 - z) % cd;
+      if (lx < 0.5 || lz < 0.5) continue;
+      const s = 0.85 + r() * 0.4;
+      sv.set(s, s, s);
+      q.setFromAxisAngle(new Vector3(0, 1, 0), r() * 6);
+      pts.push(new Matrix4().compose(new Vector3(x + (r() - 0.5) * 0.1, -0.12, z + (r() - 0.5) * 0.1), q, sv));
+    }
+    const tg = new ConeGeometry(0.09, 0.42, 4, 1, true);
+    tg.translate(0, 0.21, 0);
+    return { dikes: merge(parts), tufts: { geo: tg, m: pts }, water: { x: (x0 + x1) / 2, z: (z0 + z1) / 2, w: x1 - x0, d: z1 - z0 } };
+  }, []);
+  const ref = useRef<InstancedMesh>(null);
+  useLayoutEffect(() => {
+    const im = ref.current!;
+    tufts.m.forEach((m, i) => im.setMatrixAt(i, m));
+    im.instanceMatrix.needsUpdate = true;
+    im.computeBoundingSphere();
+  }, [tufts]);
+  return (
+    <>
+      <mesh position={[water.x, -0.1, water.z]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+        <planeGeometry args={[water.w, water.d]} />
+        <meshStandardMaterial color="#a9cfc0" roughness={0.35} metalness={0} />
+      </mesh>
+      <mesh geometry={dikes} material={WMAT} receiveShadow castShadow />
+      <instancedMesh ref={ref} args={[tufts.geo, undefined, tufts.m.length]} castShadow={false} receiveShadow>
+        <meshStandardMaterial color="#79bb45" roughness={0.9} flatShading side={DoubleSide} />
+      </instancedMesh>
+    </>
+  );
+};
+
+const Mountains: React.FC = () => {
+  const geo = useMemo(() => {
+    const r = rng(31);
+    const one = (rt: number, rb: number, h: number, pos: V3, color: string, seg: number) => {
+      const g = new CylinderGeometry(rt, rb, h, seg, 3).toNonIndexed();
+      const p = g.getAttribute("position");
+      for (let i = 0; i < p.count; i++) {
+        const y = p.getY(i);
+        if (y > -h / 2 + 1 && y < h / 2 - 1) { p.setX(i, p.getX(i) * (0.92 + 0.16 * Math.abs(Math.sin(p.getX(i) * 0.05 + y)))); p.setZ(i, p.getZ(i) * (0.92 + 0.16 * Math.abs(Math.cos(p.getZ(i) * 0.05)))); }
+      }
+      g.translate(pos[0], pos[1] + h / 2, pos[2]);
+      const c = new Color(color);
+      const col = new Float32Array(p.count * 3);
+      for (let i = 0; i < p.count; i += 3) { const k = 0.94 + r() * 0.1; for (let v = 0; v < 3; v++) { col[(i + v) * 3] = c.r * k; col[(i + v) * 3 + 1] = c.g * k; col[(i + v) * 3 + 2] = c.b * k; } }
+      g.setAttribute("color", new Float32BufferAttribute(col, 3));
+      g.deleteAttribute("uv");
+      return g;
+    };
+    return merge([
+      one(16, 230, 105, [-80, -5, -700], "#6f9178", 11),
+      one(4, 190, 70, [230, -5, -620], "#7c9d82", 9),
+      one(6, 220, 60, [-380, -5, -520], "#80a084", 9),
+      one(3, 160, 70, [420, -5, -300], "#86a688", 8),
+      one(3, 150, 55, [-330, -5, 280], "#86a688", 8),
+      one(3, 190, 70, [260, -5, 380], "#86a688", 8),
+      one(3, 170, 60, [-60, -5, 470], "#86a688", 8),
+    ]);
+  }, []);
+  return <mesh geometry={geo} material={WMAT} />;
+};
+
+// ------------------------------------------------------------------ instancing
+type Inst = { pos: V3; rotY: number; s?: number; color?: string; grow?: number };
+const Instanced: React.FC<{ geo: BufferGeometry; items: Inst[]; mat?: MeshStandardMaterial | THREE_Material; shadow?: boolean; cap?: number }> = ({ geo, items, mat = WMAT, shadow = true, cap }) => {
+  const ref = useRef<InstancedMesh>(null);
+  const tmp = useMemo(() => new Object3D(), []);
+  useLayoutEffect(() => {
+    const im = ref.current!;
+    im.count = items.length;
+    items.forEach((it, i) => {
+      const g = it.grow ?? 1;
+      const gy = g >= 1 ? 1 : g <= 0 ? 0.0001 : backOut(g, 1.5);
+      const gx = g >= 1 ? 1 : g <= 0 ? 0.0001 : 0.55 + 0.45 * outCubic(g * 1.3);
+      tmp.position.set(...it.pos);
+      tmp.rotation.set(0, it.rotY, 0);
+      const s = it.s ?? 1;
+      tmp.scale.set(s * gx, s * gy, s * gx);
+      tmp.updateMatrix();
+      im.setMatrixAt(i, tmp.matrix);
+      if (it.color) im.setColorAt(i, new Color(it.color));
+    });
+    im.instanceMatrix.needsUpdate = true;
+    if (im.instanceColor) im.instanceColor.needsUpdate = true;
+    im.computeBoundingSphere();
+  });
+  return <instancedMesh ref={ref} args={[geo, mat as MeshStandardMaterial, Math.max(1, cap ?? items.length)]} castShadow={shadow} receiveShadow frustumCulled={false} />;
+};
+type THREE_Material = import("three").Material;
+
+// house body without its glass (the glass is its own instanced mesh: it glows at night)
+const houseBody = () => {
+  const W = 3, D = 3, H = 2.1;
+  return merge([
+    boxOn([W + 0.16, 0.22, D + 0.16], [0, 0, 0], "#b9b1a4"),
+    boxOn([W, H, D], [0, 0.22, 0], "#ffffff"),
+    prism(D, 1.0, 0.02, [W / 2 - 0.01, 0.22 + H, 0], "#ffffff", [0, Math.PI / 2, 0]),
+    prism(D, 1.0, 0.02, [-W / 2 + 0.01, 0.22 + H, 0], "#ffffff", [0, Math.PI / 2, 0]),
+    boxOn([0.78, 1.55, 0.06], [-0.55, 0.22, D / 2 + 0.01], "#6b4a33"),
+    boxOn([0.92, 0.08, 0.08], [-0.55, 1.77, D / 2 + 0.02], "#f2ede4"),
+    boxOn([0.9, 0.75, 0.05], [0.75, 0.98, D / 2 + 0.01], "#f2ede4"),
+    boxOn([0.04, 0.6, 0.07], [0.75, 1.055, D / 2 + 0.035], "#f2ede4"),
+    boxOn([0.9, 0.12, 0.35], [-0.55, 0, D / 2 + 0.25], "#b9b1a4"),
+  ]);
+};
+const houseGlass = () => merge([
+  boxOn([0.74, 0.6, 0.06], [0.75, 1.055, D2 + 0.02], "#5d7a8c"),
+  boxOn([0.05, 0.6, 0.8], [1.5 + 0.01, 1.05, 0.2], "#5d7a8c"),
+]);
+const D2 = 1.5;
+
+const GEO = {
+  tent: tentGeo(), houseBody: houseBody(), houseGlass: houseGlass(), houseRoof: houseRoofGeo(),
+  coco: [coconutGeo(1), coconutGeo(2), coconutGeo(3)], round: [roundTreeGeo(4), roundTreeGeo(7)], bush: bushGeo(3), rock: rockGeo(2),
+};
+const TINT = new MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.9 });
+
+const Trees: React.FC = () => (
+  <>
+    {GEO.coco.map((g, v) => <Instanced key={"c" + v} geo={g} items={TREES.coco.filter((t) => t.v === v).map((t) => ({ pos: t.pos, rotY: t.rotY, s: t.s }))} />)}
+    {GEO.round.map((g, v) => <Instanced key={"r" + v} geo={g} items={TREES.round.filter((t) => t.v === v).map((t) => ({ pos: t.pos, rotY: t.rotY, s: t.s }))} />)}
+    <Instanced geo={GEO.bush} items={[{ pos: [-9.6, 0, -6.4], rotY: 0.3 }, { pos: [-9.2, 0, 9.4], rotY: 1.2, s: 0.8 }, { pos: [7.4, 0, 10.6], rotY: 2.0, s: 0.7 }, { pos: [-9.8, 0, 2.2], rotY: 0.6 }]} />
+    <Instanced geo={GEO.rock} items={[{ pos: [-3.6, 0, -6.8], rotY: 0.4 }, { pos: [3.8, 0, 6.6], rotY: 1.4, s: 0.7 }, { pos: [6.6, 0, -1.0], rotY: 2.4, s: 0.6 }]} />
+  </>
+);
+
+// ------------------------------------------------------------------ flag (bamboo pole, cloth in the country's colours)
+const FLAG_W = 1.35, FLAG_H = 0.9, POLE_H = 5.4;
+const Flag: React.FC<{ t: number; colors: [string, string] }> = ({ t, colors }) => {
+  const pole = useMemo(() => {
+    const parts: BufferGeometry[] = [];
+    const N = 9;
+    for (let i = 0; i < N; i++) {
+      const y0 = (POLE_H * i) / N, y1 = (POLE_H * (i + 1)) / N;
+      parts.push(cyl(0.048 - i * 0.002, 0.05 - i * 0.002, y1 - y0, [0, (y0 + y1) / 2, 0], i % 2 ? "#cdb46d" : "#c2a95f", 8));
+      parts.push(cyl(0.056 - i * 0.002, 0.056 - i * 0.002, 0.04, [0, y1, 0], "#a8904c", 8));
+    }
+    parts.push(boxOn([0.5, 0.18, 0.5], [0, 0, 0], "#bdb6aa"));
+    parts.push(cone(0.06, 0.16, [0, POLE_H + 0.08, 0], "#e9e2d0", 6));
+    return merge(parts);
+  }, []);
+  const cloth = useMemo(() => {
+    const g = new PlaneGeometry(FLAG_W, FLAG_H, 18, 6);
+    g.translate(FLAG_W / 2 + 0.05, 0, 0);
+    const p = g.getAttribute("position");
+    const col = new Float32Array(p.count * 3);
+    const a = new Color(colors[0]), b = new Color(colors[1]);
+    for (let i = 0; i < p.count; i++) { const c = p.getY(i) > 0 ? a : b; col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b; }
+    g.setAttribute("color", new Float32BufferAttribute(col, 3));
+    return { g, base: Float32Array.from(p.array as Float32Array) };
+  }, [colors[0], colors[1]]); // eslint-disable-line react-hooks/exhaustive-deps
+  const p = cloth.g.getAttribute("position");
+  for (let i = 0; i < p.count; i++) {
+    const x = cloth.base[i * 3], y = cloth.base[i * 3 + 1];
+    const u = Math.max(0, x - 0.05) / FLAG_W;
+    p.setZ(i, Math.sin(u * 5.2 - t * 6.0 + y * 0.8) * 0.11 * u);
+    p.setY(i, y - 0.05 * u * u);
+  }
+  p.needsUpdate = true;
+  cloth.g.computeVertexNormals();
+  return (
+    <group position={MAP.flag}>
+      <mesh geometry={pole} material={WMAT} castShadow receiveShadow />
+      <mesh geometry={cloth.g} position={[0, POLE_H - FLAG_H / 2 - 0.08, 0]} castShadow receiveShadow>
+        <meshStandardMaterial vertexColors roughness={0.85} side={DoubleSide} />
+      </mesh>
+    </group>
+  );
+};
+
+// ------------------------------------------------------------------ settlement
+/** When each lot appears (film seconds): before the roll the first n(from) stand, during it they follow the count. */
+export const lotAppear = (count: (t: number) => number, t0: number, t1: number) => {
+  const out = new Float64Array(LOTS.length).fill(Infinity);
+  const n0 = Math.round(count(t0 - 0.001));
+  for (let i = 0; i < Math.min(n0, LOTS.length); i++) out[i] = -1e9;
+  let i = n0;
+  for (let t = t0; t <= t1 + 0.01 && i < LOTS.length; t += 1 / 120) while (i < LOTS.length && count(t) >= i + 1) { out[i] = t; i++; }
+  return out;
+};
+export const Settlement: React.FC<{ appear: Float64Array; t: number; upgrade: number; night: boolean }> = ({ appear, t, upgrade, night }) => {
+  const grow = (i: number) => Math.min(1, Math.max(0, (t - appear[i]) / 0.3));
+  const tents: Inst[] = [], bodies: Inst[] = [], roofs: Inst[] = [], glass: Inst[] = [];
+  const upTo = upgrade * TOTAL_TENTS;
+  LOTS.forEach((d: Lot, i) => {
+    if (appear[i] > t) return;
+    const g = grow(i);
+    const isHouse = d.kind === "house" || TENT_RANK[i] < upTo;
+    if (!isHouse) { tents.push({ pos: d.pos, rotY: d.rotY, color: d.color, grow: g }); return; }
+    const s = d.kind === "house" ? 1 : 0.72;
+    bodies.push({ pos: d.pos, rotY: d.rotY, s, color: d.kind === "house" ? d.color : ["#f4e3c3", "#e3e6f2", "#f6d8d0", "#dfeee2"][i % 4], grow: g });
+    roofs.push({ pos: d.pos, rotY: d.rotY, s, color: d.kind === "house" ? d.roof : ["#c4553a", "#3f7f8f", "#b8743a"][i % 3], grow: g });
+    glass.push({ pos: d.pos, rotY: d.rotY, s, grow: g });
+  });
+  return (
+    <>
+      <Instanced geo={GEO.tent} items={tents} mat={TINT} cap={LOTS.length} />
+      <Instanced geo={GEO.houseBody} items={bodies} mat={TINT} cap={LOTS.length} />
+      <Instanced geo={GEO.houseRoof} items={roofs} mat={TINT} cap={LOTS.length} />
+      <Instanced key={night ? "n" : "d"} geo={GEO.houseGlass} items={glass} mat={glassMat(night)} shadow={false} cap={LOTS.length} />
+    </>
+  );
+};
+
+// ------------------------------------------------------------------ the whole world
+export type WBuild = { id: string; def: BuildingDef; vars: Record<string, string>; pos: V3; yaw: number; start?: number; end?: number; appear?: number };
+export type WorldProps = {
+  t: number;
+  flag: [string, string];
+  appear: Float64Array;
+  upgrade: number;
+  night: boolean;
+  builds: WBuild[];
+  /** wraps each building (QA tags) */
+  wrap?: (id: string, node: React.ReactNode) => React.ReactNode;
+  children?: React.ReactNode;
+};
+export const World: React.FC<WorldProps> = ({ t, flag, appear, upgrade, night, builds, wrap, children }) => (
+  <>
+    <Terrain />
+    <Roads />
+    <River />
+    <Sawah />
+    <Mountains />
+    <Trees />
+    <Flag t={t} colors={flag} />
+    <group position={MAP.tent.pos} rotation={[0, MAP.tent.yaw, 0]}>
+      <mesh geometry={GEO.tent} material={tentMat} castShadow receiveShadow />
+    </group>
+    <Settlement appear={appear} t={t} upgrade={upgrade} night={night} />
+    {builds.map((b) => {
+      const node = <Building key={b.id} def={b.def} vars={b.vars} pos={b.pos} yaw={b.yaw} t={t} start={b.start} end={b.end} appear={b.appear} night={night} />;
+      return <React.Fragment key={b.id}>{wrap ? wrap(b.id, node) : node}</React.Fragment>;
+    })}
+    {children}
+  </>
+);
+const tentMat = new MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.9, color: "#e8743b" });
+export const RUMAH_DEF = BUILDINGS.rumah;
+
+==== 16270 project/src/negeri/camera.ts
+// NEGERI camera solver — a camera for every shot, chosen automatically. For a shot kind and its subjects (people,
+// a building, a sign) it tries a fan of angles × distances × heights, rejects any position inside a building / tent
+// / tree or where something hides the subject (rays against boxes and spheres), fits the subject into the part of
+// the frame the cards leave free (9:16: a vertical band; 16:9: a side column), prefers faces toward the lens, and
+// a different angle from the previous shot of the same subject. Pure TypeScript.
+
+import type { PCam, V3 } from "./types.ts";
+
+/** an axis-aligned box, or (with `yaw`) a box turned about its centre `c` — then min / max are in its own frame around c */
+export type Box = { min: V3; max: V3; yaw?: number; c?: V3 };
+export type Sphere = { c: V3; r: number; id?: string };
+export type Env = { boxes: (Box & { id?: string })[]; spheres: Sphere[] };
+export type Subj =
+  | { id: string; type: "person"; p: V3; face: number; s: number; skip?: string[]; noFace?: boolean }
+  | { id: string; type: "building"; c: V3; yaw: number; w: number; d: number; h: number }
+  | { id: string; type: "sign"; c: V3; yaw: number; w: number; h: number };
+/** free part of the frame for the subject: centre (0..1, y down) and size (fraction of the frame) */
+export type Frame = { x: number; y: number; fx: number; fy: number };
+export type SolveOpts = { aspect: number; frame: Frame; prevAz?: number; prevId?: string; side?: "left" | "right"; move?: string; bounds?: Box };
+export type Solve = { a: PCam; b: PCam; vis: number; az: number; box: number; note?: string; orbit?: { c: V3; r: number; h: number; az0: number; az1: number; fov: number; target: V3 } };
+
+const D = Math.PI / 180;
+const add = (a: V3, b: V3, k = 1): V3 => [a[0] + b[0] * k, a[1] + b[1] * k, a[2] + b[2] * k];
+const sub = (a: V3, b: V3): V3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const len = (a: V3) => Math.hypot(a[0], a[1], a[2]);
+const nrm = (a: V3): V3 => { const l = len(a) || 1; return [a[0] / l, a[1] / l, a[2] / l]; };
+const dot = (a: V3, b: V3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const cross = (a: V3, b: V3): V3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const wrapA = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
+
+/** chibi landmarks (s = scale): head centre ≈ 0.93 m, chest ≈ 0.55 m */
+export const headOf = (p: V3, s: number): V3 => [p[0], p[1] + 0.92 * s, p[2]];
+export const chestOf = (p: V3, s: number): V3 => [p[0], p[1] + 0.55 * s, p[2]];
+
+const toLocal = (p: V3, b: Box, dir = false): V3 => {
+  if (b.yaw === undefined) return p;
+  const c = Math.cos(b.yaw), s = Math.sin(b.yaw);
+  const x = dir ? p[0] : p[0] - b.c![0], z = dir ? p[2] : p[2] - b.c![2];
+  return [x * c - z * s, dir ? p[1] : p[1], x * s + z * c];
+};
+const rayBox = (o0: V3, d0: V3, b: Box) => {
+  const o = toLocal(o0, b), d = toLocal(d0, b, true);
+  let t0 = 0, t1 = 1;
+  for (let i = 0; i < 3; i++) {
+    if (Math.abs(d[i]) < 1e-9) { if (o[i] < b.min[i] || o[i] > b.max[i]) return Infinity; continue; }
+    let a = (b.min[i] - o[i]) / d[i], c = (b.max[i] - o[i]) / d[i];
+    if (a > c) [a, c] = [c, a];
+    t0 = Math.max(t0, a); t1 = Math.min(t1, c);
+    if (t0 > t1) return Infinity;
+  }
+  return t0;
+};
+const raySphere = (o: V3, d: V3, c: V3, r: number) => {
+  const m = sub(o, c), b = dot(m, d), cc = dot(m, m) - r * r, a = dot(d, d);
+  const disc = b * b - a * cc;
+  if (disc < 0) return Infinity;
+  const t = (-b - Math.sqrt(disc)) / a;
+  return t >= 0 && t <= 1 ? t : cc < 0 ? 0 : Infinity;
+};
+export const inside = (p0: V3, b: Box, pad = 0) => { const p = toLocal(p0, b); return insideL(p, b, pad); };
+const insideL = (p: V3, b: Box, pad = 0) => p[0] > b.min[0] - pad && p[0] < b.max[0] + pad && p[1] > b.min[1] - pad && p[1] < b.max[1] + pad && p[2] > b.min[2] - pad && p[2] < b.max[2] + pad;
+/** fraction of the way a → b that is clear */
+const clear = (a: V3, b: V3, E: Env, skip: Set<string>) => {
+  const d = sub(b, a);
+  let t = 1;
+  for (const c of E.boxes) if (!c.id || !skip.has(c.id)) t = Math.min(t, rayBox(a, d, c));
+  for (const s of E.spheres) if (!s.id || !skip.has(s.id)) t = Math.min(t, raySphere(a, d, s.c, s.r));
+  return t;
+};
+
+type K = { fov: number; els: number[]; offs: number[]; dists: number[]; ext: (s: Subj) => number; aim: (s: Subj) => V3; minD: number };
+const pExt = (k: number) => (s: Subj) => (s.type === "person" ? k * s.s : 2);
+const pAim = (k: number) => (s: Subj): V3 => (s.type === "person" ? [s.p[0], s.p[1] + k * s.s, s.p[2]] : s.c);
+const KIND: Record<string, K> = {
+  close: { fov: 34, els: [4, 10, -2], offs: [24, -24, 36, -36, 12, -12, 50, -50], dists: [1, 0.85, 1.2], ext: pExt(0.92), aim: (s) => (s.type === "person" ? [s.p[0], s.p[1] + 0.84 * s.s, s.p[2]] : s.c), minD: 0.9 },
+  medium: { fov: 38, els: [7, 13, 2], offs: [28, -28, 42, -42, 14, -14, 58, -58, 0], dists: [1, 0.85, 1.2, 1.45], ext: pExt(1.6), aim: pAim(0.6), minD: 1.4 },
+  low: { fov: 42, els: [-10, -5], offs: [20, -20, 34, -34, 8, -8], dists: [1, 0.85, 1.2], ext: pExt(1.75), aim: pAim(0.72), minD: 1.2 },
+  wide: { fov: 42, els: [9, 15, 4, 22], offs: [10, -10, 25, -25, 40, -40, 60, -60, 0], dists: [1, 0.85, 1.25, 1.6], ext: pExt(3.6), aim: pAim(0.55), minD: 2.2 },
+};
+
+const hfovOf = (fov: number, aspect: number) => 2 * Math.atan(Math.tan((fov * D) / 2) * aspect) / D;
+/** shift the look-at point so the aim lands at frame (x, y) instead of the centre */
+const framed = (pos: V3, aim: V3, fov: number, aspect: number, fr: Frame): V3 => {
+  const f = nrm(sub(aim, pos)), r = nrm(cross(f, [0, 1, 0])), u = cross(r, f);
+  const d = len(sub(aim, pos)), tv = Math.tan((fov * D) / 2), th = tv * aspect;
+  return add(add(aim, u, d * tv * (2 * fr.y - 1)), r, d * th * (1 - 2 * fr.x));
+};
+
+const scoreView = (pos: V3, subs: Subj[], E: Env, mainPts: V3[], allPts: V3[][]) => {
+  let vMain = 0;
+  const s0 = subs[0];
+  const skip0 = new Set([s0.id, ...(s0.type === "person" ? s0.skip ?? [] : [])]);
+  for (const q of mainPts) vMain += clear(pos, q, E, skip0) >= 0.985 ? 1 : 0;
+  vMain /= mainPts.length || 1;
+  let vAll = 0, nAll = 0;
+  allPts.forEach((pts, i) => { for (const q of pts) { vAll += clear(pos, q, E, new Set([subs[i].id])) >= 0.985 ? 1 : 0; nAll++; } });
+  return { vMain, vAll: vAll / (nAll || 1) };
+};
+const ptsOf = (s: Subj): V3[] => {
+  if (s.type === "person") return [headOf(s.p, s.s), chestOf(s.p, s.s), [s.p[0], s.p[1] + 0.25 * s.s, s.p[2]]];
+  if (s.type === "sign") return [s.c];
+  const f: V3 = [Math.sin(s.yaw), 0, Math.cos(s.yaw)], r: V3 = [Math.cos(s.yaw), 0, -Math.sin(s.yaw)];
+  const front = add(s.c, f, s.d / 2);
+  return [add(front, [0, s.h * 0.5, 0]), add(add(front, r, s.w * 0.35), [0, s.h * 0.35, 0]), add(add(front, r, -s.w * 0.35), [0, s.h * 0.35, 0]), add(s.c, [0, s.h * 0.85, 0])];
+};
+const okPos = (pos: V3, E: Env, o: SolveOpts, skip: Set<string>) => {
+  if (pos[1] < 0.28) return false;
+  const B = o.bounds;
+  if (B && (pos[0] < B.min[0] || pos[0] > B.max[0] || pos[2] < B.min[2] || pos[2] > B.max[2])) return false;
+  for (const b of E.boxes) if (inside(pos, b, 0.25)) return false;
+  // keep a head's width away from other people's heads (a giant ear in the foreground reads as a mistake)
+  for (const s of E.spheres) if ((!s.id || !skip.has(s.id)) && len(sub(pos, s.c)) < s.r + (s.id ? 0.7 : 0.3)) return false;
+  return true;
+};
+
+/** A camera move's end key. */
+export const moved = (a: PCam, move: string, E: Env): PCam => {
+  const v = sub(a.target, a.pos), d = len(v);
+  let b: PCam = a;
+  if (move === "push") b = { ...a, pos: add(a.pos, v, 0.08), fov: a.fov - 1 };
+  else if (move === "pull") b = { ...a, pos: add(a.pos, v, -0.1), fov: a.fov + 1 };
+  else if (move === "orbit") { const r = sub(a.pos, a.target), c = Math.cos(8 * D), s = Math.sin(8 * D); b = { ...a, pos: add(a.target, [r[0] * c + r[2] * s, r[1], -r[0] * s + r[2] * c]) }; }
+  else if (move === "rise") b = { ...a, pos: add(a.pos, [0, d * 0.14, 0]), target: add(a.target, [0, d * 0.04, 0]) };
+  else if (move === "track") { const rgt = nrm([v[2], 0, -v[0]]); b = { ...a, pos: add(a.pos, rgt, d * 0.06), target: add(a.target, rgt, d * 0.06) }; }
+  if (E.boxes.some((c) => inside(b.pos, c, 0.15))) return a;
+  return b;
+};
+
+/** People shots (close / medium / low / wide), one or several subjects (subs[0] = main). */
+export const solvePeople = (kind: string, subs: Subj[], E: Env, o: SolveOpts): Solve => {
+  const K0 = KIND[kind] ?? KIND.medium;
+  // landscape frames are short: a close / medium shot needs a little more height to keep the hat in
+  const K: K = o.aspect > 1 && (kind === "close" || kind === "medium") ? { ...K0, ext: (s) => K0.ext(s) * 1.18 } : K0;
+  const skip = new Set(subs.map((s) => s.id));
+  const main = subs[0] as Extract<Subj, { type: "person" }>;
+  const group = subs.length > 1;
+  const aim: V3 = group ? (() => { const c = subs.map(K.aim).reduce((x, y) => add(x, y), [0, 0, 0] as V3); return [c[0] / subs.length, c[1] / subs.length, c[2] / subs.length]; })() : K.aim(main);
+  const hf = hfovOf(K.fov, o.aspect);
+  const mainPts = ptsOf(main), allPts = subs.map(ptsOf);
+  let best: (Solve & { score: number }) | null = null;
+  for (const dk of K.dists) for (const el of K.els) for (const off of K.offs) {
+    const A = main.face + off * D;
+    let d = K.ext(main) / (2 * Math.tan((K.fov * D) / 2) * Math.max(0.35, o.frame.fy));
+    if (group) {
+      const right: V3 = [Math.cos(A), 0, -Math.sin(A)];
+      const xs = subs.map((s) => dot(sub(s.type === "person" ? s.p : s.c, aim), right));
+      const spread = Math.max(...xs) - Math.min(...xs) + 0.9;
+      d = Math.max(d, spread / 2 / Math.tan((hf * D) / 2) / Math.max(0.35, o.frame.fx));
+    } else d = Math.max(d, 0.9 / 2 / Math.tan((hf * D) / 2) / Math.max(0.35, o.frame.fx));
+    d *= dk;
+    const dir: V3 = [Math.cos(el * D) * Math.sin(A), Math.sin(el * D), Math.cos(el * D) * Math.cos(A)];
+    const pos = add(aim, dir, d);
+    if (kind === "low") pos[1] = Math.max(0.3, Math.min(pos[1], 0.5 * main.s));
+    if (!okPos(pos, E, o, skip)) continue;
+    if (subs.some((q) => q.type === "person" && len(sub(pos, headOf(q.p, q.s))) < K.minD * (q === main ? 0.6 : 1))) continue;
+    const { vMain, vAll } = scoreView(pos, subs, E, mainPts, allPts);
+    // faces toward the lens
+    const people = subs.filter((q): q is Extract<Subj, { type: "person" }> => q.type === "person" && !q.noFace);
+    const faceOf = (q: Extract<Subj, { type: "person" }>) => Math.cos(wrapA(Math.atan2(pos[0] - q.p[0], pos[2] - q.p[2]) - q.face));
+    const front = people.length ? people.reduce((acc, q, i) => acc + faceOf(q) * (i === 0 ? 2 : 1), 0) / (people.length + 1) : 0;
+    // something behind the subject (a building, trees) rather than empty sky / grass far away
+    const fwd = nrm(sub(aim, pos));
+    const hitT = clear(aim, add(aim, fwd, 40), E, skip);
+    const back = hitT < 1 ? Math.min(1, (hitT * 40) / 10) * 0.8 + 0.2 : 0.35;
+    let score = 4 * vMain + 1.5 * vAll + 1.3 * front + 0.4 * back - 0.25 * Math.abs(dk - 1) - 0.015 * Math.abs(el - K.els[0]);
+    if (o.prevAz !== undefined && o.prevId === main.id && Math.abs(wrapA(A - o.prevAz)) < 16 * D) score -= 0.8;
+    if (o.side) score += (Math.sign(off) === (o.side === "left" ? 1 : -1) ? 0.35 : 0);
+    if (!best || score > best.score) {
+      const target = framed(pos, aim, K.fov, o.aspect, o.frame);
+      const a: PCam = { pos, target, fov: K.fov };
+      best = { a, b: a, vis: vMain, az: A, box: Math.max(4, Math.min(24, d * 1.3 + 3)), score };
+    }
+  }
+  if (!best) {
+    const A = main.face, d = K.ext(main) / (2 * Math.tan((K.fov * D) / 2)) * 1.2;
+    const pos = add(aim, [Math.sin(A) * d, 0.4, Math.cos(A) * d]);
+    const a: PCam = { pos, target: aim, fov: K.fov };
+    return { a, b: a, vis: 0, az: A, box: 8, note: "no clear camera position" };
+  }
+  best.b = moved(best.a, o.move ?? "push", E);
+  return best;
+};
+
+/** A building: a slow orbit (wide) around it, sized to fit, from its front side. */
+export const solveBuilding = (s: Extract<Subj, { type: "building" }>, E: Env, o: SolveOpts, sweep = 12, extra: Subj[] = []): Solve => {
+  const skip = new Set([s.id, ...extra.map((x) => x.id)]);
+  const fov = 40, hf = hfovOf(fov, o.aspect);
+  const pts = ptsOf(s);
+  let best: (Solve & { score: number }) | null = null;
+  for (const off of [28, -28, 40, -40, 16, -16, 55, -55, 0]) for (const el of [17, 24, 11, 32]) for (const dk of [1, 1.15, 0.92, 1.35]) {
+    const A = s.yaw + off * D;
+    // horizontal extent of the footprint seen from A, vertical extent = height
+    const ca = Math.abs(Math.cos(A - s.yaw)), sa = Math.abs(Math.sin(A - s.yaw));
+    const across = s.w * ca + s.d * sa + 1.2, depth = s.w * sa + s.d * ca;
+    let d = Math.max(across / 2 / Math.tan((hf * D) / 2) / Math.max(0.35, o.frame.fx), (s.h + 1.2) / 2 / Math.tan((fov * D) / 2) / Math.max(0.35, o.frame.fy)) + depth * 0.5;
+    d = Math.max(d, 5) * dk;
+    const aim: V3 = [s.c[0], s.c[1] + s.h * 0.42, s.c[2]];
+    const dir: V3 = [Math.cos(el * D) * Math.sin(A), Math.sin(el * D), Math.cos(el * D) * Math.cos(A)];
+    const pos = add(aim, dir, d);
+    if (!okPos(pos, E, o, skip)) continue;
+    // the whole sweep must stay clear too
+    const endA = A + sweep * D * (off >= 0 ? -1 : 1);
+    const pos2 = add(aim, [Math.cos(el * D) * Math.sin(endA) * d, Math.sin(el * D) * d, Math.cos(el * D) * Math.cos(endA) * d]);
+    if (!okPos(pos2, E, o, skip)) continue;
+    let v = 0;
+    for (const q of pts) v += clear(pos, q, E, skip) >= 0.985 ? 1 : 0;
+    let v2 = 0;
+    for (const q of pts) v2 += clear(pos2, q, E, skip) >= 0.985 ? 1 : 0;
+    const vis = (v + v2) / (pts.length * 2);
+    let score = 5 * vis + 0.6 * Math.cos(off * D) - 0.3 * Math.abs(dk - 1) - 0.01 * Math.abs(el - 17);
+    if (o.prevAz !== undefined && o.prevId === s.id && Math.abs(wrapA(A - o.prevAz)) < 14 * D) score -= 0.6;
+    if (!best || score > best.score) {
+      const target = framed(pos, aim, fov, o.aspect, o.frame);
+      const h = pos[1] - aim[1], r = Math.hypot(pos[0] - aim[0], pos[2] - aim[2]);
+      const a: PCam = { pos, target, fov };
+      const tgt2 = framed(pos2, aim, fov, o.aspect, o.frame);
+      best = { a, b: { pos: pos2, target: tgt2, fov }, vis, az: A, box: Math.max(10, Math.min(60, Math.max(s.w, s.d) * 1.6 + 6)), score, orbit: { c: aim, r, h, az0: A, az1: endA, fov, target: sub(target, aim) } };
+    }
+  }
+  if (!best) {
+    const A = s.yaw, d = Math.max(s.w, s.h * 1.6) * 2.4;
+    const aim: V3 = [s.c[0], s.c[1] + s.h * 0.4, s.c[2]];
+    const pos = add(aim, [Math.sin(A) * d, d * 0.35, Math.cos(A) * d]);
+    const a: PCam = { pos, target: aim, fov };
+    return { a, b: a, vis: 0, az: A, box: 30, note: "no clear view of the building" };
+  }
+  return best;
+};
+
+/** A sign / name board: straight-ish in front, close enough to read. */
+export const solveSign = (s: Extract<Subj, { type: "sign" }>, E: Env, o: SolveOpts): Solve => {
+  const fov = 36, hf = hfovOf(fov, o.aspect);
+  let best: (Solve & { score: number }) | null = null;
+  for (const off of [14, -14, 24, -24, 0, 34, -34]) for (const el of [6, 12, 0]) for (const dk of [1, 0.85, 1.2]) {
+    const A = s.yaw + off * D;
+    const want = Math.max(s.w / 0.62 / 2 / Math.tan((hf * D) / 2) / Math.max(0.35, o.frame.fx), (s.h * 3.2) / 2 / Math.tan((fov * D) / 2));
+    const d = Math.max(1.6, Math.min(want, 22)) * dk;
+    const dir: V3 = [Math.cos(el * D) * Math.sin(A), Math.sin(el * D), Math.cos(el * D) * Math.cos(A)];
+    const pos = add(s.c, dir, d);
+    if (!okPos(pos, E, o, new Set([s.id]))) continue;
+    const vis = clear(pos, s.c, E, new Set([s.id])) >= 0.985 ? 1 : 0;
+    let score = 5 * vis + Math.cos(off * D) - 0.3 * Math.abs(dk - 1);
+    if (o.prevAz !== undefined && o.prevId === s.id && Math.abs(wrapA(A - o.prevAz)) < 10 * D) score -= 0.3;
+    if (!best || score > best.score) {
+      const target = framed(pos, s.c, fov, o.aspect, o.frame);
+      const a: PCam = { pos, target, fov };
+      best = { a, b: a, vis, az: A, box: Math.max(5, d * 1.5 + 4), score };
+    }
+  }
+  if (!best) {
+    const pos = add(s.c, [Math.sin(s.yaw) * 4, 0.4, Math.cos(s.yaw) * 4]);
+    const a: PCam = { pos, target: s.c, fov };
+    return { a, b: a, vis: 0, az: s.yaw, box: 8, note: "no clear view of the sign" };
+  }
+  best.b = moved(best.a, o.move ?? "push", E);
+  return best;
+};
+
+==== 18160 project/src/negeri/cast.ts
+// NEGERI cast library — original chibi characters. The HOST (the leader of the made-up country: president, queen,
+// village head…) is the recurring star of the series; WARGA are the citizens (commenters cast as residents).
+//   "host": { "preset": "presiden", "look": { "shirt": { "color": "#2f4f93" } } }
+//   "cast": { "budi": { "preset": "bapak", "handle": "@budi.santuy", "look": { "hat": { "kind": "topi", "color": "#d8412f" } } } }
+// Pure data (node + browser). Any field of a look can be overridden; `false` removes a part (lanyard, sarung, vest…).
+import type { ChibiSpec } from "../kits/negeri/chibi/spec.ts";
+
+export type Preset = { about: string; host?: boolean; look: ChibiSpec };
+
+const SKIN = { S1: "#e2ad86", S2: "#cc966f", S3: "#b67b52", S4: "#8e5a3a" };
+
+export const CAST: Record<string, Preset> = {
+  // ------------------------------------------------ leaders (host)
+  presiden: { host: true, about: "presiden: peci, teal kawung batik, red lanyard PRESIDEN (the default host)", look: {
+    skin: "#c4906e", hair: { style: "short", color: "#231a15" },
+    shirt: { color: "#17696a", motif: "kawung", motifColor: "#e9d6a8", collar: "#0f4f50", buttons: "#e9d6a8" },
+    pants: "#3a3f4a", shoes: "#2a2320", hat: { kind: "peci", color: "#1d1c22" }, face: { brows: "thick", blush: true },
+    lanyard: { strap: "#c8252f", card: "#ffffff", text: "PRESIDEN" } } },
+  "presiden-hijab": { host: true, about: "presiden (perempuan): navy kerudung, maroon parang batik, long sleeves, lanyard PRESIDEN", look: {
+    skin: "#d49d78", hair: { style: "bun", color: "#2a1d18" },
+    shirt: { color: "#8c2a35", motif: "parang", motifColor: "#e8c58a", collar: "#6e1f29", long: true, tunic: true },
+    pants: "#2e2f3a", shoes: "#3a2a20", hat: { kind: "kerudung", color: "#24395e" }, face: { brows: "thin", lashes: true, blush: true },
+    lanyard: { strap: "#c8252f", card: "#ffffff", text: "PRESIDEN" } } },
+  raja: { host: true, about: "raja kocak: gold crown, red robe with a gold sash, round belly, beard, lanyard RAJA", look: {
+    belly: 1.22, skin: "#c08a64", hair: { style: "short", color: "#1d1714" },
+    shirt: { color: "#a3262e", motif: "dots", motifColor: "#e0a83a", long: true, tunic: true, collar: "#e0a83a" },
+    pants: "#5a1a22", shoes: "#3a2a20", hat: { kind: "mahkota", color: "#c8252f", color2: "#f0c43c" }, face: { brows: "thick", mustache: true, beard: true, blush: true },
+    sash: "#f0c43c", lanyard: { strap: "#f0c43c", card: "#ffffff", text: "RAJA" } } },
+  ratu: { host: true, about: "ratu: gold crown, purple kebaya with dots, batik sarung, lanyard RATU", look: {
+    skin: "#dba985", hair: { style: "long", color: "#2c1c16" },
+    shirt: { color: "#7a4aa8", motif: "dots", motifColor: "#f2d7ef", long: true, tunic: true, collar: "#5c3486" },
+    pants: "#4a2b1d", shoes: "#3a2a20", hat: { kind: "mahkota", color: "#3f86c6", color2: "#f0c43c" }, face: { brows: "thin", lashes: true, blush: true },
+    sarung: { color: "#7a4a2a", check: "#c9955a" }, lanyard: { strap: "#7a4aa8", card: "#ffffff", text: "RATU" } } },
+  lurah: { host: true, about: "pak lurah: khaki safari shirt, peci, glasses, mustache, lanyard LURAH", look: {
+    belly: 1.12, skin: "#b9815a", hair: { style: "short", color: "#231a15" },
+    shirt: { color: "#b39b6e", collar: "#9c8458", buttons: "#5a4a30", long: true },
+    pants: "#4a4337", shoes: "#2a2320", hat: { kind: "peci", color: "#1d1c22" }, face: { brows: "thick", mustache: true, glasses: true },
+    lanyard: { strap: "#2b4f7e", card: "#ffffff", text: "LURAH" } } },
+  // ------------------------------------------------ warga
+  bapak: { about: "bapak: red shirt, mustache, round belly", look: { skin: SKIN.S3, hair: { style: "short", color: "#2b2420" }, shirt: { color: "#d9523b" }, pants: "#2f3b52", shoes: "#3a2a20", face: { mustache: true, brows: "thick" }, belly: 1.15 } },
+  ibu: { about: "ibu: green kerudung, yellow dotted blouse", look: { skin: "#d9a07a", hair: { style: "bun", color: "#2a1d18" }, shirt: { color: "#e7b43f", motif: "dots", motifColor: "#fff3d0", long: true, tunic: true }, pants: "#6a3b5a", shoes: "#5a3a2a", face: { lashes: true, blush: true }, hat: { kind: "kerudung", color: "#3f8f7a" } } },
+  mas: { about: "mas: spiky hair, blue t-shirt", look: { skin: "#c48558", hair: { style: "spiky", color: "#1e1814" }, shirt: { color: "#3b74c4" }, pants: "#2b2b2f", shoes: "#e9e4da", face: {} } },
+  mbak: { about: "mbak: long hair, pink top", look: { skin: SKIN.S1, hair: { style: "long", color: "#3a241a" }, shirt: { color: "#f08c9a" }, pants: "#3e4a6b", shoes: "#ffffff", face: { lashes: true, blush: true } } },
+  pakde: { about: "pakde: bald, glasses, white shirt, blue sarung", look: { skin: "#a86e47", hair: { style: "bald", color: "#4a4440" }, shirt: { color: "#f2efe6", buttons: "#c9c2b4" }, pants: "#2e2a26", shoes: "#3a2a20", face: { mustache: true, glasses: true }, belly: 1.25, sarung: { color: "#3c5f8f", check: "#7fa6d6" } } },
+  ronda: { about: "petugas ronda: fringe, olive shirt, red sarung", look: { skin: SKIN.S3, hair: { style: "fringe", color: "#241c17" }, shirt: { color: "#596a3d" }, pants: "#2c2a28", shoes: "#3b2b22", face: {}, sarung: { color: "#8c3b2e", check: "#c9774f" } } },
+  bocil: { about: "bocil (boy): small, white shirt, red shorts", look: { scale: 0.75, skin: "#cf9468", hair: { style: "fringe", color: "#2a1f19" }, shirt: { color: "#ffffff" }, pants: "#c8252f", shoes: "#2a2a2a", face: { blush: true } } },
+  "bocil-cewek": { about: "bocil (girl): small, bun, yellow striped shirt", look: { scale: 0.74, skin: SKIN.S1, hair: { style: "bun", color: "#2a1d18" }, shirt: { color: "#f2c94c", motif: "stripes", motifColor: "#f7e7b0" }, pants: "#3f86c6", shoes: "#d9577a", face: { blush: true, lashes: true } } },
+  nenek: { about: "nenek: grey bun, glasses, brown kebaya, batik sarung", look: { scale: 0.92, skin: "#c99a78", hair: { style: "bun", color: "#a8a39a" }, shirt: { color: "#8a5a3a", motif: "dots", motifColor: "#e8c58a", long: true, tunic: true }, pants: "#3a2a20", shoes: "#3a2a20", face: { glasses: true, lashes: true }, sarung: { color: "#6b4a2e", check: "#b88a55" } } },
+  tukang: { about: "tukang: orange hard hat, orange safety vest, grey shirt", look: { skin: SKIN.S3, hair: { style: "short", color: "#231812" }, shirt: { color: "#7d8a93" }, vest: "#f08a2c", pants: "#3a4250", shoes: "#5a4030", hat: { kind: "helm", color: "#f2a33a" }, face: { brows: "thick" } } },
+  pedagang: { about: "pedagang: white shirt, green apron, black peci, mustache", look: { skin: SKIN.S2, hair: { style: "short", color: "#231812" }, shirt: { color: "#f4f1e8" }, apron: "#3f8f5a", pants: "#2f3b52", shoes: "#3a2a20", hat: { kind: "peci", color: "#1d1c22" }, face: { mustache: true, brows: "thick" } } },
+  guru: { about: "bu guru: brown batik, glasses, blue kerudung", look: { skin: SKIN.S2, hair: { style: "bun", color: "#2a1d18" }, shirt: { color: "#7a4a2a", motif: "parang", motifColor: "#e8c58a", long: true, tunic: true }, pants: "#2e2f3a", shoes: "#3a2a20", hat: { kind: "kerudung", color: "#3f6fb8" }, face: { glasses: true, lashes: true } } },
+  pemuda: { about: "pemuda: red cap, black t-shirt", look: { skin: SKIN.S2, hair: { style: "short", color: "#1f1712" }, shirt: { color: "#2c2930" }, pants: "#3e4a6b", shoes: "#f4f1e8", hat: { kind: "topi", color: "#d8412f", color2: "#f4f1e8" }, face: { brows: "thick" } } },
+};
+export const HOSTS = Object.keys(CAST).filter((k) => CAST[k].host);
+export const WARGA = Object.keys(CAST).filter((k) => !CAST[k].host);
+
+// ------------------------------------------------------------------ merge
+const isObj = (x: unknown): x is Record<string, unknown> => !!x && typeof x === "object" && !Array.isArray(x);
+const deep = (a: Record<string, unknown>, b: Record<string, unknown>): Record<string, unknown> => {
+  const o: Record<string, unknown> = { ...a };
+  for (const [k, v] of Object.entries(b)) {
+    if (v === false || v === null) { delete o[k]; continue; }
+    o[k] = isObj(v) && isObj(a[k]) ? deep(a[k] as Record<string, unknown>, v) : v;
+  }
+  return o;
+};
+export const mergeLook = (a?: Record<string, unknown>, b?: Record<string, unknown>): Record<string, unknown> => deep(a ?? {}, b ?? {});
+export const resolveLook = (preset: string, over?: Record<string, unknown>): ChibiSpec => {
+  const base = CAST[preset];
+  if (!base) throw new Error(`cast preset "${preset}" does not exist (have: ${Object.keys(CAST).join(", ")})`);
+  return (over ? deep(base.look as unknown as Record<string, unknown>, over) : base.look) as unknown as ChibiSpec;
+};
+
+// ------------------------------------------------------------------ KARTU TOKOH codes
+export const MENU = {
+  skin: [{ code: "S1", name: "kuning langsat", hex: SKIN.S1 }, { code: "S2", name: "sawo muda", hex: SKIN.S2 }, { code: "S3", name: "sawo matang", hex: SKIN.S3 }, { code: "S4", name: "gelap", hex: SKIN.S4 }],
+  hair: [
+    { code: "R1", name: "pendek", style: "short" }, { code: "R2", name: "poni", style: "fringe" }, { code: "R3", name: "jabrik", style: "spiky" },
+    { code: "R4", name: "panjang", style: "long" }, { code: "R5", name: "sanggul", style: "bun" }, { code: "R6", name: "botak", style: "bald" },
+  ],
+  hat: [
+    { code: "K1", name: "tanpa", kind: "none" }, { code: "K2", name: "peci", kind: "peci" }, { code: "K3", name: "kerudung", kind: "kerudung" },
+    { code: "K4", name: "mahkota", kind: "mahkota" }, { code: "K5", name: "caping", kind: "caping" }, { code: "K6", name: "topi", kind: "topi" }, { code: "K7", name: "helm proyek", kind: "helm" },
+  ],
+  face: [
+    { code: "F1", name: "kacamata", face: { glasses: true } }, { code: "F2", name: "kumis", face: { mustache: true } }, { code: "F3", name: "jenggot", face: { beard: true } },
+    { code: "F4", name: "bulu mata + pipi", face: { lashes: true, blush: true } }, { code: "F5", name: "alis tebal", face: { brows: "thick" } }, { code: "F6", name: "alis tipis", face: { brows: "thin" } },
+  ],
+  build: [
+    { code: "B1", name: "bocil", build: { scale: 0.75 } }, { code: "B2", name: "mungil", build: { scale: 0.9 } },
+    { code: "B3", name: "sedang", build: { scale: 1 } }, { code: "B4", name: "gendut", build: { belly: 1.25 } },
+  ],
+  motif: [{ code: "M1", name: "batik kawung", motif: "kawung" }, { code: "M2", name: "batik parang", motif: "parang" }, { code: "M3", name: "polkadot", motif: "dots" }, { code: "M4", name: "garis", motif: "stripes" }],
+  colors: [
+    { code: "W1", name: "merah", hex: "#d8412f" }, { code: "W2", name: "oranye", hex: "#e8833a" }, { code: "W3", name: "kuning", hex: "#f2c94c" },
+    { code: "W4", name: "hijau", hex: "#4f9a5a" }, { code: "W5", name: "tosca", hex: "#17696a" }, { code: "W6", name: "biru muda", hex: "#6aa6d8" },
+    { code: "W7", name: "biru", hex: "#3a74c4" }, { code: "W8", name: "dongker", hex: "#24395e" }, { code: "W9", name: "ungu", hex: "#7a4aa8" },
+    { code: "W10", name: "pink", hex: "#f08c9a" }, { code: "W11", name: "marun", hex: "#8c2a35" }, { code: "W12", name: "cokelat", hex: "#7a4a2a" },
+    { code: "W13", name: "krem", hex: "#e9d6a8" }, { code: "W14", name: "putih", hex: "#f4f1e8" }, { code: "W15", name: "abu", hex: "#7d8a93" }, { code: "W16", name: "hitam", hex: "#2c2930" },
+  ],
+  /** clothing parts a buyer can recolour or add ("rompi W2"); field = look path */
+  clothes: [
+    { name: "baju", field: "shirt.color" }, { name: "motif batik", field: "shirt.motif + shirt.motifColor" }, { name: "kerah", field: "shirt.collar" },
+    { name: "kancing", field: "shirt.buttons" }, { name: "lengan panjang", field: "shirt.long (true)" }, { name: "baju panjang / kebaya", field: "shirt.tunic (true)" },
+    { name: "celana", field: "pants" }, { name: "sepatu", field: "shoes" }, { name: "sarung", field: "sarung { color, check }" },
+    { name: "rompi", field: "vest" }, { name: "celemek", field: "apron" }, { name: "selempang", field: "sash" },
+    { name: "tali ID + kartu", field: "lanyard { strap, text }" }, { name: "warna kulit", field: "skin (S1–S4)" },
+  ],
+} as const;
+
+/** Tokoh codes: P1… = leaders (host presets), T1… = warga presets, in library order. */
+export const tokohCode = (preset: string) => (CAST[preset]?.host ? `P${HOSTS.indexOf(preset) + 1}` : `T${WARGA.indexOf(preset) + 1}`);
+export const presetOfCode = (code: string) => { const m = /^([PT])(\d+)$/i.exec(code.trim()); if (!m) return undefined; return (m[1].toUpperCase() === "P" ? HOSTS : WARGA)[+m[2] - 1]; };
+
+export const menuText = () => [
+  "KARTU TOKOH codes (the buyer says a code or a word → write the field):",
+  "  P1…P" + HOSTS.length + " pemimpin (host) = preset: " + HOSTS.map((k) => `${tokohCode(k)} ${k}`).join(", "),
+  "  T1…T" + WARGA.length + " warga = preset: " + WARGA.map((k) => `${tokohCode(k)} ${k}`).join(", "),
+  "  kulit   → skin: " + MENU.skin.map((s) => `${s.code} ${s.name} ${s.hex}`).join(", "),
+  "  rambut  → hair.style (+ hair.color hex): " + MENU.hair.map((h) => `${h.code} ${h.name}="${h.style}"`).join(", "),
+  "  penutup kepala → hat.kind (+ hat.color, hat.color2 = crown gold / cap brim): " + MENU.hat.map((h) => `${h.code} ${h.name}="${h.kind}"`).join(", "),
+  "  wajah   → face: " + MENU.face.map((f) => `${f.code} ${f.name}=${JSON.stringify(f.face)}`).join(", "),
+  "  badan   → " + MENU.build.map((b) => `${b.code} ${b.name}=${JSON.stringify(b.build)}`).join(", "),
+  "  motif   → shirt.motif (+ shirt.motifColor): " + MENU.motif.map((m) => `${m.code} ${m.name}="${m.motif}"`).join(", "),
+  "  warna   → any colour field: " + MENU.colors.map((c) => `${c.code} ${c.name} ${c.hex}`).join(", "),
+  "  pakaian → " + MENU.clothes.map((c) => `${c.name}=${c.field}`).join(", "),
+  "  Remove a part with false (\"lanyard\": false, \"sarung\": false, \"vest\": false). A colour not on the card: a flat hex close to it.",
+].join("\n");
+
+// ------------------------------------------------------------------ validation
+const HEX = /^#[0-9a-fA-F]{6}$/;
+const HAIR = ["short", "fringe", "spiky", "long", "bun", "bald"], HATS = ["none", "peci", "kerudung", "mahkota", "caping", "topi", "helm"];
+const MOTIF = ["kawung", "parang", "dots", "stripes", "none"];
+/** Problems with a final look, in plain words (empty = fine). */
+export const lookProblems = (look: Record<string, unknown>): string[] => {
+  const p: string[] = [];
+  const known = ["scale", "belly", "skin", "hair", "shirt", "pants", "shoes", "hat", "face", "lanyard", "sarung", "vest", "apron", "sash"];
+  for (const k of Object.keys(look)) if (!known.includes(k)) p.push(`unknown look field "${k}" (have: ${known.join(", ")})`);
+  const hex = (v: unknown, where: string) => { if (typeof v !== "string" || !HEX.test(v)) p.push(`${where} must be a colour like "#3a74c4" (got ${JSON.stringify(v)})`); };
+  const num = (v: unknown, where: string, a: number, b: number) => { if (v !== undefined && (typeof v !== "number" || v < a || v > b)) p.push(`${where} must be a number ${a}–${b} (got ${JSON.stringify(v)})`); };
+  num(look.scale, "scale", 0.6, 1.15);
+  num(look.belly, "belly", 0.9, 1.3);
+  hex(look.skin, "skin");
+  hex(look.pants, "pants");
+  hex(look.shoes, "shoes");
+  const h = look.hair as Record<string, unknown> | undefined;
+  if (!isObj(h)) p.push(`hair must be { "style": …, "color": "#…" }`);
+  else { if (!HAIR.includes(String(h.style))) p.push(`hair.style "${h.style}" unknown (have: ${HAIR.join(", ")})`); hex(h.color, "hair.color"); }
+  const sh = look.shirt as Record<string, unknown> | undefined;
+  if (!isObj(sh)) p.push(`shirt must be { "color": "#…", … }`);
+  else for (const [k, v] of Object.entries(sh)) {
+    if (k === "motif") { if (!MOTIF.includes(String(v))) p.push(`shirt.motif "${v}" unknown (have: ${MOTIF.join(", ")})`); }
+    else if (k === "long" || k === "tunic") { if (typeof v !== "boolean") p.push(`shirt.${k} must be true or false`); }
+    else if (["color", "motifColor", "collar", "buttons"].includes(k)) hex(v, `shirt.${k}`);
+    else p.push(`unknown shirt field "${k}" (have: color, motif, motifColor, collar, buttons, long, tunic)`);
+  }
+  const t = look.hat as Record<string, unknown> | undefined;
+  if (t !== undefined) {
+    if (!isObj(t)) p.push(`hat must be { "kind": … }`);
+    else { if (!HATS.includes(String(t.kind))) p.push(`hat.kind "${t.kind}" unknown (have: ${HATS.join(", ")})`); if (t.color !== undefined) hex(t.color, "hat.color"); if (t.color2 !== undefined) hex(t.color2, "hat.color2"); }
+  }
+  const f = look.face as Record<string, unknown> | undefined;
+  if (f !== undefined) {
+    if (!isObj(f)) p.push(`face must be an object`);
+    else for (const [k, v] of Object.entries(f)) {
+      if (k === "brows") { if (!["thin", "thick"].includes(String(v))) p.push(`face.brows "${v}" unknown (have: thin, thick)`); }
+      else if (["lashes", "blush", "mustache", "beard", "glasses"].includes(k)) { if (typeof v !== "boolean") p.push(`face.${k} must be true or false`); }
+      else p.push(`unknown face field "${k}" (have: brows, lashes, blush, mustache, beard, glasses)`);
+    }
+  }
+  const l = look.lanyard as Record<string, unknown> | undefined;
+  if (l !== undefined) {
+    if (!isObj(l)) p.push(`lanyard must be { "strap": "#…", "text": "PRESIDEN" } (or false)`);
+    else { hex(l.strap, "lanyard.strap"); if (l.card !== undefined) hex(l.card, "lanyard.card"); if (typeof l.text !== "string" || l.text.length > 10) p.push(`lanyard.text must be a short word (≤ 10 letters), e.g. "PRESIDEN"`); }
+  }
+  const sa = look.sarung as Record<string, unknown> | undefined;
+  if (sa !== undefined) { if (!isObj(sa)) p.push(`sarung must be { "color": "#…", "check": "#…" } (or false)`); else { hex(sa.color, "sarung.color"); hex(sa.check, "sarung.check"); } }
+  for (const k of ["vest", "apron", "sash"]) if (look[k] !== undefined) hex(look[k], k);
+  return p;
+};
+
+/** Crowd extras: rotate through the warga presets with colour variations. */
+const EXTRA_COLORS = ["#e9c446", "#4f9a5a", "#d8577a", "#3a74c4", "#e8833a", "#7a4aa8", "#17696a", "#c94a3a", "#f4f1e8", "#6aa6d8"];
+export const extraLook = (i: number): ChibiSpec => {
+  const pool = WARGA.filter((k) => k !== "tukang");
+  const p = pool[i % pool.length];
+  return resolveLook(p, { shirt: { color: EXTRA_COLORS[(i * 3 + 1) % EXTRA_COLORS.length] } });
+};
+
+==== 19824 project/src/negeri/Film.tsx
+// NEGERI film renderer: draws a compiled Plan (compile.ts) — the country (settlement growing with the counter,
+// buildings rising stage by stage, named houses), the host and the citizens (poses, faces, talking on the voice),
+// the camera move of every shot, dissolves, and the 2D layer (day chip, counter, cards, speech bubbles, name tags).
+// Every frame is a pure function of the plan and the frame number.
+
+import React, { useEffect, useMemo, useState } from "react";
+import { AbsoluteFill, continueRender, delayRender, Html5Audio, staticFile, useCurrentFrame, useVideoConfig, type CalculateMetadataFunction } from "remotion";
+import { ThreeCanvas } from "@remotion/three";
+import { PCFShadowMap } from "three";
+import { LOOKS, SORE, Stage } from "../kits/negeri/Stage.tsx";
+import { project, type Shot } from "../kits/negeri/cam.ts";
+import { clamp01, hash, mix, mix3, smoother, sm, type V3 } from "../kits/negeri/math.ts";
+import { fontsReady } from "../kits/negeri/fonts.ts";
+import { Chibi, solveChibi, withHead } from "../kits/negeri/chibi/Chibi.tsx";
+import { HEAD_HAND, mixPose, POSES, SEATED_POSES, type Pose } from "../kits/negeri/chibi/rig.ts";
+import type { Expr } from "../kits/negeri/chibi/exprs.ts";
+import { lotAppear, World, type WBuild } from "../kits/negeri/world/World.tsx";
+import { dwellingsFor, upgradeFor } from "../kits/negeri/world/map.ts";
+import { BuildCard, Bubble, CommentCards, Counter, CTA, DayChip, NameTag, RuleCards, stepped, Tag, Title, Zzz, type Lay } from "../kits/negeri/ui/UI.tsx";
+import { QaProbe, qaNoOverlay, Solid } from "../core/qa/scene-qa.tsx";
+import { bandP, colW, freeOf } from "../kits/negeri/ui/layout.ts";
+import { BUILDINGS } from "./buildings.ts";
+import { resolveKind } from "./series.ts";
+import type { AKey, PActor, Plan, PShot } from "./types.ts";
+
+export type FilmProps = { plan: Plan; frames?: number[] };
+export const negeriMetadata: CalculateMetadataFunction<FilmProps> = ({ props }) => ({ durationInFrames: Math.max(1, Math.round(props.plan.duration * 60)) });
+export const negeriMetadata30: CalculateMetadataFunction<FilmProps> = ({ props }) => ({ durationInFrames: Math.max(1, Math.round(props.plan.duration * 30)) });
+export const negeriStillsMetadata: CalculateMetadataFunction<FilmProps> = ({ props }) => ({ durationInFrames: Math.max(1, props.frames?.length ?? 1) });
+const DISSOLVE = 0.5;
+
+// ------------------------------------------------------------------ people
+export const blinkAt = (t: number, seed = 1) => { const period = 2.6 + (seed % 5) * 0.41; const ph = (t + seed * 1.37) % period; return ph < 0.05 ? 0.5 : ph < 0.11 ? 1 : ph < 0.16 ? 0.5 : 0; };
+/** lip flap on the spoken words (open while a word is spoken, pulsing per syllable) */
+export const mouthAt = (t: number, words: { t0: number; t1: number; w: string }[]) => {
+  for (const w of words) {
+    if (t < w.t0 - 0.02 || t > w.t1 + 0.02) continue;
+    const syl = Math.max(1, (w.w.match(/[aiueo]/gi) ?? []).length);
+    const k = (t - w.t0) / Math.max(0.05, w.t1 - w.t0);
+    return 0.25 + 0.75 * (0.5 - 0.5 * Math.cos(2 * Math.PI * k * syl));
+  }
+  return 0;
+};
+const poseOf = (k: AKey, t: number, seed: number): Pose => {
+  const ph = t + seed * 1.7;
+  switch (k.pose) {
+    case "talk": return POSES.talk(ph * 4.2);
+    case "wave": return POSES.wave(ph * 7);
+    case "cheer": return POSES.cheer(ph * 5.5);
+    case "clap": return POSES.clap(ph * 13);
+    case "queue": return POSES.queue(ph * 2);
+    case "eat": return POSES.eat(ph * 3);
+    case "sitTalk": return POSES.sitTalk(ph * 4);
+    case "sitEat": return POSES.sitEat(ph * 3);
+    case "argue": return POSES.argue(k.target ?? [0, 1, 1.5], ph * 3);
+    case "point": return POSES.point(k.target ?? [-1.4, 0.9, 0.8]);
+    case "present": return POSES.present(k.target ?? [-1.4, 0.9, 0.8]);
+    default: return (POSES[k.pose] as () => Pose)();
+  }
+};
+type Live = { pose: Pose; pos: V3; yaw: number; expr: Expr; open: number; key: AKey; seated: boolean };
+const liveActor = (a: PActor, t: number, words: Plan["words"]): Live | null => {
+  let ki = -1;
+  for (let i = 0; i < a.keys.length; i++) if (t >= a.keys[i].t - 1e-4) ki = i;
+  if (ki < 0) return null;
+  const k = a.keys[ki];
+  if (k.gone) return null;
+  const withHand = (p: Pose, kk: AKey) => (HEAD_HAND[kk.pose] ? withHead(a.spec, p, HEAD_HAND[kk.pose]!) : p);
+  let pose = withHand(poseOf(k, t, a.seed), k);
+  const prev = a.keys[ki - 1];
+  // blend from the previous pose over 0.25 s when the person did not move (a move happens on a cut)
+  if (prev && !prev.gone && t - k.t < 0.25 && Math.hypot(prev.pos[0] - k.pos[0], prev.pos[1] - k.pos[1], prev.pos[2] - k.pos[2]) < 0.01 && SEATED_POSES.has(prev.pose) === SEATED_POSES.has(k.pose))
+    pose = mixPose(withHand(poseOf(prev, t, a.seed), prev), pose, smoother((t - k.t) / 0.25));
+  const seated = SEATED_POSES.has(k.pose);
+  if (!seated) pose = { ...pose, pelvis: [pose.pelvis[0], pose.pelvis[1] + 0.004 * Math.sin(t * 2.4 + a.seed), pose.pelvis[2]] };
+  const open = a.host ? mouthAt(t, words) : k.chatter ? 0.5 + 0.5 * Math.sin(t * 11 + a.seed * 2) : k.expr === "sleep" ? 0.5 + 0.5 * Math.sin(t * 2.2 + a.seed) : 0;
+  return { pose, pos: k.pos, yaw: k.yaw, expr: k.expr, open, key: k, seated };
+};
+
+const Phone: React.FC<{ s: number }> = ({ s }) => (
+  <group position={[0, 0.655 * s, 0.31 * s]} rotation={[-0.75, 0, 0]} scale={[s, s, s]}>
+    <mesh castShadow><boxGeometry args={[0.086, 0.15, 0.014]} /><meshStandardMaterial color="#22262b" roughness={0.5} /></mesh>
+    <mesh position={[0, 0, 0.0075]}><planeGeometry args={[0.074, 0.132]} /><meshBasicMaterial color="#e9f1f4" /></mesh>
+  </group>
+);
+const Bowl: React.FC<{ at: V3; s: number }> = ({ at, s }) => (
+  <group position={at} scale={[s, s, s]}>
+    <mesh castShadow position={[0, 0.028, 0]}><cylinderGeometry args={[0.075, 0.048, 0.056, 16]} /><meshStandardMaterial color="#e9e4da" roughness={0.6} /></mesh>
+    <mesh position={[0, 0.056, 0]}><sphereGeometry args={[0.066, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2]} /><meshStandardMaterial color="#ffffff" roughness={0.8} /></mesh>
+  </group>
+);
+const Tikar: React.FC<{ pos: V3; yaw: number }> = ({ pos, yaw }) => (
+  <group position={pos} rotation={[0, yaw, 0]}>
+    <mesh position={[0, 0.012, 0]} receiveShadow><boxGeometry args={[2.0, 0.024, 1.3]} /><meshStandardMaterial color="#c9a45c" roughness={1} /></mesh>
+    {[-0.6, 0, 0.6].map((x) => <mesh key={x} position={[x, 0.025, 0]} receiveShadow><boxGeometry args={[0.08, 0.003, 1.3]} /><meshStandardMaterial color="#a8823e" roughness={1} /></mesh>)}
+  </group>
+);
+
+// ------------------------------------------------------------------ the world over time
+const usePlanWorld = (plan: Plan) => useMemo(() => {
+  const P = plan.pop;
+  const count = (t: number) => dwellingsFor(t <= P.t0 ? P.from : t >= P.t1 ? P.to : P.from + (P.to - P.from) * sm((t - P.t0) / Math.max(0.01, P.t1 - P.t0)));
+  const appear = lotAppear(count, P.t0, Math.max(P.t0, P.t1));
+  const builds: WBuild[] = plan.builds.map((b) => { const r = resolveKind(b.kind, plan.custom); return r ? { id: b.id, def: r.def, vars: b.vars, pos: b.pos, yaw: b.yaw, start: b.start, end: b.end } : null; }).filter(Boolean) as WBuild[];
+  for (const p of plan.plates) if (!p.byBuild) builds.push({ id: `plate:${p.handle}`, def: BUILDINGS.rumah, vars: { ...p.colors, by: p.handle, no: String(p.no).padStart(3, "0") }, pos: p.pos, yaw: p.yaw, appear: p.appear < 0 ? undefined : p.appear });
+  return { appear, builds, upgrade: upgradeFor(P.from) };
+}, [plan]);
+/** the population shown: rolls during the counter beat, then a few new followers trickle in (≤ 2 changes / s) */
+const popShown = (plan: Plan, t: number) => {
+  const P = plan.pop;
+  if (t < P.t1 || P.t1 === 0 && t < 0.8) return t <= P.t0 ? P.from : P.from + (P.to - P.from) * sm((t - P.t0) / Math.max(0.01, P.t1 - P.t0));
+  let v = P.to;
+  const t0 = Math.max(P.t1 + 0.6, 0.8);
+  const n = t < t0 ? 0 : Math.floor((t - t0) / 0.7) + 1;
+  for (let i = 0; i < n; i++) v += 1 + Math.floor(hash(i + 3 + plan.day) * 6);
+  return v;
+};
+
+// ------------------------------------------------------------------ one shot
+const camAt = (S: PShot, t: number): Shot => {
+  const d = Math.max(0.01, S.t1 - S.t0), u = clamp01((t - S.t0) / d);
+  const k = S.linear ? u : smoother(u);
+  if (S.orbit) {
+    const o = S.orbit, az = mix(o.az0, o.az1, k);
+    return { pos: [o.c[0] + Math.sin(az) * o.r, o.c[1] + o.h, o.c[2] + Math.cos(az) * o.r], target: mix3(S.a.target, S.b.target, k), fov: o.fov };
+  }
+  return { pos: mix3(S.a.pos, S.b.pos, k), target: mix3(S.a.target, S.b.target, k), fov: mix(S.a.fov, S.b.fov, k) };
+};
+const ShotView: React.FC<{ plan: Plan; S: PShot; t: number; W: ReturnType<typeof usePlanWorld> }> = ({ plan, S, t, W }) => {
+  const { width, height } = useVideoConfig();
+  const cam = camAt(S, t);
+  const shot: Shot = { ...cam, shadowAt: S.shadowAt, shadowBox: S.shadowBox };
+  const look = LOOKS[S.time] ?? SORE;
+  const night = S.time === "malam";
+  const hd = height >= 1500 || width >= 1500;
+  const close = S.kind === "close";
+  return (
+    <ThreeCanvas width={width} height={height} shadows={{ type: PCFShadowMap }} dpr={1} gl={{ antialias: false, preserveDrawingBuffer: true, powerPreference: "high-performance" }} camera={{ fov: shot.fov, position: shot.pos, near: 0.08, far: 2000 }}>
+      <Stage shot={shot} look={look} t={t}>
+        <World t={t} flag={plan.flag} appear={W.appear} upgrade={W.upgrade} night={night} builds={W.builds}
+          wrap={(id, node) => <Solid id={id} kind="set" touch={["*"]}>{node}</Solid>}>
+          {plan.props.filter((p) => t >= p.t0 && t < p.t1).map((p) => <Tikar key={p.id} pos={p.pos} yaw={p.yaw} />)}
+          {plan.actors.map((a) => {
+            const L = liveActor(a, t, plan.words);
+            if (!L) return null;
+            const s = a.spec.scale ?? 1;
+            let bowl: V3 | null = null;
+            if (L.key.prop === "bowl") { const j = solveChibi(a.spec, L.pose); bowl = [j.wristL[0] + 0.0, j.wristL[1] + 0.03 * s, j.wristL[2] + 0.035 * s]; }
+            return (
+              <Solid key={a.id} id={a.id} kind="body">
+                <group position={L.pos} rotation={[0, L.yaw, 0]}>
+                  <Chibi spec={a.spec} pose={L.pose} face={{ expr: L.expr, open: L.open, blink: L.expr === "sleep" ? 0 : blinkAt(t, a.seed) }} faceRes={hd && (close || a.host) ? 1024 : 768} />
+                  {L.key.prop === "phone" && L.key.pose === "read" ? <Phone s={s} /> : null}
+                  {bowl ? <Bowl at={bowl} s={s} /> : null}
+                </group>
+              </Solid>
+            );
+          })}
+        </World>
+      </Stage>
+      <QaProbe />
+    </ThreeCanvas>
+  );
+};
+
+// ------------------------------------------------------------------ the 2D layer
+const chunkWords = (words: Plan["words"], maxChars = 22) => {
+  const out: { text: string; t0: number; t1: number; start: boolean }[] = [];
+  let cur: typeof words = [];
+  const flush = () => { if (cur.length) out.push({ text: cur.map((w) => w.w).join(" "), t0: cur[0].t0, t1: cur[cur.length - 1].t1, start: false }); cur = []; };
+  for (const w of words) {
+    const txt = [...cur, w].map((x) => x.w).join(" ");
+    if (cur.length && (txt.length > maxChars || cur.length >= 4 || cur[0].line !== w.line)) flush();
+    cur.push(w);
+    if (/[.!?,]["”]?$/.test(w.w) && cur.map((x) => x.w).join(" ").length > 8) flush();
+  }
+  flush();
+  out.forEach((c, i) => { const prev = out[i - 1]; c.start = !prev || c.t0 - prev.t1 > 0.35; if (out[i + 1]) c.t1 = Math.min(out[i + 1].t0, c.t1 + 0.4); else c.t1 += 0.5; });
+  return out.map((c) => ({ ...c, text: c.text.replace(/["“”]/g, "") }));
+};
+
+const Overlay: React.FC<{ plan: Plan; S: PShot; t: number; L: Lay; chunks: ReturnType<typeof chunkWords> }> = ({ plan, S, t, L, chunks }) => {
+  const aspect = L.w / L.h;
+  const act = plan.overlays.filter((o) => t >= o.t0 && t <= o.t1);
+  // speech: a bubble over the host when the host is on screen, otherwise a caption card in the free part of the frame
+  const cam = camAt(S, t);
+  const hostA = plan.actors.find((a) => a.host);
+  const hostL = hostA ? liveActor(hostA, t, plan.words) : null;
+  const ch = chunks.find((c) => t >= c.t0 - 0.02 && t < c.t1);
+  let speech: React.ReactNode = null;
+  if (ch) {
+    const size = L.wide ? 54 : 60;
+    const w = Math.min(L.wide ? 760 : 860, Math.max(380, ch.text.length * size * 0.52 + 70));
+    const perLine = (w - 60) / (size * 0.5), lines = Math.ceil(ch.text.length / perLine), bh = lines * size * 1.06 + 44;
+    const free = freeOf(0.235, 0.84, act.map((o) => bandP(o)).filter(Boolean) as [number, number][]);
+    const xBand = L.wide ? freeOf(0.03, 0.97, act.map((o) => colW(o)).filter(Boolean) as [number, number][]) : ([0.03, 0.97] as [number, number]);
+    const age = t - ch.t0, pop = ch.start && age < 0.18 ? Math.max(0.2, Math.min(1, 0.35 + age / 0.18 * 0.65 + Math.sin(Math.min(1, age / 0.18) * Math.PI) * 0.06)) : 1;
+    const sc = hostA?.spec.scale ?? 1;
+    const head = hostL ? project(cam, aspect, [hostL.pos[0], hostL.pos[1] + 1.27 * sc, hostL.pos[2]]) : null;
+    const y0 = L.wide ? 0.09 * L.h : free[0] * L.h + 8, y1 = L.wide ? 0.84 * L.h : free[1] * L.h;
+    const bx0 = xBand[0] * L.w + 10, bx1 = xBand[1] * L.w - 10;
+    if (head && head.vis && S.on.includes("host") && head.x > 0.06 && head.x < 0.94 && head.y > 0.12) {
+      const ax = head.x * L.w, ay = head.y * L.h;
+      let x = Math.max(bx0, Math.min(bx1 - w, ax - w * 0.35));
+      const y = Math.max(y0, ay - 64 - bh);
+      // landscape: the day chip + counter own the top-left corner
+      if (L.wide && y < 400 && x < 620) x = Math.min(Math.max(620, x), bx1 - w);
+      if (y + bh < ay - 30) speech = <Bubble text={ch.text} x={x} y={y} w={w} tail={Math.max(x + 60, Math.min(x + w - 60, ax))} scale={pop} size={size} />;
+    }
+    if (!speech) {
+      const x = (bx0 + bx1) / 2 - w / 2, y = Math.max(y0, y1 - bh - (L.wide ? 20 : 40));
+      speech = <Bubble text={ch.text} x={x} y={y} w={w} tail={null} scale={pop} size={size} />;
+    }
+  }
+  // build card
+  const bo = act.find((o) => o.kind === "build");
+  let buildCard: React.ReactNode = null;
+  if (bo && bo.kind === "build") {
+    const b = plan.builds.find((x) => x.id === bo.build);
+    const r = b ? resolveKind(b.kind, plan.custom) : null;
+    if (b && r) {
+      const steps = r.def.steps.map((s) => s.label);
+      const wsum = r.def.steps.reduce((s, x) => s + (x.dur ?? 1), 0);
+      const p = b.start === undefined || b.end === undefined ? 1 : clamp01((t - b.start) / (b.end - b.start));
+      let acc = 0, label = "SELESAI";
+      if (p < 1) for (const s of r.def.steps) { acc += (s.dur ?? 1) / wsum; if (p <= acc) { label = s.label; break; } }
+      // the bar fills step by step (each stage its own share)
+      let shown = 0, a2 = 0;
+      for (let i = 0; i < r.def.steps.length; i++) { const w = (r.def.steps[i].dur ?? 1) / wsum; if (p >= a2 + w) shown += 1 / steps.length; else { shown += ((p - a2) / w) / steps.length; break; } a2 += w; }
+      buildCard = <BuildCard t={t} t0={bo.t0} t1={bo.t1} name={b.name} by={b.by} label={label} p={p >= 1 ? 1 : shown} steps={steps} L={L} />;
+    }
+  }
+  const bigO = plan.overlays.find((o) => o.kind === "bigcounter" && t >= o.t0 - 0.4 && t <= o.t1 + 0.4);
+  const big = bigO ? Math.min(sm((t - bigO.t0) / 0.35), 1 - sm((t - (bigO.t1 - 0.3)) / 0.3)) : 0;
+  // name tags + Zzz for the citizens on screen
+  const marks: React.ReactNode[] = [];
+  const tags: { id: string; text: string; x: number; y: number; a: number }[] = [];
+  for (const a of plan.actors) {
+    if (a.host) continue;
+    const lv = liveActor(a, t, plan.words);
+    if (!lv) continue;
+    const sc = a.spec.scale ?? 1, top = lv.pos[1] + (lv.seated ? 0.95 : 1.32) * sc;
+    const pr = project(cam, aspect, [lv.pos[0], top, lv.pos[2]]);
+    if (!pr.vis || pr.y < 0.1 || pr.y > 0.86) continue;
+    const fade = clamp01((t - S.t0 - 0.15) / 0.25);
+    const nearCounter = L.wide ? pr.x < 0.34 && pr.y < 0.37 : pr.y * L.h < 500;
+    if (a.label && !nearCounter && (S.beat === "gag" || S.on.includes(a.id))) tags.push({ id: a.id, text: a.label, x: Math.max(14 + a.label.length * 9, Math.min(L.w - 14 - a.label.length * 9, pr.x * L.w)), y: pr.y * L.h, a: fade });
+    if (lv.expr === "sleep" && (S.beat === "gag" || S.on.includes(a.id))) marks.push(<Zzz key={a.id + "z"} t={t} x={pr.x * L.w + (a.label ? 190 : 80)} y={pr.y * L.h + (a.label ? 40 : -10)} a={fade} />);
+  }
+  // name tags never overlap: a tag that would cover another one moves up a row
+  tags.sort((p, q) => q.y - p.y);
+  const placedTags: typeof tags = [];
+  for (const tg of tags) {
+    const w = tg.text.length * 18 + 30;
+    for (let guard = 0; guard < 6 && placedTags.some((o) => Math.abs(o.x - tg.x) < (w + o.text.length * 18 + 30) / 2 && Math.abs(o.y - tg.y) < 50); guard++) tg.y -= 52;
+    placedTags.push(tg);
+    marks.push(<NameTag key={tg.id} text={tg.text} x={tg.x} y={tg.y} a={tg.a} />);
+  }
+  const topCard = act.some((o) => o.kind === "rules" || o.kind === "comment" || o.kind === "cta" || o.kind === "title");
+  return (
+    <>
+      <DayChip t={t} day={plan.day} country={plan.country} at={0.12} L={L} />
+      <Counter t={t} at={0.3} value={stepped((x) => popShown(plan, x), t, 10, 0.08)} big={big} L={L} />
+      {marks}
+      {act.map((o, i) => {
+        if (o.kind === "rules") return <RuleCards key={i} t={t} t0={o.t0} t1={o.t1} rules={o.rules} L={L} />;
+        if (o.kind === "comment") return <CommentCards key={i} t={t} t0={o.t0} t1={o.t1} comments={o.comments} L={L} />;
+        if (o.kind === "tag") return <Tag key={i} t={t} t0={o.t0} t1={o.t1} text={o.text} top={L.wide ? 800 : topCard ? 1160 : 470} />;
+        if (o.kind === "cta") return <CTA key={i} t={t} t0={o.t0} line={o.line} button={o.button} sub={o.sub} L={L} />;
+        if (o.kind === "title") return <Title key={i} t={t} t0={o.t0} t1={o.t1} text={o.text} sub={o.sub} L={L} />;
+        return null;
+      })}
+      {buildCard}
+      {speech}
+    </>
+  );
+};
+
+// ------------------------------------------------------------------ the film
+export const NegeriFilm: React.FC<FilmProps> = ({ plan, frames }) => {
+  const at = useCurrentFrame();
+  const frame = frames?.length ? frames[Math.min(frames.length - 1, at)] : at;
+  const { fps, width, height } = useVideoConfig();
+  const t = frame / (frames?.length ? 30 : fps);
+  const [h] = useState(() => delayRender("negeri fonts"));
+  const [ok, setOk] = useState(false);
+  useEffect(() => { fontsReady().then(() => { setOk(true); continueRender(h); }); }, [h]);
+  const W = usePlanWorld(plan);
+  const chunks = useMemo(() => chunkWords(plan.words), [plan]);
+  if (!plan.shots.length) return <AbsoluteFill style={{ background: "#000" }} />;
+  let si = 0;
+  for (let i = 0; i < plan.shots.length; i++) if (t >= plan.shots[i].t0) si = i;
+  const S = plan.shots[si];
+  const prev = si > 0 ? plan.shots[si - 1] : null;
+  const fade = S.dissolve && prev ? clamp01((t - S.t0) / DISSOLVE) : 1;
+  const wide = width > height, L: Lay = { w: wide ? 1920 : 1080, h: wide ? 1080 : 1920, wide };
+  return (
+    <AbsoluteFill style={{ background: "#cfe3ee" }}>
+      {ok && (
+        <>
+          <AbsoluteFill><ShotView plan={plan} S={S} t={t} W={W} /></AbsoluteFill>
+          {fade < 1 && prev ? <AbsoluteFill style={{ opacity: 1 - smoother(fade) }}><ShotView plan={plan} S={prev} t={Math.min(t, prev.t1 + DISSOLVE)} W={W} /></AbsoluteFill> : null}
+          {qaNoOverlay() ? null : (
+            <div style={{ position: "absolute", left: 0, top: 0, width: L.w, height: L.h, transform: `scale(${width / L.w})`, transformOrigin: "0 0", pointerEvents: "none" }}>
+              <Overlay plan={plan} S={S} t={t} L={L} chunks={chunks} />
+            </div>
+          )}
+        </>
+      )}
+      {plan.audio && !frames ? <Html5Audio src={staticFile(plan.audio)} /> : null}
+    </AbsoluteFill>
+  );
+};
+
+==== 3036 project/src/Root.tsx
+import React from "react";
+import { Composition } from "remotion";
+import { NegeriFilm, negeriMetadata, negeriMetadata30, negeriStillsMetadata, type FilmProps } from "./negeri/Film.tsx";
+import { cardMetadata, lookMetadata, NegeriCard, NegeriLook, type CardProps, type LookProps } from "./negeri/Cards.tsx";
+import type { Plan } from "./negeri/types.ts";
+
+const EMPTY: FilmProps = { plan: { id: "-", title: "-", day: 1, country: "-", flag: ["#d7262e", "#f7f5ef"], voice: "aku", duration: 1, aspect: 9 / 16, pop: { from: 1, to: 1, t0: 0, t1: 0 }, builds: [], plates: [], props: [], custom: {}, actors: [], shots: [], overlays: [], words: [], lines: [], warnings: [] } as Plan };
+
+// VOYNANN Motion — NEGERI. Films are rendered by scripts/make.mjs with the compiled plan as props (out/<id>/props.json):
+// NegeriPreview (540 × 960, QA probe), NegeriPreviewSS (rendered at 2× and downscaled for the preview MP4), NegeriFinal
+// (1080 × 1920 @ 60). The …Wide compositions are the same film in 16:9 (make.mjs --wide). NegeriStills renders the
+// stills sheet from one page; NegeriCard the kartu tokoh strips; NegeriLook the building library + map views.
+export const RemotionRoot: React.FC = () => (
+  <>
+    <Composition id="NegeriPreview" component={NegeriFilm} defaultProps={EMPTY} calculateMetadata={negeriMetadata30} durationInFrames={30} fps={30} width={540} height={960} />
+    <Composition id="NegeriPreviewSS" component={NegeriFilm} defaultProps={EMPTY} calculateMetadata={negeriMetadata30} durationInFrames={30} fps={30} width={1080} height={1920} />
+    <Composition id="NegeriFinal" component={NegeriFilm} defaultProps={EMPTY} calculateMetadata={negeriMetadata} durationInFrames={60} fps={60} width={1080} height={1920} />
+    <Composition id="NegeriPreviewWide" component={NegeriFilm} defaultProps={EMPTY} calculateMetadata={negeriMetadata30} durationInFrames={30} fps={30} width={960} height={540} />
+    <Composition id="NegeriPreviewSSWide" component={NegeriFilm} defaultProps={EMPTY} calculateMetadata={negeriMetadata30} durationInFrames={30} fps={30} width={1920} height={1080} />
+    <Composition id="NegeriFinalWide" component={NegeriFilm} defaultProps={EMPTY} calculateMetadata={negeriMetadata} durationInFrames={60} fps={60} width={1920} height={1080} />
+    <Composition id="NegeriStills" component={NegeriFilm} defaultProps={EMPTY} calculateMetadata={negeriStillsMetadata} durationInFrames={1} fps={30} width={540} height={960} />
+    <Composition id="NegeriStillsWide" component={NegeriFilm} defaultProps={EMPTY} calculateMetadata={negeriStillsMetadata} durationInFrames={1} fps={30} width={960} height={540} />
+    <Composition id="NegeriCard" component={NegeriCard} defaultProps={{ strips: [], h: 400 } as CardProps} calculateMetadata={cardMetadata} durationInFrames={1} fps={30} width={1080} height={400} />
+    <Composition id="NegeriLook" component={NegeriLook} defaultProps={{ items: [] } as LookProps} calculateMetadata={lookMetadata} durationInFrames={1} fps={30} width={720} height={720} />
+  </>
+);

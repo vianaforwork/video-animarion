@@ -1,0 +1,2461 @@
+VOYNANN Motion - packed source files of this folder. Do not edit by hand.
+The skill upload in the Claude app accepts at most 200 files, so the source files are packed here.
+`node <skill folder>/new-project.mjs <project folder> --kit=<style>` unpacks them into the project.
+Format: per file one line with four '=' signs, the byte length and the path, then exactly that many bytes.
+
+==== 17601 project/scripts/lib/nekat-sound.mjs
+// NEKAT sound from a Plan — original synth, no samples, no meme sounds.
+// Music: a bouncy, mischievous "challenge show" bed (staccato tuba-like bass, plucky marimba hook, woodblock + shaker)
+// that ESCALATES: every level adds a layer and steps the key up a semitone; the peak drops to a stop-time hit; the
+// ending gets its own mood (nap = music-box lullaby, adopt = warm resolve, run = fast chase, cliffhanger = low
+// suspense, menyerah = slow falling marimba).
+// SFX follow the plan cues: cut swishes, level-chip ting, each tool's own noise (broom swish, hose hiss, vacuum hum +
+// burst, siren, fan, megaphone blare, party horn, umbrella fwump, drone buzz, box thump, bowl clink), hops, the counter
+// tick + ×N ding, pop waves for the arrivals, little synth creature voices, splash, scramble, snore, the PART thump.
+// Mix: music + SFX (+ voice ducking the music when there is a narrator) → −14 LUFS / −1.5 dBTP.
+import fs from "node:fs";
+import path from "node:path";
+import { execFileSync, spawnSync } from "node:child_process";
+
+export const buildSound = (plan, { voice, outDir, mixFile, music = true }) => {
+  const DUR = plan.duration, SR = 48000, N = Math.ceil(DUR * SR);
+  const mk = () => [new Float32Array(N), new Float32Array(N)];
+  let seed = 9173;
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const add = (buf, t, pan, len, fn) => {
+    const i0 = Math.max(0, Math.round(t * SR)), n = Math.min(N - i0, Math.round(len * SR));
+    const gl = Math.cos(((pan + 1) * Math.PI) / 4), gr = Math.sin(((pan + 1) * Math.PI) / 4);
+    for (let i = 0; i < n; i++) { const v = fn(i / SR, i); buf[0][i0 + i] += v * gl; buf[1][i0 + i] += v * gr; }
+  };
+  const hz = (m) => 440 * Math.pow(2, (m - 69) / 12);
+  const segAt = (t) => plan.segs.find((s) => t >= s.t0 && t < s.t1) ?? plan.segs[plan.segs.length - 1];
+
+  // ---------------------------------------------------------------- music
+  const mus = mk();
+  if (music) {
+    const pluck = (t, m, vel, pan, len = 0.5, bright = 0.35) => { const f = hz(m); add(mus, t, pan, len, (x) => (Math.sin(2 * Math.PI * f * x) * Math.exp(-x * 9) + bright * Math.sin(2 * Math.PI * f * 4 * x) * Math.exp(-x * 34)) * vel * Math.min(1, x / 0.002)); };
+    const tuba = (t, m, vel, len = 0.22) => { const f = hz(m); add(mus, t, -0.05, len + 0.05, (x) => (Math.sin(2 * Math.PI * f * x) + 0.45 * Math.sin(4 * Math.PI * f * x) + 0.15 * Math.sin(6 * Math.PI * f * x)) * vel * Math.min(1, x / 0.008) * Math.exp(-x * 7) * Math.min(1, (len + 0.05 - x) / 0.04)); };
+    const wood = (t, f, vel, pan) => add(mus, t, pan, 0.1, (x) => Math.sin(2 * Math.PI * f * x) * Math.exp(-x * 60) * vel);
+    const shaker = (t, vel, pan) => { let lp = 0; add(mus, t, pan, 0.06, () => { const n = rnd() * 2 - 1; lp += (n - lp) * 0.75; return (n - lp) * vel; }); };
+    // a hook motif in scale degrees (major), 8 eighths per bar, two bars
+    const SCALE = [0, 2, 4, 5, 7, 9, 11, 12, 14];
+    const HOOK = [4, -1, 4, 5, 7, -1, 5, 4, 2, -1, 2, 4, 5, 4, 2, 0];
+    const CH = [[0, 4, 7], [5, 9, 12], [7, 11, 14], [0, 4, 7]];
+    for (const sg of plan.segs) {
+      const mood = sg.kind === "ending" ? sg.ending.kind : sg.kind;
+      const lvl = sg.kind === "level" ? sg.level.n : sg.kind === "peak" ? 6 : 0;
+      const root = 48 + Math.min(lvl, 5) + (sg.kind === "peak" ? 0 : 0);
+      const bpm = mood === "run" ? 150 : mood === "nap" ? 76 : mood === "cliffhanger" ? 90 : mood === "menyerah" ? 84 : sg.kind === "level" ? 116 + lvl * 3 : 116;
+      const beat = 60 / bpm, eighth = beat / 2;
+      const fadeIn = (t) => Math.min(1, (t - sg.t0) / 0.05);
+      const endFade = (t) => Math.min(1, Math.max(0, (DUR - 0.25 - t) / 1.4));
+      if (sg.kind === "peak") {
+        // stop-time: a held low note under the shock, a hit on the flip
+        add(mus, sg.t0, 0, Math.min(1.0, sg.peak.flip - sg.t0 + 0.1), (x) => Math.sin(2 * Math.PI * hz(root - 12) * x) * 0.05 * Math.min(1, x / 0.05));
+        for (const m of [root, root + 4, root + 7, root + 12]) add(mus, sg.peak.flip, 0, 1.2, (x) => Math.sin(2 * Math.PI * hz(m) * x) * 0.03 * Math.min(1, x / 0.01) * Math.exp(-x * 2.4));
+        for (let k = 0; sg.peak.flip + 0.45 + k * eighth < sg.t1; k++) wood(sg.peak.flip + 0.45 + k * eighth, k % 2 ? 900 : 1300, 0.018, 0.2);
+        continue;
+      }
+      if (mood === "nap") {
+        const MEL = [7, 4, 2, 4, 0, -1, 2, 4];
+        for (let k = 0; sg.t0 + k * beat < sg.t1; k++) {
+          const t = sg.t0 + k * beat;
+          pluck(t, 72 + SCALE[Math.max(0, MEL[k % 8] < 0 ? 0 : MEL[k % 8])], 0.03 * endFade(t), (k % 2 ? 0.3 : -0.3), 1.2, 0.6);
+          if (k % 2 === 0) tuba(t, 36 + CH[Math.floor(k / 2) % 4][0], 0.03 * endFade(t), 0.5);
+        }
+        continue;
+      }
+      if (mood === "cliffhanger") {
+        add(mus, sg.t0, 0, sg.t1 - sg.t0, (x) => (Math.sin(2 * Math.PI * hz(36) * (sg.t0 + x)) + 0.3 * Math.sin(2 * Math.PI * hz(43) * (sg.t0 + x))) * 0.03 * Math.min(1, x / 0.6) * endFade(sg.t0 + x));
+        for (let k = 0; sg.t0 + k * beat < sg.t1; k++) wood(sg.t0 + k * beat, 700, 0.02 * endFade(sg.t0 + k * beat), 0.3);
+        continue;
+      }
+      if (mood === "menyerah") {
+        const MEL = [7, 6, 5, 4, 3, 2, 1, 0];
+        for (let k = 0; sg.t0 + k * beat < sg.t1; k++) { const t = sg.t0 + k * beat; pluck(t, 64 + SCALE[MEL[Math.min(7, k)]], 0.04 * endFade(t), 0, 0.9); if (k % 2 === 0) tuba(t, 36 + (k % 4 ? 5 : 0), 0.035 * endFade(t), 0.4); }
+        continue;
+      }
+      // hook / levels / adopt / run: the bouncy loop, thicker each level
+      const layers = sg.kind === "hook" ? 1 : mood === "adopt" ? 2 : mood === "run" ? 4 : Math.min(4, lvl);
+      let k = 0;
+      for (let t = sg.t0; t < sg.t1 - 0.02; t += eighth, k++) {
+        const bar = Math.floor(k / 8), e = k % 8;
+        const ch = CH[bar % 4].map((x) => x + root);
+        const g = fadeIn(t) * endFade(t);
+        if (e % 2 === 0) tuba(t, ch[e % 4 === 0 ? 0 : 2] - 12, 0.08 * g);
+        if (e === 2 || e === 6) wood(t, 1250, 0.035 * g, -0.3);
+        if (layers >= 1) { const d = HOOK[k % 16]; if (d >= 0 && (sg.kind !== "hook" || k < 16)) pluck(t, root + 24 + SCALE[d], (e % 4 === 0 ? 0.06 : 0.045) * g, (rnd() - 0.5) * 0.6); }
+        if (layers >= 2 && e % 2 === 1) pluck(t, ch[1] + 12, 0.022 * g, 0.4, 0.25);
+        if (layers >= 3) shaker(t, 0.022 * g, 0.35);
+        if (layers >= 4 && e % 4 === 3) pluck(t, root + 36 + SCALE[(k * 3) % 7], 0.026 * g, -0.4, 0.3, 0.6);
+      }
+      if (mood === "adopt") for (const m of [root + 12, root + 16, root + 19, root + 24]) add(mus, sg.t0 + 0.4, 0, 2.4, (x) => Math.sin(2 * Math.PI * hz(m) * x) * 0.016 * Math.min(1, x / 0.3) * Math.exp(-x * 0.8) * endFade(sg.t0 + 0.4 + x));
+    }
+  }
+
+  // ---------------------------------------------------------------- SFX
+  const sfx = mk();
+  const noise = (t, len, gain, lpK, hpK, env, pan = 0) => { let lp = 0, hp = 0; add(sfx, t, pan, len, (x) => { const n = rnd() * 2 - 1; lp += (n - lp) * lpK; hp += (lp - hp) * hpK; return (lp - hp) * gain * env(x); }); };
+  const tone = (t, f0, f1, len, gain, pan = 0, shape = "sin") => { let ph = 0; add(sfx, t, pan, len, (x) => { const f = f0 * Math.pow(f1 / f0, x / len); ph += (2 * Math.PI * f) / SR; const s = shape === "sq" ? Math.sign(Math.sin(ph)) * 0.6 : shape === "saw" ? ((ph / Math.PI) % 2) - 1 : Math.sin(ph); return s * gain * Math.min(1, x / 0.004) * Math.min(1, (len - x) / 0.03); }); };
+  const swish = (t, len = 0.26, g = 0.12, pan = 0) => noise(t, len, g, 0.25, 0.04, (x) => Math.sin(Math.PI * Math.min(1, x / len)) ** 2, pan);
+  const thud = (t, g = 0.16, f = 80) => add(sfx, t, 0, 0.35, (x) => Math.sin(2 * Math.PI * f * x * (1 + Math.exp(-x * 40))) * Math.exp(-x * 14) * g * Math.min(1, x / 0.003));
+  const knock = (t, f = 420, g = 0.1) => add(sfx, t, 0.1, 0.18, (x) => (Math.sin(2 * Math.PI * f * x) * Math.exp(-x * 40) + (rnd() * 2 - 1) * 0.3 * Math.exp(-x * 120)) * g);
+  const ding = (t, m = 88, g = 0.04) => { for (const [k, mm] of [m, m + 7, m + 12].entries()) add(sfx, t + k * 0.03, 0.15, 0.9, (x) => Math.sin(2 * Math.PI * hz(mm) * x) * (g - k * 0.008) * Math.min(1, x / 0.003) * Math.exp(-x * 5)); };
+  const pop = (t, f = 800, g = 0.06, pan = 0) => add(sfx, t, pan, 0.09, (x) => Math.sin(2 * Math.PI * f * x * (1 + 1.2 * x / 0.09)) * Math.exp(-x * 45) * g * Math.min(1, x / 0.002));
+  const boing = (t, f = 220, g = 0.07) => { let ph = 0; add(sfx, t, 0, 0.45, (x) => { ph += (2 * Math.PI * f * (1 + 0.6 * Math.sin(x * 38) * Math.exp(-x * 6)) * (1 + x)) / SR; return Math.sin(ph) * g * Math.exp(-x * 6) * Math.min(1, x / 0.004); }); };
+  const hiss = (t, len, g = 0.05, pan = 0.2) => noise(t, len, g, 0.55, 0.12, (x) => Math.min(1, x / 0.08) * Math.min(1, (len - x) / 0.12), pan);
+  const voiceOf = (sp, t, pitch) => {
+    if (sp === "kucing") { let ph = 0, lp1 = 0, lp2 = 0; add(sfx, t, (rnd() - 0.5) * 0.6, 0.42, (x) => { const f = pitch * (1 + 0.35 * Math.sin(Math.PI * x / 0.42)); ph += (2 * Math.PI * f) / SR; const s = ((ph / Math.PI) % 2) - 1; const k1 = 0.05 + 0.25 * Math.sin(Math.PI * x / 0.42); lp1 += (s - lp1) * k1; lp2 += (lp1 - lp2) * 0.3; return lp2 * 0.11 * Math.sin(Math.PI * Math.min(1, x / 0.42)); }); }
+    else if (sp === "ayam") { for (let k = 0; k < 3; k++) tone(t + k * 0.11, pitch * 1.6, pitch * 1.1, 0.07, 0.035, (rnd() - 0.5) * 0.6, "sq"); }
+    else if (sp === "bebek") { tone(t, pitch * 1.2, pitch * 0.8, 0.16, 0.04, (rnd() - 0.5) * 0.6, "sq"); tone(t + 0.2, pitch * 1.25, pitch * 0.82, 0.14, 0.035, (rnd() - 0.5) * 0.6, "sq"); }
+    else { let ph = 0, lp = 0; add(sfx, t, (rnd() - 0.5) * 0.6, 0.55, (x) => { const f = pitch * 0.75 * (1 + 0.06 * Math.sin(x * 2 * Math.PI * 9)); ph += (2 * Math.PI * f) / SR; const s = ((ph / Math.PI) % 2) - 1; lp += (s - lp) * 0.18; return lp * 0.09 * Math.sin(Math.PI * Math.min(1, x / 0.55)); }); }
+  };
+  const events = [];
+  const ev = (t, k) => events.push(`${t.toFixed(2)} ${k}`);
+  const sp = plan.pest.look.species;
+  for (const c of plan.cues) {
+    const t = c.t;
+    if (c.k === "title") { tone(t, 330, 660, 0.18, 0.06); ding(t + 0.12, 84, 0.05); ev(t, "title"); }
+    else if (c.k === "cut") swish(t - 0.1, 0.24, 0.07);
+    else if (c.k === "chip") { /* the level chip slides in under the cut swish */ }
+    else if (c.k.startsWith("tool:")) {
+      const kind = c.k.slice(5), len = Math.max(0.3, c.v ?? 0.8);
+      if (kind === "swish") { swish(t + 0.12, 0.22, 0.14, -0.2); }
+      else if (kind === "water") hiss(t, len, 0.05);
+      else if (kind === "splash") { swish(t, 0.2, 0.1); noise(t + 0.25, 0.4, 0.12, 0.6, 0.05, (x) => Math.exp(-x * 7)); thud(t + 0.25, 0.08, 120); }
+      else if (kind === "vacuum") { let ph = 0; add(sfx, t, 0.2, len, (x) => { const f = 110 * (1 + 0.5 * Math.min(1, x / len)); ph += (2 * Math.PI * f) / SR; return (((ph / Math.PI) % 2) - 1) * 0.02 * Math.min(1, x / 0.15) * Math.min(1, (len - x) / 0.05); }); hiss(t, len, 0.03); thud(t + len - 0.05, 0.14, 70); pop(t + len - 0.04, 500, 0.08); }
+      else if (kind === "siren") { const L = Math.min(1.6, len + 0.6); add(sfx, t - 0.6, 0.3, L, (x) => Math.sin(2 * Math.PI * (Math.floor(x / 0.32) % 2 ? 560 : 720) * x) * 0.03 * Math.min(1, x / 0.1) * Math.min(1, (L - x) / 0.2)); for (let k = 0; k < 8; k++) thud(t - 0.6 + k * 0.12, 0.03, 55); }
+      else if (kind === "fan") { add(sfx, t, 0.3, len + 0.4, (x) => Math.sin(2 * Math.PI * 95 * x) * 0.02 * Math.min(1, x / 0.3) * Math.min(1, (len + 0.4 - x) / 0.2)); noise(t + 0.2, len + 0.2, 0.06, 0.12, 0.02, (x) => Math.min(1, x / 0.3) * Math.min(1, (len - x + 0.2) / 0.2), 0.2); }
+      else if (kind === "clink") { knock(t + 0.1, 2300, 0.06); noise(t + 0.2, 0.35, 0.04, 0.4, 0.2, (x) => Math.exp(-x * 4)); }
+      else if (kind === "toa") { let ph = 0, lp = 0; add(sfx, t + 0.25, 0, Math.min(0.85, len), (x) => { const f = 260 * (1 + 0.02 * Math.sin(x * 40)); ph += (2 * Math.PI * f) / SR; const s = Math.sign(Math.sin(ph)) + 0.5 * Math.sign(Math.sin(ph * 1.5)); lp += (s - lp) * 0.15; return lp * 0.03 * Math.min(1, x / 0.03) * Math.min(1, (Math.min(0.85, len) - x) / 0.1); }); }
+      else if (kind === "horn") { tone(t + 0.25, 480, 620, Math.min(0.7, len), 0.035, 0, "saw"); }
+      else if (kind === "fwump") { noise(t + 0.25, 0.25, 0.14, 0.08, 0.01, (x) => Math.exp(-x * 12)); thud(t + 0.25, 0.08, 90); }
+      else if (kind === "drone") { let ph = 0; add(sfx, t - 0.2, -0.2, len + 0.6, (x) => { ph += (2 * Math.PI * 190) / SR; return (((ph / Math.PI) % 2) - 1) * 0.018 * (0.7 + 0.3 * Math.sin(x * 2 * Math.PI * 23)) * Math.min(1, x / 0.2) * Math.min(1, (len + 0.6 - x) / 0.2); }); }
+      else if (kind === "thump") { swish(t + 0.1, 0.25, 0.08); }
+      ev(t, kind);
+    }
+    else if (c.k === "impact") { knock(t, 380, 0.11); thud(t, 0.08, 110); }
+    else if (c.k === "slurp") { tone(t, 300, 1400, 0.5, 0.03); }
+    else if (c.k === "hop") { boing(t, 300, 0.05); }
+    else if (c.k === "stuck") { const n = Math.max(2, Math.min(5, Math.round((c.v ?? 1) / 0.6))); for (let k = 0; k < n; k++) tone(t + k * 0.62, 900, 1100, 0.12, 0.03, 0, "sin"); }
+    else if (c.k === "flip") { knock(t, 1600, 0.05); ding(t + 0.06, 86 + Math.min(10, Math.round(Math.log2(Math.max(2, c.v ?? 2)) * 2)), 0.045); ev(t, `flip x${c.v}`); }
+    else if (c.k === "arrive") {
+      const n = c.n ?? 0, style = c.v ?? 0;
+      const audible = Math.min(12, n);
+      for (let k = 0; k < audible; k++) {
+        const tt = t + (k / Math.max(1, audible)) * Math.min(0.9, 0.15 + n * 0.03) + rnd() * 0.04;
+        if (style === 2) { tone(tt, 1400, 500, 0.3, 0.012, (rnd() - 0.5) * 0.8); thud(tt + 0.3, 0.03, 140); }
+        else if (style === 3) knock(tt, 700 + rnd() * 300, 0.03);
+        else pop(tt + (style === 1 ? 0.25 : 0), 600 + rnd() * 600, 0.045, (rnd() - 0.5) * 0.8);
+      }
+      if (style === 1) { noise(t, 0.3, 0.12, 0.1, 0.01, (x) => Math.exp(-x * 9)); thud(t, 0.12, 70); }
+      if (n > 40) noise(t + 0.1, 1.0, 0.035, 0.3, 0.05, (x) => Math.sin(Math.PI * Math.min(1, x / 1.0)), 0);
+      
+    }
+    else if (c.k.startsWith("voice:")) { const nV = c.n ?? 1; for (let k = 0; k < nV; k++) voiceOf(sp, t + k * 0.16 + rnd() * 0.05, 520 + rnd() * 160 + k * 40); }
+    else if (c.k === "splash") { noise(t, 0.35, 0.13, 0.6, 0.05, (x) => Math.exp(-x * 8), -0.1); }
+    else if (c.k === "scramble") { for (let k = 0; k < 10; k++) knock(t + k * 0.07 + rnd() * 0.03, 600 + rnd() * 400, 0.025); }
+    else if (c.k === "sting") { for (const m of [43, 50, 55]) add(sfx, t, 0, 0.6, (x) => Math.sin(2 * Math.PI * hz(m) * x) * 0.05 * Math.min(1, x / 0.005) * Math.exp(-x * 5)); ev(t, "sting"); }
+    else if (c.k === "boing") { boing(t, 240, 0.08); }
+    else if (c.k.startsWith("end:")) {
+      const kind = c.k.slice(4), len = c.v ?? 3;
+      if (kind === "nap") { for (let k = 0; k * 1.5 + 0.4 < len - 0.3; k++) noise(t + 0.4 + k * 1.5, 0.9, 0.06, 0.05, 0.01, (x) => Math.sin(Math.PI * Math.min(1, x / 0.9)) ** 2); }
+      else if (kind === "run") { swish(t + 0.3, 0.3, 0.12); for (let k = 0; k < 16; k++) knock(t + 0.4 + k * 0.09, 500 + rnd() * 500, 0.03); }
+      else if (kind === "cliffhanger") { noise(t + 1.0, 1.0, 0.1, 0.03, 0.005, (x) => Math.sin(Math.PI * Math.min(1, x / 1.0))); for (const m of [36, 42, 48]) add(sfx, t + 1.75, 0, 1.2, (x) => Math.sin(2 * Math.PI * hz(m) * x) * 0.05 * Math.min(1, x / 0.01) * Math.exp(-x * 2.5)); }
+      else if (kind === "menyerah") { for (let k = 0; k < 8; k++) pop(t + 0.5 + k * 0.13, 500 + rnd() * 300, 0.035); swish(t + 1.6, 0.3, 0.08); }
+      else if (kind === "adopt") { ding(t + 0.9, 79, 0.03); }
+      ev(t, `end ${kind}`);
+    }
+    else if (c.k === "part") { thud(t, 0.12, 90); ding(t + 0.05, 84, 0.04); ev(t, "part"); }
+  }
+
+  // ---------------------------------------------------------------- write + mix
+  const wav = (file, buf) => {
+    const data = Buffer.alloc(N * 4);
+    for (let i = 0; i < N; i++) for (let c = 0; c < 2; c++) data.writeInt16LE(Math.round(Math.max(-1, Math.min(1, buf[c][i])) * 32767), i * 4 + c * 2);
+    const h = Buffer.alloc(44);
+    h.write("RIFF", 0); h.writeUInt32LE(36 + data.length, 4); h.write("WAVEfmt ", 8); h.writeUInt32LE(16, 16); h.writeUInt16LE(1, 20); h.writeUInt16LE(2, 22);
+    h.writeUInt32LE(SR, 24); h.writeUInt32LE(SR * 4, 28); h.writeUInt16LE(4, 32); h.writeUInt16LE(16, 34); h.write("data", 36); h.writeUInt32LE(data.length, 40);
+    fs.writeFileSync(file, Buffer.concat([h, data]));
+  };
+  fs.mkdirSync(outDir, { recursive: true });
+  fs.mkdirSync(path.dirname(mixFile), { recursive: true });
+  const mf = path.join(outDir, "music.wav"), sf = path.join(outDir, "sfx.wav");
+  wav(mf, mus);
+  wav(sf, sfx);
+  const tail = `apad=whole_dur=${DUR},atrim=0:${DUR},loudnorm=I=-14:TP=-1.5:LRA=11,aresample=48000[out]`;
+  const filter = voice
+    ? ["[0:a]highpass=f=70,acompressor=threshold=-20dB:ratio=2.5:attack=8:release=140:makeup=3,asplit=2[v][vk]", "[1:a]volume=1.0[m]", "[m][vk]sidechaincompress=threshold=0.03:ratio=6:attack=25:release=420[md]", "[2:a]volume=0.85[s]", `[v][md][s]amix=inputs=3:normalize=0:duration=longest,${tail}`].join(";")
+    : ["[0:a]volume=1.35[m]", "[1:a]volume=1.0[s]", `[m][s]amix=inputs=2:normalize=0:duration=longest,${tail}`].join(";");
+  execFileSync("ffmpeg", ["-y", "-v", "error", ...(voice ? ["-i", voice] : []), "-i", mf, "-i", sf, "-filter_complex", filter, "-map", "[out]", "-ac", "2", mixFile]);
+  const m = spawnSync("ffmpeg", ["-hide_banner", "-i", mixFile, "-af", "loudnorm=print_format=summary", "-f", "null", "-"], { encoding: "utf8" }).stderr;
+  return { lufs: (m.match(/Input Integrated:\s+(-?[\d.]+)/) ?? [])[1], peak: (m.match(/Input True Peak:\s+(-?[\d.]+)/) ?? [])[1], events: events.length, perMin: Math.round((events.length / DUR) * 60) };
+};
+
+==== 24655 project/scripts/make.mjs
+// NEKAT — story → film (recurring duo + one escalating absurd challenge with a counter).
+//   node scripts/make.mjs --library               what exists: sets, tools, backfires, arrivals, endings, cast + card codes
+//   node scripts/make.mjs <id> --plan             compile stories/<id>/story.json, print segments + shots + warnings
+//   node scripts/make.mjs <id> --stills auto      one still per shot from ONE page → out/<id>/stills/_sheet.jpg
+//   node scripts/make.mjs <id> --preview          plan + sound + 540×960 preview (rendered at 2×, downscaled) + QA report
+//   node scripts/make.mjs <id> --final            plan + sound + QA gate (stops on FAIL) + 1080×1920 @ 60 + delivery scan
+// Characters (tokoh):
+//   node scripts/make.mjs --menu                  kartu tokoh → out/_menu/kartu-tokoh-1|2|3.jpg (codes T/H/R/K/F/B/A/S/KL/W)
+//   node scripts/make.mjs <id> --cast             this story's duo + creature → out/<id>/tokoh.jpg (validated)
+//   node scripts/make.mjs <id> --save-tokoh darto[,oren] [--nama "Pak Darto"]   → tokoh/tokoh-<nama>.json
+//   story.json "cast": { "darto": { "tokoh": "pak-darto" } } uses a saved file (+ optional "look" changes on top)
+// Series: "series": "<name>" saves each part's end state to series/<name>/state.json; the next part with
+//   "continue": true starts from it (counter, set, cast).
+// Voice (optional): stories/<id>/vo.(wav|mp3|m4a) → word timings with whisper.cpp; without it the captions are paced.
+// Flags: --silent (no sound), --no-music, --wide (16:9: only when asked), --no-qa, --force-qa.
+import fs from "node:fs";
+import path from "node:path";
+import { execFileSync, spawnSync } from "node:child_process";
+import { compile, voiceScript } from "../src/nekat/compile.ts";
+import { SETS } from "../src/nekat/sets/index.ts";
+import { PEOPLE, CREATURES, MENU, menuText, mergeLook, personProblems, creatureProblems, resolvePerson, resolveCreature, tokohCode, hewanCode } from "../src/nekat/cast.ts";
+import { TOOLS, BACKFIRES, ARRIVALS, ENDINGS } from "../src/nekat/tools.ts";
+import { SPECIES } from "../src/nekat/species.ts";
+import { syncVo } from "./lib/vo.mjs";
+import { buildSound } from "./lib/nekat-sound.mjs";
+import { deliveryScan, sceneGate } from "./qa-gate.mjs";
+
+const args = process.argv.slice(2);
+const flag = (f) => args.includes(f);
+const val = (f) => (args.includes(f) ? args[args.indexOf(f) + 1] : undefined);
+const sh = (cmd, a) => { const r = spawnSync(cmd, a, { stdio: "inherit" }); if (r.status) process.exit(r.status); };
+
+// ---------------------------------------------------------------- character cards (NekatCard strips → stacked JPGs)
+const renderCards = (groups, h, outDir, names) => {
+  fs.mkdirSync(outDir, { recursive: true });
+  const tmp = path.join(outDir, "_strips"), pf = path.join(outDir, "_card-props.json");
+  fs.rmSync(tmp, { recursive: true, force: true });
+  fs.writeFileSync(pf, JSON.stringify({ strips: groups.flat(), h }));
+  sh("npx", ["remotion", "render", "src/index.ts", "NekatCard", tmp, "--sequence", "--image-format=jpeg", "--jpeg-quality=92", `--props=${pf}`, "--concurrency=2", "--log=error"]);
+  const files = fs.readdirSync(tmp).filter((f) => /^element-\d+\.jpe?g$/.test(f)).sort((a, b) => parseInt(a.slice(8)) - parseInt(b.slice(8))).map((f) => path.join(tmp, f));
+  let k = 0;
+  const made = groups.map((g, gi) => {
+    const part = files.slice(k, (k += g.length)), to = path.join(outDir, names[gi]);
+    if (part.length === 1) fs.copyFileSync(part[0], to);
+    else execFileSync("ffmpeg", ["-v", "error", "-y", ...part.flatMap((f) => ["-i", f]), "-filter_complex", part.map((_, i) => `[${i}:v]`).join("") + `vstack=inputs=${part.length}`, "-q:v", "3", to]);
+    return to;
+  });
+  fs.rmSync(tmp, { recursive: true, force: true });
+  fs.rmSync(pf, { force: true });
+  return made;
+};
+const rows = (a, n) => Array.from({ length: Math.ceil(a.length / n) }, (_, i) => a.slice(i * n, i * n + n));
+const BASE = PEOPLE.bapak.look;
+
+if (flag("--menu")) {
+  const ppl = Object.keys(PEOPLE).map((k) => ({ look: PEOPLE[k].look, code: tokohCode(k), name: k }));
+  const ani = Object.keys(CREATURES).map((k) => ({ look: CREATURES[k].look, code: hewanCode(k), name: k.replace("-", " ") }));
+  const card1 = [
+    { kind: "header", title: "KARTU TOKOH NEKAT", lines: ["Pilih orang T1–T" + ppl.length + " dan hewan H1–H" + ani.length + ", lalu ganti apa saja:", "rambut (R), penutup kepala (K), wajah (F), badan (B), atasan (A), bawahan (S), kulit (KL), warna (W).", "Contoh: “Tokoh utama T1 tapi kaos W7, sarung W12. Hewannya H5.”", "“Temannya T3, rambut R5, kulit KL2.” Tokoh bisa disimpan untuk part berikutnya."] },
+    ...rows(ppl, 5).map((items, i) => ({ kind: "people", frame: "body", title: i ? undefined : "ORANG", items })),
+    ...rows(ani, 6).map((items, i) => ({ kind: "creatures", title: i ? undefined : "HEWAN · tiap diusir malah nambah", items })),
+  ];
+  const head = (patch, code, name) => ({ look: mergeLook(BASE, patch), code, name, rotY: 0.35, expr: "neutral" });
+  const hair = MENU.hair.map((o) => ({ ...head({ hair: { style: o.style, color: o.style === "ring" ? "#d9d4cc" : "#2a2522" }, face: { moustache: false } }, o.code, o.name), rotY: o.style === "bun" ? 1.15 : o.style === "long" ? 0.75 : 0.35 }));
+  const hats = MENU.hat.map((o) => head({ hat: { kind: o.kind, color: o.kind === "kerudung" ? "#d9577a" : o.kind === "topi" ? "#2f3a5a" : o.kind === "caping" ? "#d9be7c" : "#2b2626" }, ...(o.kind === "kerudung" ? { face: { moustache: false, lashes: true, brows: "thin" }, skin: "#d9a27a" } : {}) }, o.code, o.name));
+  const face = MENU.face.map((o) => head({ face: { moustache: false, brows: "thick", ...o.face } }, o.code, o.name));
+  const card2 = [
+    { kind: "people", frame: "head", title: "RAMBUT · sebut juga warnanya", items: hair },
+    { kind: "people", frame: "head", title: "PENUTUP KEPALA · bisa diwarnai", items: hats },
+    { kind: "people", frame: "head", title: "WAJAH · boleh digabung", items: face },
+  ];
+  const body = (patch, code, name) => ({ look: mergeLook(BASE, patch), code, name, rotY: 0.2 });
+  const build = MENU.build.map((o) => body({ build: o.build }, o.code, o.name));
+  const tops = MENU.top.map((o) => body(o.kind === "daster" ? { top: { kind: "daster", color: "#6aa6d8" }, bottom: { kind: "skirt", color: "#6aa6d8" }, hair: { style: "long", color: "#2a1a12" }, face: { moustache: false, lashes: true } } : { top: { kind: o.kind, color: o.kind === "singlet" ? "#f6f3ea" : "#3a7bd5", color2: "#f6f3ea" } }, o.code, o.name));
+  const bottoms = MENU.bottom.map((o) => body({ top: { kind: "kaos", color: "#f2c94c" }, bottom: { kind: o.kind, color: o.kind === "sarung" ? "#3f6f8f" : "#2f3a5a" } }, o.code, o.name));
+  const card3 = [
+    { kind: "people", frame: "body", title: "BADAN", items: build },
+    { kind: "people", frame: "body", title: "ATASAN · warna W, garis-garis boleh", items: tops },
+    { kind: "people", frame: "body", title: "BAWAHAN", items: bottoms },
+    { kind: "swatches", title: "WARNA (W)", colors: [...MENU.colors], lines: ["Sebut bagian + warna, mis. “kaos W7, sarung W11, peci W16”. Warna lain boleh, sebut namanya."] },
+    { kind: "swatches", title: "KULIT (KL) + HEWAN", colors: [...MENU.skin], lines: ["Kulit: sebut kodenya, mis. “kulit KL2”.", "Hewan: warna badan, belang / bercak / polos, perut, hidung / paruh — mis. “kucing abu polos”, “ayam hitam”, “kambing putih bercak cokelat”."] },
+  ];
+  const made = renderCards([card1, card2, card3], 480, path.join("out", "_menu"), ["kartu-tokoh-1.jpg", "kartu-tokoh-2.jpg", "kartu-tokoh-3.jpg"]);
+  console.log("cards:\n  " + made.join("\n  ") + "\n\n" + menuText());
+  process.exit(0);
+}
+
+if (flag("--library")) {
+  for (const S of Object.values(SETS)) console.log(`SET "${S.id}" — ${S.about}`);
+  console.log("\nTOOLS (level \"tool\"):\n" + Object.entries(TOOLS).map(([k, t]) => `  ${k.padEnd(9)} ${t.label.padEnd(20)} ${t.about}  [backfire ${t.backfire}, arrive ${t.arrive}, ≥${t.min}s${t.vehicle ? ", he rides it" : ""}]`).join("\n"));
+  console.log("\nBACKFIRES (level \"backfire\"):\n" + Object.entries(BACKFIRES).map(([k, a]) => `  ${k.padEnd(9)} ${a}`).join("\n"));
+  console.log("\nARRIVALS (level \"arrive\"):\n" + Object.entries(ARRIVALS).map(([k, a]) => `  ${k.padEnd(9)} ${a}`).join("\n"));
+  console.log("\nENDINGS (ending \"kind\"):\n" + Object.entries(ENDINGS).map(([k, a]) => `  ${k.padEnd(12)} ${a}`).join("\n"));
+  console.log("\nCOUNTER curve: escalate (×2 ×2 ×4 ×8 ×8 ×10…, default), x2, x4, x8, or a list of multipliers [2, 4, 8]; or \"to\" per level");
+  console.log("\nPEOPLE (\"preset\"):\n" + Object.entries(PEOPLE).map(([k, c]) => `  ${tokohCode(k).padEnd(4)}${k.padEnd(8)} ${c.about}`).join("\n"));
+  console.log("\nCREATURES (\"creature\"):\n" + Object.entries(CREATURES).map(([k, c]) => `  ${hewanCode(k).padEnd(4)}${k.padEnd(16)} ${c.about}  (cap ${SPECIES[c.look.species].cap} drawn)`).join("\n"));
+  console.log("\n" + menuText());
+  const saved = fs.existsSync("tokoh") ? fs.readdirSync("tokoh").filter((f) => f.endsWith(".json")) : [];
+  console.log(saved.length ? `SAVED tokoh/: ${saved.join(", ")}` : "SAVED tokoh/: none");
+  const series = fs.existsSync("series") ? fs.readdirSync("series").filter((f) => fs.existsSync(path.join("series", f, "state.json"))) : [];
+  console.log(series.length ? `SERIES series/: ${series.join(", ")}` : "SERIES series/: none");
+  process.exit(0);
+}
+
+const id = args.find((a) => !a.startsWith("--") && a !== val("--stills") && a !== val("--save-tokoh") && a !== val("--nama"));
+if (!id) { console.error("usage: node scripts/make.mjs <id> --plan | --stills auto | --preview | --final   (or --library / --menu)"); process.exit(1); }
+const dir = path.join("stories", id), out = path.join("out", id);
+const storyFile = path.join(dir, "story.json");
+if (!fs.existsSync(storyFile)) { console.error(`missing ${storyFile}`); process.exit(1); }
+fs.mkdirSync(out, { recursive: true });
+let story;
+try { story = JSON.parse(fs.readFileSync(storyFile, "utf8")); } catch (e) { console.error(`${storyFile} is not valid JSON: ${e.message}`); process.exit(1); }
+story.id = story.id ?? id;
+// own set dressing: stories/<id>/props.json { "<name>": { "at": [x, z], "footprint": [w, d], "height", "parts": [...] } }
+const dressFile = path.join(dir, "props.json");
+if (fs.existsSync(dressFile)) {
+  try { story.dressing = Object.entries(JSON.parse(fs.readFileSync(dressFile, "utf8"))).map(([name, d]) => ({ name, ...d })); }
+  catch (e) { console.error(`${dressFile} is not valid JSON: ${e.message}`); process.exit(1); }
+}
+
+// ---------------------------------------------------------------- saved characters (tokoh/tokoh-<slug>.json)
+const slug = (x) => String(x).toLowerCase().normalize("NFKD").replace(/[̀-ͯ]/g, "").replace(/^tokoh-/, "").replace(/\.json$/, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+const savedTokoh = () => (fs.existsSync("tokoh") ? fs.readdirSync("tokoh").filter((f) => f.endsWith(".json")) : []);
+for (const [cid, c] of Object.entries(story.cast ?? {})) {
+  if (!c.tokoh) continue;
+  const f = [path.join("tokoh", `tokoh-${slug(c.tokoh)}.json`), path.join("tokoh", `${slug(c.tokoh)}.json`), c.tokoh].find((x) => x.endsWith(".json") && fs.existsSync(x));
+  if (!f) { console.error(`✗ cast "${cid}": saved tokoh "${c.tokoh}" not found in tokoh/ (have: ${savedTokoh().join(", ") || "none"}) — copy the buyer's tokoh-*.json there`); process.exit(2); }
+  let t;
+  try { t = JSON.parse(fs.readFileSync(f, "utf8")); } catch (e) { console.error(`✗ ${f} is not valid JSON: ${e.message}`); process.exit(2); }
+  if ((!t.preset || !PEOPLE[t.preset]) && (!t.creature || !CREATURES[t.creature]) || !t.look) { console.error(`✗ ${f}: needs "preset" (a person: ${Object.keys(PEOPLE).join(", ")}) or "creature" (${Object.keys(CREATURES).join(", ")}) and "look"`); process.exit(2); }
+  story.cast[cid] = { ...(t.preset ? { preset: t.preset } : { creature: t.creature }), look: mergeLook(t.look, c.look), name: c.name ?? t.nama };
+}
+const lookOf = (c) => (c.creature ? resolveCreature(c.creature, c.look) : resolvePerson(c.preset, c.look));
+const problemsOf = (c) => (c.creature ? (CREATURES[c.creature] ? creatureProblems(lookOf(c)) : [`creature "${c.creature}" unknown (have: ${Object.keys(CREATURES).join(", ")})`]) : PEOPLE[c.preset] ? personProblems(lookOf(c)) : [`preset "${c.preset}" unknown (have: ${Object.keys(PEOPLE).join(", ")})`]);
+if (flag("--save-tokoh")) {
+  const ids = String(val("--save-tokoh") ?? "").split(",").filter(Boolean);
+  if (!ids.length) { console.error("usage: --save-tokoh <castId>[,<castId>] [--nama \"Nama\"]"); process.exit(1); }
+  fs.mkdirSync("tokoh", { recursive: true });
+  for (const cid of ids) {
+    const c = story.cast?.[cid];
+    if (!c) { console.error(`✗ "${cid}" is not in cast (have: ${Object.keys(story.cast ?? {}).join(", ")})`); process.exit(2); }
+    const bad = problemsOf(c);
+    if (bad.length) { console.error(`✗ cast "${cid}":\n  ` + bad.join("\n  ")); process.exit(2); }
+    const nama = (ids.length === 1 && val("--nama")) || c.name || cid;
+    const file = path.join("tokoh", `tokoh-${slug(nama)}.json`);
+    fs.writeFileSync(file, JSON.stringify({ voynann: "nekat-tokoh/1", nama, ...(c.creature ? { creature: c.creature } : { preset: c.preset }), look: lookOf(c), dari: id, catatan: "Tokoh NEKAT tersimpan. Di video berikutnya cukup sebut namanya. Untuk proyek atau komputer lain: salin file ini ke folder tokoh/ di proyek itu." }, null, 2) + "\n");
+    console.log(`saved: ${file}   (story.json: "cast": { "${cid}": { "tokoh": "${slug(nama)}" } })`);
+  }
+  if (!["--cast", "--plan", "--stills", "--preview", "--final"].some(flag)) process.exit(0);
+}
+// ---------------------------------------------------------------- series state
+const seriesFile = story.series ? path.join("series", slug(story.series), "state.json") : null;
+const seriesAll = seriesFile && fs.existsSync(seriesFile) ? JSON.parse(fs.readFileSync(seriesFile, "utf8")) : { parts: {} };
+let state;
+if (story.continue) {
+  if (!seriesFile) { console.error(`✗ "continue": true needs "series": "<name>"`); process.exit(2); }
+  const prev = Object.keys(seriesAll.parts).map(Number).filter((p) => !story.part || p < story.part).sort((a, b) => b - a)[0];
+  if (prev === undefined) { console.error(`✗ series "${story.series}": no earlier part saved in ${seriesFile} — make part 1 first (its --plan saves the end state)`); process.exit(2); }
+  state = seriesAll.parts[prev];
+  if (!story.part) story.part = prev + 1;
+  console.log(`series "${story.series}": part ${story.part} continues from part ${prev} (counter ${state.count.toLocaleString("id-ID")}, set ${state.set})`);
+  for (const [cid, c] of Object.entries(state.cast)) if (!story.cast?.[cid]) (story.cast ??= {})[cid] = c;
+}
+if (flag("--cast")) {
+  const ents = Object.entries(story.cast ?? {});
+  if (!ents.length) { console.error("✗ story has no cast"); process.exit(2); }
+  const bad = ents.flatMap(([cid, c]) => problemsOf(c).map((p) => `cast "${cid}": ${p}`));
+  if (bad.length) { console.error("✗ " + bad.join("\n  ")); process.exit(2); }
+  const ppl = ents.filter(([, c]) => !c.creature).map(([cid, c]) => ({ look: lookOf(c), code: c.name ?? cid, name: c.tokoh ? "tokoh tersimpan" : `dari ${tokohCode(c.preset)} ${c.preset}` }));
+  const ani = ents.filter(([, c]) => c.creature).map(([cid, c]) => ({ look: lookOf(c), code: c.name ?? cid, name: `dari ${hewanCode(c.creature)} ${c.creature}` }));
+  const strips = [
+    ...rows(ppl, 4).map((items, i) => ({ kind: "people", frame: "body", title: i ? undefined : `TOKOH · ${Array.isArray(story.title) ? story.title.join(" ") : story.title}`.slice(0, 60), items })),
+    ...rows(ppl, 4).map((items) => ({ kind: "people", frame: "head", items: items.map((x) => ({ ...x, rotY: 0.25 })) })),
+    ...(ani.length ? [{ kind: "creatures", items: [...ani, ...ani.map((x) => ({ ...x, pose: 0, name: "(rebahan)" }))] }] : []),
+  ];
+  const [file] = renderCards([strips], 600, out, ["tokoh.jpg"]);
+  console.log(`cast card: ${file}`);
+  if (!["--plan", "--stills", "--preview", "--final"].some(flag)) process.exit(0);
+}
+
+// ---------------------------------------------------------------- timing
+const texts = voiceScript(story);
+const vo = ["vo.wav", "vo.mp3", "vo.m4a"].map((f) => path.join(dir, f)).find((f) => fs.existsSync(f));
+let timing, voice;
+if (vo) {
+  const cache = path.join(out, "timing.json");
+  const stamp = `${fs.statSync(vo).mtimeMs}|${texts.join("|")}`;
+  const c = fs.existsSync(cache) ? JSON.parse(fs.readFileSync(cache, "utf8")) : null;
+  if (c?.stamp === stamp && fs.existsSync(c.voice)) { timing = c.lines; voice = c.voice; console.log(`voice: ${vo} (timings cached)`); }
+  else {
+    const r = syncVo(vo, texts, path.join(out, "vo"));
+    timing = r.lines; voice = r.voice;
+    fs.writeFileSync(cache, JSON.stringify({ stamp, lines: timing, voice }));
+    console.log(r.method === "whisper" ? `voice: ${vo} — whisper matched all but ${r.missed} word(s)` : `voice: ${vo} — whisper.cpp not found: sentences laid onto the speech runs (sentence starts ≈ exact, words paced)`);
+    if (r.missed > texts.join(" ").split(/\s+/).length * 0.15) console.log(`! many words not matched: is the recording this script?\n  heard: ${r.heard}`);
+  }
+} else console.log("voice: none — captions paced, music + SFX carry it (a narrator recording goes to " + path.join(dir, "vo.mp3") + ")");
+
+// ---------------------------------------------------------------- plan
+const silent = flag("--silent"), wide = flag("--wide") || story.format === "landscape";
+const wantSound = !silent && (flag("--preview") || flag("--final"));
+const audio = wantSound ? `stories/${id}/mix.wav` : undefined;
+let plan;
+try { plan = compile(story, { aspect: wide ? 16 / 9 : 9 / 16, audio, timing, state }); }
+catch (e) { console.error(`\n✗ ${e.message}`); process.exit(2); }
+console.log(`\n"${plan.title.join(" ")}" — ${plan.segs.length} parts, ${plan.shots.length} shots, ${plan.duration}s, set ${plan.set}, ${plan.hero.name} vs ${plan.pest.name}${plan.partner ? ` (+ ${plan.partner.name})` : ""}`);
+plan.segs.forEach((S) => {
+  const head = S.level ? `LEVEL ${S.level.n} ${S.level.tool} [${S.level.backfire}/${S.level.arrive}] ${S.level.from.toLocaleString("id-ID")}→${S.level.to.toLocaleString("id-ID")} @${S.level.flip.toFixed(2)}` : S.peak ? `PEAK ${S.peak.from.toLocaleString("id-ID")}→${S.peak.to.toLocaleString("id-ID")} @${S.peak.flip.toFixed(2)}` : S.ending ? `ENDING ${S.ending.kind} · ${S.ending.part}` : "HOOK";
+  console.log(`${S.t0.toFixed(2).padStart(6)}–${S.t1.toFixed(2).padEnd(6)} ${head}\n        ${S.lines.map((l) => `${l.who ? l.who + ": " : ""}${l.text.replace(/\n/g, " ")}`).join(" | ")}`);
+});
+console.log("shots: " + plan.shots.map((s) => `${s.i + 1}:${s.role}@${s.t0.toFixed(2)}${s.vis < 0.75 ? "(!vis)" : ""}`).join("  "));
+if (plan.warnings.length) console.log(`\n! ${plan.warnings.length} warning(s):\n  ` + plan.warnings.join("\n  "));
+else console.log("\nno warnings");
+if (seriesFile) {
+  const end = plan.segs[plan.segs.length - 1];
+  const castOut = Object.fromEntries(Object.entries(story.cast).map(([cid, c]) => [cid, { ...(c.creature ? { creature: c.creature } : { preset: c.preset }), look: lookOf(c), name: c.name }]));
+  seriesAll.name = story.series;
+  seriesAll.parts[story.part ?? 1] = { count: end.ending?.count ?? plan.counter.keys.at(-1).n, set: plan.set, part: story.part ?? 1, cast: castOut, hero: plan.hero.id, pest: plan.pest.id, partner: plan.partner?.id, ending: end.ending?.kind, from: id };
+  fs.mkdirSync(path.dirname(seriesFile), { recursive: true });
+  fs.writeFileSync(seriesFile, JSON.stringify(seriesAll, null, 2) + "\n");
+  console.log(`series: part ${story.part ?? 1} end state → ${seriesFile}`);
+}
+
+if (wantSound) {
+  const r = buildSound(plan, { voice, outDir: path.join(out, "sound"), mixFile: path.join("public", audio), music: !flag("--no-music") });
+  console.log(`sound: public/${audio}  ${r.lufs} LUFS  ${r.peak} dBTP  (${r.events} cues, ${r.perMin}/min)`);
+}
+const tag = wide ? "-wide" : "";
+const propsFile = path.join(out, `props${tag}.json`);
+fs.writeFileSync(path.join(out, `plan${tag}.json`), JSON.stringify(plan));
+fs.writeFileSync(propsFile, JSON.stringify({ plan }));
+if (flag("--plan")) process.exit(plan.warnings.length ? 3 : 0);
+
+const comp = (k) => `Nekat${k}${wide ? "Wide" : ""}`;
+const gateDir = path.join(out, `qa-gate${tag}`);
+// the scene probe runs in one tab: with several tabs it can read a pose from another frame (false one-frame flicks)
+const gate = { comp: comp("Preview"), cuts: plan.shots.slice(1).map((s) => s.t0), out: gateDir, props: propsFile, extra: ["--concurrency=1"] };
+if (flag("--stills")) {
+  let list = val("--stills");
+  const auto = !list || list === "auto";
+  if (auto) list = plan.shots.map((s) => {
+    const sg = plan.segs[s.seg], flip = sg.level?.flip ?? sg.peak?.flip;
+    const at = flip !== undefined && flip > s.t0 && flip < s.t1 ? Math.min(s.t1 - 0.12, flip + 0.55) : s.t0 + (s.t1 - s.t0) * (s.role === "end" ? 0.72 : 0.62);
+    return `${at.toFixed(2)}s`;
+  }).join(",");
+  const frames = list.split(",").map((t) => (t.endsWith("s") ? Math.round(parseFloat(t) * 30) : parseInt(t, 10)));
+  const sdir = path.join(out, `stills${tag}`);
+  fs.rmSync(sdir, { recursive: true, force: true });
+  fs.mkdirSync(sdir, { recursive: true });
+  const sp = path.join(out, `stills-props${tag}.json`);
+  fs.writeFileSync(sp, JSON.stringify({ plan: { ...plan, audio: undefined }, frames }));
+  sh("npx", ["remotion", "render", "src/index.ts", wide ? "NekatStillsWide" : "NekatStills", sdir, "--sequence", "--image-format=jpeg", "--jpeg-quality=92", `--props=${sp}`, "--concurrency=2", "--log=error"]);
+  const made = fs.readdirSync(sdir).filter((f) => /^element-\d+\.jpe?g$/.test(f)).sort((a, b) => parseInt(a.slice(8)) - parseInt(b.slice(8)));
+  const files = made.map((f, i) => { const to = path.join(sdir, `f${String(frames[i]).padStart(4, "0")}${auto ? `-shot${i + 1}` : ""}.jpg`); fs.renameSync(path.join(sdir, f), to); return to; });
+  const W = wide ? 960 : 540, H = wide ? 540 : 960, cols = Math.min(4, files.length), n = cols * Math.ceil(files.length / cols);
+  const sheet = (labels) => {
+    const pads = Array.from({ length: n - files.length }, () => ["-f", "lavfi", "-i", `color=c=black:s=${W}x${H}`]).flat();
+    const filter = Array.from({ length: n }, (_, i) => `[${i}:v]scale=${W}:${H},setsar=1${labels && i < files.length ? `,drawtext=text='${auto ? i + 1 : frames[i]}':x=10:y=10:fontsize=34:fontcolor=yellow:box=1:boxcolor=black@0.6` : ""}[v${i}]`).join(";") + ";" +
+      Array.from({ length: n }, (_, i) => `[v${i}]`).join("") + `xstack=inputs=${n}:layout=` + Array.from({ length: n }, (_, i) => `${(i % cols) * W}_${Math.floor(i / cols) * H}`).join("|") + `,scale='min(2160,iw)':-2`;
+    execFileSync("ffmpeg", ["-v", "error", "-y", ...files.flatMap((f) => ["-i", f]), ...pads, "-filter_complex", filter, "-frames:v", "1", path.join(sdir, "_sheet.jpg")], { stdio: ["ignore", "ignore", "ignore"] });
+  };
+  if (n > 1) { try { sheet(true); } catch { try { sheet(false); } catch { console.log("(contact sheet skipped: ffmpeg not available)"); } } }
+  console.log(`stills: ${files.length} → ${path.join(sdir, "_sheet.jpg")}${auto ? "  (in shot order)" : ""}`);
+}
+if (flag("--preview")) {
+  const big = path.join(out, "_ss.mp4"), file = path.join(out, wide ? `${id}_preview_960x540.mp4` : `${id}_preview_540x960.mp4`);
+  sh("npx", ["remotion", "render", "src/index.ts", comp("PreviewSS"), big, `--props=${propsFile}`, "--concurrency=3", "--crf=12", "--log=error"]);
+  execFileSync("ffmpeg", ["-v", "error", "-y", "-i", big, "-vf", wide ? "scale=960:540:flags=lanczos" : "scale=540:960:flags=lanczos", "-c:v", "libx264", "-crf", "17", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", file]);
+  fs.rmSync(big);
+  console.log(`\npreview: ${file}`);
+  if (!flag("--no-qa")) sceneGate({ ...gate, force: true });
+}
+if (flag("--final")) {
+  if (!flag("--no-qa")) sceneGate({ ...gate, force: flag("--force-qa") });
+  const file = path.join(out, wide ? `${id}_1920x1080_60fps.mp4` : `${id}_1080x1920_60fps.mp4`);
+  sh("npx", ["remotion", "render", "src/index.ts", comp("Final"), file, `--props=${propsFile}`, "--concurrency=3", "--crf=16", "--log=error"]);
+  console.log(`\nfinal: ${file}`);
+  if (!flag("--no-qa") && deliveryScan({ file, cuts: gate.cuts, out: path.join(gateDir, "delivered") }) === "FAIL") {
+    console.error(`✗ the delivered film has a hard glitch (see ${path.join(gateDir, "delivered")}) — fix it before delivery`);
+    process.exitCode = 1;
+  }
+}
+
+==== 9400 project/src/nekat/Card.tsx
+// NEKAT character cards (kartu tokoh) and look-development views. One frame = one strip (1080 × h); make.mjs --menu /
+// --cast renders the strips and stacks them into JPG cards:
+//   header     big title + how-to lines
+//   people     full bodies ("body") or heads ("head") in a row, a code + name under each
+//   creatures  animals in a row, code + name
+//   swatches   colour chips + text lines
+import React, { useEffect, useState } from "react";
+import { AbsoluteFill, continueRender, delayRender, useCurrentFrame, useVideoConfig } from "remotion";
+import { ToyCanvas, type Shot } from "./kit/Stage.tsx";
+import { Person, EXPR, defaultPose, type Expr } from "./kit/Person.tsx";
+import { Creatures } from "./kit/Creatures.tsx";
+import { clay } from "./kit/clay.ts";
+import { F_DISPLAY, F_TEXT, nekatFonts } from "./kit/Hud.tsx";
+import type { CreatureLook, PersonLook } from "./cast.ts";
+
+export type CardItem = { look: PersonLook; code?: string; name: string; rotY?: number; expr?: Expr };
+export type CreatureItem = { look: CreatureLook; code?: string; name: string; pose?: number };
+export type CardStrip =
+  | { kind: "header"; title: string; lines: string[] }
+  | { kind: "people"; title?: string; frame: "body" | "head"; items: CardItem[] }
+  | { kind: "creatures"; title?: string; items: CreatureItem[] }
+  | { kind: "swatches"; title: string; colors: { code: string; name: string; hex: string }[]; lines: string[] };
+export type CardProps = { strips: CardStrip[]; h: number };
+
+const INKC = "#2b2533", PAPER = "#fff8ec", ACC = "#ff9a2e";
+const band = (title: string) => (
+  <div style={{ position: "absolute", left: 0, right: 0, top: 0, height: 64, background: INKC, color: PAPER, display: "flex", alignItems: "center", paddingLeft: 32, fontFamily: F_DISPLAY, fontSize: 34, letterSpacing: 1 }}>{title}</div>
+);
+const Floor: React.FC = () => (
+  <mesh rotation={[-Math.PI / 2, 0, 0]} material={clay("#efdcc2")} receiveShadow>
+    <planeGeometry args={[80, 80]} />
+  </mesh>
+);
+/** Camera that fits a row of n items (spacing d) and a content height y0…y1 between the title band and the labels. */
+const rowShot = (W: number, H: number, n: number, d: number, y0: number, y1: number, tb: number, lb: number): { shot: Shot; vis: number; xs: number[] } => {
+  const A = W / H, f01 = (H - tb - lb) / H, V = 22;
+  const vis = Math.max((y1 - y0) / f01, (n * d) / (A * 0.97));
+  const dist = vis / (2 * Math.tan(((V / 2) * Math.PI) / 180));
+  const offPx = tb + (H - tb - lb) / 2 - H / 2;
+  const camY = (y0 + y1) / 2 + (offPx / H) * vis;
+  const xs = Array.from({ length: n }, (_, i) => (i - (n - 1) / 2) * d);
+  return { shot: { pos: [0, camY, dist], target: [0, camY, 0], fov: V, shadowAt: [0, 0, 0], shadowBox: Math.max(6, n * d) }, vis, xs };
+};
+const Labels: React.FC<{ items: { code?: string; name: string }[]; xs: number[]; vis: number; W: number; H: number; lb: number }> = ({ items, xs, vis, W, H, lb }) => (
+  <>
+    <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: lb, background: PAPER }} />
+    {items.map((it, i) => (
+      <div key={i} style={{ position: "absolute", bottom: 8, left: W / 2 + (xs[i] / (vis * (W / H))) * W - 95, width: 190, textAlign: "center", fontFamily: F_TEXT, fontWeight: 700, color: INKC, lineHeight: 1.05 }}>
+        {it.code ? <div style={{ fontFamily: F_DISPLAY, fontSize: 32, color: ACC }}>{it.code}</div> : null}
+        <div style={{ fontSize: it.code ? 20 : 26 }}>{it.name}</div>
+      </div>
+    ))}
+  </>
+);
+
+const PeopleStrip: React.FC<{ s: Extract<CardStrip, { kind: "people" }> }> = ({ s }) => {
+  const { width: W, height: H } = useVideoConfig();
+  const head = s.frame === "head";
+  const tb = s.title ? 64 : 0, lb = 84;
+  const smax = Math.max(...s.items.map((i) => (i.look.build?.s ?? 1) * (1 + ((i.look.build?.head ?? 1) - 1) * 0.3)));
+  const { shot, vis, xs } = rowShot(W, H, s.items.length, head ? 0.62 : 1.0, head ? 0.98 * smax : 0, (head ? 1.62 : 1.66) * smax, tb, lb);
+  return (
+    <AbsoluteFill style={{ background: PAPER }}>
+      <ToyCanvas shot={shot}>
+        <Floor />
+        {s.items.map((it, i) => (
+          <Person key={i} look={it.look} pose={defaultPose()} face={EXPR[it.expr ?? "grin"]} pos={[xs[i], 0, 0]} rot={[0, it.rotY ?? (head ? 0.32 : 0.18), 0]} />
+        ))}
+      </ToyCanvas>
+      {s.title ? band(s.title) : null}
+      <Labels items={s.items} xs={xs} vis={vis} W={W} H={H} lb={lb} />
+    </AbsoluteFill>
+  );
+};
+const CreatureStrip: React.FC<{ s: Extract<CardStrip, { kind: "creatures" }>; f: number }> = ({ s, f }) => {
+  const { width: W, height: H } = useVideoConfig();
+  const tb = s.title ? 64 : 0, lb = 84;
+  const { shot, vis, xs } = rowShot(W, H, s.items.length, 0.95, 0, 0.95, tb, lb);
+  return (
+    <AbsoluteFill style={{ background: PAPER }}>
+      <ToyCanvas shot={shot}>
+        <Floor />
+        {s.items.map((it, i) => (
+          <Creatures key={i} look={it.look} t={f * 0.37 + i} list={[{ p: [xs[i], 0, 0], yaw: 0.45, pose: it.pose ?? 1, seed: 7 + i, eye: 1 }]} max={2} />
+        ))}
+      </ToyCanvas>
+      {s.title ? band(s.title) : null}
+      <Labels items={s.items} xs={xs} vis={vis} W={W} H={H} lb={lb} />
+    </AbsoluteFill>
+  );
+};
+
+export const NekatCard: React.FC<CardProps> = ({ strips }) => {
+  const f = useCurrentFrame();
+  const [h] = useState(() => delayRender("fonts"));
+  useEffect(() => { nekatFonts().then(() => continueRender(h)); }, [h]);
+  const s = strips[f];
+  if (!s) return <AbsoluteFill style={{ background: PAPER }} />;
+  if (s.kind === "people") return <PeopleStrip s={s} />;
+  if (s.kind === "creatures") return <CreatureStrip s={s} f={f} />;
+  if (s.kind === "header") return (
+    <AbsoluteFill style={{ background: PAPER, padding: "40px 40px", color: INKC }}>
+      <div style={{ fontFamily: F_DISPLAY, fontSize: 76, letterSpacing: 1 }}>{s.title}</div>
+      <div style={{ width: 120, height: 10, background: ACC, margin: "14px 0 20px", borderRadius: 5 }} />
+      {s.lines.map((l, i) => <div key={i} style={{ fontFamily: F_TEXT, fontWeight: 700, fontSize: 30, lineHeight: 1.3, marginBottom: 6, color: i === s.lines.length - 1 ? "#d5711a" : INKC }}>{l}</div>)}
+    </AbsoluteFill>
+  );
+  return (
+    <AbsoluteFill style={{ background: PAPER, color: INKC }}>
+      {band(s.title)}
+      <div style={{ position: "absolute", top: 84, left: 32, right: 32, display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gap: 10 }}>
+        {s.colors.map((c) => (
+          <div key={c.code} style={{ textAlign: "center" }}>
+            <div style={{ height: 52, background: c.hex, border: `4px solid ${INKC}`, borderRadius: 12 }} />
+            <div style={{ fontFamily: F_DISPLAY, fontSize: 24, color: "#d5711a", marginTop: 4 }}>{c.code}</div>
+            <div style={{ fontFamily: F_TEXT, fontWeight: 700, fontSize: 16 }}>{c.name}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{ position: "absolute", left: 32, right: 32, bottom: 20 }}>
+        {s.lines.map((l, i) => <div key={i} style={{ fontFamily: F_TEXT, fontWeight: 700, fontSize: 22, lineHeight: 1.32, marginTop: 6 }}>{l}</div>)}
+      </div>
+    </AbsoluteFill>
+  );
+};
+export const cardMetadata = ({ props }: { props: CardProps }) => ({ durationInFrames: Math.max(1, props.strips.length), height: props.h || 400 });
+
+// ------------------------------------------------------------------ SetLook: one set from several cameras (look development)
+//   frame 0 the authored wide view, 1 the hero's spot from the front, 2 from the left, 3 from the right, 4 high crane,
+//   5 the set full of creatures (600 kucing) from the wide view. Props: { "set": "kebun", "creature": "ayam-putih" }.
+import { SETS } from "./sets/index.ts";
+import { SET_PICTURES } from "./sets/scenes.tsx";
+import { homes } from "./population.ts";
+import { resolveCreature } from "./cast.ts";
+export const SetLook: React.FC<{ set: string; creature?: string; n?: number }> = ({ set, creature = "kucing-oren", n = 600 }) => {
+  const f = useCurrentFrame();
+  const [h] = useState(() => delayRender("fonts"));
+  useEffect(() => { nekatFonts().then(() => continueRender(h)); }, [h]);
+  const S = SETS[set];
+  const Pic = SET_PICTURES[set];
+  const P = S.hero;
+  const views: Shot[] = [
+    { ...S.wide, shadowAt: [P[0], 0, P[2]], shadowBox: 14 },
+    { pos: [P[0] + 0.4, 2.3, P[2] + 5.6], target: [P[0], 1.0, P[2] + 0.6], fov: 50, shadowAt: [P[0], 0, P[2]], shadowBox: 8 },
+    { pos: [P[0] - 5.5, 2.2, P[2] + 3.2], target: [P[0], 1.0, P[2] + 0.4], fov: 50, shadowAt: [P[0], 0, P[2]], shadowBox: 9 },
+    { pos: [P[0] + 5.5, 2.2, P[2] + 3.2], target: [P[0], 1.0, P[2] + 0.4], fov: 50, shadowAt: [P[0], 0, P[2]], shadowBox: 9 },
+    { ...S.top, shadowAt: [P[0], 0, P[2]], shadowBox: 16 },
+    { ...S.wide, shadowAt: [P[0], 0, P[2]], shadowBox: 16 },
+  ];
+  const look = resolveCreature(creature);
+  const crowd = f === 5 ? homes(S, look.species, true).slice(0, n) : [];
+  return (
+    <AbsoluteFill style={{ background: "#a9dcf3" }}>
+      <ToyCanvas shot={views[Math.min(f, views.length - 1)]}>
+        <Pic hideZ={f === 1 ? 3.7 : undefined} />
+        {f === 5 ? <Creatures list={crowd} t={1} look={look} /> : null}
+        <Person look={{ skin: "#c98d63", hair: { style: "short", color: "#2a2522" }, top: { kind: "singlet", color: "#f6f3ea" }, bottom: { kind: "sarung", color: "#3f6f8f" } }} pose={defaultPose()} face={EXPR.neutral} pos={P} />
+      </ToyCanvas>
+    </AbsoluteFill>
+  );
+};
+
+==== 17553 project/src/nekat/cast.ts
+// NEKAT cast library (original designs): human presets for the duo (T codes) and creature presets with colour
+// variants (H codes). A story picks a preset and may override any look field; buyers describe people with the codes
+// on the kartu tokoh (`make.mjs --menu`). Pure data + validation (node + browser).
+import { SPECIES } from "./species.ts";
+
+export type HairStyle = "short" | "ring" | "none" | "bun" | "long" | "spiky";
+export type HatKind = "none" | "peci" | "kerudung" | "topi" | "caping";
+export type TopKind = "singlet" | "kaos" | "kemeja" | "daster";
+export type BottomKind = "sarung" | "shorts" | "pants" | "skirt";
+export type PersonLook = {
+  skin: string;
+  build?: { s?: number; belly?: number; head?: number };
+  hair?: { style: HairStyle; color: string };
+  face?: { moustache?: boolean; beard?: boolean; glasses?: boolean; lashes?: boolean; blush?: boolean; brows?: "thin" | "thick" | "bushy" };
+  /** color2 = collar / pocket (kemeja) or the stripe colour when stripes: true */
+  top: { kind: TopKind; color: string; color2?: string; stripes?: boolean };
+  /** sarung: color2 + color3 = the two plaid lines; skirt / pants / shorts: color2 = a waist band */
+  bottom: { kind: BottomKind; color: string; color2?: string; color3?: string };
+  hat?: { kind: HatKind; color?: string };
+  feet?: { kind: "sandal" | "shoes"; color: string; color2?: string };
+  towel?: string;
+};
+export type CreatureLook = { species: string; body: string; accent: string; belly: string; nose: string; eye?: string; pattern?: "stripes" | "spots" | "plain" };
+
+export const PEOPLE: Record<string, { about: string; look: PersonLook }> = {
+  bapak: { about: "bapak gang: kaos kutang, sarung kotak, sandal jepit, kumis tebal", look: {
+    skin: "#c98d63", hair: { style: "short", color: "#2a2522" }, face: { moustache: true, brows: "thick" },
+    top: { kind: "singlet", color: "#f6f3ea" }, bottom: { kind: "sarung", color: "#3f6f8f", color2: "#2c4f69", color3: "#e7c66b" },
+    feet: { kind: "sandal", color: "#4c8fd0", color2: "#f2f2f0" } } },
+  ibu: { about: "ibu: kerudung, daster panjang, sandal", look: {
+    skin: "#d9a27a", build: { belly: 1.02 }, face: { lashes: true, blush: true, brows: "thin" }, hat: { kind: "kerudung", color: "#d9577a" },
+    top: { kind: "daster", color: "#6aa6d8", color2: "#f4f1e8" }, bottom: { kind: "skirt", color: "#6aa6d8" },
+    feet: { kind: "sandal", color: "#e8833a", color2: "#f2f2f0" } } },
+  bocil: { about: "bocil: anak kecil, kaos belang, celana pendek, rambut jabrik", look: {
+    skin: "#d09a70", build: { s: 0.72, head: 1.2, belly: 0.92 }, hair: { style: "spiky", color: "#231c18" }, face: { brows: "thin" },
+    top: { kind: "kaos", color: "#e2574c", color2: "#fbf7ee", stripes: true }, bottom: { kind: "shorts", color: "#2f4f93" },
+    feet: { kind: "sandal", color: "#5b9a4b", color2: "#f2f2f0" } } },
+  kakek: { about: "kakek: botak pinggir uban, peci, kemeja, sarung hijau, kacamata", look: {
+    skin: "#c08660", build: { s: 0.96, belly: 0.94 }, hair: { style: "ring", color: "#e6e2da" }, face: { moustache: true, glasses: true, brows: "bushy" },
+    hat: { kind: "peci", color: "#2b2626" }, top: { kind: "kemeja", color: "#f1ede4", color2: "#d8d2c4" },
+    bottom: { kind: "sarung", color: "#3b6b4a", color2: "#2b4f36", color3: "#d8c27a" }, feet: { kind: "sandal", color: "#6b4a2a", color2: "#3a2a1c" } } },
+  nenek: { about: "nenek: sanggul uban, kacamata, baju cokelat, rok panjang", look: {
+    skin: "#c99470", build: { s: 0.92, belly: 0.96 }, hair: { style: "bun", color: "#cfcac2" }, face: { glasses: true, lashes: true, brows: "thin" },
+    top: { kind: "kaos", color: "#a8664a" }, bottom: { kind: "skirt", color: "#6b4a2a", color2: "#e8c58a" },
+    feet: { kind: "sandal", color: "#8a5a3a", color2: "#3a2a1c" } } },
+  satpam: { about: "satpam: kemeja putih, celana & topi biru tua, sepatu hitam, kumis", look: {
+    skin: "#b98058", build: { belly: 1.06 }, hair: { style: "short", color: "#1d1917" }, face: { moustache: true, brows: "thick" },
+    hat: { kind: "topi", color: "#2f3a5a" }, top: { kind: "kemeja", color: "#f4f2ec", color2: "#2f3a5a" }, bottom: { kind: "pants", color: "#2f3a5a", color2: "#1d1917" },
+    feet: { kind: "shoes", color: "#1d1917" } } },
+  pemuda: { about: "pemuda: kaos oranye, celana panjang, rambut jabrik", look: {
+    skin: "#c98d63", build: { belly: 0.86 }, hair: { style: "spiky", color: "#1d1917" }, face: { brows: "thick" },
+    top: { kind: "kaos", color: "#e8833a" }, bottom: { kind: "pants", color: "#3a5a8a" }, feet: { kind: "sandal", color: "#2c2930", color2: "#f2f2f0" } } },
+  mbak: { about: "mbak: rambut panjang, kaos kuning, rok biru muda", look: {
+    skin: "#e0b08a", build: { s: 0.97, belly: 0.84 }, hair: { style: "long", color: "#2a1a12" }, face: { lashes: true, blush: true, brows: "thin" },
+    top: { kind: "kaos", color: "#f2c94c" }, bottom: { kind: "skirt", color: "#6aa6d8" }, feet: { kind: "sandal", color: "#d9577a", color2: "#f2f2f0" } } },
+  pakrt: { about: "pak RT: kemeja marun, peci, celana panjang, perut buncit, kumis", look: {
+    skin: "#bf8660", build: { belly: 1.28 }, hair: { style: "short", color: "#1d1917" }, face: { moustache: true, brows: "bushy" },
+    hat: { kind: "peci", color: "#1d1917" }, top: { kind: "kemeja", color: "#a3262e", color2: "#e8c58a" }, bottom: { kind: "pants", color: "#3a3532" },
+    feet: { kind: "sandal", color: "#3a2a1c", color2: "#6b4a2a" } } },
+};
+
+export const CREATURES: Record<string, { about: string; look: CreatureLook }> = {
+  "kucing-oren": { about: "kucing oren belang (the classic)", look: { species: "kucing", body: "#f29a3f", accent: "#c8662a", belly: "#fbf3e6", nose: "#e98a8f", eye: "#2a211d", pattern: "stripes" } },
+  "kucing-hitam": { about: "kucing hitam, dada putih", look: { species: "kucing", body: "#3d373b", accent: "#2a2528", belly: "#f4efe6", nose: "#e2a0a6", eye: "#e8c34a", pattern: "plain" } },
+  "kucing-belang": { about: "kucing belang tiga (putih + bercak oranye)", look: { species: "kucing", body: "#f6f1e7", accent: "#e08a3c", belly: "#ffffff", nose: "#e98a8f", eye: "#2a211d", pattern: "spots" } },
+  "kucing-abu": { about: "kucing abu belang", look: { species: "kucing", body: "#a3a8ae", accent: "#6e747c", belly: "#eef0f2", nose: "#e2a0a6", eye: "#2a211d", pattern: "stripes" } },
+  "ayam-putih": { about: "ayam putih, jengger merah", look: { species: "ayam", body: "#f7f4ec", accent: "#e6e0d0", belly: "#ffffff", nose: "#f2b33d", eye: "#231c18", pattern: "plain" } },
+  "ayam-cokelat": { about: "ayam kampung cokelat", look: { species: "ayam", body: "#b5683c", accent: "#7a3f22", belly: "#e0a466", nose: "#f2b33d", eye: "#231c18", pattern: "plain" } },
+  "bebek-putih": { about: "bebek putih, paruh oranye", look: { species: "bebek", body: "#f7f6f0", accent: "#e3e1d8", belly: "#ffffff", nose: "#f39a3a", eye: "#231c18", pattern: "plain" } },
+  "bebek-cokelat": { about: "bebek cokelat", look: { species: "bebek", body: "#a87b55", accent: "#6e4d33", belly: "#d9b98f", nose: "#e8a33a", eye: "#231c18", pattern: "plain" } },
+  "kambing-putih": { about: "kambing putih", look: { species: "kambing", body: "#f3efe6", accent: "#d9d2c4", belly: "#ffffff", nose: "#e5a3a3", eye: "#2a211d", pattern: "plain" } },
+  "kambing-cokelat": { about: "kambing cokelat bercak", look: { species: "kambing", body: "#9a6a45", accent: "#f0e6d6", belly: "#e2c8a4", nose: "#3a2a22", eye: "#2a211d", pattern: "spots" } },
+  "kambing-hitam": { about: "kambing hitam", look: { species: "kambing", body: "#3e3836", accent: "#ece6dc", belly: "#6a605c", nose: "#2a2422", eye: "#e8c34a", pattern: "plain" } },
+};
+
+const isObj = (x: unknown): x is Record<string, unknown> => !!x && typeof x === "object" && !Array.isArray(x);
+const deep = (a: Record<string, unknown>, b: Record<string, unknown>): Record<string, unknown> => {
+  const o: Record<string, unknown> = { ...a };
+  for (const [k, v] of Object.entries(b)) o[k] = isObj(v) && isObj(a[k]) ? deep(a[k] as Record<string, unknown>, v) : v;
+  return o;
+};
+/** Deep-merge look overrides (later wins). */
+export const mergeLook = (a?: Record<string, unknown>, b?: Record<string, unknown>): Record<string, unknown> => deep(a ?? {}, b ?? {});
+export const resolvePerson = (preset: string, over?: Record<string, unknown>): PersonLook => {
+  const p = PEOPLE[preset];
+  if (!p) throw new Error(`person preset "${preset}" does not exist (have: ${Object.keys(PEOPLE).join(", ")})`);
+  return (over ? deep(p.look as unknown as Record<string, unknown>, over) : p.look) as unknown as PersonLook;
+};
+export const resolveCreature = (preset: string, over?: Record<string, unknown>): CreatureLook => {
+  const p = CREATURES[preset] ?? Object.values(CREATURES).find((c) => c.look.species === preset);
+  if (!p) throw new Error(`creature "${preset}" does not exist (have: ${Object.keys(CREATURES).join(", ")})`);
+  return (over ? deep(p.look as unknown as Record<string, unknown>, over) : p.look) as unknown as CreatureLook;
+};
+
+// ------------------------------------------------------------------ KARTU TOKOH codes
+export const MENU = {
+  hair: [
+    { code: "R1", name: "pendek", style: "short" }, { code: "R2", name: "botak pinggir", style: "ring" }, { code: "R3", name: "botak", style: "none" },
+    { code: "R4", name: "sanggul", style: "bun" }, { code: "R5", name: "panjang", style: "long" }, { code: "R6", name: "jabrik", style: "spiky" },
+  ],
+  hat: [
+    { code: "K1", name: "tanpa", kind: "none" }, { code: "K2", name: "peci", kind: "peci" }, { code: "K3", name: "kerudung", kind: "kerudung" },
+    { code: "K4", name: "topi", kind: "topi" }, { code: "K5", name: "caping", kind: "caping" },
+  ],
+  face: [
+    { code: "F1", name: "kumis", face: { moustache: true } }, { code: "F2", name: "jenggot", face: { beard: true } }, { code: "F3", name: "kacamata", face: { glasses: true } },
+    { code: "F4", name: "bulu mata", face: { lashes: true } }, { code: "F5", name: "pipi merah", face: { blush: true } }, { code: "F6", name: "alis tebal", face: { brows: "bushy" } },
+  ],
+  build: [
+    { code: "B1", name: "anak", build: { s: 0.72, head: 1.2, belly: 0.92 } }, { code: "B2", name: "kurus", build: { belly: 0.82 } },
+    { code: "B3", name: "sedang", build: { belly: 1 } }, { code: "B4", name: "gendut", build: { belly: 1.3 } }, { code: "B5", name: "tinggi", build: { s: 1.08 } },
+  ],
+  top: [
+    { code: "A1", name: "kaos kutang", kind: "singlet" }, { code: "A2", name: "kaos", kind: "kaos" }, { code: "A3", name: "kemeja", kind: "kemeja" }, { code: "A4", name: "daster", kind: "daster" },
+  ],
+  bottom: [
+    { code: "S1", name: "sarung", kind: "sarung" }, { code: "S2", name: "celana pendek", kind: "shorts" }, { code: "S3", name: "celana panjang", kind: "pants" }, { code: "S4", name: "rok panjang", kind: "skirt" },
+  ],
+  skin: [
+    { code: "KL1", name: "kulit terang", hex: "#eac3a0" }, { code: "KL2", name: "kuning langsat", hex: "#dcaa80" },
+    { code: "KL3", name: "sawo matang", hex: "#c98d63" }, { code: "KL4", name: "cokelat gelap", hex: "#94603e" },
+  ],
+  colors: [
+    { code: "W1", name: "merah", hex: "#d8412f" }, { code: "W2", name: "oranye", hex: "#e8833a" }, { code: "W3", name: "kuning", hex: "#f2c94c" },
+    { code: "W4", name: "hijau", hex: "#5b9a4b" }, { code: "W5", name: "tosca", hex: "#2f9c93" }, { code: "W6", name: "biru muda", hex: "#6aa6d8" },
+    { code: "W7", name: "biru", hex: "#3a7bd5" }, { code: "W8", name: "dongker", hex: "#2f3a5a" }, { code: "W9", name: "ungu", hex: "#8a5ab8" },
+    { code: "W10", name: "pink", hex: "#d9577a" }, { code: "W11", name: "marun", hex: "#a3262e" }, { code: "W12", name: "cokelat", hex: "#8a5a3a" },
+    { code: "W13", name: "krem", hex: "#efe2c4" }, { code: "W14", name: "putih", hex: "#f6f3ea" }, { code: "W15", name: "abu", hex: "#8d8f94" }, { code: "W16", name: "hitam", hex: "#2c2930" },
+  ],
+} as const;
+export const tokohCode = (preset: string) => `T${Object.keys(PEOPLE).indexOf(preset) + 1}`;
+export const hewanCode = (preset: string) => `H${Object.keys(CREATURES).indexOf(preset) + 1}`;
+
+export const menuText = () => [
+  "KARTU TOKOH codes (buyer says a code or a word → write the field):",
+  "  T1…T" + Object.keys(PEOPLE).length + " orang = \"preset\": " + Object.keys(PEOPLE).map((k) => `${tokohCode(k)} ${k}`).join(", "),
+  "  H1…H" + Object.keys(CREATURES).length + " hewan = \"creature\": " + Object.keys(CREATURES).map((k) => `${hewanCode(k)} ${k}`).join(", "),
+  "  rambut  → hair.style (+ hair.color): " + MENU.hair.map((h) => `${h.code} ${h.name}="${h.style}"`).join(", "),
+  "  penutup kepala → hat.kind (+ hat.color): " + MENU.hat.map((h) => `${h.code} ${h.name}="${h.kind}"`).join(", "),
+  "  wajah   → face: " + MENU.face.map((f) => `${f.code} ${f.name}=${JSON.stringify(f.face)}`).join(", "),
+  "  badan   → build: " + MENU.build.map((b) => `${b.code} ${b.name}=${JSON.stringify(b.build)}`).join(", "),
+  "  atasan  → top.kind (+ top.color, top.color2, top.stripes): " + MENU.top.map((t) => `${t.code} ${t.name}="${t.kind}"`).join(", "),
+  "  bawahan → bottom.kind (+ bottom.color; sarung color2/color3 = garis kotak): " + MENU.bottom.map((t) => `${t.code} ${t.name}="${t.kind}"`).join(", "),
+  "  kulit   → skin: " + MENU.skin.map((c) => `${c.code} ${c.name} ${c.hex}`).join(", "),
+  "  warna   → any colour field: " + MENU.colors.map((c) => `${c.code} ${c.name} ${c.hex}`).join(", "),
+  "  hewan   → creature look: body, accent (belang / bercak / sayap), belly, nose (hidung / paruh + kaki unggas), eye, pattern stripes|spots|plain",
+  "  A colour the buyer names that is not on the card: pick a flat hex close to it (no neon, no gradients).",
+].join("\n");
+
+// ------------------------------------------------------------------ validation (buyer-made looks are checked)
+const HEX = /^#[0-9a-fA-F]{6}$/;
+const RANGE: Record<string, [number, number]> = { s: [0.65, 1.15], belly: [0.8, 1.4], head: [0.85, 1.3] };
+export const personProblems = (look: Record<string, unknown>): string[] => {
+  const p: string[] = [];
+  const known = ["skin", "build", "hair", "face", "top", "bottom", "hat", "feet", "towel"];
+  for (const k of Object.keys(look)) if (!known.includes(k)) p.push(`unknown look field "${k}" (have: ${known.join(", ")})`);
+  const hex = (v: unknown, where: string) => { if (typeof v !== "string" || !HEX.test(v)) p.push(`${where} must be a colour like "#3a7bd5" (got ${JSON.stringify(v)})`); };
+  hex(look.skin, "skin");
+  const obj = (k: string, fields: Record<string, "hex" | "bool" | string[] | [number, number]>, required: string[] = [], must = false) => {
+    const v = look[k];
+    if (v === undefined) { if (must) p.push(`${k} missing`); return; }
+    if (!isObj(v)) { p.push(`${k} must be an object`); return; }
+    for (const r of required) if (v[r] === undefined) p.push(`${k}.${r} missing`);
+    for (const [f, val] of Object.entries(v)) {
+      const rule = fields[f];
+      if (!rule) { p.push(`unknown ${k} field "${f}" (have: ${Object.keys(fields).join(", ")})`); continue; }
+      if (rule === "hex") hex(val, `${k}.${f}`);
+      else if (rule === "bool") { if (typeof val !== "boolean") p.push(`${k}.${f} must be true or false`); }
+      else if (typeof rule[0] === "number") { const [a, b] = rule as [number, number]; if (typeof val !== "number" || val < a || val > b) p.push(`${k}.${f} must be a number ${a}–${b} (got ${JSON.stringify(val)})`); }
+      else if (!(rule as string[]).includes(String(val))) p.push(`${k}.${f} "${val}" unknown (have: ${(rule as string[]).join(", ")})`);
+    }
+  };
+  obj("build", { s: RANGE.s, belly: RANGE.belly, head: RANGE.head });
+  obj("hair", { style: MENU.hair.map((h) => h.style), color: "hex" }, ["style", "color"]);
+  obj("face", { moustache: "bool", beard: "bool", glasses: "bool", lashes: "bool", blush: "bool", brows: ["thin", "thick", "bushy"] });
+  obj("top", { kind: MENU.top.map((t) => t.kind), color: "hex", color2: "hex", stripes: "bool" }, ["kind", "color"], true);
+  obj("bottom", { kind: MENU.bottom.map((t) => t.kind), color: "hex", color2: "hex", color3: "hex" }, ["kind", "color"], true);
+  obj("hat", { kind: MENU.hat.map((h) => h.kind), color: "hex" }, ["kind"]);
+  obj("feet", { kind: ["sandal", "shoes"], color: "hex", color2: "hex" }, ["kind", "color"]);
+  if (look.towel !== undefined) hex(look.towel, "towel");
+  const top = look.top as Record<string, unknown> | undefined, bottom = look.bottom as Record<string, unknown> | undefined;
+  if (top?.kind === "daster" && bottom && bottom.kind !== "skirt") p.push(`top.kind "daster" is a long dress: use bottom.kind "skirt" (same colour)`);
+  return p;
+};
+export const creatureProblems = (look: Record<string, unknown>): string[] => {
+  const p: string[] = [];
+  const known = ["species", "body", "accent", "belly", "nose", "eye", "pattern"];
+  for (const k of Object.keys(look)) if (!known.includes(k)) p.push(`unknown creature field "${k}" (have: ${known.join(", ")})`);
+  if (!SPECIES[String(look.species)]) p.push(`species "${look.species}" unknown (have: ${Object.keys(SPECIES).join(", ")}) — another animal needs a new species in src/nekat/species.ts`);
+  for (const k of ["body", "accent", "belly", "nose"]) if (typeof look[k] !== "string" || !HEX.test(String(look[k]))) p.push(`${k} must be a colour like "#f29a3f" (got ${JSON.stringify(look[k])})`);
+  if (look.eye !== undefined && (typeof look.eye !== "string" || !HEX.test(look.eye))) p.push(`eye must be a colour`);
+  if (look.pattern !== undefined && !["stripes", "spots", "plain"].includes(String(look.pattern))) p.push(`pattern "${look.pattern}" unknown (have: stripes, spots, plain)`);
+  return p;
+};
+
+==== 10512 project/src/nekat/crowd.ts
+// NEKAT crowd layout — where hundreds of creatures go without passing through each other or the set. Pure TypeScript.
+//   scatter(): one layer on a floor (oriented-rectangle footprints, separating-axis test, exclusion zones)
+//   Pile:      a height-map "drop": each creature lands on the highest thing under its footprint (ground, set pieces,
+//              other creatures, a lying person) and stamps its own top surface in — stacks never interpenetrate.
+//   row():     along a ledge (fence top, bench); slope(): on a tilted plane (a roof).
+// Footprints and top surfaces come from the species data (species.ts › shapeOf). Everything is seeded: the same layout
+// on every frame and in every render tab.
+import { hash, rng, type V3 } from "./math.ts";
+import { SPECIES, shapeOf } from "./species.ts";
+
+export type Inst = {
+  p: V3;
+  yaw: number;
+  pose: number;
+  s?: number;
+  pitch?: number;
+  roll?: number;
+  squash?: number;
+  eye?: number;
+  seed: number;
+  wag?: number;
+};
+
+type Rect = { c: [number, number]; ax: [number, number]; az: [number, number]; hx: number; hz: number };
+export const rectOf = (sp: string, pose: number, x: number, z: number, yaw: number, s = 1, pad = 0.012): Rect => {
+  const f = shapeOf(sp, pose).foot;
+  const c = Math.cos(yaw), sn = Math.sin(yaw);
+  const ax: [number, number] = [c, -sn], az: [number, number] = [sn, c];
+  return { c: [x + (ax[0] * f.cx + az[0] * f.cz) * s, z + (ax[1] * f.cx + az[1] * f.cz) * s], ax, az, hx: f.hx * s + pad, hz: f.hz * s + pad };
+};
+const overlap = (a: Rect, b: Rect) => {
+  const d: [number, number] = [b.c[0] - a.c[0], b.c[1] - a.c[1]];
+  for (const axis of [a.ax, a.az, b.ax, b.az]) {
+    const proj = (r: Rect) => r.hx * Math.abs(r.ax[0] * axis[0] + r.ax[1] * axis[1]) + r.hz * Math.abs(r.az[0] * axis[0] + r.az[1] * axis[1]);
+    if (Math.abs(d[0] * axis[0] + d[1] * axis[1]) > proj(a) + proj(b)) return false;
+  }
+  return true;
+};
+
+export type Zone = { kind: "circle"; c: [number, number]; r: number } | { kind: "rect"; x0: number; x1: number; z0: number; z1: number };
+const inZone = (r: Rect, zones: Zone[]) =>
+  zones.some((z) => {
+    if (z.kind === "circle") return Math.hypot(r.c[0] - z.c[0], r.c[1] - z.c[1]) < z.r + Math.max(r.hx, r.hz) * 0.85;
+    const ex = Math.abs(r.ax[0]) * r.hx + Math.abs(r.az[0]) * r.hz;
+    const ez = Math.abs(r.ax[1]) * r.hx + Math.abs(r.az[1]) * r.hz;
+    return r.c[0] + ex > z.x0 && r.c[0] - ex < z.x1 && r.c[1] + ez > z.z0 && r.c[1] - ez < z.z1;
+  });
+export const pointInZones = (x: number, z: number, zones: Zone[], pad = 0) =>
+  zones.some((q) => (q.kind === "circle" ? Math.hypot(x - q.c[0], z - q.c[1]) < q.r + pad : x > q.x0 - pad && x < q.x1 + pad && z > q.z0 - pad && z < q.z1 + pad));
+
+export type ScatterOpts = {
+  sp: string;
+  x0: number; x1: number; z0: number; z1: number; n: number; seed: number; y?: number;
+  avoid?: Zone[]; facing?: number; yawJitter?: number; altShare?: number; s?: number; tries?: number;
+  /** already-placed creatures to keep clear of */
+  existing?: Inst[];
+  /** sort candidates nearest this point first (fills outward from it) */
+  near?: [number, number];
+};
+/** One non-overlapping layer in a rectangle. Returns as many as fit (≤ n). */
+export const scatter = (o: ScatterOpts): Inst[] => {
+  const r = rng(o.seed);
+  const out: Inst[] = [];
+  const rects: Rect[] = (o.existing ?? []).map((c) => rectOf(o.sp, c.pose, c.p[0], c.p[2], c.yaw, c.s ?? 1));
+  const tries = o.tries ?? o.n * 40;
+  const alt = o.altShare ?? SPECIES[o.sp].altShare;
+  const cand: [number, number][] = [];
+  for (let k = 0; k < tries; k++) cand.push([o.x0 + r() * (o.x1 - o.x0), o.z0 + r() * (o.z1 - o.z0)]);
+  if (o.near) cand.sort((a, b) => Math.hypot(a[0] - o.near![0], a[1] - o.near![1]) - Math.hypot(b[0] - o.near![0], b[1] - o.near![1]));
+  for (const [x, z] of cand) {
+    if (out.length >= o.n) break;
+    const yaw = (o.facing ?? 0) + (r() * 2 - 1) * (o.yawJitter ?? 0.55);
+    const pose = r() < alt ? 1 : 0;
+    const s = (o.s ?? 1) * (0.92 + 0.12 * r());
+    const rc = rectOf(o.sp, pose, x, z, yaw, s);
+    if (o.avoid && inZone(rc, o.avoid)) continue;
+    if (rects.some((q) => overlap(q, rc))) continue;
+    rects.push(rc);
+    out.push({ p: [x, o.y ?? 0, z], yaw, pose, s, seed: o.seed * 1000 + out.length, eye: r() < 0.45 ? 0.5 : 1 });
+  }
+  return out;
+};
+
+// ------------------------------------------------------------------ height-map pile
+export type BoxTop = [number, number, number, number, number];
+export class Pile {
+  x0: number; z0: number; res: number; nx: number; nz: number; h: Float32Array; sp: string;
+  constructor(sp: string, x0: number, x1: number, z0: number, z1: number, res = 0.035) {
+    this.sp = sp;
+    this.x0 = x0;
+    this.z0 = z0;
+    this.res = res;
+    this.nx = Math.ceil((x1 - x0) / res) + 1;
+    this.nz = Math.ceil((z1 - z0) / res) + 1;
+    this.h = new Float32Array(this.nx * this.nz);
+  }
+  private cells(rc: Rect, fn: (i: number, x: number, z: number) => void) {
+    const ex = Math.abs(rc.ax[0]) * rc.hx + Math.abs(rc.az[0]) * rc.hz;
+    const ez = Math.abs(rc.ax[1]) * rc.hx + Math.abs(rc.az[1]) * rc.hz;
+    const i0 = Math.max(0, Math.floor((rc.c[0] - ex - this.x0) / this.res)), i1 = Math.min(this.nx - 1, Math.ceil((rc.c[0] + ex - this.x0) / this.res));
+    const j0 = Math.max(0, Math.floor((rc.c[1] - ez - this.z0) / this.res)), j1 = Math.min(this.nz - 1, Math.ceil((rc.c[1] + ez - this.z0) / this.res));
+    for (let j = j0; j <= j1; j++)
+      for (let i = i0; i <= i1; i++) {
+        const x = this.x0 + i * this.res, z = this.z0 + j * this.res;
+        const dx = x - rc.c[0], dz = z - rc.c[1];
+        if (Math.abs(dx * rc.ax[0] + dz * rc.ax[1]) <= rc.hx && Math.abs(dx * rc.az[0] + dz * rc.az[1]) <= rc.hz) fn(j * this.nx + i, x, z);
+      }
+  }
+  maxIn(x0: number, x1: number, z0: number, z1: number) {
+    let m = 0;
+    this.cells({ c: [(x0 + x1) / 2, (z0 + z1) / 2], ax: [1, 0], az: [0, 1], hx: (x1 - x0) / 2, hz: (z1 - z0) / 2 }, (i) => (m = Math.max(m, this.h[i])));
+    return m;
+  }
+  /** Raise an axis-aligned box region to `top` (set pieces, a lying body). */
+  box(x0: number, x1: number, z0: number, z1: number, top: number) {
+    this.cells({ c: [(x0 + x1) / 2, (z0 + z1) / 2], ax: [1, 0], az: [0, 1], hx: (x1 - x0) / 2, hz: (z1 - z0) / 2 }, (i) => (this.h[i] = Math.max(this.h[i], top)));
+  }
+  boxes(list: BoxTop[]) { for (const b of list) this.box(b[0], b[1], b[2], b[3], b[4]); return this; }
+  /** Drop one creature at (x, z): returns its resting height and stamps it in. */
+  place(pose: number, x: number, z: number, yaw: number, s = 1) {
+    const rc = rectOf(this.sp, pose, x, z, yaw, s, 0.005);
+    let y = 0;
+    this.cells(rc, (i) => (y = Math.max(y, this.h[i])));
+    const c = Math.cos(yaw), sn = Math.sin(yaw), top = shapeOf(this.sp, pose).top;
+    this.cells(rc, (i, wx, wz) => {
+      const dx = wx - x, dz = wz - z;
+      const lx = (dx * c - dz * sn) / s, lz = (dx * sn + dz * c) / s;
+      const tp = top(lx, lz);
+      if (tp >= 0) this.h[i] = Math.max(this.h[i], y + tp * s);
+    });
+    return y;
+  }
+  /** Drop n creatures around a centre (elliptic, centre-weighted, or uniform in a rect). Order = landing order. */
+  drop(o: { cx: number; cz: number; rx: number; rz: number; n: number; seed: number; facing?: number; yawJitter?: number; altShare?: number; best?: number; avoid?: Zone[]; power?: number; rect?: boolean; s?: number; cap?: (x: number, z: number) => number; minY?: number }): Inst[] {
+    const r = rng(o.seed);
+    const out: Inst[] = [];
+    let guard = 0, miss = 0;
+    const alt = o.altShare ?? SPECIES[this.sp].altShare * 0.35;
+    while (out.length < o.n && guard++ < o.n * 60 && miss < 250) {
+      let bestC: { x: number; z: number; y: number; yaw: number; pose: number; s: number } | null = null;
+      for (let k = 0; k < (o.best ?? 4); k++) {
+        const a = r() * Math.PI * 2, d = Math.pow(r(), o.power ?? 0.6);
+        const ux = r() * 2 - 1, uz = r() * 2 - 1;
+        const x = o.rect ? o.cx + ux * o.rx : o.cx + Math.cos(a) * d * o.rx, z = o.rect ? o.cz + uz * o.rz : o.cz + Math.sin(a) * d * o.rz;
+        const yaw = (o.facing ?? 0) + (r() * 2 - 1) * (o.yawJitter ?? 0.6);
+        const pose = r() < alt ? 1 : 0;
+        const s = (o.s ?? 1) * (0.92 + 0.12 * r());
+        if (o.avoid && inZone(rectOf(this.sp, pose, x, z, yaw, s), o.avoid)) continue;
+        const rc = rectOf(this.sp, pose, x, z, yaw, s, 0.005);
+        let y = 0;
+        this.cells(rc, (i) => (y = Math.max(y, this.h[i])));
+        if (o.cap && y > o.cap(x, z)) continue;
+        if (o.minY !== undefined && y < o.minY) continue;
+        if (!bestC || y < bestC.y) bestC = { x, z, y, yaw, pose, s };
+      }
+      if (!bestC) { miss++; continue; }
+      miss = 0;
+      const y = this.place(bestC.pose, bestC.x, bestC.z, bestC.yaw, bestC.s);
+      out.push({ p: [bestC.x, y, bestC.z], yaw: bestC.yaw, pose: bestC.pose, s: bestC.s, seed: o.seed * 1000 + out.length, eye: hash(o.seed + out.length) < 0.5 ? 0.5 : 1 });
+    }
+    return out;
+  }
+}
+
+/** Creatures in a row along a ledge from a to b (top surface height y), gaps between. */
+export const row = (sp: string, a: [number, number], b: [number, number], y: number, n: number, seed: number, facing = 0): Inst[] => {
+  const r = rng(seed);
+  const out: Inst[] = [];
+  for (let i = 0; i < n; i++) {
+    const u = n === 1 ? 0.5 : i / (n - 1);
+    out.push({ p: [a[0] + (b[0] - a[0]) * u, y, a[1] + (b[1] - a[1]) * u], yaw: facing + (r() * 2 - 1) * 0.25, pose: r() < SPECIES[sp].altShare ? 1 : 0, s: 0.9 + 0.1 * r(), seed: seed * 1000 + i, eye: r() < 0.5 ? 0.5 : 1 });
+  }
+  return out;
+};
+
+/** Creatures on a tilted plane: origin o, along-edge unit vector e (xz), down-slope yaw and slope angle; cols × rows. */
+export const slope = (o: V3, e: [number, number], downYaw: number, angle: number, cols: number, rows: number, dx: number, dz: number, seed: number, fill = 0.85): Inst[] => {
+  const r = rng(seed);
+  const out: Inst[] = [];
+  const up: [number, number] = [-Math.sin(downYaw), -Math.cos(downYaw)];
+  for (let j = 0; j < rows; j++)
+    for (let i = 0; i < cols; i++) {
+      if (r() > fill) continue;
+      const along = (i + (j % 2) * 0.5) * dx, upd = j * dz;
+      const hor = upd * Math.cos(angle);
+      out.push({ p: [o[0] + e[0] * along + up[0] * hor, o[1] + upd * Math.sin(angle), o[2] + e[1] * along + up[1] * hor], yaw: downYaw + (r() * 2 - 1) * 0.12, pitch: angle, pose: 0, s: 0.9 + 0.1 * r(), seed: seed * 1000 + out.length, eye: r() < 0.5 ? 0.5 : 1 });
+    }
+  return out;
+};
+
+==== 10034 project/src/nekat/Film.tsx
+// NEKAT film renderer: reads a compiled Plan (compile.ts) and draws it — one toy canvas for the whole episode (one set),
+// the camera of the current shot, the hero + partner, the crowd, tools and effects from acts.ts (pure data), and the
+// challenge HUD (counter, level chip, captions with speaker chips, hook title, PART card). Every frame is a pure function
+// of the plan and the frame number.
+import React, { useEffect, useState } from "react";
+import { AbsoluteFill, continueRender, delayRender, Html5Audio, staticFile, useCurrentFrame, useVideoConfig, type CalculateMetadataFunction } from "remotion";
+import { PerspectiveCamera, Vector3 } from "three";
+import { ToyCanvas, TOY_DAY, TOY_SORE, type Shot } from "./kit/Stage.tsx";
+import { Person } from "./kit/Person.tsx";
+import { Creatures } from "./kit/Creatures.tsx";
+import { Drips, Puffs, Rings, Wind } from "./kit/fx.tsx";
+import { BoxTrap, Bowl, Stick, Broom, Bucket, Drone, Fan, FireTruck, Flag, Hose, Net, Nozzle, Reel, Remote, Toa, Umbrella, Vacuum, WaterArc } from "./kit/props.tsx";
+import { Chair, Dressing } from "./sets/parts.tsx";
+import { Caption, Counter, LevelChip, PartCard, Title, Zzz, nekatFonts } from "./kit/Hud.tsx";
+import { SET_PICTURES } from "./sets/scenes.tsx";
+import { sceneAt, segIndexAt, type ToolDesc } from "./acts.ts";
+import { endCardAt } from "./compile.ts";
+import { qaNoOverlay, Solid } from "../core/qa/scene-qa.tsx";
+import type { Plan, PShot } from "./types.ts";
+import type { V3 } from "./math.ts";
+
+export type FilmProps = { plan: Plan; frames?: number[] };
+export const nekatMetadata: CalculateMetadataFunction<FilmProps> = ({ props }) => ({ durationInFrames: Math.max(1, Math.round(props.plan.duration * 60)) });
+export const nekatMetadata30: CalculateMetadataFunction<FilmProps> = ({ props }) => ({ durationInFrames: Math.max(1, Math.round(props.plan.duration * 30)) });
+export const nekatStillsMetadata: CalculateMetadataFunction<FilmProps> = ({ props }) => ({ durationInFrames: Math.max(1, props.frames?.length ?? 1) });
+
+const c01 = (x: number) => (x < 0 ? 0 : x > 1 ? 1 : x);
+const smoother = (x: number) => { const t = c01(x); return t * t * t * (t * (t * 6 - 15) + 10); };
+const mix = (a: number, b: number, t: number) => a + (b - a) * t;
+const mix3 = (a: V3, b: V3, t: number): V3 => [mix(a[0], b[0], t), mix(a[1], b[1], t), mix(a[2], b[2], t)];
+
+const camAt = (S: PShot, t: number): Shot => {
+  const hold = S.hold ?? 0;
+  const k = smoother((t - S.t0 - hold) / Math.max(0.01, S.t1 - S.t0 - hold));
+  return { pos: mix3(S.a.pos, S.b.pos, k), target: mix3(S.a.target, S.b.target, k), fov: mix(S.a.fov, S.b.fov, k), shadowAt: S.shadowAt, shadowBox: S.shadowBox };
+};
+/** Creatures this close to the shot's camera path are left out for the whole shot (no giant blur at the lens, no pop). */
+const NEAR = 0.85;
+const clearOfLens = (S: PShot, p: V3) => {
+  const a = S.a.pos, b = S.b.pos, q: V3 = [p[0], p[1] + 0.3, p[2]];
+  const ab: V3 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], aq: V3 = [q[0] - a[0], q[1] - a[1], q[2] - a[2]];
+  const L = ab[0] * ab[0] + ab[1] * ab[1] + ab[2] * ab[2];
+  const k = L > 1e-6 ? Math.max(0, Math.min(1, (aq[0] * ab[0] + aq[1] * ab[1] + aq[2] * ab[2]) / L)) : 0;
+  return Math.hypot(q[0] - a[0] - ab[0] * k, q[1] - a[1] - ab[1] * k, q[2] - a[2] - ab[2] * k) > NEAR;
+};
+const project = (shot: Shot, p: V3, w: number, h: number) => {
+  const c = new PerspectiveCamera(shot.fov, w / h, 0.05, 400);
+  c.position.set(...shot.pos);
+  c.lookAt(...shot.target);
+  c.updateMatrixWorld();
+  const v = new Vector3(...p).project(c);
+  return { x: (v.x * 0.5 + 0.5) * w, y: (1 - (v.y * 0.5 + 0.5)) * h };
+};
+
+const ToolView: React.FC<{ d: ToolDesc; t: number; tl: number }> = ({ d, t, tl }) => {
+  switch (d.kind) {
+    case "broom": return <Broom top={d.top} dir={d.dir} side={[1, 0, 0]} />;
+    case "hose": return (<><Reel p={d.reel} /><Hose pts={d.pts} /><Nozzle p={d.nozzle} dir={d.dir} /></>);
+    case "water": return <WaterArc from={d.from} vel={d.vel} t={t} on={d.on} n={d.n} r={d.r} seed={d.seed} />;
+    case "vacuum": return <Vacuum can={d.can} yaw={d.yaw} handle={d.handle} dir={d.dir} swell={d.swell} lid={d.lid} />;
+    case "truck": return <Solid id="truck" kind="set" touch={["*"]}><FireTruck p={d.p} yaw={d.yaw} spin={d.spin} aim={d.aim} cyaw={d.cyaw} ride={d.ride} /></Solid>;
+    case "fan": return <Solid id="fan" kind="set" touch={["*"]}><Fan p={d.p} yaw={d.yaw} spin={d.spin} /></Solid>;
+    case "wind": return <Wind p={d.p} dir={d.dir} t={t} on={d.on} />;
+    case "net": return <Net grip={d.grip} dir={d.dir} bag={d.bag} />;
+    case "bowl": return <Solid id="bowl" kind="prop" touch={["hero", "crowd"]}><Bowl p={d.p} /></Solid>;
+    case "toa": return <Toa p={d.p} dir={d.dir} horn={d.horn} />;
+    case "rings": return <Rings p={d.p} dir={d.dir} t={tl} t0={d.t0} t1={d.t1} color={d.color} />;
+    case "umbrella": return <Umbrella grip={d.grip} dir={d.dir} open={d.open} />;
+    case "drone": return <Solid id="drone" kind="prop" touch={["crowd"]}><Drone p={d.p} yaw={d.yaw} tilt={d.tilt} /></Solid>;
+    case "remote": return <Remote p={d.p} yaw={d.yaw} />;
+    case "box": return <BoxTrap p={d.p} yaw={d.yaw} tilt={d.tilt} />;
+    case "bucket": return <Bucket p={d.p} tilt={d.tilt} />;
+    case "drips": return <Drips p={d.p} t={t} t0={d.t0} />;
+    case "chair": return <Solid id="chair" kind="set" touch={["*"]}><group position={d.p} rotation={[0, d.yaw, 0]} scale={d.s}><Chair p={[0, 0, 0]} yaw={0} color="#e0524a" /></group></Solid>;
+    case "flag": return <Flag grip={d.grip} wave={d.wave} />;
+    case "stick": return <Stick p={d.p} lean={d.lean} hand={d.hand} />;
+  }
+};
+
+export const NekatFilm: React.FC<FilmProps> = ({ plan, frames }) => {
+  const at = useCurrentFrame();
+  const { fps, width, height } = useVideoConfig();
+  const frame = frames?.length ? frames[Math.min(frames.length - 1, at)] : at;
+  const T = frame / (frames?.length ? 30 : fps);
+  const [h] = useState(() => delayRender("nekat fonts"));
+  const [ok, setOk] = useState(false);
+  useEffect(() => { nekatFonts().then(() => { setOk(true); continueRender(h); }); }, [h]);
+  const Picture = SET_PICTURES[plan.set];
+  const light = plan.light === "sore" ? TOY_SORE : TOY_DAY;
+  if (!plan.shots.length) return <AbsoluteFill style={{ background: "#a9dcf3" }} />;
+  let si = 0;
+  for (let i = 0; i < plan.shots.length; i++) if (T >= plan.shots[i].t0) si = i;
+  const S = plan.shots[si];
+  const shot = camAt(S, T);
+  const seg = plan.segs[segIndexAt(plan, T)];
+  const sc = sceneAt(plan, T);
+  const crowd = sc.crowd.filter((q) => (S.hide === undefined || q.p[2] < S.hide - 0.05) && clearOfLens(S, q.p));
+  const wide = width > height, LW = wide ? 1920 : 1080, LH = wide ? 1080 : 1920;
+  const zzz = sc.zzz ? project(shot, sc.zzz.at, LW, LH) : null;
+  const end = plan.segs[plan.segs.length - 1];
+  const hold = sc.tools.some((d) => d.kind === "truck") ? ["truck", "tool", "chair"] : ["tool", "chair"];
+  const contact = seg.kind === "peak" || seg.kind === "ending" ? ["hero", "chair", "truck"] : [];
+  const hook = plan.segs[0];
+  return (
+    <AbsoluteFill style={{ background: light.sky }}>
+      {ok ? (
+        <>
+          <ToyCanvas shot={shot} light={light}>
+            <Picture hideZ={S.hide} />
+            {plan.dressing?.filter((d) => S.hide === undefined || d.at[1] < S.hide).map((d) => <Dressing key={d.name} d={d} />)}
+            {sc.hero ? (
+              <Solid id="hero" kind="body" touch={[...hold, ...(seg.kind === "ending" ? ["crowd"] : [])]}>
+                <Person look={plan.hero.look} pose={sc.hero.pose} face={sc.hero.face} blink={sc.hero.blink} pos={sc.hero.pos} rot={sc.hero.rot ?? [0, sc.hero.yaw, 0]} seated={sc.hero.seated} />
+              </Solid>
+            ) : null}
+            {sc.partner && plan.partner ? (
+              <Solid id="partner" kind="body">
+                <Person look={plan.partner.look} pose={sc.partner.pose} face={sc.partner.face} blink={sc.partner.blink} pos={sc.partner.pos} rot={[0, sc.partner.yaw, 0]} />
+              </Solid>
+            ) : null}
+            <Solid id="crowd" kind="set" touch={contact}>
+              <Creatures list={crowd} t={T} look={plan.pest.look} />
+            </Solid>
+            {sc.giant ? <Creatures list={[{ p: sc.giant.p, yaw: sc.giant.yaw, pose: 1, s: sc.giant.scale, seed: 5, eye: 1.1 }]} t={T} look={plan.pest.look} max={2} /> : null}
+            <Puffs puffs={sc.puffs} t={T} />
+            {sc.tools.map((d, i) => <React.Fragment key={`${d.kind}${i}`}><ToolView d={d} t={T} tl={T - seg.t0} /></React.Fragment>)}
+          </ToyCanvas>
+          {qaNoOverlay() ? null : (
+            <div style={{ position: "absolute", left: 0, top: 0, width: LW, height: LH, transform: `scale(${width / LW})`, transformOrigin: "0 0" }}>
+              {zzz && sc.zzz ? <Zzz t={T} x={zzz.x} y={zzz.y} show={sc.zzz.show} /> : null}
+              <Counter t={T} keys={plan.counter.keys} label={plan.counter.label} show={[0.35, 9999]} look={plan.pest.look} wide={wide} />
+              {plan.segs.filter((s) => s.level).map((s) => (
+                <LevelChip key={s.i} t={T} t0={s.t0 + 0.04} t1={s.t1} level={s.level!.n} tool={s.level!.label} wide={wide} />
+              ))}
+              <Title t={T} lines={plan.title} t0={0.08} t1={Math.min(hook.t1 - 0.05, 2.25)} y={wide ? 300 : 420} width={wide ? 1500 : 1020} />
+              {seg.lines.map((ln, i) => (
+                <Caption key={`${seg.i}-${i}`} t={T} line={{ text: ln.text, at: ln.t0, end: ln.t1, speaker: ln.who }} y={ln.y ?? (wide ? 850 : seg.kind === "peak" ? 1440 : 1250)} size={wide ? 80 : 100} width={wide ? 1500 : 980} />
+              ))}
+              {end.ending ? <PartCard t={T} t0={end.t0 + endCardAt(end)} part={end.ending.part} next={end.ending.next} y={end.ending.kind === "nap" || end.ending.kind === "adopt" ? (wide ? 300 : 430) : wide ? 640 : 1180} /> : null}
+            </div>
+          )}
+        </>
+      ) : null}
+      {plan.audio && !frames ? <Html5Audio src={staticFile(plan.audio)} /> : null}
+    </AbsoluteFill>
+  );
+};
+
+==== 13494 project/src/nekat/kit/Hud.tsx
+// NEKAT HUD — our own "challenge show" graphics, flat colours only: a cream sticker counter with a creature badge and
+// a sliding number, a ×N multiplier tag, a level chip naming the tool, chunky outlined captions with one highlighted
+// word (*like this*) and a speaker chip, a hook title and a PART card. Drawn in a 1080 × 1920 (or 1920 × 1080) frame.
+// Safe zones (portrait): nothing important above y 160 or below y 1610.
+import React from "react";
+import { continueRender, delayRender, staticFile } from "remotion";
+import { clamp, easeBack, easeOut, lin, smooth } from "../math.ts";
+import type { CreatureLook } from "../cast.ts";
+import { SPECIES } from "../species.ts";
+
+export const F_DISPLAY = "NekatLilita";
+export const F_TEXT = "NekatJakarta";
+export const INK = "#2b2533";
+export const ORANGE = "#ff9a2e";
+export const CREAM = "#fff8ec";
+
+let ready: Promise<void> | null = null;
+export const nekatFonts = (): Promise<void> => {
+  if (ready) return ready;
+  if (typeof document === "undefined") return (ready = Promise.resolve());
+  const h = delayRender("nekat fonts");
+  const faces = [
+    new FontFace(F_DISPLAY, `url(${staticFile("nekat/LilitaOne-Regular.ttf")}) format("truetype")`),
+    new FontFace(F_TEXT, `url(${staticFile("fonts/PlusJakartaSans_700Bold.ttf")}) format("truetype")`, { weight: "700" }),
+  ];
+  ready = Promise.all(faces.map(async (f) => { await f.load(); (document.fonts as unknown as { add(f: FontFace): void }).add(f); })).then(
+    () => continueRender(h),
+    (e) => { continueRender(h); throw e; },
+  );
+  return ready;
+};
+
+const fmt = (n: number) => n.toLocaleString("id-ID");
+
+/** Round badge of the counted creature, drawn from its look (cat / chicken / duck / goat). */
+export const CreatureBadge: React.FC<{ size: number; look: CreatureLook }> = ({ size, look }) => {
+  const kind = SPECIES[look.species]?.badge ?? "cat";
+  const B = look.body, A = look.accent, W = look.belly, N = look.nose;
+  const st = { stroke: INK, strokeWidth: 5, strokeLinejoin: "round" as const };
+  return (
+    <svg width={size} height={size} viewBox="0 0 100 100">
+      {kind === "cat" ? (
+        <>
+          <path d="M18 40 L22 10 L42 28 Z" fill={B} {...st} />
+          <path d="M82 40 L78 10 L58 28 Z" fill={B} {...st} />
+          <ellipse cx="50" cy="56" rx="38" ry="33" fill={B} {...st} />
+          {look.pattern !== "plain" ? <path d="M42 26 L44 38 M50 24 L50 37 M58 26 L56 38" stroke={A} strokeWidth="5" strokeLinecap="round" /> : null}
+          <ellipse cx="38" cy="58" rx="4.5" ry="6" fill={INK} />
+          <ellipse cx="62" cy="58" rx="4.5" ry="6" fill={INK} />
+          <ellipse cx="50" cy="71" rx="13" ry="9" fill={W} />
+          <path d="M46 67 L54 67 L50 71 Z" fill={N} />
+        </>
+      ) : kind === "chicken" ? (
+        <>
+          <circle cx="40" cy="20" r="8" fill="#e0483f" {...st} />
+          <circle cx="54" cy="17" r="9" fill="#e0483f" {...st} />
+          <ellipse cx="50" cy="56" rx="34" ry="34" fill={B} {...st} />
+          <path d="M80 54 L96 60 L80 66 Z" fill={N} {...st} />
+          <ellipse cx="66" cy="50" rx="5" ry="6.5" fill={INK} />
+          <path d="M72 70 Q76 82 70 86" stroke="#e0483f" strokeWidth="7" fill="none" strokeLinecap="round" />
+          <ellipse cx="38" cy="66" rx="14" ry="10" fill={A} {...st} />
+        </>
+      ) : kind === "duck" ? (
+        <>
+          <ellipse cx="48" cy="52" rx="34" ry="32" fill={B} {...st} />
+          <path d="M74 56 Q98 56 96 66 Q86 72 72 66 Z" fill={N} {...st} />
+          <ellipse cx="60" cy="44" rx="5" ry="6.5" fill={INK} />
+          <ellipse cx="32" cy="68" rx="14" ry="9" fill={A} {...st} />
+        </>
+      ) : (
+        <>
+          <path d="M34 26 Q28 8 18 10" stroke="#d8cbb0" strokeWidth="9" fill="none" strokeLinecap="round" />
+          <path d="M66 26 Q72 8 82 10" stroke="#d8cbb0" strokeWidth="9" fill="none" strokeLinecap="round" />
+          <ellipse cx="14" cy="44" rx="13" ry="6" fill={B} {...st} />
+          <ellipse cx="86" cy="44" rx="13" ry="6" fill={B} {...st} />
+          <ellipse cx="50" cy="50" rx="30" ry="32" fill={B} {...st} />
+          <ellipse cx="50" cy="68" rx="18" ry="13" fill={W} {...st} />
+          <ellipse cx="38" cy="46" rx="4.5" ry="6" fill={INK} />
+          <ellipse cx="62" cy="46" rx="4.5" ry="6" fill={INK} />
+          <path d="M44 64 L56 64" stroke={N} strokeWidth="5" strokeLinecap="round" />
+          <path d="M46 82 L50 96 L54 82 Z" fill={A} {...st} />
+        </>
+      )}
+    </svg>
+  );
+};
+
+/** Counter keys: [{t, n}] — value n from time t (s). Number slides (0.28 s), card bumps, ×N tag pops. */
+export const Counter: React.FC<{ t: number; keys: { t: number; n: number }[]; label: string; show: [number, number]; look: CreatureLook; wide?: boolean }> = ({ t, keys, label, show, look, wide }) => {
+  const inA = easeOut(lin(t, show[0], show[0] + 0.3));
+  const outA = 1 - smooth(lin(t, show[1] - 0.25, show[1]));
+  if (inA <= 0 || outA <= 0) return null;
+  let i = 0;
+  while (i < keys.length - 1 && t >= keys[i + 1].t) i++;
+  const cur = keys[i], prev = i > 0 ? keys[i - 1] : null;
+  const age = t - cur.t;
+  const slide = prev ? easeOut(clamp(age / 0.28)) : 1;
+  const bumpS = prev && age < 0.36 ? 1 + 0.09 * Math.sin((age / 0.36) * Math.PI) : 1;
+  const mult = prev ? Math.round(cur.n / prev.n) : 0;
+  const tagA = prev ? easeBack(clamp(age / 0.25), 2.2) * (1 - smooth(lin(age, 1.1, 1.35))) : 0;
+  const big = cur.n >= 1000;
+  const W = 600;
+  const fsz = (v: number) => Math.min(110, 400 / (fmt(v).length * 0.56));
+  return (
+    <div style={{ position: "absolute", left: wide ? 56 : 0, right: wide ? undefined : 0, top: wide ? 44 : 168, display: "flex", justifyContent: "center", opacity: outA, transform: `translateY(${(1 - inA) * -60}px)${wide ? " scale(0.82)" : ""}`, transformOrigin: "0 0" }}>
+      <div style={{ position: "relative", transform: `scale(${bumpS})` }}>
+        <div
+          style={{
+            width: W, height: 176, background: big ? ORANGE : CREAM, border: `8px solid ${INK}`, borderRadius: 40, boxShadow: `0 12px 0 ${INK}`,
+            display: "flex", alignItems: "center", padding: "0 30px", boxSizing: "border-box", gap: 22,
+          }}
+        >
+          <CreatureBadge size={118} look={look} />
+          <div style={{ display: "flex", flexDirection: "column", lineHeight: 1 }}>
+            <div style={{ fontFamily: F_DISPLAY, fontSize: 44, letterSpacing: 4, color: big ? CREAM : "#e9802a" }}>{label}</div>
+            <div style={{ position: "relative", height: 108, width: 380, overflow: "hidden" }}>
+              {prev && slide < 1 ? (
+                <div style={{ position: "absolute", left: 0, top: 0, fontFamily: F_DISPLAY, fontSize: fsz(prev.n), lineHeight: "108px", color: INK, transform: `translateY(${-slide * 110}px)` }}>{fmt(prev.n)}</div>
+              ) : null}
+              <div style={{ position: "absolute", left: 0, top: 0, fontFamily: F_DISPLAY, fontSize: fsz(cur.n), lineHeight: "108px", color: INK, transform: `translateY(${(1 - slide) * 110}px)` }}>{fmt(cur.n)}</div>
+            </div>
+          </div>
+        </div>
+        {tagA > 0.01 ? (
+          <div
+            style={{
+              position: "absolute", right: -46, top: -34, transform: `scale(${tagA}) rotate(10deg)`, background: "#e8453c", color: CREAM,
+              border: `7px solid ${INK}`, borderRadius: 26, padding: "6px 20px 2px", fontFamily: F_DISPLAY, fontSize: 64, boxShadow: `0 8px 0 ${INK}`,
+            }}
+          >
+            ×{mult}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+};
+
+/** Level chip under the counter: "LEVEL n" + tool name; slides in from the left. */
+export const LevelChip: React.FC<{ t: number; t0: number; t1: number; level: number; tool: string; wide?: boolean }> = ({ t, t0, t1, level, tool, wide }) => {
+  const a = easeOut(lin(t, t0, t0 + 0.28)) * (1 - smooth(lin(t, t1 - 0.2, t1)));
+  if (a <= 0.001) return null;
+  const size = tool.length > 18 ? 40 : 50;
+  return (
+    <div style={{ position: "absolute", left: wide ? 56 : 0, right: wide ? undefined : 0, top: wide ? 232 : 384, display: "flex", justifyContent: "center", opacity: a, transform: `translateX(${(1 - a) * -120}px)${wide ? " scale(0.82)" : ""}`, transformOrigin: "0 0" }}>
+      <div style={{ display: "flex", border: `7px solid ${INK}`, borderRadius: 999, overflow: "hidden", boxShadow: `0 9px 0 ${INK}` }}>
+        <div style={{ background: ORANGE, color: INK, fontFamily: F_DISPLAY, fontSize: size, padding: "8px 26px 2px", whiteSpace: "nowrap" }}>LEVEL {level}</div>
+        <div style={{ background: INK, color: CREAM, fontFamily: F_DISPLAY, fontSize: size, padding: "8px 30px 2px", letterSpacing: 1, whiteSpace: "nowrap" }}>{tool}</div>
+      </div>
+    </div>
+  );
+};
+
+export type Line = { text: string; at: number; end: number; speaker?: string };
+import { fitSize, wrap } from "../caption.ts";
+export { wrap };
+const renderText = (s: string) =>
+  s.split("\n").map((ln, li) => (
+    <div key={li}>
+      {ln.split(/(\*[^*]+\*)/g).map((part, pi) =>
+        part.startsWith("*") ? (
+          <span key={pi} style={{ color: ORANGE }}>{part.slice(1, -1)}</span>
+        ) : (
+          <span key={pi}>{part}</span>
+        ),
+      )}
+    </div>
+  ));
+
+/** Caption line: pops up (0.14 s ease), fades out (0.1 s). y = centre line. */
+export const Caption: React.FC<{ t: number; line: Line; y?: number; size?: number; width?: number }> = ({ t, line, y = 1250, size: size0 = 100, width = 980 }) => {
+  if (t < line.at || t > line.end) return null;
+  const size = fitSize(wrap(line.text), size0, width);
+  const a = easeBack(clamp((t - line.at) / 0.16), 1.4);
+  const out = 1 - smooth(lin(t, line.end - 0.1, line.end));
+  return (
+    <div style={{ position: "absolute", left: 50, right: 50, top: y, transform: `translateY(-50%) translateY(${(1 - a) * 30}px) scale(${0.9 + 0.1 * a})`, opacity: out * clamp(a * 3), textAlign: "center" }}>
+      {line.speaker ? (
+        <div style={{ display: "inline-block", marginBottom: 14, background: CREAM, color: INK, fontFamily: F_DISPLAY, fontSize: 40, padding: "6px 20px 0", borderRadius: 16, border: `6px solid ${INK}` }}>
+          {line.speaker}
+        </div>
+      ) : null}
+      <div
+        style={{
+          fontFamily: F_DISPLAY, fontSize: size, lineHeight: 1.08, color: "#ffffff", WebkitTextStroke: `${Math.round(size * 0.16)}px ${INK}`,
+          paintOrder: "stroke fill", letterSpacing: 1,
+        }}
+      >
+        {renderText(wrap(line.text))}
+      </div>
+    </div>
+  );
+};
+/** Hook title: 3 stacked lines pop in one after another; slides up and away at the end. */
+export const Title: React.FC<{ t: number; lines: string[]; t0: number; t1: number; y?: number; width?: number }> = ({ t, lines, t0, t1, y = 420, width = 1020 }) => {
+  if (t < t0 || t > t1) return null;
+  const out = smooth(lin(t, t1 - 0.25, t1));
+  const base = lines.length === 1 ? [118] : lines.length === 2 ? [86, 112] : [76, 118, 100];
+  const sizes = base.map((sz, i) => fitSize(lines[i] ?? "", sz, width));
+  return (
+    <div style={{ position: "absolute", left: 30, right: 30, top: y, textAlign: "center", opacity: 1 - out, transform: `translateY(${-out * 80}px)` }}>
+      {lines.map((ln, i) => {
+        const a = easeBack(clamp((t - t0 - i * 0.14) / 0.22), 1.8);
+        return (
+          <div
+            key={i}
+            style={{
+              fontFamily: F_DISPLAY, fontSize: sizes[i] ?? 100, lineHeight: 1.04, color: i === (lines.length > 1 ? 1 : 0) ? ORANGE : "#ffffff",
+              WebkitTextStroke: `${Math.round((sizes[i] ?? 100) * 0.15)}px ${INK}`, paintOrder: "stroke fill", transform: `scale(${a})`, opacity: clamp(a * 4),
+            }}
+          >
+            {renderText(ln)}
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+/** End card: tilted PART sticker + a small "to be continued" line. */
+export const PartCard: React.FC<{ t: number; t0: number; part: string; next: string; y?: number }> = ({ t, t0, part, next, y = 430 }) => {
+  if (t < t0) return null;
+  const a = easeBack(clamp((t - t0) / 0.3), 2);
+  const b = easeOut(clamp((t - t0 - 0.35) / 0.3));
+  return (
+    <div style={{ position: "absolute", left: 0, right: 0, top: y, display: "flex", flexDirection: "column", alignItems: "center", gap: 26 }}>
+      <div
+        style={{
+          transform: `scale(${a}) rotate(-5deg)`, background: ORANGE, color: INK, fontFamily: F_DISPLAY, fontSize: 150, padding: "18px 56px 4px",
+          border: `10px solid ${INK}`, borderRadius: 44, boxShadow: `0 16px 0 ${INK}`,
+        }}
+      >
+        {part}
+      </div>
+      <div style={{ opacity: b, transform: `translateY(${(1 - b) * 20}px)`, background: CREAM, color: INK, fontFamily: F_DISPLAY, fontSize: 52, padding: "10px 30px 2px", border: `7px solid ${INK}`, borderRadius: 22 }}>
+        {next}
+      </div>
+    </div>
+  );
+};
+
+/** 3D-anchored "Z z z" (screen-space position supplied by the caller). */
+export const Zzz: React.FC<{ t: number; x: number; y: number; show: number }> = ({ t, x, y, show }) => {
+  if (show <= 0) return null;
+  return (
+    <>
+      {[0, 1, 2].map((i) => {
+        const u = ((t * 0.55 + i / 3) % 1 + 1) % 1;
+        const a = Math.sin(u * Math.PI) * show;
+        return (
+          <div key={i} style={{ position: "absolute", left: x + u * 90 + i * 10, top: y - u * 170, opacity: a, fontFamily: F_DISPLAY, fontSize: 56 + i * 16, color: CREAM, WebkitTextStroke: `9px ${INK}`, paintOrder: "stroke fill" }}>
+            Z
+          </div>
+        );
+      })}
+    </>
+  );
+};
+
+==== 23162 project/src/nekat/kit/props.tsx
+// NEKAT tool props — the escalation ladder. Each tool is posed from a few numbers (acts.ts computes them) so the hero's
+// hands sit exactly on its grips: broom, hose + reel + water arc, bucket, vacuum, mini fire truck, giant fan, net,
+// bait bowl, megaphone / party horn + sound rings, umbrella, toy drone + remote, box trap, chair, white flag.
+import React, { useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import {
+  CatmullRomCurve3, CylinderGeometry, InstancedMesh, Matrix4, MeshStandardMaterial, Quaternion, SphereGeometry, TorusGeometry,
+  TubeGeometry, Vector3,
+} from "three";
+import { clay } from "./clay.ts";
+import { B, Ball, Cyl } from "../sets/parts.tsx";
+import { add, cross, mul, norm, type V3 } from "../math.ts";
+import { rb } from "./Person.tsx";
+import { TRUCK } from "../acts.ts";
+import { HUB, type Ride } from "../ride.ts";
+import { Solid } from "../../core/qa/scene-qa.tsx";
+/** QA tag for the working end of a held tool (handles inside the fist are not measured). */
+const Head: React.FC<{ children: React.ReactNode; touch?: string[] }> = ({ children, touch = ["hero", "crowd"] }) => <Solid id="tool" kind="prop" touch={touch}>{children}</Solid>;
+
+const cyl = new CylinderGeometry(1, 1, 1, 16, 1);
+const UP = new Vector3(0, 1, 0);
+
+/** Orientation whose +y = dir and +x ≈ side. */
+export const basis = (dir: V3, side: V3 = [1, 0, 0]): Quaternion => {
+  const y = new Vector3(...dir).normalize();
+  let x = new Vector3(...side);
+  x.sub(y.clone().multiplyScalar(x.dot(y)));
+  if (x.lengthSq() < 1e-6) x = new Vector3(0, 0, 1).cross(y);
+  x.normalize();
+  const z = new Vector3().crossVectors(x, y).normalize();
+  return new Quaternion().setFromRotationMatrix(new Matrix4().makeBasis(x, y, z));
+};
+const Rod: React.FC<{ a: V3; b: V3; r: number; c: string }> = ({ a, b, r, c }) => {
+  const va = new Vector3(...a), vb = new Vector3(...b);
+  const d = vb.clone().sub(va);
+  return <mesh geometry={cyl} material={clay(c)} position={va.clone().add(vb).multiplyScalar(0.5)} quaternion={new Quaternion().setFromUnitVectors(UP, d.clone().normalize())} scale={[r, d.length(), r]} castShadow receiveShadow />;
+};
+
+// ------------------------------------------------------------------ broom
+export const BROOM_LEN = 1.05;
+/** Grips (hand centres) on a broom held at its top end: right hand near the top, left hand lower. */
+export const broomGrips = (top: V3, dir: V3): { r: V3; l: V3 } => ({ r: add(top, mul(norm(dir), 0.1)), l: add(top, mul(norm(dir), 0.36)) });
+export const Broom: React.FC<{ top: V3; dir: V3; side?: V3; handle?: string; block?: string; fibre?: string }> = ({ top, dir, side = [1, 0, 0], handle = "#5fae7e", block = "#e2574c", fibre = "#3a2f28" }) => {
+  const d = norm(dir);
+  const head = add(top, mul(d, BROOM_LEN));
+  const q = basis(d, side);
+  return (
+    <>
+      <Rod a={top} b={head} r={0.018} c={handle} />
+      <Head><group position={head} quaternion={q}>
+        <B p={[0, 0.03, 0]} s={[0.34, 0.07, 0.06]} c={block} r={0.02} />
+        <B p={[0, 0.17, 0]} s={[0.36, 0.22, 0.045]} c={fibre} r={0.015} />
+        <B p={[0, 0.27, 0]} s={[0.4, 0.06, 0.04]} c={fibre} r={0.015} />
+      </group></Head>
+    </>
+  );
+};
+
+// ------------------------------------------------------------------ hose
+export const Tap: React.FC<{ p: V3 }> = ({ p }) => (
+  <group position={p}>
+    <Cyl p={[0, 0, 0.06]} r={0.025} h={0.12} c="#c9c6bd" rot={[Math.PI / 2, 0, 0]} />
+    <Cyl p={[0, 0.05, 0.1]} r={0.012} h={0.08} c="#c9c6bd" />
+    <B p={[0, 0.09, 0.1]} s={[0.08, 0.02, 0.02]} c="#e2574c" r={0.008} />
+  </group>
+);
+/** Garden hose through points (tap → ground → hand); rebuilt when the points move. */
+export const Hose: React.FC<{ pts: V3[]; color?: string; r?: number }> = ({ pts, color = "#58b368", r = 0.022 }) => {
+  const key = pts.map((p) => p.map((x) => x.toFixed(3)).join(",")).join("|");
+  const g = useMemo(() => new TubeGeometry(new CatmullRomCurve3(pts.map((p) => new Vector3(...p))), Math.max(24, pts.length * 12), r, 8, false), [key, r]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => g.dispose(), [g]);
+  return <mesh geometry={g} material={clay(color)} castShadow receiveShadow />;
+};
+export const Nozzle: React.FC<{ p: V3; dir: V3 }> = ({ p, dir }) => (
+  <group position={p} quaternion={basis(dir)}>
+    <Cyl p={[0, 0.05, 0]} r={0.03} h={0.14} c="#f2c14e" />
+    <Cyl p={[0, 0.14, 0]} r={0.022} h={0.06} c="#e2574c" />
+  </group>
+);
+
+// ------------------------------------------------------------------ water arc (instanced droplets, flat light blue)
+const dropGeo = new SphereGeometry(1, 12, 8);
+const dropMat = new MeshStandardMaterial({ color: "#86cdf2", roughness: 0.35 });
+const M4 = new Matrix4(), Qd = new Quaternion(), Sd = new Vector3(), Td = new Vector3();
+/** Ballistic jet from `from` with velocity `vel` (m/s); `on` 0..1 ramps the jet in/out (shrinks, never pops). */
+export const WaterArc: React.FC<{ from: V3; vel: V3; t: number; on: number; n?: number; r?: number; floor?: number; seed?: number }> = ({ from, vel, t, on, n = 46, r = 0.022, floor = 0, seed = 0 }) => {
+  const ref = useRef<InstancedMesh>(null);
+  useLayoutEffect(() => {
+    const m = ref.current;
+    if (!m) return;
+    const g = -9.8;
+    // flight time to the floor
+    const a = 0.5 * g, b = vel[1], c = from[1] - floor;
+    const T = (-b - Math.sqrt(Math.max(0, b * b - 4 * a * c))) / (2 * a);
+    let k = 0;
+    if (on > 0.01) {
+      for (let i = 0; i < n; i++) {
+        const u = ((i / n + t * 2.2 + seed * 0.37) % 1 + 1) % 1;
+        const s = u * T;
+        const p: V3 = [from[0] + vel[0] * s, from[1] + vel[1] * s + 0.5 * g * s * s, from[2] + vel[2] * s];
+        const v = new Vector3(vel[0], vel[1] + g * s, vel[2]).normalize();
+        Qd.setFromUnitVectors(UP, v);
+        const sz = r * on * (0.7 + 0.6 * ((i * 7) % 5) / 4) * (u > 0.94 ? (1 - u) / 0.06 : 1) * (0.8 + 0.5 * u);
+        // a little spread so it reads as spray, not a rope
+        const sp = 0.06 * u;
+        const jx = Math.sin(i * 12.9898) * sp, jy = Math.sin(i * 78.233) * sp, jz = Math.sin(i * 37.719) * sp;
+        M4.compose(Td.set(p[0] + jx, p[1] + jy, p[2] + jz), Qd, Sd.set(sz, sz * 1.8, sz));
+        m.setMatrixAt(k++, M4);
+      }
+    }
+    m.count = k;
+    m.instanceMatrix.needsUpdate = true;
+  });
+  return <instancedMesh ref={ref} args={[dropGeo, dropMat, n]} frustumCulled={false} castShadow={false} />;
+};
+// ------------------------------------------------------------------ vacuum cleaner
+/** Canister vacuum. `swell` 0..1 puffs the canister up, `lid` 0..1 flips the lid open. Wand from handle along dir. */
+export const VACUUM_WAND = 0.95;
+export const vacuumGrips = (handle: V3, dir: V3): { r: V3; l: V3 } => ({ r: handle, l: add(handle, mul(norm(dir), 0.22)) });
+export const Vacuum: React.FC<{ can: V3; yaw: number; handle: V3; dir: V3; swell?: number; lid?: number; body?: string }> = ({ can, yaw, handle, dir, swell = 0, lid = 0, body = "#f2c14e" }) => {
+  const d = norm(dir);
+  const tip = add(handle, mul(d, VACUUM_WAND));
+  const sw = 1 + swell * 0.28;
+  // hose from the canister front to the handle
+  const front: V3 = [can[0] + Math.sin(yaw) * 0.3, can[1] + 0.28, can[2] + Math.cos(yaw) * 0.3];
+  const mid: V3 = [(front[0] + handle[0]) / 2, Math.min(front[1], handle[1]) - 0.25, (front[2] + handle[2]) / 2];
+  const side = norm(cross(d, [0, 1, 0]));
+  return (
+    <>
+      <Head><group position={can} rotation={[0, yaw, 0]}>
+        <group scale={[sw, 1 + swell * 0.18, sw]}>
+          <B p={[0, 0.27, 0]} s={[0.4, 0.34, 0.58]} c={body} r={0.12} />
+          <B p={[0, 0.27, 0.3]} s={[0.24, 0.16, 0.06]} c="#3b3f46" r={0.03} />
+        </group>
+        {/* lid hinged at the back edge */}
+        <group position={[0, 0.44 + swell * 0.06, -0.24 * sw]} rotation={[-lid * 1.9, 0, 0]}>
+          <B p={[0, 0.03, 0.24 * sw]} s={[0.34 * sw, 0.06, 0.46 * sw]} c="#3b3f46" r={0.03} />
+          <B p={[0, 0.08, 0.3 * sw]} s={[0.14, 0.04, 0.05]} c="#e2574c" r={0.015} />
+        </group>
+        {[-0.2, 0.2].map((x) => (
+          <Cyl key={x} p={[x * sw, 0.08, -0.15]} r={0.08} h={0.05} c="#2d2a2a" rot={[0, 0, Math.PI / 2]} />
+        ))}
+        <Ball p={[0, 0.03, 0.2]} s={[0.04, 0.03, 0.04]} c="#2d2a2a" />
+      </group></Head>
+      <Hose pts={[front, mid, handle]} color="#7b8089" r={0.03} />
+      <Rod a={handle} b={tip} r={0.022} c="#c4c8ce" />
+      <B p={handle} s={[0.06, 0.06, 0.06]} c="#3b3f46" r={0.02} />
+      {/* floor/air nozzle: a wide mouth facing along the wand */}
+      <Head><group position={tip} quaternion={basis(d, side)}>
+        <B p={[0, 0.06, 0]} s={[0.3, 0.12, 0.09]} c="#3b3f46" r={0.03} />
+      </group></Head>
+    </>
+  );
+};
+
+// ------------------------------------------------------------------ mini fire truck (ride-on toy scale, no badges)
+// The cab is built around its rider (ride.ts): seat, backrest, foot well, cab length, steering wheel and, for a wide
+// rider, the whole toy scale (k) — so any build sits in it without passing through anything.
+const tireGeo = new TorusGeometry(0.17, 0.085, 12, 28);
+const ovalCache = new Map<string, TubeGeometry>();
+/** Steering rim in the truck's YZ plane: half-width rz (across), half-height ry, tube radius tr. */
+const ovalRim = (rz: number, ry: number, tr: number) => {
+  const k = `${rz.toFixed(3)}|${ry.toFixed(3)}|${tr.toFixed(3)}`;
+  let g = ovalCache.get(k);
+  if (!g) {
+    const pts = Array.from({ length: 48 }, (_, i) => { const a = (i / 48) * Math.PI * 2; return new Vector3(0, ry * Math.sin(a), rz * Math.cos(a)); });
+    g = new TubeGeometry(new CatmullRomCurve3(pts, true), 96, tr, 8, true);
+    ovalCache.set(k, g);
+  }
+  return g;
+};
+/** Box from its extents. */
+const Bx: React.FC<{ x: [number, number]; y: [number, number]; z: [number, number]; c: string; r?: number }> = ({ x, y, z, c, r = 0.03 }) => (
+  <B p={[(x[0] + x[1]) / 2, (y[0] + y[1]) / 2, (z[0] + z[1]) / 2]} s={[x[1] - x[0], y[1] - y[0], z[1] - z[0]]} c={c} r={r} />
+);
+export const FireTruck: React.FC<{ p: V3; yaw: number; spin: number; aim?: number; cyaw?: number; ride: Ride; children?: React.ReactNode }> = ({ p, yaw, spin, aim = 0.25, cyaw = 0, ride: R, children }) => {
+  const red = "#e5463d", white = "#fbf7ee", grey = "#9aa0a8", seat = "#3d4048";
+  const tire = clay("#2d2a2a", { rough: 0.9 });
+  const wheel = (x: number, z: number) => (
+    <group position={[x, 0.255, z]} rotation={[0, 0, -spin]}>
+      <mesh geometry={tireGeo} material={tire} castShadow receiveShadow />
+      <mesh geometry={cyl} material={clay(white)} rotation={[Math.PI / 2, 0, 0]} scale={[0.1, 0.12, 0.1]} castShadow />
+      <B p={[0, 0, Math.sign(z) * 0.065]} s={[0.12, 0.03, 0.02]} c={grey} r={0.01} />
+    </group>
+  );
+  const F = R.front, Rr = R.rear, W = R.side;
+  const bar = Math.max(1.2, R.backTop + 0.08);
+  const dash: V3 = [F + 0.03, 0.82, 0];
+  return (
+    <group position={p} rotation={[0, yaw, 0]} scale={R.k}>
+      {wheel(0.62, 0.42)}
+      {wheel(0.62, -0.42)}
+      {wheel(-0.6, 0.42)}
+      {wheel(-0.6, -0.42)}
+      {/* chassis: nose and tail blocks, a cab tub between them (floor plate + full-height side walls) */}
+      <Bx x={[F, 0.95]} y={[0.24, 0.6]} z={[-0.43, 0.43]} c={red} r={0.1} />
+      <Bx x={[-0.95, Rr]} y={[0.24, 0.6]} z={[-0.43, 0.43]} c={red} r={0.1} />
+      <Bx x={[Rr - 0.05, F + 0.05]} y={[0.2, R.floor]} z={[-0.43, 0.43]} c={red} r={0.02} />
+      <Bx x={[Rr - 0.1, F + 0.1]} y={[0.22, 0.86]} z={[W, 0.44]} c={red} r={0.04} />
+      <Bx x={[Rr - 0.1, F + 0.1]} y={[0.22, 0.86]} z={[-0.44, -W]} c={red} r={0.04} />
+      <B p={[0, 0.42, 0.445]} s={[1.5, 0.08, 0.02]} c={white} r={0.01} />
+      <B p={[0, 0.42, -0.445]} s={[1.5, 0.08, 0.02]} c={white} r={0.01} />
+      {/* dash + rear wall of the tub */}
+      <Bx x={[F, F + 0.1]} y={[0.55, 0.86]} z={[-0.43, 0.43]} c={red} r={0.04} />
+      <Bx x={[Rr - 0.1, Rr]} y={[0.55, 0.86]} z={[-0.43, 0.43]} c={red} r={0.04} />
+      {/* hood */}
+      <Bx x={[F + 0.1, 0.93]} y={[0.57, 0.79]} z={[-0.42, 0.42]} c={red} r={0.1} />
+      <B p={[0.96, 0.5, 0]} s={[0.06, 0.2, 0.6]} c={grey} r={0.02} />
+      <Ball p={[0.95, 0.66, 0.3]} s={[0.03, 0.07, 0.07]} c="#fff6dc" />
+      <Ball p={[0.95, 0.66, -0.3]} s={[0.03, 0.07, 0.07]} c="#fff6dc" />
+      <B p={[0.98, 0.3, 0]} s={[0.08, 0.1, 0.9]} c={grey} r={0.03} />
+      {/* seat (under the rider's thighs) + backrest (behind the back) */}
+      <Bx x={[Rr, R.seatFront]} y={[R.floor, R.seatTop]} z={[-W + 0.005, W - 0.005]} c={seat} r={0.03} />
+      <Bx x={[Rr, R.backFront]} y={[R.seatTop - 0.02, R.backTop]} z={[-W + 0.03, W - 0.03]} c={seat} r={0.03} />
+      {/* roll bar behind the seat with a static light bar */}
+      <B p={[Rr - 0.06, (0.84 + bar) / 2, 0.36]} s={[0.05, bar - 0.84, 0.05]} c={grey} r={0.02} />
+      <B p={[Rr - 0.06, (0.84 + bar) / 2, -0.36]} s={[0.05, bar - 0.84, 0.05]} c={grey} r={0.02} />
+      <B p={[Rr - 0.06, bar, 0]} s={[0.06, 0.06, 0.78]} c={grey} r={0.02} />
+      <B p={[Rr - 0.06, bar + 0.07, 0.17]} s={[0.12, 0.09, 0.24]} c="#e23b33" r={0.035} />
+      <B p={[Rr - 0.06, bar + 0.07, -0.17]} s={[0.12, 0.09, 0.24]} c="#3f7fd6" r={0.035} />
+      {/* steering: column from the dash, rim where the rider's hands are */}
+      <Rod a={dash} b={R.wheel.join} r={0.025 * Math.min(1, R.s)} c={grey} />
+      <Ball p={R.wheel.join} s={HUB * R.s} c={grey} />
+      <group position={R.wheel.c} rotation={[0, 0, R.wheel.tilt]}>
+        <mesh geometry={ovalRim(R.wheel.rx, R.wheel.ry, 0.02 * Math.min(1, R.s))} material={clay("#2d2a2a")} castShadow />
+      </group>
+      {/* rear deck: hose reel + ladder */}
+      <B p={[-0.7, 0.72, 0]} s={[0.46, 0.26, 0.84]} c={red} r={0.08} />
+      <Cyl p={[-0.7, 0.98, 0]} r={0.16} h={0.5} c={white} rot={[Math.PI / 2, 0, 0]} />
+      {[0.25, -0.25].map((z) => (
+        <B key={z} p={[-0.78, 1.18, z]} s={[0.5, 0.04, 0.04]} c={grey} r={0.015} />
+      ))}
+      {[-0.98, -0.85, -0.72, -0.59].map((x) => (
+        <B key={x} p={[x, 1.18, 0]} s={[0.03, 0.03, 0.5]} c={grey} r={0.01} />
+      ))}
+      <B p={[-0.8, 1.06, 0.25]} s={[0.04, 0.2, 0.04]} c={grey} r={0.01} />
+      <B p={[-0.8, 1.06, -0.25]} s={[0.04, 0.2, 0.04]} c={grey} r={0.01} />
+      {/* water cannon on the hood */}
+      <group position={TRUCK.cannon}>
+        <Cyl p={[0, -0.12, 0]} r={0.07} h={0.12} c={grey} />
+        <group rotation={[0, cyaw, aim]}>
+          <Cyl p={[0.12, 0, 0]} r={0.035} h={0.3} c={white} rot={[0, 0, -Math.PI / 2]} />
+          <Cyl p={[0.28, 0, 0]} r={0.045} h={0.06} c="#e2574c" rot={[0, 0, -Math.PI / 2]} />
+        </group>
+      </group>
+      {children}
+    </group>
+  );
+};
+
+// ------------------------------------------------------------------ new tools
+/** Hose reel on a little stand (the hose starts here). */
+export const Reel: React.FC<{ p: V3 }> = ({ p }) => (
+  <group position={p}>
+    <B p={[0, 0.06, 0]} s={[0.36, 0.12, 0.3]} c="#3f8f6a" r={0.03} />
+    <Cyl p={[0, 0.24, 0]} r={0.16} h={0.12} c="#58b368" rot={[Math.PI / 2, 0, 0]} />
+    <Cyl p={[0, 0.24, 0]} r={0.05} h={0.2} c="#e2574c" rot={[Math.PI / 2, 0, 0]} />
+  </group>
+);
+/** Water bucket; `tilt` pitches it forward (pour). */
+export const Bucket: React.FC<{ p: V3; tilt: number }> = ({ p, tilt }) => (
+  <group position={p} rotation={[tilt, 0, 0]}>
+    <Head touch={["hero"]}><mesh geometry={bucketGeo} material={clay("#3f86c9")} castShadow receiveShadow /></Head>
+    <Cyl p={[0, 0.11, 0]} r={0.12} h={0.01} c="#86cdf2" />
+    <mesh geometry={handleGeo} material={clay("#c9c6bd", { bump: 0 })} position={[0, 0.13, 0]} rotation={[0, Math.PI / 2, 0]} castShadow />
+  </group>
+);
+const bucketGeo = new CylinderGeometry(0.14, 0.11, 0.26, 20, 1);
+const handleGeo = new TorusGeometry(0.135, 0.008, 6, 20, Math.PI);
+/** Giant standing fan: base, pole, motor, 3 blades behind a ring guard; spin = blade angle (slow, readable). */
+export const Fan: React.FC<{ p: V3; yaw: number; spin: number }> = ({ p, yaw, spin }) => (
+  <group position={p} rotation={[0, yaw, 0]}>
+    <Cyl p={[0, 0.04, 0]} r={0.34} h={0.08} c="#3b3f46" />
+    <Cyl p={[0, 0.62, 0]} r={0.045} h={1.12} c="#c4c8ce" />
+    <B p={[0, 1.22, -0.1]} s={[0.22, 0.22, 0.3]} c="#e8e4dc" r={0.09} />
+    <group position={[0, 1.22, 0.12]}>
+      <mesh geometry={guardGeo} material={clay("#9fd3e6", { bump: 0 })} castShadow />
+      <mesh geometry={guardGeo} material={clay("#9fd3e6", { bump: 0 })} position={[0, 0, 0.12]} castShadow />
+      <Ball p={[0, 0, 0.06]} s={[0.08, 0.08, 0.06]} c="#e2574c" />
+      <group rotation={[0, 0, spin]} position={[0, 0, 0.06]}>
+        {[0, 1, 2].map((k) => (
+          <mesh key={k} geometry={rb(0.2, 0.5, 0.02, 0.09)} material={clay("#6aa6d8")} position={[Math.sin((k * Math.PI * 2) / 3) * 0.27, Math.cos((k * Math.PI * 2) / 3) * 0.27, 0]} rotation={[0.35, 0, -(k * Math.PI * 2) / 3]} castShadow />
+        ))}
+      </group>
+    </group>
+  </group>
+);
+const guardGeo = new TorusGeometry(0.58, 0.022, 8, 40);
+/** Butterfly net: pole from the grip along dir, hoop at 1.6 m, cloth bag (bag 0…1 = fullness). */
+export const Net: React.FC<{ grip: V3; dir: V3; bag: number }> = ({ grip, dir, bag }) => {
+  const d = norm(dir);
+  const hoop = add(grip, mul(d, 1.6));
+  const q = basis(d);
+  return (
+    <>
+      <Rod a={add(grip, mul(d, -0.12))} b={hoop} r={0.02} c="#d8a45a" />
+      <group position={hoop} quaternion={q}>
+        <Head><mesh geometry={hoopGeo} material={clay("#3b3f46", { bump: 0 })} rotation={[Math.PI / 2, 0, 0]} position={[0, 0.3, 0]} castShadow />
+        <mesh geometry={bagGeo} material={clay("#f4f1e8", { rough: 0.95, double: true })} position={[0, 0.3, 0]} scale={[1 + bag * 0.35, 1 + bag * 0.25, 1 + bag * 0.35]} castShadow receiveShadow /></Head>
+      </group>
+    </>
+  );
+};
+const hoopGeo = new TorusGeometry(0.3, 0.018, 8, 32);
+const bagGeo = new SphereGeometry(0.3, 20, 12, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2);
+/** Bait bowl with fish. */
+export const Bowl: React.FC<{ p: V3 }> = ({ p }) => (
+  <group position={p}>
+    <mesh geometry={bowlGeo} material={clay("#e2574c")} position={[0, 0.05, 0]} castShadow receiveShadow />
+    <Cyl p={[0, 0.08, 0]} r={0.12} h={0.02} c="#f2e3c4" />
+    {[[-0.05, 0.03, 0.4], [0.05, -0.04, -0.6], [0.0, 0.05, 1.6]].map(([x, z, a], i) => (
+      <Ball key={i} p={[x, 0.11, z]} s={[0.08, 0.025, 0.03]} c={i % 2 ? "#a7b4bf" : "#c9d1d8"} />
+    ))}
+  </group>
+);
+const bowlGeo = new CylinderGeometry(0.15, 0.1, 0.09, 22, 1);
+/** Megaphone (or a striped paper party horn) held at p, pointing along dir. */
+export const Toa: React.FC<{ p: V3; dir: V3; horn?: boolean }> = ({ p, dir, horn }) => (
+  <group position={p} quaternion={basis(norm(dir), [1, 0, 0])}>
+    {horn ? (
+      <>
+        <Head touch={["hero"]}><mesh geometry={hornGeo} material={clay("#f6d36b")} position={[0, 0.3, 0]} castShadow /></Head>
+        <mesh geometry={hornGeo} material={clay("#e2574c")} position={[0, 0.3, 0]} scale={[1.01, 0.34, 1.01]} castShadow />
+      </>
+    ) : (
+      <>
+        <Head touch={["hero"]}><mesh geometry={toaGeo} material={clay("#f2f2ee")} position={[0, 0.27, 0]} castShadow /></Head>
+        <Cyl p={[0, 0.43, 0]} r={0.135} h={0.03} c="#e2574c" />
+        <Cyl p={[0, 0.08, 0]} r={0.03} h={0.1} c="#3b3f46" />
+      </>
+    )}
+  </group>
+);
+const toaGeo = new CylinderGeometry(0.13, 0.05, 0.3, 22, 1, true);
+const hornGeo = new CylinderGeometry(0.09, 0.02, 0.4, 18, 1);
+/** Umbrella: grip at the handle, shaft along dir, canopy open 0…1 (8 panels, two colours). */
+export const Umbrella: React.FC<{ grip: V3; dir: V3; open: number }> = ({ grip, dir, open }) => {
+  const d = norm(dir);
+  const tip = add(grip, mul(d, 0.95));
+  const r = 0.12 + 0.5 * open, h = 0.62 - 0.36 * open;
+  return (
+    <>
+      <Rod a={add(grip, mul(d, -0.06))} b={tip} r={0.014} c="#5a4a3f" />
+      <Head><group position={add(grip, mul(d, 0.95 - h))} quaternion={basis(d)}>
+        {Array.from({ length: 8 }, (_, k) => (
+          <mesh key={k} geometry={panelGeo} material={clay(k % 2 ? "#f6f1e6" : "#e2574c", { double: true })} rotation={[0, (k * Math.PI) / 4, 0]} scale={[r, h, r]} castShadow receiveShadow />
+        ))}
+      </group></Head>
+    </>
+  );
+};
+const panelGeo = new CylinderGeometry(0, 1, 1, 2, 1, true, 0, Math.PI / 4);
+panelGeo.translate(0, 0.5, 0);
+panelGeo.rotateX(Math.PI);
+panelGeo.translate(0, 1, 0);
+/** Toy quadcopter: body, 4 arms, rotor discs (still discs: no blade strobe). */
+export const Drone: React.FC<{ p: V3; yaw: number; tilt: number }> = ({ p, yaw, tilt }) => (
+  <group position={p} rotation={[tilt, yaw, 0]}>
+    <B p={[0, 0, 0]} s={[0.2, 0.08, 0.2]} c="#f2c14e" r={0.035} />
+    <Ball p={[0, -0.02, 0.1]} s={0.025} c="#3b3f46" />
+    {[[1, 1], [1, -1], [-1, 1], [-1, -1]].map(([x, z], i) => (
+      <group key={i}>
+        <B p={[x * 0.12, 0.01, z * 0.12]} s={[0.2, 0.025, 0.03]} c="#3b3f46" r={0.01} rot={[0, (x * z * Math.PI) / 4, 0]} />
+        <Cyl p={[x * 0.19, 0.04, z * 0.19]} r={0.1} h={0.008} c="#cfd8df" />
+        <Cyl p={[x * 0.19, 0.03, z * 0.19]} r={0.018} h={0.04} c="#3b3f46" />
+      </group>
+    ))}
+  </group>
+);
+export const Remote: React.FC<{ p: V3; yaw: number }> = ({ p, yaw }) => (
+  <group position={p} rotation={[-0.5, yaw, 0]}>
+    <B p={[0, 0, 0]} s={[0.24, 0.04, 0.12]} c="#3b3f46" r={0.02} />
+    <Cyl p={[0.06, 0.04, 0]} r={0.008} h={0.05} c="#e2574c" />
+    <Cyl p={[-0.06, 0.04, 0]} r={0.008} h={0.05} c="#e2574c" />
+  </group>
+);
+/** Cardboard box trap (open bottom), p = bottom centre; tilt > 0 lifts the near edge (it tips about the far edge). */
+export const BoxTrap: React.FC<{ p: V3; yaw: number; tilt: number }> = ({ p, yaw, tilt }) => (
+  <Head><group position={p} rotation={[0, yaw, 0]}>
+    <group rotation={[tilt, 0, 0]} position={[0, 0, 0.45]}>
+      <group position={[0, 0, -0.45]}>
+        <B p={[0, 0.6, 0]} s={[0.92, 0.04, 0.92]} c="#c89a5e" r={0.015} />
+        <B p={[0.44, 0.31, 0]} s={[0.04, 0.6, 0.92]} c="#c08f55" r={0.015} />
+        <B p={[-0.44, 0.31, 0]} s={[0.04, 0.6, 0.92]} c="#c08f55" r={0.015} />
+        <B p={[0, 0.31, 0.44]} s={[0.92, 0.6, 0.04]} c="#c89a5e" r={0.015} />
+        <B p={[0, 0.31, -0.44]} s={[0.92, 0.6, 0.04]} c="#c89a5e" r={0.015} />
+        <B p={[0, 0.62, 0]} s={[0.94, 0.012, 0.16]} c="#e9d9a8" r={0.004} shadow={false} />
+      </group>
+    </group>
+  </group></Head>
+);
+/** White surrender flag on a stick held at the grip. */
+export const Flag: React.FC<{ grip: V3; wave: number }> = ({ grip, wave }) => (
+  <group position={grip}>
+    <Cyl p={[0, 0.5, 0]} r={0.016} h={1.25} c="#a8774a" />
+    <group position={[0, 1.08, 0]} rotation={[0, wave, 0]}>
+      <Head touch={["hero"]}><B p={[0.3, -0.16, 0]} s={[0.6, 0.4, 0.016]} c="#fbfaf6" r={0.006} /></Head>
+    </group>
+  </group>
+);
+
+/** Prop stick under the near edge of the box trap, with a string to the hero's hand (lean 0 = upright, falls over). */
+export const Stick: React.FC<{ p: V3; lean: number; hand: V3 }> = ({ p, lean, hand }) => {
+  const top: V3 = [p[0], p[1] + 0.5 * Math.cos(lean), p[2] - 0.5 * Math.sin(lean)];
+  const mid: V3 = [(p[0] + hand[0]) / 2, Math.min(p[1], hand[1]) + 0.02, (p[2] + hand[2]) / 2];
+  return (
+    <>
+      <Rod a={p} b={top} r={0.016} c="#a8774a" />
+      <Hose pts={[add(p, [0, 0.03, 0]), mid, hand]} color="#e9e2d0" r={0.005} />
+    </>
+  );
+};
+
+==== 6797 project/src/nekat/rig.ts
+// NEKAT rig data (pure TypeScript): body dimensions, pose / face types, the 9 expressions, keyed pose and face tracks
+// and helpers that mirror the Person rig (head top, hand world points). Node (compile, camera) and the browser share it.
+import { clamp, lin, mix, smoother, type V3 } from "./math.ts";
+import { rotE } from "./species.ts";
+import type { PersonLook } from "./cast.ts";
+
+export const BD = {
+  waistY: 0.62, torsoC: 0.17, torsoR: [0.27, 0.3, 0.235] as V3, shY: 0.31, shX: 0.215, headC: 0.62, headR: 0.215,
+  upper: 0.21, fore: 0.2, armR: 0.062, handR: 0.07, hemY: 0.11, footX: 0.1,
+};
+
+export type Pose = {
+  /** pivot (waist) offset: crouch / bob */
+  hip?: V3;
+  /** torso: forward lean (+), twist to his left (+), side lean to his left (+) */
+  lean?: number;
+  twist?: number;
+  side?: number;
+  /** head: nod down (+), turn to his left (+), tilt */
+  nod?: number;
+  turn?: number;
+  tilt?: number;
+  /** hand centres (root-local) */
+  handL: V3;
+  handR: V3;
+  /** elbow hint directions */
+  poleL?: V3;
+  poleR?: V3;
+  footL?: V3;
+  footR?: V3;
+};
+
+export type Face = {
+  browA: number; browY: number; eyeS: number; eyeW: number; lookX: number; lookY: number;
+  mouthOpen: number; mouthW: number; smile: number;
+};
+export type Expr = "neutral" | "angry" | "yell" | "shock" | "smug" | "grin" | "defeated" | "sleep" | "worried";
+export const EXPRS: Expr[] = ["neutral", "angry", "yell", "shock", "smug", "grin", "defeated", "sleep", "worried"];
+export const EXPR: Record<Expr, Face> = {
+  neutral: { browA: 0, browY: 0, eyeS: 1, eyeW: 0, lookX: 0, lookY: 0, mouthOpen: 0, mouthW: 1, smile: 0.15 },
+  angry: { browA: 0.5, browY: -0.025, eyeS: 0.8, eyeW: 0, lookX: 0, lookY: 0, mouthOpen: 0, mouthW: 1.1, smile: -0.7 },
+  yell: { browA: 0.55, browY: -0.02, eyeS: 0.85, eyeW: 0, lookX: 0, lookY: 0, mouthOpen: 1, mouthW: 1.2, smile: 0 },
+  shock: { browA: -0.3, browY: 0.06, eyeS: 1.15, eyeW: 1, lookX: 0, lookY: 0, mouthOpen: 0.85, mouthW: 0.75, smile: 0 },
+  smug: { browA: 0.15, browY: 0.01, eyeS: 0.55, eyeW: 0, lookX: 0, lookY: 0, mouthOpen: 0, mouthW: 1, smile: 0.8 },
+  grin: { browA: -0.15, browY: 0.03, eyeS: 0.9, eyeW: 0, lookX: 0, lookY: 0, mouthOpen: 0.45, mouthW: 1.3, smile: 1 },
+  defeated: { browA: -0.45, browY: 0.01, eyeS: 0.45, eyeW: 0, lookX: 0, lookY: -0.4, mouthOpen: 0, mouthW: 0.9, smile: -0.6 },
+  sleep: { browA: -0.1, browY: 0, eyeS: 0.1, eyeW: 0, lookX: 0, lookY: 0, mouthOpen: 0.3, mouthW: 0.55, smile: 0 },
+  worried: { browA: -0.45, browY: 0.04, eyeS: 1, eyeW: 0.6, lookX: 0, lookY: 0, mouthOpen: 0.2, mouthW: 0.8, smile: -0.5 },
+};
+export const mixFace = (a: Face, b: Face, t: number): Face => {
+  const o = {} as Face;
+  for (const k of Object.keys(a) as (keyof Face)[]) o[k] = mix(a[k], b[k], t);
+  return o;
+};
+/** Expression keys [{t, e}] → blended face (0.16 s blends, never a one-frame snap). */
+export const faceAt = (keys: { t: number; e: Expr }[], t: number, blend = 0.16): Face => {
+  let f = EXPR[keys[0].e];
+  for (let i = 1; i < keys.length; i++) {
+    const k = keys[i];
+    if (t <= k.t) break;
+    const u = clamp((t - k.t) / blend);
+    f = mixFace(f, EXPR[k.e], u * u * (3 - 2 * u));
+  }
+  return f;
+};
+
+export const defaultPose = (): Pose => ({
+  handL: [0.3, 0.6, 0.06],
+  handR: [-0.3, 0.6, 0.06],
+  footL: [BD.footX, 0, 0.02],
+  footR: [-BD.footX, 0, 0.02],
+});
+export const AKIMBO = { handL: [0.31, 0.7, 0.0] as V3, handR: [-0.31, 0.7, 0.0] as V3, poleL: [1, 0.25, -0.5] as V3, poleR: [-1, 0.25, -0.5] as V3 };
+export const CROSSED = { handL: [-0.08, 0.86, 0.26] as V3, handR: [0.08, 0.8, 0.27] as V3, poleL: [1, -0.6, 0.2] as V3, poleR: [-1, -0.6, 0.2] as V3 };
+
+export type PoseKey = { t: number; p: Partial<Pose> & { handL: V3; handR: V3 }; ease?: (x: number) => number };
+const poseNums = (p: Partial<Pose> & { handL: V3; handR: V3 }) => [
+  ...(p.hip ?? [0, 0, 0]), p.lean ?? 0, p.twist ?? 0, p.side ?? 0, p.nod ?? 0, p.turn ?? 0, p.tilt ?? 0,
+  ...p.handL, ...p.handR, ...(p.poleL ?? [0.8, -0.3, -0.5]), ...(p.poleR ?? [-0.8, -0.3, -0.5]),
+  ...(p.footL ?? [BD.footX, 0, 0.02]), ...(p.footR ?? [-BD.footX, 0, 0.02]),
+];
+/** Keyed numeric track, smootherstep between keys (or the key's own ease). */
+export const track = (keys: { t: number; v: number[]; ease?: (x: number) => number }[], t: number): number[] => {
+  if (t <= keys[0].t) return keys[0].v.slice();
+  const last = keys[keys.length - 1];
+  if (t >= last.t) return last.v.slice();
+  let i = 0;
+  while (i < keys.length - 2 && t > keys[i + 1].t) i++;
+  const a = keys[i], b = keys[i + 1];
+  const u = (b.ease ?? smoother)(lin(t, a.t, b.t));
+  return a.v.map((x, j) => mix(x, b.v[j], u));
+};
+export const poseTrack = (keys: PoseKey[], t: number): Pose => {
+  const v = track(keys.map((k) => ({ t: k.t, v: poseNums(k.p), ease: k.ease })), t);
+  return {
+    hip: [v[0], v[1], v[2]], lean: v[3], twist: v[4], side: v[5], nod: v[6], turn: v[7], tilt: v[8],
+    handL: [v[9], v[10], v[11]], handR: [v[12], v[13], v[14]], poleL: [v[15], v[16], v[17]], poleR: [v[18], v[19], v[20]],
+    footL: [v[21], v[22], v[23]], footR: [v[24], v[25], v[26]],
+  };
+};
+export const mixPose = (a: Pose, b: Pose, u: number): Pose => poseTrack([{ t: 0, p: a as PoseKey["p"] }, { t: 1, p: b as PoseKey["p"], ease: (x) => x }], u);
+
+/** Head centre height for a look (big heads sit a little higher so the chin clears the chest). */
+export const headLift = (look: PersonLook) => ((look.build?.head ?? 1) - 1) * BD.headR * 0.9;
+/** Root-local top-of-head point for a pose (unit space, before build.s). */
+export const headTop = (pose: Pose, look?: PersonLook): V3 => {
+  const hip = pose.hip ?? [0, 0, 0];
+  const tR: V3 = [pose.lean ?? 0, pose.twist ?? 0, pose.side ?? 0];
+  const c = rotE([0, BD.headC + (look ? headLift(look) : 0), 0], tR, "YXZ");
+  const top = rotE(rotE([0, (BD.headR - 0.012) * (look?.build?.head ?? 1), 0], [pose.nod ?? 0, pose.turn ?? 0, pose.tilt ?? 0], "YXZ"), tR, "YXZ");
+  return [hip[0] + c[0] + top[0], BD.waistY + hip[1] + c[1] + top[1], hip[2] + c[2] + top[2]];
+};
+/** Head centre (root-local, unit space). */
+export const headCentre = (pose: Pose, look?: PersonLook): V3 => {
+  const hip = pose.hip ?? [0, 0, 0];
+  const c = rotE([0, BD.headC + (look ? headLift(look) : 0), 0], [pose.lean ?? 0, pose.twist ?? 0, pose.side ?? 0], "YXZ");
+  return [hip[0] + c[0], BD.waistY + hip[1] + c[1], hip[2] + c[2]];
+};
+/** Root-local → world for a person at P with yaw and scale. */
+export const toWorld = (P: V3, yaw: number, s: number, l: V3): V3 => {
+  const c = Math.cos(yaw), sn = Math.sin(yaw);
+  return [P[0] + (l[0] * c + l[2] * sn) * s, P[1] + l[1] * s, P[2] + (-l[0] * sn + l[2] * c) * s];
+};
+export const blinkAt = (t: number, seed = 0) => {
+  const P = 3.3, l = (((t + seed) % P) + P) % P;
+  return l < 0.18 ? Math.sin((l / 0.18) * Math.PI) : 0;
+};
+
+==== 9419 project/src/nekat/sets/gang.meta.ts
+// NEKAT set "gang": a pastel Indonesian gang (alley) — the hero's house with a genteng roof and teras behind a low
+// painted fence, neighbours on both sides and across, paving-block street, a parked matic scooter, pots, jemuran, a
+// power pole. Pure data (node + browser): the picture is Gang.tsx.
+import type { BoxTop, Zone } from "../crowd.ts";
+import type { Box, SetMeta } from "../types.ts";
+import type { HouseSpec } from "./parts.tsx";
+
+export type FenceSpec = { x0: number; x1: number; z: number; gap?: [number, number]; wall: string; cap: string };
+export const FENCE_H = 0.86;
+export const FENCES: FenceSpec[] = [
+  { x0: -3.7, x1: 3.7, z: -0.1, gap: [0.35, 1.95], wall: "#f4efe6", cap: "#7cc4a9" },
+  { x0: -11.1, x1: -3.9, z: -0.1, gap: [-6.6, -5.2], wall: "#fbe9e4", cap: "#e8a197" },
+  { x0: 3.9, x1: 10.8, z: -0.1, gap: [5.4, 6.8], wall: "#fdf3d6", cap: "#e7c46f" },
+  { x0: -18, x1: -11.3, z: -0.1, wall: "#e7eef8", cap: "#9fb9d8" },
+  { x0: 11.0, x1: 18, z: -0.1, wall: "#f3e8f7", cap: "#c9a6d8" },
+  { x0: -7.4, x1: 0.6, z: 3.8, gap: [-2.8, -1.4], wall: "#fff3e4", cap: "#f0bf8a" },
+  { x0: 0.8, x1: 8.2, z: 3.8, gap: [3.8, 5.2], wall: "#eef8f5", cap: "#8cc8bb" },
+  { x0: -15, x1: -7.6, z: 3.8, wall: "#fbeef4", cap: "#e2a6c0" },
+  { x0: 8.4, x1: 16, z: 3.8, wall: "#f2f8ea", cap: "#b3d394" },
+];
+export const HOUSES: HouseSpec[] = [
+  {
+    x: 0, z: -2.3, face: 1, w: 7.2, h: 3.0, d: 6.5, wall: "#a8dcc6", plint: "#78bfa4", trim: "#fbf7ee",
+    roof: { kind: "gable", color: "#dc7a56", line: "#c1613f", rise: 1.6, front: 1.4 },
+    door: { x: 1.0, color: "#3f8f8a" }, windows: [{ x: -1.8, w: 1.5, curtain: "#f4a7a3" }, { x: 2.6, w: 0.8, curtain: "#f4a7a3" }],
+    columns: "#fbf7ee", toren: "#f0a24a",
+  },
+  {
+    x: -7.6, z: -2.2, face: 1, w: 7.0, h: 3.2, d: 6.5, wall: "#f6c7c0", plint: "#e39d94", trim: "#fffaf3",
+    roof: { kind: "flat", color: "#efe7dc" },
+    door: { x: -1.6, color: "#c2654e" }, windows: [{ x: 0.6, w: 1.6, curtain: "#9fd3e6" }, { x: 2.6, w: 0.8, curtain: "#9fd3e6" }],
+    toren: "#6fb7e0",
+  },
+  {
+    x: 7.4, z: -2.1, face: 1, w: 6.8, h: 2.9, d: 6.5, wall: "#f8e1a0", plint: "#e6c26b", trim: "#fffaf0",
+    roof: { kind: "gable", color: "#8fa3c2", line: "#6f84a6", rise: 1.4, front: 1.2 },
+    door: { x: -1.2, color: "#7a8fc9" }, windows: [{ x: 1.2, w: 1.5, curtain: "#a6d8b8" }],
+    columns: "#fffaf0",
+  },
+  {
+    x: -14.6, z: -2.0, face: 1, w: 6.6, h: 3.0, d: 6.5, wall: "#cfe0f4", plint: "#9fb9d8", trim: "#ffffff",
+    roof: { kind: "gable", color: "#d98a5f", line: "#bd6e45", rise: 1.5, front: 1.0 },
+    door: { x: 1.2, color: "#e09a5a" }, windows: [{ x: -1.3, w: 1.5, curtain: "#f6d18a" }], columns: "#ffffff",
+  },
+  {
+    x: 14.2, z: -2.2, face: 1, w: 6.6, h: 3.3, d: 6.5, wall: "#e6cdf0", plint: "#c9a6d8", trim: "#ffffff",
+    roof: { kind: "flat", color: "#f1ebe2" },
+    door: { x: 1.4, color: "#8d6fb8" }, windows: [{ x: -1.2, w: 1.6, curtain: "#f5b39a" }],
+  },
+  // street ends (close the vista)
+  {
+    x: -19.5, z: 1.85, face: 1, rot: Math.PI / 2, w: 7.0, h: 3.2, d: 6.5, wall: "#f9d9b0", plint: "#e8b778", trim: "#ffffff",
+    roof: { kind: "gable", color: "#7f97b9", line: "#647c9f", rise: 1.5, front: 0.6 },
+    door: { x: 1.4, color: "#5c9fd0" }, windows: [{ x: -1.3, w: 1.6, curtain: "#f2b5c4" }],
+  },
+  {
+    x: 19.0, z: 1.85, face: 1, rot: -Math.PI / 2, w: 7.0, h: 3.1, d: 6.5, wall: "#d4e9f6", plint: "#a2c8e0", trim: "#ffffff",
+    roof: { kind: "gable", color: "#d9825a", line: "#bd6a43", rise: 1.5, front: 0.6 },
+    door: { x: -1.4, color: "#e07e6a" }, windows: [{ x: 1.3, w: 1.6, curtain: "#a8dcc6" }],
+  },
+  // north row (faces −z, across the gang)
+  {
+    x: -3.2, z: 5.7, face: -1, w: 7.0, h: 3.0, d: 6.5, wall: "#fde3c4", plint: "#f0bf8a", trim: "#ffffff",
+    roof: { kind: "gable", color: "#d6704e", line: "#b85636", rise: 1.5, front: 1.2 },
+    door: { x: 1.3, color: "#5c9fd0" }, windows: [{ x: -1.4, w: 1.6, curtain: "#a8dcc6" }], columns: "#ffffff",
+  },
+  {
+    x: 4.4, z: 5.9, face: -1, w: 7.4, h: 3.1, d: 6.5, wall: "#bfe3dc", plint: "#8cc8bb", trim: "#ffffff",
+    roof: { kind: "flat", color: "#eee6da" },
+    door: { x: -1.0, color: "#e07e6a" }, windows: [{ x: 1.5, w: 1.8, curtain: "#f7cf7a" }], toren: "#5fb0dd",
+  },
+  {
+    x: -11.0, z: 5.6, face: -1, w: 7.0, h: 3.1, d: 6.5, wall: "#f4d0e0", plint: "#e2a6c0", trim: "#ffffff",
+    roof: { kind: "gable", color: "#7f97b9", line: "#647c9f", rise: 1.5, front: 1.0 },
+    door: { x: -1.4, color: "#4f9a86" }, windows: [{ x: 1.3, w: 1.5, curtain: "#b9d8f2" }], columns: "#ffffff",
+  },
+  {
+    x: 12.2, z: 5.7, face: -1, w: 7.0, h: 3.0, d: 6.5, wall: "#d9ecc2", plint: "#b3d394", trim: "#ffffff",
+    roof: { kind: "gable", color: "#d9825a", line: "#bd6a43", rise: 1.5, front: 1.0 },
+    door: { x: 1.4, color: "#c96f5b" }, windows: [{ x: -1.4, w: 1.5, curtain: "#f2b5c4" }], columns: "#ffffff",
+  },
+];
+
+export const POTS_AT: [number, number][] = [[-3.3, 0.32], [2.5, 0.32], [3.3, 0.32], [-6.0, 0.32], [6.0, 0.32]];
+export const MOTOR = { p: [-1.4, 0, 0.75] as [number, number, number], yaw: Math.PI };
+export const POLE_AT: [number, number] = [4.6, 0.25];
+
+/** Things creatures rest ON: fence caps, pillars, street pots, the parked motor. */
+const tops = (): BoxTop[] => {
+  const out: BoxTop[] = [];
+  for (const f of FENCES) {
+    const segs: [number, number][] = f.gap ? [[f.x0, f.gap[0]], [f.gap[1], f.x1]] : [[f.x0, f.x1]];
+    for (const [a, b] of segs) {
+      if (b - a < 0.05) continue;
+      out.push([a - 0.02, b + 0.02, f.z - 0.15, f.z + 0.15, FENCE_H + 0.08]);
+      const n = Math.max(1, Math.round((b - a) / 2.4));
+      for (let i = 0; i <= n; i++) {
+        const x = a + ((b - a) * i) / n;
+        const potTop = Math.abs(Math.abs(x) - 3.7) < 0.01 && f.z < 0 ? 1.7 : FENCE_H + 0.38;
+        out.push([x - 0.21, x + 0.21, f.z - 0.21, f.z + 0.21, potTop]);
+      }
+    }
+  }
+  for (const [x, z] of POTS_AT) out.push([x - 0.2, x + 0.2, z - 0.2, z + 0.2, 0.62]);
+  out.push([-2.2, -0.62, 0.55, 0.95, 0.8], [-2.15, -1.92, 0.36, 1.14, 1.22], [-2.25, -1.95, 0.6, 0.9, 1.0]);
+  return out;
+};
+const blockers = (): Box[] => {
+  const out: Box[] = [];
+  for (const h of HOUSES) {
+    const rise = h.roof.kind === "gable" ? h.roof.rise : 0.5;
+    if (h.rot !== undefined) out.push({ min: [h.x - (h.face === 1 ? h.d : 0) - 0.3, 0, h.z - h.w / 2 - 0.3], max: [h.x + 0.3 + (h.rot < 0 ? h.d : 0), h.h + rise, h.z + h.w / 2 + 0.3] });
+    else if (h.face === 1) out.push({ min: [h.x - h.w / 2 - 0.3, 0, h.z - h.d - 0.4], max: [h.x + h.w / 2 + 0.3, h.h + rise, h.z + 0.15] });
+    else out.push({ min: [h.x - h.w / 2 - 0.3, 0, h.z - 0.15], max: [h.x + h.w / 2 + 0.3, h.h + rise, h.z + h.d + 0.4] });
+  }
+  for (const f of FENCES) out.push({ min: [f.x0, 0, f.z - 0.2], max: [f.x1, FENCE_H + 0.1, f.z + 0.2] });
+  out.push({ min: [POLE_AT[0] - 0.2, 0, POLE_AT[1] - 0.2], max: [POLE_AT[0] + 0.2, 7, POLE_AT[1] + 0.2] });
+  out.push({ min: [-2.3, 0, 0.5], max: [-0.5, 1.2, 1.0] });
+  return out;
+};
+const angA = Math.atan(1.6 / 3.25), angB = Math.atan(1.4 / 3.25), up = 0.38;
+export const GANG: SetMeta = {
+  id: "gang",
+  about: "gang rumah: pastel row houses, the hero's house with teras + fence, paving street, parked motor, pots, jemuran, power pole",
+  hero: [0.3, 0, 1.05],
+  watch: { p: [-1.15, 0.16, -1.3], yaw: 0.12 },
+  perch: { p: [-1.02, 0.8, 0.75], yaw: 0.55 },
+  ground: [
+    { x0: -6, x1: 6, z0: 0.3, z1: 3.5 },
+    { x0: -16, x1: 16, z0: 0.3, z1: 3.5 },
+    { x0: -3.5, x1: 3.5, z0: -0.95, z1: -0.32, y: 0.04 },
+    { x0: -3.4, x1: 3.4, z0: -2.15, z1: -1.05, y: 0.16 },
+  ],
+  tops: tops(),
+  ledges: [
+    { cx: -1.6, cz: -0.1, rx: 2.0, rz: 0.05, facing: 0.15 },
+    { cx: 2.9, cz: -0.1, rx: 0.8, rz: 0.05, facing: 0.1 },
+    { cx: -7.5, cz: -0.1, rx: 3.4, rz: 0.05, facing: 0.15 },
+    { cx: 7.4, cz: -0.1, rx: 3.2, rz: 0.05, facing: 0.1 },
+    { cx: -3.4, cz: 3.8, rx: 3.6, rz: 0.05, facing: Math.PI - 0.3 },
+    { cx: 2.2, cz: 3.8, rx: 1.4, rz: 0.05, facing: Math.PI - 0.2 },
+  ],
+  roofs: [
+    { o: [-3.45, 2.44 + up * Math.sin(angA), -0.9 - up * Math.cos(angA)], e: [1, 0], downYaw: 0, angle: angA, cols: 12, rows: 7, dx: 0.6, dz: 0.72, fill: 0.85 },
+    { o: [4.0, 2.513 + up * Math.sin(angB), -0.9 - up * Math.cos(angB)], e: [1, 0], downYaw: 0, angle: angB, cols: 11, rows: 6, dx: 0.6, dz: 0.72, fill: 0.8 },
+  ],
+  flats: [
+    { x0: -10.8, x1: -4.4, z0: -8.4, z1: -2.0, y: 3.4 },
+    { x0: 1.0, x1: 7.8, z0: 5.6, z1: 12.0, y: 3.3 },
+  ],
+  avoid: [
+    { kind: "rect", x0: -2.25, x1: -0.58, z0: 0.35, z1: 1.15 },
+    ...POTS_AT.map(([x, z]) => ({ kind: "circle", c: [x, z], r: 0.22 }) as Zone),
+    { kind: "circle", c: POLE_AT, r: 0.2 },
+    { kind: "circle", c: [-5.1, -6.05], r: 0.55 },
+    { kind: "circle", c: [1.7, 9.75], r: 0.55 },
+    { kind: "rect", x0: -2.8, x1: -1.3, z0: -2.0, z1: -1.3 },
+    { kind: "circle", c: [-3.15, -1.2], r: 0.2 },
+    { kind: "circle", c: [3.15, -1.2], r: 0.2 },
+    { kind: "rect", x0: 0.3, x1: 2.1, z0: -1.2, z1: 0.0 },
+  ],
+  blockers: blockers(),
+  laneFrom: -10.5,
+  giant: { p: [0.4, 0, -8.3], scale: 11, over: [0.4, 4.7, -5.55] },
+  bounds: { x0: -14, x1: 14, z0: -0.3, z1: 9.5, y1: 10 },
+  wide: { pos: [3.9, 6.9, 9.4], target: [-0.05, 2.55, -0.3], fov: 44 },
+  top: { pos: [2.2, 10.5, 11.5], target: [0, 1.6, 0.2], fov: 46 },
+  light: "siang",
+};
+/** Pieces north of this z hide while the camera stands beyond it (the camera's own side of the street). */
+export const GANG_HIDE_Z = 3.7;
+
+==== 381 project/src/nekat/sets/scenes.tsx
+// NEKAT set pictures by id (the data lives in index.ts).
+import React from "react";
+import { Gang } from "./Gang.tsx";
+import { Kebun } from "./Kebun.tsx";
+import { Sekolah } from "./Sekolah.tsx";
+
+export const SET_PICTURES: Record<string, React.FC<{ hideZ?: number }>> = {
+  gang: ({ hideZ }) => <Gang hideZ={hideZ} />,
+  kebun: () => <Kebun />,
+  sekolah: () => <Sekolah />,
+};
+
+==== 20310 project/src/nekat/species.ts
+// NEKAT creatures as pure data: every species is a list of clay blobs (ellipsoids, cones, tubes) per pose. The same
+// data builds the three.js geometry in the browser (kit/creatureGeo.ts) and, here in plain TypeScript, the footprint
+// and top-surface height map the crowd layout uses to stack hundreds of them without passing through each other.
+// Creature-local frame: stands on y = 0, faces +z, its right side is −x. Metres (a chunky cat ≈ 0.62 m long).
+// Pose 0 = "rest" (low, stackable: loaf / brooding / lying), pose 1 = "alt" (sitting up / standing).
+import type { V3 } from "./math.ts";
+
+export type Role = "body" | "accent" | "belly" | "nose" | "ear" | "eye" | "shine" | "mouth" | "beak" | "comb" | "horn" | "hoof";
+/** st: tabby pattern mode painted in the shader: 1 body bands, 2 forehead marks, 3 tail rings (spots: body patches). */
+export type Part =
+  | { k: "ell"; c: V3; r: V3; rot?: V3; col: Role; st?: number; seg?: [number, number]; floor?: number }
+  | { k: "cone"; c: V3; r: number; h: number; rot: V3; col: Role; flat?: number }
+  | { k: "tube"; pts: V3[]; r: number; col: Role; st?: number; taper?: number };
+/** An animated sub-part: rotates about `at` (tail sway / head nod). */
+export type Moving = { at: V3; parts: Part[]; axis: "x" | "y"; amp: number; speed: number; mode: "sway" | "peck" };
+export type PoseDef = { parts: Part[]; eyes?: { at: V3; parts: Part[] }; move?: Moving };
+export type SpeciesDef = {
+  id: string;
+  about: string;
+  poses: [PoseDef, PoseDef];
+  /** share of crowd members in pose 1 (sitting up / standing) */
+  altShare: number;
+  /** most instances drawn (the counter can go higher; the picture is full long before) */
+  cap: number;
+  /** pile cap height (m) of the ending mound */
+  mound: number;
+  /** HUD badge colours: [body, accent, belly, nose] come from the spec */
+  badge: "cat" | "chicken" | "duck" | "goat";
+};
+
+// ------------------------------------------------------------------ small vector helpers (Euler like three.js)
+const rx = (v: V3, a: number): V3 => [v[0], v[1] * Math.cos(a) - v[2] * Math.sin(a), v[1] * Math.sin(a) + v[2] * Math.cos(a)];
+const ry = (v: V3, a: number): V3 => [v[0] * Math.cos(a) + v[2] * Math.sin(a), v[1], -v[0] * Math.sin(a) + v[2] * Math.cos(a)];
+const rz = (v: V3, a: number): V3 => [v[0] * Math.cos(a) - v[1] * Math.sin(a), v[0] * Math.sin(a) + v[1] * Math.cos(a), v[2]];
+/** three.js Euler rotation applied to a vector: "YXZ" = Ry·Rx·Rz, "XYZ" = Rx·Ry·Rz. */
+export const rotE = (v: V3, r: V3, order: "YXZ" | "XYZ"): V3 => (order === "YXZ" ? ry(rx(rz(v, r[2]), r[0]), r[1]) : rx(ry(rz(v, r[2]), r[1]), r[0]));
+const add = (a: V3, b: V3): V3 => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+const shiftParts = (ps: Part[], d: V3): Part[] =>
+  ps.map((p) => (p.k === "tube" ? { ...p, pts: p.pts.map((q) => add(q, d)) } : { ...p, c: add(p.c, d) }));
+
+// ------------------------------------------------------------------ the cat (from the approved preview)
+const catHead = (H: V3, tiltX: number) => {
+  const r = 0.155;
+  const at = (lon: number, lat: number, rr: number): V3 => add(H, rx([Math.cos(lat) * Math.sin(lon) * rr, Math.sin(lat) * rr, Math.cos(lat) * Math.cos(lon) * rr], tiltX));
+  const parts: Part[] = [
+    { k: "ell", c: H, r: [r * 1.1, r * 0.94, r], col: "body", st: 2, rot: [tiltX, 0, 0], seg: [32, 22] },
+    { k: "ell", c: at(0.32, -0.38, r * 0.86), r: [0.062, 0.05, 0.05], col: "belly", rot: [tiltX, 0.3, 0] },
+    { k: "ell", c: at(-0.32, -0.38, r * 0.86), r: [0.062, 0.05, 0.05], col: "belly", rot: [tiltX, -0.3, 0] },
+    { k: "ell", c: at(0, -0.55, r * 0.86), r: [0.045, 0.035, 0.04], col: "belly", rot: [tiltX, 0, 0] },
+    { k: "ell", c: at(0, -0.2, r), r: [0.022, 0.015, 0.016], col: "nose", rot: [tiltX, 0, 0], seg: [12, 8] },
+    { k: "cone", c: at(0.6, 0.7, r * 0.98), r: 0.068, h: 0.13, col: "body", rot: [tiltX - 0.1, 0, -0.5] },
+    { k: "cone", c: at(-0.6, 0.7, r * 0.98), r: 0.068, h: 0.13, col: "body", rot: [tiltX - 0.1, 0, 0.5] },
+    { k: "cone", c: at(0.6, 0.66, r * 1.08), r: 0.042, h: 0.085, col: "ear", rot: [tiltX - 0.1, 0, -0.5], flat: 0.3 },
+    { k: "cone", c: at(-0.6, 0.66, r * 1.08), r: 0.042, h: 0.085, col: "ear", rot: [tiltX - 0.1, 0, 0.5], flat: 0.3 },
+  ];
+  const m0 = at(0, -0.36, r * 1.005), mL = at(0.17, -0.42, r * 0.99), mR = at(-0.17, -0.42, r * 0.99);
+  parts.push({ k: "tube", pts: [mR, [mR[0] * 0.5 + m0[0] * 0.5, mR[1] - 0.012, (mR[2] + m0[2]) / 2 + 0.004], m0], r: 0.0045, col: "mouth" });
+  parts.push({ k: "tube", pts: [m0, [mL[0] * 0.5 + m0[0] * 0.5, mL[1] - 0.012, (mL[2] + m0[2]) / 2 + 0.004], mL], r: 0.0045, col: "mouth" });
+  return { parts, eyeL: at(0.4, 0.02, r * 0.97), eyeR: at(-0.4, 0.02, r * 0.97) };
+};
+/** Bead eyes around their midpoint (blink = squash in y). */
+const beadEyes = (eL: V3, eR: V3, tiltX: number, size = 1): { at: V3; parts: Part[] } => {
+  const at: V3 = [(eL[0] + eR[0]) / 2, (eL[1] + eR[1]) / 2, (eL[2] + eR[2]) / 2];
+  const parts: Part[] = [];
+  for (const [p, side] of [[eL, 1], [eR, -1]] as [V3, number][]) {
+    const c: V3 = [p[0] - at[0], p[1] - at[1], p[2] - at[2]];
+    parts.push({ k: "ell", c, r: [0.024 * size, 0.032 * size, 0.014 * size], col: "eye", rot: [tiltX, side * 0.4, 0], seg: [16, 12] });
+    parts.push({ k: "ell", c: [c[0] + 0.008 * size, c[1] + 0.012 * size, c[2] + 0.012 * size], r: [0.0075 * size, 0.0075 * size, 0.005 * size], col: "shine", seg: [8, 6] });
+  }
+  return { at, parts };
+};
+const CAT: SpeciesDef = (() => {
+  const hl = catHead([0, 0.27, 0.2], 0.05), hs = catHead([0, 0.52, 0.06], -0.05);
+  const loaf: PoseDef = {
+    parts: [
+      { k: "ell", c: [0, 0.165, -0.03], r: [0.21, 0.17, 0.27], col: "body", st: 1, seg: [40, 26], floor: 0 },
+      { k: "ell", c: [0, 0.115, 0.13], r: [0.135, 0.1, 0.1], col: "belly", rot: [0.3, 0, 0], seg: [20, 14] },
+      { k: "ell", c: [0.08, 0.03, 0.225], r: [0.042, 0.03, 0.05], col: "belly", seg: [14, 10] },
+      { k: "ell", c: [-0.08, 0.03, 0.225], r: [0.042, 0.03, 0.05], col: "belly", seg: [14, 10] },
+      ...hl.parts,
+    ],
+    eyes: beadEyes(hl.eyeL, hl.eyeR, 0.05),
+    move: { at: [-0.06, 0.07, -0.28], axis: "y", amp: -0.28, speed: 2.1, mode: "sway", parts: [{ k: "tube", pts: [[0, 0, 0], [-0.1, -0.025, -0.05], [-0.22, -0.03, 0.02], [-0.265, -0.03, 0.15], [-0.245, -0.03, 0.28]].map((q) => add(q as V3, [-0.06, 0.07, -0.28])), r: 0.04, col: "body", st: 3, taper: 0.35 }] },
+  };
+  const sit: PoseDef = {
+    parts: [
+      { k: "ell", c: [0, 0.22, -0.03], r: [0.185, 0.2, 0.235], col: "body", st: 1, rot: [-1.25, 0, 0], seg: [36, 26], floor: 0 },
+      { k: "ell", c: [0, 0.25, 0.1], r: [0.105, 0.15, 0.08], col: "belly", rot: [0.15, 0, 0], seg: [20, 14] },
+      { k: "ell", c: [0.13, 0.105, -0.04], r: [0.085, 0.1, 0.13], col: "body", seg: [18, 12], floor: 0 },
+      { k: "ell", c: [-0.13, 0.105, -0.04], r: [0.085, 0.1, 0.13], col: "body", seg: [18, 12], floor: 0 },
+      { k: "ell", c: [0.065, 0.14, 0.13], r: [0.04, 0.12, 0.042], col: "belly", rot: [0.12, 0, 0], seg: [14, 10] },
+      { k: "ell", c: [-0.065, 0.14, 0.13], r: [0.04, 0.12, 0.042], col: "belly", rot: [0.12, 0, 0], seg: [14, 10] },
+      { k: "ell", c: [0.068, 0.025, 0.165], r: [0.045, 0.028, 0.055], col: "belly", seg: [12, 8] },
+      { k: "ell", c: [-0.068, 0.025, 0.165], r: [0.045, 0.028, 0.055], col: "belly", seg: [12, 8] },
+      ...hs.parts,
+    ],
+    eyes: beadEyes(hs.eyeL, hs.eyeR, -0.05),
+    move: { at: [-0.05, 0.05, -0.2], axis: "y", amp: -0.28, speed: 2.1, mode: "sway", parts: [{ k: "tube", pts: [[0, 0, 0], [-0.1, -0.015, -0.03], [-0.2, -0.015, 0.05], [-0.23, -0.015, 0.18], [-0.17, -0.015, 0.3]].map((q) => add(q as V3, [-0.05, 0.05, -0.2])), r: 0.036, col: "body", st: 3, taper: 0.35 }] },
+  };
+  return { id: "kucing", about: "chubby toy cat (loaf / sitting), tabby stripes, spots or plain", poses: [loaf, sit], altShare: 0.3, cap: 1100, mound: 2.2, badge: "cat" };
+})();
+
+// ------------------------------------------------------------------ chicken
+const chickenHead = (dy: number): Part[] => shiftParts([
+  { k: "ell", c: [0, 0.44, 0.12], r: [0.085, 0.09, 0.085], col: "body", seg: [22, 16] },
+  { k: "ell", c: [0, 0.545, 0.125], r: [0.026, 0.03, 0.026], col: "comb", seg: [10, 8] },
+  { k: "ell", c: [0, 0.535, 0.075], r: [0.024, 0.026, 0.024], col: "comb", seg: [10, 8] },
+  { k: "ell", c: [0, 0.53, 0.17], r: [0.022, 0.024, 0.022], col: "comb", seg: [10, 8] },
+  { k: "cone", c: [0, 0.43, 0.222], r: 0.026, h: 0.065, col: "beak", rot: [Math.PI / 2, 0, 0], flat: 0.8 },
+  { k: "ell", c: [0, 0.383, 0.18], r: [0.018, 0.03, 0.015], col: "comb", seg: [10, 8] },
+  { k: "ell", c: [0.058, 0.462, 0.175], r: [0.014, 0.018, 0.01], col: "eye", seg: [10, 8] },
+  { k: "ell", c: [-0.058, 0.462, 0.175], r: [0.014, 0.018, 0.01], col: "eye", seg: [10, 8] },
+  { k: "ell", c: [0.062, 0.468, 0.183], r: [0.005, 0.005, 0.004], col: "shine", seg: [6, 4] },
+  { k: "ell", c: [-0.054, 0.468, 0.183], r: [0.005, 0.005, 0.004], col: "shine", seg: [6, 4] },
+], [0, dy, 0]);
+const chickenBody = (dy: number, floor?: number): Part[] => shiftParts([
+  { k: "ell", c: [0, 0.24, -0.02], r: [0.16, 0.15, 0.2], col: "body", st: 1, seg: [32, 22], floor },
+  { k: "ell", c: [0, 0.23, 0.1], r: [0.12, 0.12, 0.1], col: "belly", seg: [20, 14] },
+  { k: "ell", c: [0.145, 0.255, -0.03], r: [0.04, 0.1, 0.15], col: "accent", rot: [-0.2, 0, 0.15], seg: [16, 12] },
+  { k: "ell", c: [-0.145, 0.255, -0.03], r: [0.04, 0.1, 0.15], col: "accent", rot: [-0.2, 0, -0.15], seg: [16, 12] },
+  { k: "ell", c: [0, 0.37, -0.2], r: [0.045, 0.12, 0.06], col: "accent", rot: [-0.6, 0, 0], seg: [14, 10] },
+  { k: "ell", c: [0.05, 0.34, -0.19], r: [0.035, 0.1, 0.05], col: "accent", rot: [-0.5, 0, 0.3], seg: [14, 10] },
+  { k: "ell", c: [-0.05, 0.34, -0.19], r: [0.035, 0.1, 0.05], col: "accent", rot: [-0.5, 0, -0.3], seg: [14, 10] },
+], [0, dy, 0]);
+const CHICKEN: SpeciesDef = {
+  id: "ayam", about: "round toy chicken (brooding / standing), red comb", altShare: 0.45, cap: 1000, mound: 2.0, badge: "chicken",
+  poses: [
+    { parts: chickenBody(-0.085, 0), move: { at: [0, 0.27, 0.1], axis: "x", amp: 0.32, speed: 1.3, mode: "peck", parts: chickenHead(-0.1) } },
+    {
+      parts: [
+        ...chickenBody(0),
+        { k: "tube", pts: [[0.06, 0.13, 0], [0.063, 0.06, 0.01], [0.065, 0.012, 0.02]], r: 0.014, col: "beak" },
+        { k: "tube", pts: [[-0.06, 0.13, 0], [-0.063, 0.06, 0.01], [-0.065, 0.012, 0.02]], r: 0.014, col: "beak" },
+        { k: "ell", c: [0.065, 0.01, 0.05], r: [0.035, 0.01, 0.05], col: "beak", seg: [10, 6] },
+        { k: "ell", c: [-0.065, 0.01, 0.05], r: [0.035, 0.01, 0.05], col: "beak", seg: [10, 6] },
+      ],
+      move: { at: [0, 0.37, 0.1], axis: "x", amp: 0.42, speed: 1.5, mode: "peck", parts: chickenHead(0) },
+    },
+  ],
+};
+
+// ------------------------------------------------------------------ duck
+const duckHead = (dy: number): Part[] => shiftParts([
+  { k: "ell", c: [0, 0.335, 0.105], r: [0.058, 0.09, 0.058], col: "body", rot: [0.25, 0, 0], seg: [16, 12] },
+  { k: "ell", c: [0, 0.43, 0.13], r: [0.08, 0.078, 0.085], col: "body", seg: [22, 16] },
+  { k: "ell", c: [0, 0.412, 0.218], r: [0.042, 0.017, 0.058], col: "beak", seg: [14, 8] },
+  { k: "ell", c: [0.055, 0.448, 0.172], r: [0.013, 0.017, 0.01], col: "eye", seg: [10, 8] },
+  { k: "ell", c: [-0.055, 0.448, 0.172], r: [0.013, 0.017, 0.01], col: "eye", seg: [10, 8] },
+  { k: "ell", c: [0.059, 0.454, 0.18], r: [0.005, 0.005, 0.004], col: "shine", seg: [6, 4] },
+  { k: "ell", c: [-0.051, 0.454, 0.18], r: [0.005, 0.005, 0.004], col: "shine", seg: [6, 4] },
+], [0, dy, 0]);
+const duckBody = (dy: number, floor?: number): Part[] => shiftParts([
+  { k: "ell", c: [0, 0.22, -0.03], r: [0.15, 0.13, 0.23], col: "body", rot: [0.15, 0, 0], st: 1, seg: [32, 22], floor },
+  { k: "cone", c: [0, 0.285, -0.255], r: 0.06, h: 0.13, col: "body", rot: [-2.05, 0, 0], flat: 0.55 },
+  { k: "ell", c: [0, 0.22, 0.1], r: [0.11, 0.11, 0.09], col: "belly", seg: [18, 12] },
+  { k: "ell", c: [0.128, 0.245, -0.05], r: [0.035, 0.08, 0.15], col: "accent", rot: [-0.1, 0, 0.12], seg: [16, 12] },
+  { k: "ell", c: [-0.128, 0.245, -0.05], r: [0.035, 0.08, 0.15], col: "accent", rot: [-0.1, 0, -0.12], seg: [16, 12] },
+], [0, dy, 0]);
+const DUCK: SpeciesDef = {
+  id: "bebek", about: "plump toy duck (sitting / standing), flat bill, paddle feet", altShare: 0.5, cap: 1000, mound: 1.9, badge: "duck",
+  poses: [
+    { parts: duckBody(-0.08, 0), move: { at: [0, 0.2, 0.1], axis: "x", amp: 0.22, speed: 1.1, mode: "peck", parts: duckHead(-0.08) } },
+    {
+      parts: [
+        ...duckBody(0),
+        { k: "tube", pts: [[0.05, 0.11, 0], [0.053, 0.05, 0.01], [0.055, 0.01, 0.02]], r: 0.014, col: "beak" },
+        { k: "tube", pts: [[-0.05, 0.11, 0], [-0.053, 0.05, 0.01], [-0.055, 0.01, 0.02]], r: 0.014, col: "beak" },
+        { k: "ell", c: [0.056, 0.007, 0.06], r: [0.045, 0.007, 0.055], col: "beak", seg: [10, 6] },
+        { k: "ell", c: [-0.056, 0.007, 0.06], r: [0.045, 0.007, 0.055], col: "beak", seg: [10, 6] },
+      ],
+      move: { at: [0, 0.29, 0.1], axis: "x", amp: 0.26, speed: 1.2, mode: "peck", parts: duckHead(0) },
+    },
+  ],
+};
+
+// ------------------------------------------------------------------ goat
+const goatHead = (dy: number): { parts: Part[]; eyes: { at: V3; parts: Part[] } } => {
+  const parts = shiftParts([
+    { k: "ell", c: [0, 0.585, 0.26], r: [0.1, 0.14, 0.1], col: "body", rot: [0.5, 0, 0], st: 1, seg: [18, 14] },
+    { k: "ell", c: [0, 0.72, 0.33], r: [0.13, 0.12, 0.14], col: "body", st: 2, seg: [26, 18] },
+    { k: "ell", c: [0, 0.675, 0.44], r: [0.085, 0.07, 0.08], col: "belly", seg: [18, 12] },
+    { k: "ell", c: [0, 0.69, 0.515], r: [0.03, 0.02, 0.014], col: "nose", seg: [10, 8] },
+    { k: "ell", c: [0.15, 0.735, 0.29], r: [0.075, 0.026, 0.036], col: "body", rot: [0, 0, 0.45], seg: [14, 8] },
+    { k: "ell", c: [-0.15, 0.735, 0.29], r: [0.075, 0.026, 0.036], col: "body", rot: [0, 0, -0.45], seg: [14, 8] },
+    { k: "ell", c: [0.165, 0.725, 0.305], r: [0.05, 0.012, 0.022], col: "ear", rot: [0, 0, 0.45], seg: [10, 6] },
+    { k: "ell", c: [-0.165, 0.725, 0.305], r: [0.05, 0.012, 0.022], col: "ear", rot: [0, 0, -0.45], seg: [10, 6] },
+    { k: "cone", c: [0.06, 0.86, 0.27], r: 0.028, h: 0.13, col: "horn", rot: [-0.65, 0, -0.2] },
+    { k: "cone", c: [-0.06, 0.86, 0.27], r: 0.028, h: 0.13, col: "horn", rot: [-0.65, 0, 0.2] },
+    { k: "cone", c: [0, 0.6, 0.45], r: 0.026, h: 0.085, col: "accent", rot: [Math.PI - 0.25, 0, 0] },
+  ], [0, dy, 0]);
+  return { parts, eyes: beadEyes([0.088, 0.752 + dy, 0.425], [-0.088, 0.752 + dy, 0.425], 0, 1.05) };
+};
+const GOAT: SpeciesDef = (() => {
+  const hs = goatHead(-0.08), hl = goatHead(-0.26);
+  const legs = (top: number, len: number): Part[] => [0.17, -0.25].flatMap((z) => [0.11, -0.11].flatMap((x) => [
+    { k: "tube", pts: [[x, top, z], [x, top - len * 0.5, z + 0.005], [x, 0.05, z + 0.01]], r: 0.056, col: "body" } as Part,
+    { k: "ell", c: [x, 0.036, z + 0.012], r: [0.06, 0.038, 0.064], col: "hoof", seg: [12, 8] } as Part,
+  ]));
+  const stand: PoseDef = {
+    parts: [
+      { k: "ell", c: [0, 0.36, -0.04], r: [0.215, 0.195, 0.32], col: "body", st: 1, seg: [36, 24] },
+      { k: "ell", c: [0, 0.27, 0], r: [0.16, 0.1, 0.22], col: "belly", seg: [20, 12] },
+      ...legs(0.27, 0.23),
+      ...hs.parts,
+    ],
+    eyes: hs.eyes,
+    move: { at: [0, 0.48, -0.33], axis: "x", amp: 0.35, speed: 3.2, mode: "sway", parts: [{ k: "ell", c: [0, 0.53, -0.36], r: [0.04, 0.075, 0.04], col: "body", rot: [-0.6, 0, 0], seg: [10, 8] }] },
+  };
+  const lie: PoseDef = {
+    parts: [
+      { k: "ell", c: [0, 0.2, -0.04], r: [0.21, 0.19, 0.33], col: "body", st: 1, seg: [36, 24], floor: 0 },
+      ...[0.2, -0.22].flatMap((z) => [0.14, -0.14].flatMap((x) => [
+        { k: "ell", c: [x, 0.05, z], r: [0.06, 0.05, 0.11], col: "body", seg: [12, 8], floor: 0 } as Part,
+        { k: "ell", c: [x, 0.035, z + 0.1], r: [0.045, 0.032, 0.04], col: "hoof", seg: [10, 6] } as Part,
+      ])),
+      ...hl.parts,
+    ],
+    eyes: hl.eyes,
+    move: { at: [0, 0.31, -0.34], axis: "x", amp: 0.3, speed: 2.6, mode: "sway", parts: [{ k: "ell", c: [0, 0.36, -0.37], r: [0.04, 0.075, 0.04], col: "body", rot: [-0.6, 0, 0], seg: [10, 8] }] },
+  };
+  return { id: "kambing", about: "big-headed toy goat (lying / standing), little horns and beard", poses: [lie, stand], altShare: 0.45, cap: 420, mound: 2.0, badge: "goat" };
+})();
+
+export const SPECIES: Record<string, SpeciesDef> = { kucing: CAT, ayam: CHICKEN, bebek: DUCK, kambing: GOAT };
+
+// ------------------------------------------------------------------ surface samples (footprint + top height map)
+/** Catmull-Rom point (uniform) on a polyline at u ∈ [0, 1]. */
+const crAt = (pts: V3[], u: number): V3 => {
+  const n = pts.length - 1, f = Math.min(n - 1e-6, Math.max(0, u * n)), i = Math.floor(f), t = f - i;
+  const p0 = pts[Math.max(0, i - 1)], p1 = pts[i], p2 = pts[Math.min(n, i + 1)], p3 = pts[Math.min(n, i + 2)];
+  const c = (a: number, b: number, cc: number, d: number) => 0.5 * (2 * b + (-a + cc) * t + (2 * a - 5 * b + 4 * cc - d) * t * t + (-a + 3 * b - 3 * cc + d) * t * t * t);
+  return [c(p0[0], p1[0], p2[0], p3[0]), c(p0[1], p1[1], p2[1], p3[1]), c(p0[2], p1[2], p2[2], p3[2])];
+};
+/** Points on the surface of a part (local creature frame). */
+export const samplePart = (p: Part, dense = 1): V3[] => {
+  const out: V3[] = [];
+  if (p.k === "ell") {
+    const nt = Math.round(14 * dense), np = Math.round(24 * dense);
+    for (let i = 0; i <= nt; i++)
+      for (let j = 0; j < np; j++) {
+        const th = (i / nt) * Math.PI, ph = (j / np) * Math.PI * 2;
+        let v: V3 = [Math.sin(th) * Math.cos(ph) * p.r[0], Math.cos(th) * p.r[1], Math.sin(th) * Math.sin(ph) * p.r[2]];
+        v = add(rotE(v, p.rot ?? [0, 0, 0], "YXZ"), p.c);
+        if (p.floor !== undefined && v[1] < p.floor + 0.03) v = [v[0], p.floor + 0.03 - (p.floor + 0.03 - v[1]) * 0.12, v[2]];
+        out.push(v);
+      }
+  } else if (p.k === "cone") {
+    const f = p.flat ?? 0.6;
+    out.push(add(rotE([0, p.h / 2, 0], p.rot, "XYZ"), p.c));
+    for (let j = 0; j < 12; j++) {
+      const a = (j / 12) * Math.PI * 2;
+      out.push(add(rotE([Math.cos(a) * p.r, -p.h / 2, Math.sin(a) * p.r * f], p.rot, "XYZ"), p.c));
+    }
+  } else {
+    for (let i = 0; i <= 16; i++) {
+      const c = crAt(p.pts, i / 16), rr = p.r * (1 - (p.taper ?? 0) * (i / 16) ** 2);
+      for (let j = 0; j < 6; j++) { const a = (j / 6) * Math.PI * 2; out.push([c[0] + Math.cos(a) * rr, c[1] + Math.sin(a) * rr, c[2]]); }
+      out.push([c[0], c[1] + rr, c[2]]);
+    }
+  }
+  return out;
+};
+
+export type Shape = { foot: { cx: number; cz: number; hx: number; hz: number }; top: (x: number, z: number) => number; height: number };
+const shapeCache = new Map<string, Shape>();
+/** Footprint rectangle (incl. tail, ears) and top-surface height function of a species pose, scale 1. */
+export const shapeOf = (species: string, pose: number): Shape => {
+  const key = `${species}|${pose}`;
+  const hit = shapeCache.get(key);
+  if (hit) return hit;
+  const P = SPECIES[species].poses[pose];
+  const parts = [...P.parts, ...(P.move?.parts ?? []), ...(P.eyes ? shiftParts(P.eyes.parts, P.eyes.at) : [])];
+  const pts = parts.flatMap((p) => samplePart(p, p.k === "ell" && Math.max(...p.r) > 0.12 ? 2.2 : 1));
+  let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9, h = 0;
+  for (const q of pts) { x0 = Math.min(x0, q[0]); x1 = Math.max(x1, q[0]); z0 = Math.min(z0, q[2]); z1 = Math.max(z1, q[2]); h = Math.max(h, q[1]); }
+  const res = 0.02, nx = Math.ceil((x1 - x0) / res) + 1, nz = Math.ceil((z1 - z0) / res) + 1;
+  const g = new Float32Array(nx * nz).fill(-1);
+  for (const q of pts) {
+    const i = Math.round((q[0] - x0) / res), j = Math.round((q[2] - z0) / res);
+    for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
+      const ii = i + di, jj = j + dj;
+      if (ii < 0 || jj < 0 || ii >= nx || jj >= nz) continue;
+      const k = jj * nx + ii;
+      if (q[1] > g[k]) g[k] = q[1];
+    }
+  }
+  const top = (x: number, z: number) => {
+    const i = Math.round((x - x0) / res), j = Math.round((z - z0) / res);
+    if (i < 0 || j < 0 || i >= nx || j >= nz) return -1;
+    return g[j * nx + i];
+  };
+  const s: Shape = { foot: { cx: (x0 + x1) / 2, cz: (z0 + z1) / 2, hx: (x1 - x0) / 2, hz: (z1 - z0) / 2 }, top, height: h };
+  shapeCache.set(key, s);
+  return s;
+};

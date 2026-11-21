@@ -1,0 +1,2560 @@
+VOYNANN Motion - packed source files of this folder. Do not edit by hand.
+The skill upload in the Claude app accepts at most 200 files, so the source files are packed here.
+`node <skill folder>/new-project.mjs <project folder> --kit=<style>` unpacks them into the project.
+Format: per file one line with four '=' signs, the byte length and the path, then exactly that many bytes.
+
+==== 664 project/remotion.config.ts
+// See all configuration options: https://remotion.dev/docs/config
+import fs from "node:fs";
+import { Config } from "@remotion/cli/config";
+
+Config.setVideoImageFormat("jpeg");
+Config.setJpegQuality(95);
+Config.setOverwriteOutput(true);
+// WebGL film: GPU-backed ANGLE path in headless Chrome, or software "swangle" when scripts/gl.mjs found
+// no usable GPU on this computer (remembered in .gl-mode). The GL env var overrides both.
+type GL = Parameters<typeof Config.setChromiumOpenGlRenderer>[0];
+const gl = (process.env.GL || (fs.existsSync(".gl-mode") ? fs.readFileSync(".gl-mode", "utf8").trim() : "") || "angle") as GL;
+Config.setChromiumOpenGlRenderer(gl);
+
+==== 12433 project/scripts/lib/tipikal-sound.mjs
+// TIPIKAL sound from a Plan — original synth, no samples, no meme clips.
+// Music: a bouncy sitcom-sketch groove (plucky bass, offbeat chord stabs, toy-piano hook, light hats + soft clap),
+// 118 bpm, C major I–vi–IV–V. It stops dead under a freeze (record scratch) and comes back on the next type card;
+// it lands on a "ta-da" under the outro card.
+// SFX follow the plan: header drop, a slam per type card, pops / boings / stings for the stickers, comic sound words
+// (brake squeal, two-tone horn, crash, thud, slap, whoosh, splash, chomp), beat cues, a putter bed under moving motors,
+// a slide-whistle + thud for falls. Mix: −14 LUFS, true peak ≤ −1.5 dBTP; the music ducks under a voice-over.
+import fs from "node:fs";
+import path from "node:path";
+import { execFileSync, spawnSync } from "node:child_process";
+import { segAt } from "../../src/tipikal/track.ts";
+
+export const buildSound = (plan, { voice, outDir, mixFile, music = true }) => {
+  const DUR = plan.duration, SR = 48000, N = Math.ceil(DUR * SR);
+  const mk = () => [new Float32Array(N), new Float32Array(N)];
+  let seed = 7777;
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const add = (buf, t, pan, len, fn) => {
+    const i0 = Math.max(0, Math.round(t * SR)), n = Math.min(N - i0, Math.round(len * SR));
+    const gl = Math.cos(((pan + 1) * Math.PI) / 4), gr = Math.sin(((pan + 1) * Math.PI) / 4);
+    for (let i = 0; i < n; i++) { const v = fn(i / SR, i); buf[0][i0 + i] += v * gl; buf[1][i0 + i] += v * gr; }
+  };
+  const hz = (m) => 440 * Math.pow(2, (m - 69) / 12);
+  const env = (t, a, d) => Math.min(1, t / a) * Math.exp(-t * d);
+
+  // freezes and the outro silence the groove
+  const freezes = plan.shots.filter((s) => s.freeze !== undefined && s.type !== -2).map((s) => [s.freeze, s.t1]);
+  const outroT = plan.outro ? plan.outro.t0 : DUR + 1;
+  const gate = (t) => { for (const [a, b] of freezes) if (t >= a - 0.02 && t < b) return 0; return t >= outroT ? 0 : 1; };
+
+  // ---------------------------------------------------------------- music
+  const mus = mk();
+  if (music) {
+    const beat = 60 / 118, bar = beat * 4;
+    const CH = [[48, 52, 55], [45, 48, 52], [41, 45, 48], [43, 47, 50]];
+    const HOOK = [[0, 76], [0.75, 79], [1.5, 81], [2, 79], [2.75, 76], [3.5, 74]];
+    const start = plan.intro ? 0.15 : 0;
+    const bars = Math.ceil(DUR / bar) + 1;
+    for (let b = 0; b < bars; b++) {
+      const c = CH[b % 4], t0 = start + b * bar;
+      // plucky bass: root on 1, octave bounce on 2&, fifth on 3, approach on 4&
+      for (const [bt, m] of [[0, c[0] - 12], [1.5, c[0]], [2, c[0] - 5], [3.5, c[0] - 10]]) {
+        const tt = t0 + bt * beat; if (!gate(tt)) continue;
+        const f = hz(m);
+        add(mus, tt, -0.05, 0.4, (t) => { const ph = (f * t) % 1; return (ph < 0.5 ? 1 : -1) * 0.04 * env(t, 0.003, 11) + Math.sin(2 * Math.PI * f * t) * 0.07 * env(t, 0.003, 7); });
+      }
+      // offbeat chord stabs (ukulele-ish triangle plucks)
+      for (let e = 1; e < 8; e += 2) {
+        const tt = t0 + (e * beat) / 2; if (!gate(tt)) continue;
+        for (const [k, m] of c.entries()) { const f = hz(m + 12); add(mus, tt + k * 0.006, 0.25, 0.22, (t) => { const ph = (f * t) % 1; return (4 * Math.abs(ph - 0.5) - 1) * 0.02 * env(t, 0.002, 18); }); }
+      }
+      // toy-piano hook every other bar, a lighter answer in between
+      const hook = b % 2 === 0 ? HOOK : HOOK.filter((_, i) => i % 2 === 0).map(([bt, m]) => [bt + 0.5, m - 3]);
+      for (const [bt, m] of hook) {
+        const tt = t0 + bt * beat; if (!gate(tt)) continue;
+        const mm = c.some((x) => (m - x) % 12 === 0) ? m : m - 1;
+        const f = hz(mm);
+        add(mus, tt, -0.3 + rnd() * 0.2, 0.6, (t) => (Math.sin(2 * Math.PI * f * t) * Math.exp(-t * 7) + 0.3 * Math.sin(2 * Math.PI * f * 4.02 * t) * Math.exp(-t * 26)) * 0.045 * Math.min(1, t / 0.002));
+      }
+      // hats on 8ths, soft clap on 2 and 4
+      for (let e = 0; e < 8; e++) { const tt = t0 + (e * beat) / 2; if (!gate(tt)) continue; let hp = 0; add(mus, tt, 0.35, 0.05, (t) => { const n = rnd() * 2 - 1; const o = n - hp; hp = n; return o * (e % 2 ? 0.012 : 0.007) * Math.exp(-t * 90); }); }
+      for (const bt of [1, 3]) { const tt = t0 + bt * beat; if (!gate(tt)) continue; let lp = 0; add(mus, tt, -0.1, 0.16, (t) => { const n = rnd() * 2 - 1; lp += (n - lp) * 0.4; return lp * 0.05 * Math.exp(-t * 32); }); }
+    }
+    // ta-da under the outro card
+    if (plan.outro) for (const [k, m] of [[0, 67], [0.14, 72]]) add(mus, plan.outro.t0 + 0.12 + k, 0, 1.6, (t) => { const f = hz(m); const ph = (f * t) % 1; return ((2 * ph - 1) * 0.5 + Math.sin(2 * Math.PI * f * t)) * 0.045 * Math.min(1, t / 0.01) * Math.exp(-t * (k ? 1.6 : 5)); });
+    if (plan.outro) for (const m of [48, 55, 60, 64]) add(mus, plan.outro.t0 + 0.26, 0, 1.8, (t) => Math.sin(2 * Math.PI * hz(m) * t) * 0.022 * Math.min(1, t / 0.02) * Math.exp(-t * 1.3));
+  }
+
+  // ---------------------------------------------------------------- SFX
+  const sfx = mk();
+  const events = [];
+  const cue = (t, kind) => { if (t < 0 || t > DUR) return; events.push(`${t.toFixed(2)} ${kind}`); SFX[kind]?.(t); };
+  const noise = (t, len, gain, lpK, hpK, envf, pan = 0) => { let lp = 0, hp = 0; add(sfx, t, pan, len, (x) => { const n = rnd() * 2 - 1; lp += (n - lp) * lpK; hp += (lp - hp) * hpK; return (lp - hp) * gain * envf(x); }); };
+  const tone = (t, len, f0, f1, gain, decay, pan = 0, shape = "sine") => { let ph = 0; add(sfx, t, pan, len, (x) => { const f = f0 + (f1 - f0) * Math.min(1, x / len); ph += f / SR; const p = ph % 1; const w = shape === "square" ? (p < 0.5 ? 1 : -1) : shape === "tri" ? 4 * Math.abs(p - 0.5) - 1 : Math.sin(2 * Math.PI * p); return w * gain * Math.min(1, x / 0.004) * Math.exp(-x * decay); }); };
+  const SFX = {
+    whoosh: (t) => noise(t - 0.12, 0.36, 0.16, 0.12, 0.02, (x) => Math.sin(Math.PI * Math.min(1, x / 0.36)) ** 2, 0.2),
+    slam: (t) => { SFX.whoosh(t - 0.05); tone(t + 0.06, 0.3, 120, 60, 0.22, 16); noise(t + 0.06, 0.08, 0.12, 0.5, 0.05, (x) => Math.exp(-x * 60)); },
+    drop: (t) => { SFX.whoosh(t); tone(t + 0.28, 0.4, 90, 45, 0.2, 9); },
+    pop: (t) => tone(t, 0.12, 900, 420, 0.12, 30, 0.1),
+    boing: (t) => { let ph = 0; add(sfx, t, 0.15, 0.55, (x) => { const f = 220 + 140 * Math.sin(2 * Math.PI * 9 * x) * Math.exp(-x * 4) + 90 * Math.exp(-x * 10); ph += f / SR; return Math.sin(2 * Math.PI * ph) * 0.11 * Math.min(1, x / 0.003) * Math.exp(-x * 4.5); }); },
+    sting: (t) => { tone(t, 0.18, hz(79), hz(79), 0.07, 12, 0.1, "tri"); tone(t + 0.09, 0.32, hz(84), hz(84), 0.08, 8, 0.1, "tri"); },
+    tick: (t) => { for (let k = 0; k < 3; k++) tone(t + k * 0.26, 0.04, 2600, 2400, 0.06, 80, -0.2); },
+    ding: (t) => { for (const [k, m] of [[0, 88], [1, 95]]) tone(t + k * 0.05, 0.9, hz(m), hz(m), 0.04, 5, 0.15); },
+    snore: (t) => noise(t, 1.2, 0.07, 0.04, 0.01, (x) => (0.5 - 0.5 * Math.cos(2 * Math.PI * x / 1.2)) * (1 + 0.6 * Math.sin(2 * Math.PI * 28 * x)), -0.2),
+    stamp: (t) => { tone(t, 0.25, 110, 70, 0.22, 18); noise(t, 0.06, 0.18, 0.6, 0.1, (x) => Math.exp(-x * 70)); },
+    brake: (t) => { tone(t, 0.75, 2900, 2300, 0.05, 2.2, 0.1, "tri"); noise(t, 0.75, 0.06, 0.6, 0.3, (x) => Math.min(1, x / 0.05) * Math.exp(-x * 2.5)); },
+    horn: (t) => { for (const [k, f] of [[0, 415], [0.22, 415]]) { tone(t + k, 0.18, f, f, 0.05, 1.5, -0.1, "square"); tone(t + k, 0.18, f * 1.26, f * 1.26, 0.035, 1.5, -0.1, "square"); } },
+    crash: (t) => { noise(t, 0.6, 0.25, 0.5, 0.02, (x) => Math.exp(-x * 7)); tone(t, 0.4, 85, 40, 0.25, 9); for (const f of [1800, 2650, 3900]) tone(t + 0.02, 0.7, f, f * 0.98, 0.02, 6, 0.3); },
+    thud: (t) => tone(t, 0.35, 95, 48, 0.24, 13),
+    slap: (t) => noise(t, 0.09, 0.3, 0.8, 0.3, (x) => Math.exp(-x * 55)),
+    slide: (t) => tone(t, 0.55, 1500, 300, 0.07, 1.5, 0, "sine"),
+    scratch: (t) => { let ph = 0; add(sfx, t, 0, 0.42, (x) => { const sp = Math.sin(2 * Math.PI * 4.5 * x); ph += (900 + 700 * sp) / SR; return ((rnd() * 2 - 1) * 0.5 + Math.sin(2 * Math.PI * ph)) * 0.08 * Math.min(1, x / 0.01) * Math.min(1, (0.42 - x) / 0.05); }); },
+    splash: (t) => { noise(t, 0.6, 0.18, 0.4, 0.05, (x) => Math.exp(-x * 5)); for (let k = 0; k < 4; k++) tone(t + 0.08 + k * 0.07 + rnd() * 0.04, 0.1, 1200 + rnd() * 800, 600, 0.04, 30, rnd() - 0.5); },
+    chomp: (t) => { for (const k of [0, 0.16]) noise(t + k, 0.08, 0.2, 0.7, 0.2, (x) => Math.exp(-x * 45)); },
+    cheer: (t) => { [72, 76, 79, 84].forEach((m, k) => tone(t + k * 0.06, 0.4, hz(m), hz(m), 0.045, 6, (k - 1.5) * 0.3, "tri")); },
+    engine: (t) => tone(t, 0.6, 70, 110, 0.07, 3, 0, "square"),
+  };
+
+  // header drop + one slam per type card
+  cue(0.05, "drop");
+  for (const ty of plan.types) cue(ty.t0 + 0.02, ty.n === 1 && plan.intro ? "slam" : "slam");
+  // marks, beat cues, freezes, falls
+  for (const S of plan.shots) {
+    for (const m of S.marks) if (m.sound) cue(m.t0, m.sound);
+    for (const s of S.sounds ?? []) cue(s.t, s.kind);
+    if (S.freeze !== undefined && S.type !== -2) cue(S.freeze - 0.05, "scratch");
+    for (const a of S.actors) for (const k of a.keys) if (k.do === "fall" && k.t >= S.t0 - 0.01 && k.t < S.t1) { cue(k.t, "slide"); cue(k.t + 0.34, "thud"); }
+  }
+  // putter bed under moving scooters / underbones (one continuous cue)
+  const motorTracks = Object.values(plan.tracks).filter((tr) => plan.shots.some((S) => S.props.some((p) => p.track === tr.id && ["motor", "bebek", "mobil", "angkot"].includes(p.kind))));
+  if (motorTracks.length) {
+    const BL = 240, speeds = new Float32Array(Math.ceil(N / BL) + 1);
+    let used = false;
+    for (let b = 0; b < speeds.length; b++) {
+      const t = (b * BL) / SR;
+      const S = plan.shots.find((s) => t >= s.t0 && t < s.t1);
+      if (!S || (S.freeze !== undefined && t >= S.freeze) || t >= outroT) continue;
+      for (const tr of motorTracks) if (S.props.some((p) => p.track === tr.id)) speeds[b] = Math.max(speeds[b], segAt(tr, t).speed);
+    }
+    let ph = 0, lvl = 0;
+    for (let i = 0; i < N; i++) {
+      const b = i / BL, b0 = Math.floor(b), sp = speeds[b0] + (speeds[Math.min(speeds.length - 1, b0 + 1)] - speeds[b0]) * (b - b0);
+      const want = sp < 0.15 ? 0 : Math.min(1, sp / 2.5);
+      lvl += (want - lvl) * 0.0008;
+      if (lvl < 0.002) continue;
+      used = true;
+      ph += (32 + sp * 7) / SR;
+      const v = (((ph % 1) < 0.18 ? 1 : 0) - 0.18) * 0.05 * lvl;
+      sfx[0][i] += v; sfx[1][i] += v * 0.9;
+    }
+    if (used) events.push("motor bed");
+  }
+
+  // ---------------------------------------------------------------- write + mix
+  const wav = (file, buf) => {
+    const data = Buffer.alloc(N * 4);
+    for (let i = 0; i < N; i++) for (let c = 0; c < 2; c++) data.writeInt16LE(Math.round(Math.max(-1, Math.min(1, buf[c][i])) * 32767), i * 4 + c * 2);
+    const h = Buffer.alloc(44);
+    h.write("RIFF", 0); h.writeUInt32LE(36 + data.length, 4); h.write("WAVEfmt ", 8); h.writeUInt32LE(16, 16); h.writeUInt16LE(1, 20); h.writeUInt16LE(2, 22);
+    h.writeUInt32LE(SR, 24); h.writeUInt32LE(SR * 4, 28); h.writeUInt16LE(4, 32); h.writeUInt16LE(16, 34); h.write("data", 36); h.writeUInt32LE(data.length, 40);
+    fs.writeFileSync(file, Buffer.concat([h, data]));
+  };
+  fs.mkdirSync(outDir, { recursive: true });
+  fs.mkdirSync(path.dirname(mixFile), { recursive: true });
+  const mf = path.join(outDir, "music.wav"), sf = path.join(outDir, "sfx.wav");
+  wav(mf, mus);
+  wav(sf, sfx);
+  const tail = `apad=whole_dur=${DUR},atrim=0:${DUR},loudnorm=I=-14:TP=-1.5:LRA=11,aresample=48000[out]`;
+  const filter = voice
+    ? ["[0:a]highpass=f=70,acompressor=threshold=-20dB:ratio=2.5:attack=8:release=140:makeup=3,asplit=2[v][vk]", "[1:a]volume=1.0[m]", "[m][vk]sidechaincompress=threshold=0.03:ratio=6:attack=25:release=420[md]", "[2:a]volume=0.9[s]", `[v][md][s]amix=inputs=3:normalize=0:duration=longest,${tail}`].join(";")
+    : ["[0:a]volume=1.4[m]", "[1:a]volume=1.0[s]", `[m][s]amix=inputs=2:normalize=0:duration=longest,${tail}`].join(";");
+  execFileSync("ffmpeg", ["-y", "-v", "error", ...(voice ? ["-i", voice] : []), "-i", mf, "-i", sf, "-filter_complex", filter, "-map", "[out]", "-ac", "2", mixFile]);
+  const m = spawnSync("ffmpeg", ["-hide_banner", "-i", mixFile, "-af", "loudnorm=print_format=summary", "-f", "null", "-"], { encoding: "utf8" }).stderr;
+  return { lufs: (m.match(/Input Integrated:\s+(-?[\d.]+)/) ?? [])[1], peak: (m.match(/Input True Peak:\s+(-?[\d.]+)/) ?? [])[1], events: events.length };
+};
+
+==== 9206 project/src/kits/tipikal/Motor.tsx
+// Motor — a generic chunky matic scooter built from extruded side profiles (no brand marks, made-up plate text).
+// Props: spec colours, steer (rad, + = left), wheel spin distance, lean, lamp states (blinkers / brake).
+import React, { useEffect, useMemo } from "react";
+import {
+  type Material, CanvasTexture, CylinderGeometry, DoubleSide, ExtrudeGeometry, MeshToonMaterial, Quaternion, Shape, SphereGeometry, SRGBColorSpace, Vector3,
+} from "three";
+import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
+import { K, steerAxisDir } from "./motor.ts";
+import { at, basis, hullOf, inkHull, lamp, M, stick, toon } from "./mats.ts";
+import type { V3 } from "./math.ts";
+import type { MotorSpec } from "./spec.ts";
+import { F_SIGN } from "./fonts.ts";
+
+type P = [number, number];
+/** side profile (z, y) extruded across x, centred, with rounded edges */
+const profile = (pts: P[], width: number, bevel = 0.02) => {
+  const sh = new Shape();
+  pts.forEach(([z, y], i) => (i ? sh.lineTo(z, y) : sh.moveTo(z, y)));
+  sh.closePath();
+  const depth = Math.max(0.01, width - 2 * bevel);
+  const g = new ExtrudeGeometry(sh, { depth, bevelEnabled: true, bevelThickness: bevel, bevelSize: bevel * 0.8, bevelSegments: 2, curveSegments: 4 });
+  g.rotateY(-Math.PI / 2);
+  g.translate(depth / 2, 0, 0);
+  g.computeVertexNormals();
+  return g;
+};
+
+// raw (unscaled) model dimensions; the whole body is drawn inside a group scaled by K
+const RAW = { wheelR: 0.235, rearZ: -0.6, frontZ: 0.64, grip: [0.3, 1.045, 0.42] as V3, gripR: 0.021, axisTop: [0, 1.02, 0.45] as V3, rackTop: 0.845, rackZ: -0.98 };
+const MOTOR = RAW;
+const HULL = 0.01;
+const G = (() => {
+  const cowl = profile([[0.03, 0.3], [0.05, 0.55], [-0.01, 0.69], [-0.3, 0.725], [-0.74, 0.735], [-0.88, 0.68], [-0.92, 0.6], [-0.86, 0.545], [-0.44, 0.525], [-0.33, 0.37], [-0.2, 0.3]], 0.31);
+  const floor = profile([[-0.06, 0.255], [0.37, 0.255], [0.37, 0.33], [-0.06, 0.33]], 0.46, 0.015);
+  const shield = profile([[0.3, 0.255], [0.385, 0.255], [0.405, 0.45], [0.465, 0.62], [0.5, 0.8], [0.485, 0.955], [0.41, 0.995], [0.365, 0.92], [0.345, 0.6], [0.3, 0.34]], 0.42, 0.025);
+  const seat = profile([[-0.02, 0.705], [-0.06, 0.79], [-0.3, 0.795], [-0.74, 0.812], [-0.82, 0.77], [-0.78, 0.725], [-0.3, 0.722]], 0.29, 0.025);
+  const head = new RoundedBoxGeometry(0.46, 0.11, 0.18, 2, 0.04);
+  const tire = new CylinderGeometry(MOTOR.wheelR, MOTOR.wheelR, 0.1, 28, 1);
+  tire.rotateZ(Math.PI / 2);
+  const rim = new CylinderGeometry(0.15, 0.15, 0.106, 20, 1);
+  rim.rotateZ(Math.PI / 2);
+  const hub = new CylinderGeometry(0.05, 0.05, 0.116, 12, 1);
+  hub.rotateZ(Math.PI / 2);
+  const fender = new CylinderGeometry(0.27, 0.27, 0.13, 20, 1, true, -0.25, 2.2);
+  fender.rotateZ(Math.PI / 2);
+  const box = new RoundedBoxGeometry(1, 1, 1, 2, 0.12);
+  const cyl = new CylinderGeometry(1, 1, 1, 12, 1);
+  cyl.translate(0, 0.5, 0);
+  const disc = new CylinderGeometry(1, 1, 1, 18, 1);
+  const sph = new SphereGeometry(1, 14, 10);
+  const hulls = { cowl: hullOf(cowl, HULL), floor: hullOf(floor, HULL), shield: hullOf(shield, HULL), seat: hullOf(seat, HULL), head: hullOf(head, HULL), tire: hullOf(tire, HULL) };
+  return { cowl, floor, shield, seat, head, tire, rim, hub, fender, box, cyl, disc, sph, hulls };
+})();
+
+const plateCache = new Map<string, CanvasTexture>();
+const plateTex = (text: string) => {
+  const hit = plateCache.get(text);
+  if (hit) return hit;
+  const cv = document.createElement("canvas");
+  cv.width = 256;
+  cv.height = 96;
+  const g = cv.getContext("2d")!;
+  g.fillStyle = "#f4f4ee";
+  g.fillRect(0, 0, 256, 96);
+  g.strokeStyle = "#151515";
+  g.lineWidth = 8;
+  g.strokeRect(6, 6, 244, 84);
+  if (text) {
+    g.fillStyle = "#151515";
+    g.font = `800 62px ${F_SIGN}, sans-serif`;
+    g.textAlign = "center";
+    g.textBaseline = "middle";
+    g.fillText(text, 128, 52);
+  }
+  const t = new CanvasTexture(cv);
+  t.colorSpace = SRGBColorSpace;
+  t.anisotropy = 4;
+  plateCache.set(text, t);
+  return t;
+};
+
+export type Lamps = { blinkL?: boolean; blinkR?: boolean; brake?: boolean };
+export type MotorProps = { spec: MotorSpec; steer?: number; spin?: number; lean?: number; lamps?: Lamps; children?: React.ReactNode };
+
+const Wheel: React.FC<{ z: number; spin: number; rim: string }> = ({ z, spin, rim }) => (
+  <group position={[0, MOTOR.wheelR, z]} rotation={[spin / (MOTOR.wheelR * K), 0, 0]}>
+    <mesh geometry={G.tire} material={toon("#2a2a2e")} castShadow receiveShadow />
+    <mesh geometry={G.hulls.tire} material={inkHull} />
+    <mesh geometry={G.rim} material={toon(rim)} castShadow />
+    <mesh geometry={G.hub} material={toon("#3a3a40")} />
+  </group>
+);
+
+/** Scooter (children are carried with it: riders, cargo). Lean rolls the whole group about the ground line. */
+export const Motor: React.FC<MotorProps> = ({ spec, steer = 0, spin = 0, lean = 0, lamps = {}, children }) => {
+  const body = toon(spec.body), trim = toon(spec.trim ?? "#2c2d31"), seat = toon(spec.seat), accent = toon(spec.accent ?? spec.body);
+  const rim = spec.rim ?? "#b9bcc2";
+  const plateMat = useMemo(() => new MeshToonMaterial({ map: plateTex(spec.plate ?? "") }), [spec.plate]);
+  useEffect(() => () => plateMat.dispose(), [plateMat]);
+  const fenderMat = useMemo(() => new MeshToonMaterial({ color: spec.body, side: DoubleSide }), [spec.body]);
+  useEffect(() => () => fenderMat.dispose(), [fenderMat]);
+  const k = steerAxisDir();
+  const q = new Quaternion().setFromAxisAngle(new Vector3(...k), -steer);
+  const piv = MOTOR.axisTop;
+  const ON = lamp("#ffb21f"), OFF = toon("#d77b10");
+  const blink = (on?: boolean) => (on ? ON : OFF);
+  const B = (p: V3, s: V3, mat: Material, key: string) => <M key={key} g={G.box} m={at(p, s)} material={mat} />;
+  return (
+    <group rotation={[0, 0, -lean]}>
+      <group scale={K}>
+      {/* fixed body */}
+      <M g={G.cowl} m={at([0, 0, 0])} material={body} />
+      <M g={G.hulls.cowl} m={at([0, 0, 0])} material={inkHull} shadow={false} />
+      <M g={G.floor} m={at([0, 0, 0])} material={trim} />
+      <M g={G.hulls.floor} m={at([0, 0, 0])} material={inkHull} shadow={false} />
+      <M g={G.shield} m={at([0, 0, 0])} material={body} />
+      <M g={G.hulls.shield} m={at([0, 0, 0])} material={inkHull} shadow={false} />
+      <M g={G.seat} m={at([0, 0, 0])} material={seat} />
+      <M g={G.hulls.seat} m={at([0, 0, 0])} material={inkHull} shadow={false} />
+      {/* side stripes */}
+      {[1, -1].map((sd) => B([sd * 0.158, 0.6, -0.42], [0.012, 0.045, 0.62], accent, "stripe" + sd))}
+      {/* engine (left) + muffler (right) */}
+      {B([0.115, 0.3, -0.4], [0.11, 0.17, 0.46], toon("#6d7178"), "eng")}
+      <M g={G.cyl} m={stick([-0.16, 0.3, -0.36], [-0.16, 0.33, -0.86], 0.055)} material={toon("#a3a8ae")} />
+      <M g={G.cyl} m={stick([-0.16, 0.33, -0.86], [-0.16, 0.335, -0.9], 0.04)} material={toon("#2c2d31")} />
+      {/* tail: brake lamp, rear blinkers, plate */}
+      {B([0, 0.665, -0.925], [0.17, 0.055, 0.03], lamps.brake ? lamp("#ff2b2b") : toon("#b0222a"), "tail")}
+      {B([0.13, 0.64, -0.905], [0.05, 0.035, 0.03], blink(lamps.blinkL), "rbl")}
+      {B([-0.13, 0.64, -0.905], [0.05, 0.035, 0.03], blink(lamps.blinkR), "rbr")}
+      <M g={G.box} m={basis([0, 0.49, -0.885], [1, 0, 0], [0, 0.97, -0.24], [0, 0.24, 0.97], [0.21, 0.08, 0.008])} material={plateMat} />
+      {spec.rack ? (
+        <group>
+          {B([0, MOTOR.rackTop - 0.012, -1.1], [0.3, 0.024, 0.34], toon("#3b3d42"), "rack")}
+          {[1, -1].map((sd) => <M key={"rs" + sd} g={G.cyl} m={stick([sd * 0.12, 0.62, -0.78], [sd * 0.12, MOTOR.rackTop - 0.03, -0.83], 0.012)} material={toon("#3b3d42")} />)}
+        </group>
+      ) : null}
+      <Wheel z={MOTOR.rearZ} spin={spin} rim={rim} />
+      {/* steering assembly */}
+      <group position={piv} quaternion={q}>
+        <group position={[-piv[0], -piv[1], -piv[2]]}>
+          <M g={G.head} m={at([0, 1.03, 0.47])} material={body} />
+          <M g={G.hulls.head} m={at([0, 1.03, 0.47])} material={inkHull} shadow={false} />
+          {B([0, 1.022, 0.562], [0.19, 0.065, 0.02], lamp("#fff6d8"), "hl")}
+          {B([0.205, 1.02, 0.555], [0.05, 0.035, 0.02], blink(lamps.blinkL), "fbl")}
+          {B([-0.205, 1.02, 0.555], [0.05, 0.035, 0.02], blink(lamps.blinkR), "fbr")}
+          {[1, -1].map((sd) => (
+            <group key={"g" + sd}>
+              <M g={G.cyl} m={stick([sd * 0.22, MOTOR.grip[1], MOTOR.grip[2]], [sd * 0.36, MOTOR.grip[1], MOTOR.grip[2]], MOTOR.gripR)} material={toon("#202024")} />
+              <M g={G.cyl} m={stick([sd * 0.16, 1.07, 0.45], [sd * 0.25, 1.25, 0.41], 0.008)} material={toon("#202024")} />
+              <M g={G.disc} m={basis([sd * 0.26, 1.27, 0.41], [1, 0, 0], [0, 0, 1], [0, -1, 0], [0.055, 0.012, 0.038])} material={toon("#202024")} />
+              <M g={G.cyl} m={stick([sd * 0.065, MOTOR.wheelR, MOTOR.frontZ], [sd * 0.065, 0.66, 0.52], 0.022)} material={toon("#9ea3a9")} />
+            </group>
+          ))}
+          <mesh geometry={G.fender} material={fenderMat} position={[0, MOTOR.wheelR, MOTOR.frontZ]} castShadow />
+          <Wheel z={MOTOR.frontZ} spin={spin} rim={rim} />
+        </group>
+      </group>
+      </group>
+      {children}
+    </group>
+  );
+};
+
+==== 9076 project/src/kits/tipikal/rig.ts
+// TIPIKAL rig — chunky toon proportions (oval head ≈ 1/4.5 of the height, capsule body, thick limbs, real hands).
+// Posed from targets (pelvis, torso lean, hand / ankle targets); elbows and knees come from two-bone IK so hands
+// land on grips and feet on the floorboard or the road. Local frame: faces +z, up +y, its LEFT side is +x.
+import { add, cross, dot, len, mul, nrm, sub, type V3 } from "./math.ts";
+
+export type HandShape = "open" | "grip" | "fist" | "thumb" | "wave" | "point" | "peace" | "flat";
+
+export type Pose = {
+  pelvis: V3;
+  /** torso lean forward (+), side lean to the left (+), shoulder twist to the left (+) — radians */
+  pitch: number;
+  roll?: number;
+  twist?: number;
+  /** head relative to the torso: nod down (+), turn left (+), tilt left (+) */
+  nod?: number;
+  turn?: number;
+  tilt?: number;
+  handL: V3;
+  handR: V3;
+  footL: V3;
+  footR: V3;
+  /** palm normal hints (unit-ish, figure-local); default: palms in toward the body */
+  palmL?: V3;
+  palmR?: V3;
+  shapeL?: HandShape;
+  shapeR?: HandShape;
+  /** numeric finger state while a hand blends between two shapes (mixPose writes it; otherwise from shapeL/R) */
+  fingL?: Fingers;
+  fingR?: Fingers;
+  /** foot yaw outward, foot pitch (toes down +) */
+  splay?: number;
+  toe?: number;
+  elbowOut?: number;
+  kneeOut?: number;
+  /** cartoon fall: 0 standing … 1 lying on the back (the renderer tips the body over the heels) */
+  fall?: number;
+};
+
+export type Build = { s?: number; wide?: number; head?: number };
+
+/** A hand as numbers: curl of each finger (index, middle, ring, pinky) [first, second joint] radians, spread, and the
+ *  thumb direction as weights of (along the hand, out of the palm, across the palm). Shapes blend by mixing these. */
+export type Fingers = { f: [number, number][]; spread: number; thumb: V3 };
+const TH = { wrap: [0.75, 0.55, 0.15] as V3, up: [0, 0, 1] as V3, flat: [0.8, 0, 0.45] as V3, open: [0.55, 0, 0.8] as V3 };
+export const fingersOf = (shape: HandShape | undefined): Fingers => {
+  const all = (a: number, b: number) => [[a, b], [a, b], [a, b], [a, b]] as [number, number][];
+  switch (shape) {
+    case "grip": return { f: all(1.25, 1.2), spread: 0, thumb: TH.wrap };
+    case "fist": return { f: all(1.55, 1.6), spread: 0, thumb: TH.wrap };
+    case "thumb": return { f: all(1.55, 1.6), spread: 0, thumb: TH.up };
+    case "wave": return { f: all(0.05, 0.05), spread: 0.18, thumb: TH.open };
+    case "flat": return { f: all(0.02, 0.02), spread: 0.02, thumb: TH.flat };
+    case "point": return { f: [[0.05, 0.05], [1.55, 1.6], [1.55, 1.6], [1.5, 1.6]], spread: 0, thumb: TH.wrap };
+    case "peace": return { f: [[0.05, 0.05], [0.05, 0.05], [1.55, 1.6], [1.5, 1.6]], spread: 0.22, thumb: TH.wrap };
+    default: return { f: all(0.25, 0.3), spread: 0.06, thumb: TH.open };
+  }
+};
+const mixF = (a: Fingers, b: Fingers, t: number): Fingers => ({
+  f: a.f.map((x, i) => [x[0] + (b.f[i][0] - x[0]) * t, x[1] + (b.f[i][1] - x[1]) * t] as [number, number]),
+  spread: a.spread + (b.spread - a.spread) * t,
+  thumb: [a.thumb[0] + (b.thumb[0] - a.thumb[0]) * t, a.thumb[1] + (b.thumb[1] - a.thumb[1]) * t, a.thumb[2] + (b.thumb[2] - a.thumb[2]) * t],
+});
+
+export const DIM = {
+  hipW: 0.088, thigh: 0.41, shin: 0.4, ankle: 0.06,
+  torsoUp: 0.5, shoulderUp: 0.42, shoulderW: 0.185, upper: 0.3, fore: 0.285,
+  neck: 0.05, headR: [0.165, 0.19, 0.172] as V3,
+  torsoR: 0.172, torsoDeep: 0.82, armR: 0.052, foreR: 0.047, legR: 0.068, shinR: 0.06, hipBlockR: 0.112,
+};
+
+/** Two-bone IK: joint between root and target (lengths a, b), bent toward `pole`. Returns [mid, end]. */
+export const ik2 = (root: V3, target: V3, a: number, b: number, pole: V3): [V3, V3] => {
+  let d = sub(target, root);
+  let L = len(d);
+  const max = (a + b) * 0.999, min = Math.abs(a - b) + 1e-3;
+  if (L < 1e-6) { d = [0, -1, 0]; L = 1e-6; }
+  const dir = mul(d, 1 / L);
+  const Lc = Math.min(max, Math.max(min, L));
+  const x = (a * a - b * b + Lc * Lc) / (2 * Lc);
+  const h = Math.sqrt(Math.max(0, a * a - x * x));
+  let bend = sub(pole, mul(dir, dot(pole, dir)));
+  if (len(bend) < 1e-5) bend = cross(dir, [1, 0, 0]);
+  bend = nrm(bend);
+  const mid = add(add(root, mul(dir, x)), mul(bend, h));
+  return [mid, add(root, mul(dir, Lc))];
+};
+
+export type Joints = {
+  pelvis: V3; chest: V3; neck: V3; head: V3; up: V3; right: V3; fwd: V3; headUp: V3; headFwd: V3; headRight: V3;
+  hipL: V3; hipR: V3; kneeL: V3; kneeR: V3; ankleL: V3; ankleR: V3;
+  shL: V3; shR: V3; elbowL: V3; elbowR: V3; wristL: V3; wristR: V3;
+  headR: V3; s: number; W: number;
+};
+
+const rX = (v: V3, a: number): V3 => [v[0], v[1] * Math.cos(a) - v[2] * Math.sin(a), v[1] * Math.sin(a) + v[2] * Math.cos(a)];
+const rY = (v: V3, a: number): V3 => [v[0] * Math.cos(a) + v[2] * Math.sin(a), v[1], -v[0] * Math.sin(a) + v[2] * Math.cos(a)];
+const rZ = (v: V3, a: number): V3 => [v[0] * Math.cos(a) - v[1] * Math.sin(a), v[0] * Math.sin(a) + v[1] * Math.cos(a), v[2]];
+
+/** Solve a pose (targets in figure-local metres for THIS build — poses are authored at the build's size). */
+export const solve = (p: Pose, b: Build = {}): Joints => {
+  const s = b.s ?? 1, W = b.wide ?? 1, HK = (b.head ?? 1) * (s < 0.8 ? 1.25 : 1);
+  const D = DIM;
+  const tw = p.twist ?? 0, rl = p.roll ?? 0;
+  const tf = (v: V3) => rZ(rX(rY(v, tw), p.pitch), -rl);
+  const up = tf([0, 1, 0]), right = tf([1, 0, 0]), fwd = tf([0, 0, 1]);
+  const pelvis = p.pelvis;
+  const chest = add(pelvis, mul(up, D.shoulderUp * s));
+  const neck = add(pelvis, mul(up, D.torsoUp * s));
+  const hf = (v: V3) => tf(rX(rZ(rY(v, p.turn ?? 0), -(p.tilt ?? 0)), p.nod ?? 0));
+  const headUp = hf([0, 1, 0]), headFwd = hf([0, 0, 1]), headRight = hf([1, 0, 0]);
+  const headR: V3 = [D.headR[0] * s * HK, D.headR[1] * s * HK, D.headR[2] * s * HK];
+  const head = add(neck, mul(headUp, D.neck * s + headR[1] * 0.9));
+  const hipL = add(pelvis, mul(right, D.hipW * s * W));
+  const hipR = add(pelvis, mul(right, -D.hipW * s * W));
+  const ko = p.kneeOut ?? 0.15;
+  const [kneeL, ankleL] = ik2(hipL, p.footL, D.thigh * s, D.shin * s, [ko, 0.15, 1]);
+  const [kneeR, ankleR] = ik2(hipR, p.footR, D.thigh * s, D.shin * s, [-ko, 0.15, 1]);
+  const shL = add(chest, mul(right, D.shoulderW * s * W)), shR = add(chest, mul(right, -D.shoulderW * s * W));
+  const eo = p.elbowOut ?? 0.45;
+  const poleL = add(add(mul(right, eo * 1.6), mul(up, -1)), mul(fwd, -0.5));
+  const poleR = add(add(mul(right, -eo * 1.6), mul(up, -1)), mul(fwd, -0.5));
+  const [elbowL, wristL] = ik2(shL, p.handL, D.upper * s, D.fore * s, poleL);
+  const [elbowR, wristR] = ik2(shR, p.handR, D.upper * s, D.fore * s, poleR);
+  return { pelvis, chest, neck, head, up, right, fwd, headUp, headFwd, headRight, hipL, hipR, kneeL, kneeR, ankleL, ankleR, shL, shR, elbowL, elbowR, wristL, wristR, headR, s, W };
+};
+
+const mixN = (a: number | undefined, b: number | undefined, t: number, d = 0) => (a ?? d) + ((b ?? d) - (a ?? d)) * t;
+const mixV = (a: V3, b: V3, t: number): V3 => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+/** the palm hint a hand uses when the pose gives none: palms in toward the body, in the torso's frame (as Person) */
+const palmDefault = (p: Pose, side: 1 | -1): V3 => {
+  const tw = p.twist ?? 0, rl = p.roll ?? 0;
+  return rZ(rX(rY([-side, 0, 0], tw), p.pitch), -rl);
+};
+const mixPalm = (a: Pose, b: Pose, side: 1 | -1, t: number): V3 | undefined => {
+  const pa = side === 1 ? a.palmL : a.palmR, pb = side === 1 ? b.palmL : b.palmR;
+  if (!pa && !pb) return undefined;
+  return mixV(pa ?? palmDefault(a, side), pb ?? palmDefault(b, side), t);
+};
+/** Blend two poses (targets blend and IK re-solves, so limbs never stretch or pop). */
+export const mixPose = (a: Pose, b: Pose, t: number): Pose => {
+  if (t <= 0) return a;
+  if (t >= 1) return b;
+  return {
+    pelvis: mixV(a.pelvis, b.pelvis, t), pitch: mixN(a.pitch, b.pitch, t), roll: mixN(a.roll, b.roll, t), twist: mixN(a.twist, b.twist, t),
+    nod: mixN(a.nod, b.nod, t), turn: mixN(a.turn, b.turn, t), tilt: mixN(a.tilt, b.tilt, t),
+    handL: mixV(a.handL, b.handL, t), handR: mixV(a.handR, b.handR, t), footL: mixV(a.footL, b.footL, t), footR: mixV(a.footR, b.footR, t),
+    palmL: mixPalm(a, b, 1, t), palmR: mixPalm(a, b, -1, t),
+    shapeL: t < 0.5 ? a.shapeL : b.shapeL, shapeR: t < 0.5 ? a.shapeR : b.shapeR,
+    fingL: mixF(a.fingL ?? fingersOf(a.shapeL), b.fingL ?? fingersOf(b.shapeL), t), fingR: mixF(a.fingR ?? fingersOf(a.shapeR), b.fingR ?? fingersOf(b.shapeR), t),
+    splay: mixN(a.splay, b.splay, t, 0.2), toe: mixN(a.toe, b.toe, t, 0), elbowOut: mixN(a.elbowOut, b.elbowOut, t, 0.45), kneeOut: mixN(a.kneeOut, b.kneeOut, t, 0.15),
+    fall: mixN(a.fall, b.fall, t, 0),
+  };
+};
+
+export const STAND_Y = DIM.thigh + DIM.shin + DIM.ankle - 0.02;
+export const standPose = (s = 1): Pose => ({
+  pelvis: [0, STAND_Y * s, 0], pitch: 0.02,
+  handL: [0.26 * s, 0.52 * s, 0.04 * s], handR: [-0.26 * s, 0.52 * s, 0.04 * s],
+  footL: [0.1 * s, DIM.ankle * s, 0.01], footR: [-0.1 * s, DIM.ankle * s, -0.01],
+  shapeL: "open", shapeR: "open", elbowOut: 0.25,
+});
+
+==== 8461 project/src/kits/tipikal/Stage.tsx
+// TIPIKAL stage: clean flat daylight. One sun with crisp shadows, a sky-blue fill, a flat sky colour, light distance
+// haze and contact shading (GTAO). No bloom, no vignette, no grain, no lens effects — flat real colours.
+// Chain: MSAA scene → NaN guard → GTAO → output (neutral tone map) → tiny contrast / saturation grade.
+import React, { useLayoutEffect, useMemo } from "react";
+import { useFrame, useThree } from "@react-three/fiber";
+import { ThreeCanvas } from "@remotion/three";
+import { useVideoConfig } from "remotion";
+import {
+  Color, DirectionalLight, Fog, HalfFloatType, HemisphereLight, NeutralToneMapping, Object3D, PCFShadowMap, PerspectiveCamera,
+  Vector2, Vector3, WebGLRenderTarget,
+} from "three";
+import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
+import { GTAOPass } from "three/examples/jsm/postprocessing/GTAOPass.js";
+import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
+import { ShaderPass } from "three/examples/jsm/postprocessing/ShaderPass.js";
+import type { Shot, V3 } from "./math.ts";
+import { QaProbe } from "../../core/qa/scene-qa.tsx";
+
+export type Light = {
+  sun: { dir: V3; color: string; intensity: number };
+  hemi: { sky: string; ground: string; intensity: number };
+  sky: string;
+  fog: { color: string; near: number; far: number };
+  exposure: number;
+  ao: number;
+  grade: { contrast: number; sat: number };
+};
+
+export const DAYLIGHT: Light = {
+  sun: { dir: [-0.42, 0.82, 0.38], color: "#fff4e2", intensity: 2.7 },
+  hemi: { sky: "#cfe6ff", ground: "#b8a68e", intensity: 1.45 },
+  sky: "#86c9f0",
+  fog: { color: "#a9d8f2", near: 45, far: 160 },
+  exposure: 1.0,
+  ao: 0.9,
+  grade: { contrast: 0.1, sat: 1.06 },
+};
+
+/** Golden late afternoon (sore): warm low sun, peach sky. */
+export const SORE: Light = {
+  sun: { dir: [-0.7, 0.42, 0.35], color: "#ffd9a8", intensity: 2.5 },
+  hemi: { sky: "#f6d7b8", ground: "#a88e74", intensity: 1.35 },
+  sky: "#f3b98a",
+  fog: { color: "#f2c9a2", near: 45, far: 160 },
+  exposure: 1.0, ao: 0.9, grade: { contrast: 0.1, sat: 1.05 },
+};
+/** Night: deep blue sky, strong cool fill so faces stay readable (the delivery scan wants luma above black). */
+export const MALAM: Light = {
+  sun: { dir: [0.3, 0.8, 0.5], color: "#cfdcff", intensity: 1.3 },
+  hemi: { sky: "#7f93c9", ground: "#4a4a5e", intensity: 1.9 },
+  sky: "#22305a",
+  fog: { color: "#2a3866", near: 30, far: 120 },
+  exposure: 1.35, ao: 0.8, grade: { contrast: 0.08, sat: 1.0 },
+};
+/** Indoors: softer sun, more sky fill. */
+export const INDOOR: Light = {
+  sun: { dir: [-0.42, 0.85, 0.32], color: "#fff4e2", intensity: 1.7 },
+  hemi: { sky: "#f4efe6", ground: "#b8a68e", intensity: 1.9 },
+  sky: "#cfe6f4",
+  fog: { color: "#e9e4da", near: 40, far: 120 },
+  exposure: 1.0, ao: 0.95, grade: { contrast: 0.1, sat: 1.05 },
+};
+
+/** Indoors at dusk / at night: lamps on, warm and bright (no dark rooms). */
+export const INDOOR_WARM: Light = {
+  sun: { dir: [-0.42, 0.85, 0.32], color: "#ffe2bf", intensity: 1.5 },
+  hemi: { sky: "#fbead6", ground: "#b8a68e", intensity: 2.0 },
+  sky: "#f1c59b",
+  fog: { color: "#efe0cc", near: 40, far: 120 },
+  exposure: 1.0, ao: 0.95, grade: { contrast: 0.1, sat: 1.05 },
+};
+
+const GradeShader = {
+  uniforms: { tDiffuse: { value: null }, uContrast: { value: 0.1 }, uSat: { value: 1.05 } },
+  vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+  fragmentShader: `uniform sampler2D tDiffuse; uniform float uContrast; uniform float uSat; varying vec2 vUv;
+    void main(){ vec4 c = texture2D(tDiffuse, vUv);
+      c.rgb = mix(c.rgb, c.rgb * c.rgb * (3.0 - 2.0 * c.rgb), uContrast);
+      float l = dot(c.rgb, vec3(0.2126, 0.7152, 0.0722));
+      c.rgb = mix(vec3(l), c.rgb, uSat);
+      gl_FragColor = vec4(clamp(c.rgb, 0.0, 1.0), 1.0); }`,
+};
+const SanitizeShader = {
+  uniforms: { tDiffuse: { value: null } },
+  vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: `uniform sampler2D tDiffuse; varying vec2 vUv;
+    void main() { vec4 c = texture2D(tDiffuse, vUv); if (any(isnan(c)) || any(isinf(c))) c = vec4(0.0, 0.0, 0.0, 1.0); gl_FragColor = vec4(clamp(c.rgb, 0.0, 32.0), 1.0); }`,
+};
+
+const StageInner: React.FC<{ shot: Shot; light: Light; children: React.ReactNode }> = ({ shot, light, children }) => {
+  const { gl, scene, camera, size } = useThree();
+  const rig = useMemo(() => {
+    const target = new Object3D();
+    const sun = new DirectionalLight("#fff", 3);
+    sun.target = target;
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(4096, 4096);
+    sun.shadow.radius = 1.6;
+    sun.shadow.bias = -0.0002;
+    sun.shadow.normalBias = 0.025;
+    const hemi = new HemisphereLight("#fff", "#444", 1);
+    return { target, sun, hemi };
+  }, []);
+  const chain = useMemo(() => {
+    const w = size.width, h = size.height;
+    const rt = new WebGLRenderTarget(w, h, { type: HalfFloatType, samples: 8 });
+    const composer = new EffectComposer(gl, rt);
+    composer.setPixelRatio(1);
+    composer.setSize(w, h);
+    composer.addPass(new RenderPass(scene, camera));
+    composer.addPass(new ShaderPass(SanitizeShader));
+    const gtao = new GTAOPass(scene, camera, w, h);
+    gtao.updateGtaoMaterial({ radius: 0.45, distanceExponent: 1.5, thickness: 1.0, scale: 1.0, samples: 16, distanceFallOff: 1.0, screenSpaceRadius: false });
+    gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, rings: 2, samples: 16 });
+    composer.addPass(gtao);
+    composer.addPass(new OutputPass());
+    const grade = new ShaderPass(GradeShader);
+    composer.addPass(grade);
+    return { composer, gtao, grade };
+  }, [gl, scene, camera, size.width, size.height]);
+
+  useLayoutEffect(() => {
+    const cam = camera as PerspectiveCamera;
+    cam.position.set(...shot.pos);
+    cam.up.set(Math.sin(shot.roll ?? 0), Math.cos(shot.roll ?? 0), 0);
+    cam.lookAt(...shot.target);
+    cam.fov = shot.fov;
+    cam.near = 0.06;
+    cam.far = 600;
+    cam.updateProjectionMatrix();
+    cam.updateMatrixWorld();
+    gl.toneMapping = NeutralToneMapping;
+    gl.shadowMap.autoUpdate = false;
+  }, [shot, camera, gl]);
+
+  useFrame(() => {
+    const L = light;
+    const at = shot.shadowAt ?? shot.target;
+    const box = shot.shadowBox ?? 10;
+    const dir = new Vector3(...L.sun.dir).normalize();
+    rig.target.position.set(...at);
+    rig.target.updateMatrixWorld();
+    rig.sun.position.set(at[0] + dir.x * 50, at[1] + dir.y * 50, at[2] + dir.z * 50);
+    rig.sun.color.set(L.sun.color);
+    rig.sun.intensity = L.sun.intensity;
+    const sc = rig.sun.shadow.camera;
+    sc.left = -box; sc.right = box; sc.top = box; sc.bottom = -box;
+    sc.near = 1;
+    sc.far = 120;
+    sc.updateProjectionMatrix();
+    rig.sun.updateMatrixWorld();
+    rig.hemi.color.set(L.hemi.sky);
+    rig.hemi.groundColor.set(L.hemi.ground);
+    rig.hemi.intensity = L.hemi.intensity;
+    scene.background = new Color(L.sky);
+    const fog = scene.fog as Fog | null;
+    if (!fog) scene.fog = new Fog(L.fog.color, L.fog.near, L.fog.far);
+    else { fog.color.set(L.fog.color); fog.near = L.fog.near; fog.far = L.fog.far; }
+    gl.toneMappingExposure = L.exposure;
+    chain.gtao.blendIntensity = L.ao;
+    chain.grade.uniforms.uContrast.value = L.grade.contrast;
+    chain.grade.uniforms.uSat.value = L.grade.sat;
+    gl.shadowMap.needsUpdate = true;
+    chain.composer.render();
+  }, 1);
+
+  return (
+    <>
+      <primitive object={rig.target} />
+      <primitive object={rig.sun} />
+      <primitive object={rig.hemi} />
+      {children}
+    </>
+  );
+};
+
+/** One Remotion-synchronised 3D canvas with the TIPIKAL stage around the set. */
+export const ShotCanvas: React.FC<{ shot: Shot; light?: Light; children: React.ReactNode }> = ({ shot, light = DAYLIGHT, children }) => {
+  const { width, height } = useVideoConfig();
+  return (
+    <ThreeCanvas
+      width={width}
+      height={height}
+      shadows={{ type: PCFShadowMap }}
+      dpr={1}
+      gl={{ antialias: false, preserveDrawingBuffer: true, powerPreference: "high-performance" }}
+      camera={{ fov: shot.fov, position: shot.pos, near: 0.06, far: 600 }}
+    >
+      <StageInner shot={shot} light={light}>
+        {children}
+      </StageInner>
+      <QaProbe />
+    </ThreeCanvas>
+  );
+};
+void Vector2;
+
+==== 8077 project/src/kits/tipikal/vehicles.tsx
+// Other traffic + cargo: a generic angkot (minivan, no logos / route text), cardboard boxes, a loose sandal,
+// dust puffs and skid marks. Local frame for vehicles: faces +z, LEFT = +x, origin on the ground.
+import React from "react";
+import { CanvasTexture, CylinderGeometry, MeshBasicMaterial, SphereGeometry, SRGBColorSpace, type Material } from "three";
+import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
+import { at, basis, hullOf, inkHull, lamp, M, stick, toon } from "./mats.ts";
+import { clamp01, hash, type V3 } from "./math.ts";
+import type { AngkotSpec } from "./spec.ts";
+
+const G = (() => {
+  const body = new RoundedBoxGeometry(1.62, 1.08, 3.4, 2, 0.12);
+  const hood = new RoundedBoxGeometry(1.58, 0.62, 0.62, 2, 0.12);
+  const roof = new RoundedBoxGeometry(1.6, 0.1, 3.3, 2, 0.04);
+  const box = new RoundedBoxGeometry(1, 1, 1, 1, 0.02);
+  const tire = new CylinderGeometry(0.3, 0.3, 0.22, 20, 1);
+  tire.rotateZ(Math.PI / 2);
+  const rim = new CylinderGeometry(0.17, 0.17, 0.228, 14, 1);
+  rim.rotateZ(Math.PI / 2);
+  const sph = new SphereGeometry(1, 14, 10);
+  const cyl = new CylinderGeometry(1, 1, 1, 8, 1);
+  cyl.translate(0, 0.5, 0);
+  return { cyl, body, hood, roof, box, tire, rim, sph, hb: hullOf(body, 0.014), hh: hullOf(hood, 0.014), hr: hullOf(roof, 0.012), ht: hullOf(tire, 0.012) };
+})();
+
+export const ANGKOT_LEN = 3.95;
+
+/** Angkot (minivan): body + hood + glass band + open side door on the left (kerb) side. */
+export const Angkot: React.FC<{ spec: AngkotSpec; spin?: number; brake?: boolean }> = ({ spec, spin = 0, brake }) => {
+  const body = toon(spec.body), glass = toon("#2c3b48"), dark = toon("#2a2b30");
+  const B = (p: V3, s: V3, m: Material, k: string) => <M key={k} g={G.box} m={at(p, s)} material={m} />;
+  const wheels: V3[] = [[0.72, 0.3, 1.28], [-0.72, 0.3, 1.28], [0.72, 0.3, -1.25], [-0.72, 0.3, -1.25]];
+  return (
+    <group>
+      <M g={G.body} m={at([0, 0.9, -0.25])} material={body} />
+      <M g={G.hb} m={at([0, 0.9, -0.25])} material={inkHull} shadow={false} />
+      <M g={G.hood} m={at([0, 0.68, 1.62])} material={body} />
+      <M g={G.hh} m={at([0, 0.68, 1.62])} material={inkHull} shadow={false} />
+      {/* glass band + pillars + roof */}
+      {B([0, 1.66, -0.25], [1.6, 0.46, 3.3], glass, "gb")}
+      {[-1.85, -0.95, 0.15, 1.2].map((z) => B([0, 1.66, z], [1.63, 0.46, 0.1], body, "pl" + z))}
+      <M g={G.roof} m={at([0, 1.93, -0.25])} material={toon(spec.roof ?? spec.body)} />
+      <M g={G.hr} m={at([0, 1.93, -0.25])} material={inkHull} shadow={false} />
+      {/* windshield (slanted) */}
+      <M g={G.box} m={basis([0, 1.42, 1.38], [1, 0, 0], [0, 0.88, 0.47], [0, -0.47, 0.88], [1.5, 0.62, 0.05])} material={glass} />
+      {/* open side door (left = +x): dark doorway */}
+      {B([0.805, 1.12, 0.62], [0.04, 1.42, 0.86], toon("#1f2125"), "door")}
+      {/* side stripes */}
+      {[1, -1].map((sd) => B([sd * 0.812, 0.98, sd > 0 ? -0.75 : -0.25], [0.02, 0.12, sd > 0 ? 2.3 : 3.3], toon(spec.stripe), "st" + sd))}
+      {/* bumpers + lamps */}
+      {B([0, 0.42, 1.96], [1.6, 0.16, 0.1], dark, "bf")}
+      {B([0, 0.46, -1.98], [1.6, 0.16, 0.1], dark, "br")}
+      {[1, -1].map((sd) => B([sd * 0.58, 0.78, 1.93], [0.26, 0.14, 0.04], lamp("#fff4d6"), "hl" + sd))}
+      {[1, -1].map((sd) => B([sd * 0.66, 0.9, -1.89], [0.16, 0.26, 0.04], brake ? lamp("#ff2b2b") : toon("#a3222a"), "tl" + sd))}
+      {wheels.map((w, i) => (
+        <group key={i} position={w} rotation={[spin / 0.3, 0, 0]}>
+          <mesh geometry={G.tire} material={toon("#26262a")} castShadow />
+          <mesh geometry={G.ht} material={inkHull} />
+          <mesh geometry={G.rim} material={toon("#c9ccd1")} />
+        </group>
+      ))}
+    </group>
+  );
+};
+
+// ------------------------------------------------------------------ cargo
+const boxTex = (() => {
+  let t: CanvasTexture | null = null;
+  return () => {
+    if (t) return t;
+    const cv = document.createElement("canvas");
+    cv.width = 128;
+    cv.height = 128;
+    const g = cv.getContext("2d")!;
+    g.fillStyle = "#c9935a";
+    g.fillRect(0, 0, 128, 128);
+    g.fillStyle = "#dcb27c";
+    g.fillRect(56, 0, 16, 128);
+    g.strokeStyle = "#5a3d22";
+    g.lineWidth = 6;
+    for (const x of [30, 98]) {
+      g.beginPath();
+      g.moveTo(x, 92); g.lineTo(x, 46); g.moveTo(x - 12, 58); g.lineTo(x, 44); g.lineTo(x + 12, 58);
+      g.stroke();
+    }
+    t = new CanvasTexture(cv);
+    t.colorSpace = SRGBColorSpace;
+    return t;
+  };
+})();
+/** Cardboard box (size w × h × d) resting with its bottom centre at p. */
+export const Kardus: React.FC<{ p: V3; s: V3; rotY?: number; tilt?: number }> = ({ p, s, rotY = 0, tilt = 0 }) => (
+  <group position={p} rotation={[0, rotY, tilt]}>
+    <mesh position={[0, s[1] / 2, 0]} scale={s} castShadow receiveShadow>
+      <boxGeometry args={[1, 1, 1]} />
+      <meshToonMaterial map={boxTex()} />
+    </mesh>
+    <mesh position={[0, s[1] / 2, 0]} scale={[s[0] + 0.02, s[1] + 0.02, s[2] + 0.02]} material={inkHull}>
+      <boxGeometry args={[1, 1, 1]} />
+    </mesh>
+  </group>
+);
+
+/** A single flip-flop lying on the road. */
+export const LooseSandal: React.FC<{ p: V3; rotY: number; color: string }> = ({ p, rotY, color }) => {
+  const strap = toon("#f4f1e8");
+  const post: V3 = [0, 0.03, 0.07];
+  return (
+    <group position={p} rotation={[0, rotY, 0]}>
+      {/* sole: narrow heel + wide toe */}
+      <M g={G.sph} m={at([0, 0.012, -0.045], [0.048, 0.012, 0.075])} material={toon(color)} />
+      <M g={G.sph} m={at([0, 0.012, 0.05], [0.058, 0.012, 0.075])} material={toon(color)} />
+      <M g={G.sph} m={at([0, 0.012, -0.045], [0.054, 0.017, 0.081])} material={inkHull} shadow={false} />
+      <M g={G.sph} m={at([0, 0.012, 0.05], [0.064, 0.017, 0.081])} material={inkHull} shadow={false} />
+      {/* thong strap: a white V from the toe post to both sides */}
+      {[1, -1].map((sd) => {
+        const end: V3 = [sd * 0.05, 0.022, -0.02];
+        const mid: V3 = [sd * 0.03, 0.045, 0.02];
+        return (
+          <group key={sd}>
+            <M g={G.cyl} m={stick(post, mid, 0.008)} material={strap} />
+            <M g={G.cyl} m={stick(mid, end, 0.008)} material={strap} />
+          </group>
+        );
+      })}
+    </group>
+  );
+};
+
+const puffMats = new Map<number, MeshBasicMaterial>();
+const puffMat = (o: number) => {
+  const q = Math.round(o * 20) / 20;
+  let m = puffMats.get(q);
+  if (!m) puffMats.set(q, (m = new MeshBasicMaterial({ color: "#cbc2ae", transparent: true, opacity: q, depthWrite: false })));
+  return m;
+};
+/** Dust puffs kicked up at `origin(t)` while `active(t)`; deterministic, each puff lives `life` s. */
+export const DustPuffs: React.FC<{ t: number; t0: number; t1: number; at: (t: number) => V3; rate?: number; life?: number; seed?: number }> = ({ t, t0, t1, at: origin, rate = 14, life = 0.55, seed = 1 }) => {
+  const out: React.ReactNode[] = [];
+  const n0 = Math.ceil(Math.max(t0, t - life) * rate), n1 = Math.floor(Math.min(t1, t) * rate);
+  for (let n = n0; n <= n1; n++) {
+    const born = n / rate;
+    const age = (t - born) / life;
+    if (age < 0 || age > 1) continue;
+    const o = origin(born);
+    const r = 0.035 + 0.11 * Math.sqrt(age);
+    const drift: V3 = [(hash(n * 3.1 + seed) - 0.5) * 0.25 * age, 0.12 * age + 0.03, (hash(n * 7.7 + seed) - 0.5) * 0.25 * age];
+    const op = 0.42 * (1 - age) * clamp01(age * 6);
+    if (op < 0.03) continue;
+    out.push(<mesh key={n} geometry={G.sph} material={puffMat(op)} position={[o[0] + drift[0], o[1] + drift[1] + r * 0.6, o[2] + drift[2]]} scale={[r, r * 0.8, r]} />);
+  }
+  return <group>{out}</group>;
+};
+
+/** Skid mark strip on the road from a to b (world x/z), width w. */
+export const Skid: React.FC<{ a: V3; b: V3; w?: number }> = ({ a, b, w = 0.07 }) => {
+  const dx = b[0] - a[0], dz = b[2] - a[2];
+  const L = Math.hypot(dx, dz);
+  if (L < 0.02) return null;
+  return (
+    <mesh position={[(a[0] + b[0]) / 2, 0.009, (a[2] + b[2]) / 2]} rotation={[0, Math.atan2(dx, dz), 0]} material={toon("#2e2f33")}>
+      <boxGeometry args={[w, 0.002, L]} />
+    </mesh>
+  );
+};
+
+==== 7178 project/src/tipikal/sets/gang.ts
+// SET "gang" — a kampung alley: a narrow concrete lane along x with gutters, small houses with terraces on both sides,
+// a warung kelontong (counter, galon, snack strips, cracker tin), a pos ronda hut with a bench, a speed bump (polisi
+// tidur), a clothesline yard, a small mushola, electric poles and cables, an entrance arch (gapura). Pure data.
+import type { Box, SetMeta, Spot } from "../types.ts";
+
+export type GangLot = { kind: "rumah" | "warung" | "ronda" | "jemuran" | "mushola"; x: number; w: number; side: 1 | -1; color?: string; roof?: string };
+export const GANG = {
+  x0: -26, x1: 26, half: 1.6, terrace: 3.4,
+  lots: [
+    { kind: "rumah", x: -21, w: 5.6, side: -1, color: "#b9e3cf" }, { kind: "rumah", x: -15, w: 6, side: -1, color: "#f2e3c6", roof: "#9c4a36" },
+    { kind: "rumah", x: -8.6, w: 6.2, side: -1, color: "#f7c99a" }, { kind: "rumah", x: -2.2, w: 5.8, side: -1, color: "#a9d4ec" },
+    { kind: "warung", x: 4.6, w: 5.4, side: -1, color: "#e9d8b8" }, { kind: "rumah", x: 11, w: 6, side: -1, color: "#d2c4ea" },
+    { kind: "rumah", x: 17.4, w: 6, side: -1, color: "#f6d76b", roof: "#9c4a36" }, { kind: "rumah", x: 23.4, w: 5.4, side: -1, color: "#f1efe8" },
+    { kind: "rumah", x: -21.4, w: 5.8, side: 1, color: "#f6d76b" }, { kind: "rumah", x: -15, w: 6, side: 1, color: "#f1efe8" },
+    { kind: "ronda", x: -8.8, w: 3.8, side: 1 }, { kind: "rumah", x: -2.6, w: 6, side: 1, color: "#f4b6a0" },
+    { kind: "mushola", x: 4.4, w: 5.2, side: 1, color: "#e8f2e4" }, { kind: "rumah", x: 11.4, w: 6, side: 1, color: "#b9e3cf", roof: "#9c4a36" },
+    { kind: "jemuran", x: 17.2, w: 5, side: 1 }, { kind: "rumah", x: 23, w: 5, side: 1, color: "#f2e3c6" },
+  ] as GangLot[],
+  bump: 1.6,
+  bumpH: 0.07, bumpW: 0.42,
+  poles: [-18, -5, 8, 21],
+  gate: -25.2,
+  warung: { counterZ: -2.35, top: 0.95 },
+  ronda: { benchZ: 2.42, top: 0.42 },
+};
+const G = GANG;
+const box = (x0: number, y0: number, z0: number, x1: number, y1: number, z1: number): Box => ({ min: [Math.min(x0, x1), y0, Math.min(z0, z1)], max: [Math.max(x0, x1), y1, Math.max(z0, z1)] });
+const E = Math.PI / 2, W = -Math.PI / 2;
+const wa = G.lots.find((l) => l.kind === "warung")!, ro = G.lots.find((l) => l.kind === "ronda")!, je = G.lots.find((l) => l.kind === "jemuran")!;
+const spots: Record<string, Spot> = {
+  "gang-barat": { pos: [-23.5, 0, 0.6], face: E, lane: true, about: "west end of the lane (start of a ride east)" },
+  "gang-timur": { pos: [24, 0, -0.6], face: W, lane: true, about: "east end of the lane (start of a ride west)" },
+  "gang-a": { pos: [-12, 0, 0.6], face: E, lane: true, about: "lane, west part" },
+  "gang-tengah": { pos: [-3, 0, 0.6], face: E, lane: true, about: "lane, middle" },
+  "polisi-tidur": { pos: [G.bump + 1.4, 0, 0.6], face: E, lane: true, about: "just past the speed bump" },
+  "sebelum-polisi-tidur": { pos: [G.bump - 2.2, 0, 0.6], face: E, lane: true, about: "just before the speed bump" },
+  "gang-b": { pos: [12, 0, 0.6], face: E, lane: true, about: "lane, east part" },
+  "depan-warung": { pos: [wa.x + 1.2, 0, -0.75], face: E, lane: true, about: "stopped in front of the warung" },
+  warung: { pos: [wa.x - 0.4, 0, G.warung.counterZ + 0.72], face: Math.PI, surface: { y: G.warung.top, ahead: 0.42 }, about: "at the warung counter (buying)" },
+  "penjaga-warung": { pos: [wa.x - 0.4, 0.12, G.warung.counterZ - 0.75], face: 0, surface: { y: G.warung.top, ahead: 0.45 }, about: "the shopkeeper behind the counter" },
+  "bangku-warung": { pos: [wa.x + 1.9, 0.12, -1.93], face: 0, seat: 0.38, about: "bench in front of the warung, facing the lane" },
+  "pos-ronda": { pos: [ro.x - 0.8, 0, G.ronda.benchZ], face: Math.PI, seat: G.ronda.top, about: "sitting on the pos ronda bench, facing the lane" },
+  "pos-ronda-2": { pos: [ro.x + 0.6, 0, G.ronda.benchZ], face: Math.PI, seat: G.ronda.top, about: "second seat at the pos ronda" },
+  "depan-pos-ronda": { pos: [ro.x, 0, 1.1], face: 0, about: "standing in front of the pos ronda" },
+  "teras-1": { pos: [-15, 0.12, -2.55], face: 0, seat: 0.38, about: "plastic chair on a house terrace (south side)" },
+  "teras-2": { pos: [11.4, 0.12, 2.55], face: Math.PI, seat: 0.38, about: "plastic chair on a house terrace (north side)" },
+  "depan-rumah-1": { pos: [-8.6, 0, -1.2], face: Math.PI, about: "in front of a house door (south side)" },
+  "depan-rumah-2": { pos: [-2.6, 0, 1.2], face: 0, about: "in front of a house door (north side)" },
+  jemuran: { pos: [je.x - 0.8, 0.12, 2.6], face: Math.PI, about: "in the clothesline yard" },
+  "depan-mushola": { pos: [4.4, 0, 1.25], face: 0, about: "in front of the mushola" },
+  gapura: { pos: [G.gate + 1.2, 0, 0], face: E, about: "just inside the entrance arch" },
+  "tengah-gang": { pos: [0, 0, 0], face: Math.PI / 2, about: "middle of the lane (standing)" },
+};
+const colliders: Box[] = [];
+for (const l of G.lots) {
+  const sd = l.side;
+  const fz = sd * G.terrace;
+  if (l.kind === "rumah" || l.kind === "mushola") colliders.push(box(l.x - l.w / 2 + 0.1, 0, fz, l.x + l.w / 2 - 0.1, 5.4, fz + sd * 7));
+  else if (l.kind === "warung") { colliders.push(box(l.x - l.w / 2, 0, fz, l.x + l.w / 2, 5.0, fz + sd * 6)); colliders.push(box(l.x - l.w / 2 + 0.3, 0, G.warung.counterZ - 0.28, l.x + l.w / 2 - 1.8, G.warung.top - 0.05, G.warung.counterZ + 0.28)); colliders.push(box(l.x - l.w / 2 - 0.2, 2.5, sd * 1.75, l.x + l.w / 2 + 0.2, 3.4, fz)); colliders.push(box(l.x - l.w / 2 + 0.4, 1.99, G.warung.counterZ + sd * 0.25 - 0.03, l.x + l.w / 2 - 0.4, 2.45, G.warung.counterZ + sd * 0.25 + 0.03)); for (const px of [-l.w / 2 + 0.12, l.w / 2 - 0.12]) colliders.push(box(l.x + px - 0.08, 0, sd * 1.75 - 0.08, l.x + px + 0.08, 2.6, sd * 1.75 + 0.08)); }
+  else if (l.kind === "ronda") { colliders.push(box(l.x - l.w / 2, 0, 2.3, l.x + l.w / 2, G.ronda.top - 0.04, 3.9)); colliders.push(box(l.x - l.w / 2 - 0.2, 2.4, 1.9, l.x + l.w / 2 + 0.2, 3.3, 4.2)); for (const px of [-1, 1]) colliders.push(box(l.x + px * (l.w / 2 - 0.1) - 0.07, 0, 2.2, l.x + px * (l.w / 2 - 0.1) + 0.07, 2.5, 2.36)); }
+  else colliders.push(box(l.x - l.w / 2, 0, fz + sd * 2.5, l.x + l.w / 2, 3.0, fz + sd * 6));
+}
+for (const x of G.poles) colliders.push(box(x - 0.12, 0, 1.85, x + 0.12, 8, 2.1));
+colliders.push(box(G.gate - 0.3, 0, -2.2, G.gate + 0.3, 3.6, -1.7), box(G.gate - 0.3, 0, 1.7, G.gate + 0.3, 3.6, 2.2), box(G.gate - 0.35, 3.0, -2.3, G.gate + 0.35, 3.8, 2.3));
+
+export const GANG_META: SetMeta = {
+  id: "gang", theme: "warung",
+  about: "a kampung alley: narrow lane (gang-barat → gang-timur, polisi-tidur speed bump), warung kelontong with a bench, pos ronda, house terraces, clothesline yard, mushola, entrance arch",
+  spots,
+  colliders,
+  bounds: { min: [G.x0 + 0.5, 0.2, -3.2], max: [G.x1 - 0.5, 30, 3.2] },
+  views: { establish: { a: { pos: [12.5, 4.6, 2.2], target: [0, 0.8, -0.5], fov: 48 }, b: { pos: [11.5, 4.3, 2.1], target: [-0.5, 0.8, -0.5], fov: 47 } } },
+  bumps: [{ x: G.bump, w: G.bumpW, h: G.bumpH, z0: -G.half, z1: G.half }],
+  floor: [{ y: 0.12, box: box(G.x0, 0, -G.terrace, G.x1, 1, -G.half - 0.2) }, { y: 0.12, box: box(G.x0, 0, G.half + 0.2, G.x1, 1, G.terrace) }],
+  crowd: ["bangku-warung", "pos-ronda", "pos-ronda-2", "teras-1", "teras-2"],
+};
+
+==== 11409 project/src/tipikal/sets/Gang.tsx
+// SET "gang" picture — built from GANG (gang.ts): concrete lane with gutters, tiled terraces, small houses with gable
+// roofs, a warung kelontong, pos ronda, mushola, clothesline yard, speed bump, electric poles + cables, gapura.
+import React from "react";
+import { ExtrudeGeometry, Shape } from "three";
+import { Solid } from "../../core/qa/scene-qa.tsx";
+import { at, basis, flat, M, stick, toon } from "../../kits/tipikal/mats.ts";
+import { hash, type V3 } from "../../kits/tipikal/math.ts";
+import { canvasTex, Galon, signTex } from "./Jalan.tsx";
+import { Bx, Cy, GEO, ParkedMotor, Plant, PlasticChair, SignBoard, Tb } from "./pieces.tsx";
+import { GANG, type GangLot } from "./gang.ts";
+
+const G = GANG;
+const gable = (() => {
+  const s = new Shape();
+  s.moveTo(-0.5, 0); s.lineTo(0.5, 0); s.lineTo(0, 0.42); s.closePath();
+  const g = new ExtrudeGeometry(s, { depth: 1, bevelEnabled: false });
+  g.translate(0, 0, -0.5);
+  return g;
+})();
+const bumpTex = () => canvasTex("bump2", 8, 64, (g) => { g.fillStyle = "#f2c230"; g.fillRect(0, 0, 8, 64); g.fillStyle = "#26272c"; g.fillRect(0, 0, 8, 32); }, [1, 7]);
+
+const House: React.FC<{ l: GangLot }> = ({ l }) => {
+  const sd = l.side, fz = sd * G.terrace, d = 6, h = 3.0, cz = fz + sd * d / 2;
+  const out: React.ReactNode[] = [];
+  out.push(<Bx key="b" p={[l.x, h / 2, cz]} s={[l.w - 0.2, h, d]} c={l.color ?? "#f2e3c6"} />);
+  out.push(<M key="r" g={gable} m={basis([l.x, h, cz], [0, 0, 1], [0, 1, 0], [-1, 0, 0], [d + 1.2, l.w * 0.5, l.w + 0.2])} material={flat(l.roof ?? "#c4573f", 0.85)} />);
+  out.push(<Bx key="d" p={[l.x - l.w * 0.2, 1.02, fz - sd * 0.03]} s={[0.9, 2.04, 0.08]} c="#7a4a2b" />);
+  out.push(<Bx key="wf" p={[l.x + l.w * 0.2, 1.6, fz - sd * 0.03]} s={[1.3, 1.0, 0.08]} c="#f4f1e8" />);
+  out.push(<Bx key="wg" p={[l.x + l.w * 0.2, 1.6, fz - sd * 0.06]} s={[1.1, 0.82, 0.06]} c="#3c5568" rough={0.3} />);
+  // little terrace wall with a gap for the door
+  out.push(<Bx key="tw1" p={[l.x + l.w * 0.18, 0.12 + 0.3, sd * (G.half + 0.3)]} s={[l.w * 0.55, 0.6, 0.14]} c="#e9e3d6" />);
+  out.push(<Bx key="tw2" p={[l.x - l.w / 2 + 0.25, 0.12 + 0.3, sd * (G.half + 0.3)]} s={[0.4, 0.6, 0.14]} c="#e9e3d6" />);
+  out.push(<Plant key="pl" p={[l.x + l.w * 0.42, 0.12, sd * (G.terrace - 0.5)]} s={0.8} pot={hash(l.x) > 0.5 ? "#b8613f" : "#3fa45b"} />);
+  if (hash(l.x * 3.1) > 0.55) out.push(<ParkedMotor key="pm" p={[l.x + l.w * 0.05, 0.12, sd * 2.75]} rot={Math.PI / 2 + 0.2} c={["#d63b30", "#2f72c9", "#26272c", "#eeeee8"][Math.floor(hash(l.x) * 4)]} />);
+  return <group>{out}</group>;
+};
+
+const Warung: React.FC<{ l: GangLot }> = ({ l }) => {
+  const sd = l.side, fz = sd * G.terrace, cz = G.warung.counterZ;
+  const out: React.ReactNode[] = [];
+  out.push(<Bx key="b" p={[l.x, 2.25, fz + sd * 3]} s={[l.w, 4.5, 6]} c={l.color ?? "#e9d8b8"} />);
+  out.push(<Bx key="open" p={[l.x - 0.5, 1.25, fz - sd * 0.02]} s={[l.w - 1.6, 2.1, 0.05]} c="#3d3631" />);
+  out.push(
+    <Solid key="cnt" id="warung-meja" kind="set" touch={["*"]}>
+      <Bx p={[l.x - 0.5, G.warung.top / 2, cz]} s={[l.w - 2.1, G.warung.top, 0.56]} c="#9a6a3f" />
+    </Solid>,
+  );
+  for (let i = 0; i < 5; i++) out.push(<M key={"jar" + i} g={GEO.cyl} m={at([l.x - 2.0 + i * 0.42, G.warung.top, cz], [0.1, 0.24, 0.1])} material={flat(["#f2c230", "#e2563d", "#7cc4e4", "#f29bbb", "#9bd16c"][i], 0.3, false)} />);
+  out.push(<Cy key="tin" p={[l.x + 0.9, G.warung.top, cz]} r={0.16} h={0.42} c="#d9dde0" toonish />);
+  out.push(<Cy key="tinlid" p={[l.x + 0.9, G.warung.top + 0.42, cz]} r={0.165} h={0.05} c="#d63b30" toonish />);
+  for (let i = 0; i < 10; i++) out.push(<Bx key={"sn" + i} p={[l.x - l.w / 2 + 0.5 + i * ((l.w - 1) / 9), 2.22, cz + sd * 0.25]} s={[0.15, 0.44, 0.02]} c={["#e2563d", "#f2c230", "#3fa45b", "#3b7ad0", "#f07c2a", "#e94b6a"][i % 6]} rough={0.6} />);
+  out.push(<Bx key="aw" p={[l.x, 2.62, sd * 2.55]} s={[l.w + 0.3, 0.05, 1.9]} c="#a9b0b4" rough={0.6} />);
+  for (const px of [-l.w / 2 + 0.12, l.w / 2 - 0.12]) out.push(<Bx key={"pp" + px} p={[l.x + px, 1.3, sd * 1.75]} s={[0.1, 2.6, 0.1]} c="#7b5634" />);
+  out.push(<SignBoard key="sg" p={[l.x, 3.15, sd * 1.66]} w={l.w * 0.72} h={0.6} text="WARUNG SEMBAKO" bg="#f4f1e6" fg="#c8352e" facing={[0, 0, -sd]} />);
+  for (let i = 0; i < 3; i++) out.push(<Galon key={"g" + i} p={[l.x + l.w / 2 - 0.45 - i * 0.32, 0.12, sd * 3.0]} />);
+  out.push(<Galon key="g4" p={[l.x + l.w / 2 - 0.6, 0.615, sd * 3.0]} />);
+  // bench in front
+  out.push(
+    <Solid key="bench" id="warung-bangku" kind="set" touch={["*"]}>
+      <group>
+        <Bx p={[l.x + 1.9, 0.12 + 0.35, -2.05]} s={[1.6, 0.06, 0.38]} c="#9a6a3f" />
+        {[-0.65, 0.65].map((dx) => <Bx key={dx} p={[l.x + 1.9 + dx, 0.12 + 0.16, -2.05]} s={[0.07, 0.32, 0.3]} c="#7b5634" />)}
+      </group>
+    </Solid>,
+  );
+  return <group>{out}</group>;
+};
+
+const Ronda: React.FC<{ l: GangLot }> = ({ l }) => (
+  <group>
+    <Solid id="pos-ronda" kind="set" touch={["*"]}>
+      <Bx p={[l.x, G.ronda.top / 2, 3.1]} s={[l.w, G.ronda.top, 1.6]} c="#a77a4a" />
+    </Solid>
+    {[0, 1, 2, 3, 4, 5, 6].map((i) => <Bx key={i} p={[l.x - l.w / 2 + 0.25 + i * ((l.w - 0.5) / 6), G.ronda.top + 0.005, 3.1]} s={[0.04, 0.01, 1.58]} c="#7b5634" shadow={false} />)}
+    {[-1, 1].flatMap((px) => [2.28, 3.85].map((z) => <Bx key={`${px}${z}`} p={[l.x + px * (l.w / 2 - 0.1), 1.25, z]} s={[0.12, 2.5, 0.12]} c="#7b5634" />))}
+    <M g={GEO.box} m={basis([l.x, 2.6, 3.05], [1, 0, 0], [0, 0.97, 0.24], [0, -0.24, 0.97], [l.w + 0.4, 0.05, 2.3])} material={flat("#a9b0b4", 0.6, false)} />
+    <M g={GEO.cyl} m={basis([l.x + l.w / 2 - 0.25, 1.4, 2.28], [1, 0, 0], [0, 1, 0], [0, 0, 1], [0.06, 0.45, 0.06])} material={toon("#c9a24a")} />
+    <SignBoard p={[l.x, 2.25, 2.24]} w={1.5} h={0.34} text="POS RONDA" bg="#2f6b43" facing={[0, 0, -1]} />
+  </group>
+);
+const Mushola: React.FC<{ l: GangLot }> = ({ l }) => {
+  const fz = l.side * G.terrace;
+  return (
+    <group>
+      <Bx p={[l.x, 1.6, fz + l.side * 3.2]} s={[l.w - 0.3, 3.2, 6.4]} c={l.color ?? "#e8f2e4"} />
+      <M g={GEO.cone} m={at([l.x, 3.2, fz + l.side * 3.2], [l.w * 0.6, 1.6, 3.6])} material={flat("#2f8a5a")} />
+      {[-1.2, 0, 1.2].map((dx) => <Bx key={dx} p={[l.x + dx, 1.3, fz - l.side * 0.03]} s={[0.8, 1.9, 0.08]} c="#3d6b52" />)}
+      <SignBoard p={[l.x, 2.75, fz - l.side * 0.06]} w={1.8} h={0.42} text="MUSHOLA" bg="#2f8a5a" facing={[0, 0, -l.side]} />
+    </group>
+  );
+};
+const Jemuran: React.FC<{ l: GangLot; t: number }> = ({ l, t }) => {
+  const z = l.side * 3.0;
+  const cloths = [0, 1, 2, 3, 4, 5, 6];
+  return (
+    <group>
+      <Bx p={[l.x, 0.12 + 0.5, l.side * (G.half + 0.3)]} s={[l.w, 1.0, 0.1]} c="#e9e3d6" />
+      <Bx p={[l.x, 1.5, l.side * 5.2]} s={[l.w, 3.0, 0.2]} c="#f2e3c6" />
+      {[-1, 1].map((px) => <M key={px} g={GEO.cyl} m={at([l.x + px * 2.1, 0.12, z], [0.04, 1.8, 0.04])} material={flat("#8d9096", 0.6, false)} />)}
+      <M g={GEO.cyl} m={stick([l.x - 2.1, 1.9, z], [l.x + 2.1, 1.9, z], 0.008)} material={flat("#2c2d31", 0.6, false)} shadow={false} />
+      {cloths.map((i) => {
+        const sway = Math.sin(t * 1.3 + i) * 0.04;
+        return <M key={i} g={GEO.box} m={basis([l.x - 1.8 + i * 0.6, 1.62, z], [1, 0, 0], [0, Math.cos(sway), Math.sin(sway)], [0, -Math.sin(sway), Math.cos(sway)], [0.42, 0.52, 0.02])} material={toon(["#e2563d", "#2f6fd0", "#f2c94c", "#f6f5f0", "#3fa45b", "#e94b6a", "#7a4fa3"][i])} />;
+      })}
+      <PlasticChair id="kursi-jemuran" p={[l.x + 1.6, 0.12, l.side * 4.2]} face={Math.PI} c="#2f6fd0" />
+    </group>
+  );
+};
+
+export const Gang: React.FC<{ t: number }> = ({ t }) => {
+  const out: React.ReactNode[] = [];
+  out.push(<Bx key="ground" p={[0, -0.09, 0]} s={[80, 0.1, 40]} c="#8f9a6e" shadow={false} />);
+  out.push(<Bx key="lane" p={[0, -0.025, 0]} s={[G.x1 - G.x0 + 8, 0.05, 2 * G.half]} c="#c9c4b8" rough={0.95} />);
+  for (const sd of [-1, 1]) {
+    // gutter: a dark channel 2 cm below the lane and 2 cm above the ground (no face shares a plane with another)
+    out.push(<Bx key={"gut" + sd} p={[0, -0.045, sd * (G.half + 0.1)]} s={[G.x1 - G.x0 + 8, 0.05, 0.2]} c="#55585e" shadow={false} />);
+    out.push(<Bx key={"ter" + sd} p={[0, 0.035, sd * (G.half + 0.2 + (G.terrace - G.half - 0.2) / 2)]} s={[G.x1 - G.x0 + 8, 0.17, G.terrace - G.half - 0.2]} c="#d8cfbf" />);
+  }
+  for (let x = G.x0; x < G.x1; x += 2.5) out.push(<Bx key={"crack" + x} p={[x, 0.003, 0]} s={[0.03, 0.014, 2 * G.half]} c="#b4ae9f" shadow={false} />);
+  // speed bump: a half-buried cylinder across the lane (the director lifts wheels and feet over the same profile)
+  out.push(
+    <mesh key="bump" position={[G.bump, 0, 0]} rotation={[Math.PI / 2, 0, 0]} scale={[G.bumpW, 2 * G.half, 2 * G.bumpH]} castShadow receiveShadow>
+      <cylinderGeometry args={[0.5, 0.5, 1, 28, 1]} />
+      <meshStandardMaterial map={bumpTex()} roughness={0.8} />
+    </mesh>,
+  );
+  for (const l of G.lots) {
+    if (l.kind === "rumah") out.push(<House key={l.x + "" + l.side} l={l} />);
+    else if (l.kind === "warung") out.push(<Warung key="w" l={l} />);
+    else if (l.kind === "ronda") out.push(<Ronda key="r" l={l} />);
+    else if (l.kind === "mushola") out.push(<Mushola key="m" l={l} />);
+    else out.push(<Jemuran key="j" l={l} t={t} />);
+  }
+  out.push(<PlasticChair key="t1" id="kursi-teras-1" p={[-15, 0.12, -2.55]} face={0} c="#d63b30" />);
+  out.push(<PlasticChair key="t2" id="kursi-teras-2" p={[11.4, 0.12, 2.55]} face={Math.PI} c="#3fa45b" />);
+  // poles + cables across and along
+  const tops: V3[] = G.poles.map((x) => [x, 7.6, 1.98]);
+  G.poles.forEach((x, i) => {
+    out.push(<M key={"pole" + i} g={GEO.cyl} m={at([x, 0.12, 1.98], [0.1, 7.8, 0.1])} material={flat("#9a9c9e", 0.9, false)} />);
+    out.push(<Bx key={"pc" + i} p={[x, 7.3, 1.98]} s={[0.1, 0.1, 1.2]} c="#7d7f82" />);
+    out.push(<M key={"cx" + i} g={GEO.cyl} m={stick([x, 7.2, 1.98], [x + 1.5, 5.6, -3.3], 0.014)} material={flat("#222326", 0.8, false)} shadow={false} />);
+  });
+  tops.slice(0, -1).forEach((p, i) => {
+    const q = tops[i + 1];
+    for (const dz of [-0.45, 0.45]) {
+      const pts: V3[] = [];
+      for (let k = 0; k <= 8; k++) { const u = k / 8; pts.push([p[0] + (q[0] - p[0]) * u, p[1] - 0.8 * 4 * u * (1 - u), p[2] + dz]); }
+      pts.slice(0, -1).forEach((a, k) => out.push(<M key={`cb${i}${dz}${k}`} g={GEO.cyl} m={stick(a, pts[k + 1], 0.014)} material={flat("#222326", 0.8, false)} shadow={false} />));
+    }
+  });
+  // gapura
+  for (const sd of [-1, 1]) {
+    out.push(<Bx key={"gp" + sd} p={[G.gate, 1.8, sd * 1.95]} s={[0.5, 3.6, 0.5]} c="#f4f1e8" />);
+    [0.5, 1.6, 2.7].forEach((y) => out.push(<Bx key={`gb${sd}${y}`} p={[G.gate, y, sd * 1.95]} s={[0.52, 0.3, 0.52]} c="#c8352e" />));
+  }
+  out.push(
+    <mesh key="gbeam" position={[G.gate, 3.45, 0]} castShadow>
+      <boxGeometry args={[0.36, 0.7, 4.6]} />
+      <meshStandardMaterial attach="material-0" map={signTex("GG. MAWAR", "#c8352e", "#ffffff", 512, 96)} />
+      <meshStandardMaterial attach="material-1" map={signTex("GG. MAWAR", "#c8352e", "#ffffff", 512, 96)} />
+      <meshStandardMaterial attach="material-2" color="#c8352e" />
+      <meshStandardMaterial attach="material-3" color="#c8352e" />
+      <meshStandardMaterial attach="material-4" color="#c8352e" />
+      <meshStandardMaterial attach="material-5" color="#c8352e" />
+    </mesh>,
+  );
+  out.push(<Tb key="bin" p={[-5.5, 0.12 + 0.3, -2.9]} s={[0.4, 0.6, 0.4]} c="#3fa45b" />);
+  return <group>{out}</group>;
+};
+
+==== 10640 project/src/tipikal/sets/jalan.ts
+// SET "jalan" — an Indonesian street with shophouses, a warung, a gang mouth, a crossing with a traffic light and
+// countdown, zebra crossing, puddles. Pure data: the layout (drawn by Jalan.tsx) and the director's meta (places,
+// colliders, intro view). Shop signs use generic Indonesian words only (no brands); the gang name is made up.
+import type { Box, SetMeta, Spot } from "../types.ts";
+
+export type Bldg =
+  | { kind: "ruko"; x: number; w: number; side: 1 | -1; color: string; trim?: string; sign?: string; signColor?: string; shutter?: number; floors?: number }
+  | { kind: "rumah"; x: number; w: number; side: 1 | -1; color: string; roof?: string; fence?: string }
+  | { kind: "warung"; x: number; w: number; side: 1 | -1; color: string; sign: string }
+  | { kind: "gang"; x: number; w: number; side: 1 | -1; sign: string };
+
+export type StreetLayout = {
+  x0: number; x1: number;
+  roadHalf: number; walk: number;
+  cross?: { x: number; half: number };
+  buildings: Bldg[];
+  trees: { x: number; side: 1 | -1 }[];
+  poles: { x0: number; x1: number; every: number; side: 1 | -1 };
+  light?: { x: number; side: 1 | -1 };
+  stopLine?: number;
+  zebra?: [number, number];
+  puddles: { x: number; z: number; r: number }[];
+};
+
+const C = { cream: "#f2e3c6", mint: "#b9e3cf", salmon: "#f4b6a0", yellow: "#f6d76b", sky: "#a9d4ec", white: "#f1efe8", lilac: "#d2c4ea", peach: "#f7c99a" };
+const R = (x: number, side: 1 | -1, color: string, sign?: string, signColor?: string, w = 5.8, shutter?: number): Bldg => ({ kind: "ruko", x, w, side, color, sign, signColor, shutter });
+const H = (x: number, side: 1 | -1, color: string, roof?: string, w = 6.4): Bldg => ({ kind: "rumah", x, w, side, color, roof });
+
+export const STREET: StreetLayout = {
+  x0: -40, x1: 92,
+  roadHalf: 3.8, walk: 2.0,
+  cross: { x: 0, half: 4.2 },
+  stopLine: -7.4,
+  zebra: [-6.9, -4.7],
+  light: { x: -6.9, side: -1 },
+  puddles: [{ x: 67.5, z: -0.6, r: 0.8 }, { x: 77.5, z: 1.4, r: 0.55 }, { x: 18, z: 2.4, r: 0.6 }],
+  trees: [
+    { x: -20, side: 1 }, { x: 11.5, side: 1 }, { x: 33.5, side: 1 }, { x: 52, side: 1 }, { x: 70, side: 1 },
+    { x: -27, side: -1 }, { x: 17.5, side: -1 }, { x: 36.5, side: -1 }, { x: 60, side: -1 }, { x: 81, side: -1 },
+  ],
+  poles: { x0: -38, x1: 92, every: 26, side: 1 },
+  buildings: [
+    // left side (z < 0, the warung side)
+    R(-36, -1, C.peach, "BENGKEL", "#2f6fd0"), R(-30, -1, C.mint, "PULSA", "#d63b30"), H(-23.6, -1, C.white), R(-17, -1, C.yellow, "FOTOKOPI", "#1f8f5a"),
+    R(-11, -1, C.sky, "SERBA ADA", "#d63b30", 6.2, 0.2),
+    R(8, -1, C.salmon, "LAUNDRY", "#2f6fd0"), H(14.4, -1, C.mint, "#b84a36"), R(21, -1, C.cream, "JAHIT", "#7a3fa3"), R(27, -1, C.lilac, "MIE AYAM", "#d63b30"),
+    H(33.4, -1, C.yellow), R(40, -1, C.white, "BAKSO", "#d63b30"), { kind: "warung", x: 46.6, w: 5.2, side: -1, color: "#e9d8b8", sign: "WARUNG MAKMUR" },
+    R(52.6, -1, C.sky, "PULSA", "#1f8f5a"), H(59, -1, C.peach), R(65.4, -1, C.mint, "BENGKEL", "#2f6fd0"), R(71.4, -1, C.salmon, "SERBA ADA", "#d63b30"),
+    H(77.8, -1, C.cream), R(84.2, -1, C.yellow, "FOTOKOPI", "#1f8f5a"), R(90.2, -1, C.white),
+    // right side (z > 0, the gang side)
+    H(-36, 1, C.cream), R(-29.6, 1, C.salmon, "TOKO KUE", "#d63b30"), R(-23.6, 1, C.white, "LAUNDRY", "#2f6fd0"), H(-17.2, 1, C.mint), R(-10.8, 1, C.yellow, "JAHIT", "#7a3fa3"),
+    R(8, 1, C.sky, "BAKSO", "#d63b30"), R(14, 1, C.peach, "PULSA", "#1f8f5a"), H(20.2, 1, C.lilac, "#b84a36", 5.8), { kind: "gang", x: 25.5, w: 3.0, side: 1, sign: "GG. MELATI" },
+    R(30.8, 1, C.mint, "FOTOKOPI", "#2f6fd0"), H(37, 1, C.yellow), R(43.4, 1, C.salmon, "MIE AYAM", "#d63b30"), R(49.4, 1, C.white, "BENGKEL", "#1f8f5a"),
+    H(55.8, 1, C.sky), R(62.2, 1, C.cream, "TOKO KUE", "#d63b30"), R(68.2, 1, C.lilac, "BAKSO", "#2f6fd0"), H(74.6, 1, C.mint), R(81, 1, C.peach, "PULSA", "#d63b30"), R(87, 1, C.sky),
+  ],
+};
+
+// ------------------------------------------------------------------ the director's view of the street
+const L = STREET;
+const EDGE = L.roadHalf + 0.2 + L.walk; // building line
+const E = Math.PI / 2, Wd = -Math.PI / 2; // facing east (+x) / west (−x)
+const lane = (x: number, z: number, face: number, about: string): Spot => ({ pos: [x, 0, z], face, about, lane: true });
+const walk = (x: number, side: 1 | -1, face: number, about: string, z?: number): Spot => ({ pos: [x, 0.16, z ?? side * (L.roadHalf + 1.2)], face, about });
+const box = (x0: number, y0: number, z0: number, x1: number, y1: number, z1: number): Box => ({ min: [Math.min(x0, x1), y0, Math.min(z0, z1)], max: [Math.max(x0, x1), y1, Math.max(z0, z1)] });
+const colliders: Box[] = [];
+for (const b of L.buildings) {
+  const sd = b.side;
+  if (b.kind === "ruko") { const fz = sd * EDGE; colliders.push(box(b.x - b.w / 2, 0, fz, b.x + b.w / 2, (b.floors ?? 2) * 3.3 + 0.8, fz + sd * 7)); }
+  else if (b.kind === "rumah") { const fz = sd * (EDGE + 3.2); colliders.push(box(b.x - b.w / 2, 0, fz, b.x + b.w / 2, 5.2, fz + sd * 7)); colliders.push(box(b.x - b.w / 2, 0, sd * (EDGE + 0.05), b.x + b.w / 2, 1.35, sd * (EDGE + 0.25))); }
+  else if (b.kind === "warung") {
+    const fz = sd * (EDGE + 1.2);
+    colliders.push(box(b.x - b.w / 2, 0, fz + sd * 0.6, b.x + b.w / 2, 3.0, fz + sd * 5.1));
+    colliders.push(box(b.x - b.w / 2 + 0.4, 0, fz - sd * 0.45, b.x + b.w / 2 - 0.4, 0.97, fz + sd * 0.15));
+    for (const px of [-b.w / 2 + 0.15, b.w / 2 - 0.15]) colliders.push(box(b.x + px - 0.08, 0, fz - sd * 0.98, b.x + px + 0.08, 2.75, fz - sd * 0.82));
+    colliders.push(box(b.x - b.w / 2 - 0.2, 2.6, fz - sd * 1.2, b.x + b.w / 2 + 0.2, 3.65, fz + sd * 1.0));
+  } else { for (const wx of [-b.w / 2 - 0.12, b.w / 2 + 0.12]) colliders.push(box(b.x + wx - 0.2, 0, sd * (EDGE + 0.0), b.x + wx + 0.2, 3.4, sd * (EDGE + 12))); colliders.push(box(b.x - b.w / 2 - 0.4, 3.0, sd * (EDGE + 0.0), b.x + b.w / 2 + 0.4, 3.7, sd * (EDGE + 0.4))); }
+}
+for (const t of L.trees) { const z = t.side * (L.roadHalf + 1.0); colliders.push(box(t.x - 0.18, 0, z - 0.18, t.x + 0.18, 2.4, z + 0.18)); colliders.push(box(t.x - 1.3, 2.2, z - 1.3, t.x + 1.3, 4.0, z + 1.3)); }
+for (let x = L.poles.x0; x <= L.poles.x1; x += L.poles.every) { const z = L.poles.side * (L.roadHalf + 0.55); colliders.push(box(x - 0.13, 0, z - 0.13, x + 0.13, 8.4, z + 0.13)); }
+if (L.light) { const z = L.light.side * (L.roadHalf + 0.6); colliders.push(box(L.light.x - 0.12, 0, z - 0.12, L.light.x + 0.12, 5.6, z + 0.12)); colliders.push(box(L.light.x - 0.25, 4.4, L.light.side * 1.4 - 0.6, L.light.x + 0.25, 5.55, L.light.side * 1.4 + 0.6)); }
+const wa = L.buildings.find((b) => b.kind === "warung")!;
+const gg = L.buildings.find((b) => b.kind === "gang")!;
+const wfz = wa.side * (EDGE + 1.2);
+const floors: { y: number; box: Box }[] = [];
+const cx = L.cross!;
+for (const sd of [1, -1] as const) {
+  floors.push({ y: 0.16, box: box(L.x0 - 20, 0, sd * (L.roadHalf + 0.2), cx.x - cx.half, 1, sd * EDGE) });
+  floors.push({ y: 0.16, box: box(cx.x + cx.half, 0, sd * (L.roadHalf + 0.2), L.x1 + 20, 1, sd * EDGE) });
+}
+floors.push({ y: 0.15, box: box(gg.x - gg.w / 2, 0, gg.side * EDGE, gg.x + gg.w / 2, 1, gg.side * (EDGE + 12)) });
+
+export const JALAN: SetMeta = {
+  id: "jalan", theme: "jalan",
+  about: "a city street: two lanes along x, shophouses, a warung, a gang, a crossing with a traffic light + countdown and a zebra crossing",
+  spots: {
+    "lampu-merah": lane(-8.2, -1.9, E, "waiting at the red light (front of the line)"),
+    "antre-1": lane(-9.7, -1.9, E, "behind the front rider at the light"),
+    "antre-2": lane(-8.45, -0.85, E, "beside the front rider at the light (inner)"),
+    "antre-3": lane(-8.6, -2.95, E, "beside the front rider at the light (kerb side)"),
+    zebra: lane(-5.8, -1.9, E, "on the zebra crossing (past the stop line)"),
+    "tengah-simpang": lane(-1.2, -1.9, E, "in the middle of the crossing"),
+    "jalan-barat": lane(-32, -1.9, E, "far west end of the lane (start of a ride east)"),
+    "jalan-a": lane(10, -1.9, E, "lane east of the crossing"),
+    "jalan-b": lane(22, -1.9, E, "lane near the gang"),
+    "jalan-c": lane(34, -1.9, E, "lane"),
+    "jalan-d": lane(50, -1.9, E, "lane past the warung"),
+    "jalan-e": lane(66, -1.9, E, "lane (puddle nearby)"),
+    "jalan-timur": lane(90, -1.9, E, "far east end of the lane"),
+    "seberang-barat": lane(-32, 1.9, Wd, "opposite lane, west end"),
+    "seberang-a": lane(14, 1.9, Wd, "opposite lane"),
+    "seberang-b": lane(30, 1.9, Wd, "opposite lane, by the gang"),
+    "seberang-c": lane(44, 1.9, Wd, "opposite lane, across from the warung"),
+    "seberang-timur": lane(90, 1.9, Wd, "opposite lane, east end (start of a ride west)"),
+    "simpang-utara": lane(-1.6, 18, Math.PI, "cross street north (coming toward the crossing)"),
+    "simpang-selatan": lane(1.6, -18, 0, "cross street south (coming toward the crossing)"),
+    "depan-warung": lane(wa.x + 0.6, -2.75, E, "stopped by the kerb in front of the warung"),
+    warung: { pos: [wa.x, 0, wfz - wa.side * 0.85], face: wa.side > 0 ? 0 : Math.PI, about: "at the warung counter (buying)", surface: { y: 0.97, ahead: 0.42 } },
+    "bangku-warung": { pos: [wa.x - 0.6, 0.16, wfz - wa.side * 1.49], face: wa.side > 0 ? Math.PI : 0, about: "on the warung bench, facing the road", seat: 0.36 },
+    "trotoar-warung": walk(wa.x - 2.6, -1, 0, "sidewalk by the warung, facing the road"),
+    "trotoar-a": walk(14, -1, 0, "sidewalk (south side), facing the road"),
+    "trotoar-b": walk(34, 1, Math.PI, "sidewalk (north side), facing the road"),
+    "tukang-parkir": walk(53.2, -1, 0, "sidewalk in front of the shops (parking attendant)", -(L.roadHalf + 0.9)),
+    "parkir-1": lane(51.4, -3.05, E, "parked by the kerb"),
+    "parkir-2": lane(55.4, -3.05, E, "parked by the kerb"),
+    "mulut-gang": lane(gg.x, gg.side * (EDGE + 1.0), gg.side > 0 ? Math.PI : 0, "gang mouth, facing the road"),
+    gang: lane(gg.x, gg.side * (EDGE + 6.5), gg.side > 0 ? Math.PI : 0, "inside the gang, facing the road"),
+    "trotoar-gang": walk(gg.x + 2.6, 1, Math.PI, "sidewalk by the gang, facing the road"),
+    "zebra-trotoar": walk(-5.8, -1, 0, "waiting to cross at the zebra (south)", -(L.roadHalf + 0.9)),
+    "zebra-tengah": { pos: [-5.8, 0, 0], face: 0, about: "halfway across the zebra" },
+    "zebra-seberang": walk(-5.8, 1, Math.PI, "end of the zebra (north sidewalk)", L.roadHalf + 0.9),
+  },
+  colliders,
+  bounds: { min: [L.x0 - 6, 0.2, -12], max: [L.x1 + 6, 40, 14] },
+  views: { establish: { a: { pos: [-15, 7.5, 0.6], target: [8, 0.6, -1.0], fov: 46 }, b: { pos: [-13.5, 7.0, 0.5], target: [9, 0.6, -1.0], fov: 45 } } },
+  floor: floors,
+  crowd: ["trotoar-warung", "trotoar-a", "trotoar-b", "zebra-trotoar"],
+};
+
+==== 6322 project/src/tipikal/sets/kantor.ts
+// SET "kantor" — an open-plan office: two rows of desks with monitors (6 seats, back to back), the boss's glass room
+// with a big desk, a meeting table (6 chairs), a pantry with a water dispenser, printer, whiteboard, a window wall
+// with a city view. Pure data: layout (drawn by Kantor.tsx) + the director's meta.
+import type { Box, SetMeta, Spot } from "../types.ts";
+
+export const KANTOR = {
+  W: 6, D: 5, H: 3.0,
+  deskXs: [-4.2, -2.4, -0.6],
+  row1: { z: -2.45, seatZ: -1.75, face: Math.PI }, // workers face the window (−z)
+  row2: { z: 0.45, seatZ: -0.25, face: 0 },         // back to back with row 1, facing the room (+z)
+  desk: { w: 1.6, d: 0.75, top: 0.68 }, seatH: 0.4,
+  boss: { x: 4.2, z: -3.0, w: 1.9, d: 0.85, top: 0.7, chairZ: -3.8, guestZ: -1.95, room: { x0: 2.4, z1: -0.7 } },
+  meet: { x: -3.7, z: 3.2, w: 2.7, d: 1.2, top: 0.68, chairXs: [-4.6, -3.7, -2.8] },
+  pantry: { x: 5.65, z0: 1.6, z1: 4.6, top: 0.9 },
+  dispenser: { x: 5.55, z: 0.75 },
+  printer: { x: 1.3, z: 4.55 },
+  board: { x: -5.95, z0: -1.4, z1: 0.9 },
+  door: { x0: 2.6, x1: 3.6 },
+};
+const K = KANTOR;
+const box = (x0: number, y0: number, z0: number, x1: number, y1: number, z1: number): Box => ({ min: [Math.min(x0, x1), y0, Math.min(z0, z1)], max: [Math.max(x0, x1), y1, Math.max(z0, z1)] });
+const spots: Record<string, Spot> = {};
+K.deskXs.forEach((x, i) => {
+  spots[`meja-${i + 1}`] = { pos: [x, 0, K.row1.seatZ], face: K.row1.face, seat: K.seatH, surface: { y: K.desk.top, ahead: K.row1.seatZ - (K.row1.z + K.desk.d / 2) }, about: `desk ${i + 1} (front row, facing the window)` };
+  spots[`meja-${i + 4}`] = { pos: [x, 0, K.row2.seatZ], face: K.row2.face, seat: K.seatH, surface: { y: K.desk.top, ahead: K.row2.z - K.desk.d / 2 - K.row2.seatZ }, about: `desk ${i + 4} (second row, facing the room)` };
+});
+K.meet.chairXs.forEach((x, i) => {
+  spots[`rapat-${i + 1}`] = { pos: [x, 0, K.meet.z - K.meet.d / 2 - 0.42], face: 0, seat: 0.4, surface: { y: K.meet.top, ahead: 0.42 }, about: `meeting chair ${i + 1} (near side)` };
+  spots[`rapat-${i + 4}`] = { pos: [x, 0, K.meet.z + K.meet.d / 2 + 0.42], face: Math.PI, seat: 0.4, surface: { y: K.meet.top, ahead: 0.42 }, about: `meeting chair ${i + 4} (far side)` };
+});
+Object.assign(spots, {
+  "meja-bos": { pos: [K.boss.x, 0, K.boss.chairZ], face: 0, seat: 0.42, surface: { y: K.boss.top, ahead: K.boss.z - K.boss.d / 2 - K.boss.chairZ }, about: "the boss's chair behind the big desk" },
+  "kursi-tamu-bos": { pos: [K.boss.x, 0, K.boss.guestZ], face: Math.PI, seat: 0.4, surface: { y: K.boss.top, ahead: K.boss.guestZ - (K.boss.z + K.boss.d / 2) }, about: "visitor chair in front of the boss's desk" },
+  "depan-meja-bos": { pos: [K.boss.x - 0.75, 0, -1.75], face: Math.PI, about: "standing in front of the boss's desk" },
+  "papan-tulis": { pos: [-5.3, 0, -0.25], face: Math.PI / 2, about: "at the whiteboard, facing the room (presenting)" },
+  dispenser: { pos: [K.dispenser.x - 0.6, 0, K.dispenser.z], face: Math.PI / 2, about: "at the water dispenser (galon)" },
+  pantry: { pos: [K.pantry.x - 0.75, 0, 3.0], face: Math.PI / 2, surface: { y: K.pantry.top, ahead: 0.45 }, about: "at the pantry counter (coffee)" },
+  printer: { pos: [K.printer.x, 0, K.printer.z - 0.75], face: 0, about: "at the printer" },
+  pintu: { pos: [(K.door.x0 + K.door.x1) / 2, 0, K.D - 0.6], face: Math.PI, about: "just inside the door" },
+  lorong: { pos: [1.2, 0, -0.6], face: Math.PI, about: "walkway between the desks and the boss's room" },
+  "lorong-2": { pos: [-2.4, 0, 2.15], face: Math.PI / 2, about: "walkway by the meeting table" },
+  jendela: { pos: [-1.5, 0, -4.35], face: Math.PI, about: "at the window, looking out" },
+} as Record<string, Spot>);
+
+const colliders: Box[] = [];
+for (const x of K.deskXs) for (const r of [K.row1, K.row2]) {
+  colliders.push(box(x - K.desk.w / 2, 0, r.z - K.desk.d / 2, x + K.desk.w / 2, K.desk.top - 0.06, r.z + K.desk.d / 2));
+  colliders.push(box(x - 0.3, K.desk.top, r.z - 0.1 + (r === K.row1 ? -0.15 : 0.15), x + 0.3, K.desk.top + 0.42, r.z + 0.1 + (r === K.row1 ? -0.15 : 0.15)));
+}
+// office chairs (cameras and walkers keep clear of them)
+const chair = (x: number, z: number) => colliders.push(box(x - 0.26, 0, z - 0.26, x + 0.26, K.seatH, z + 0.26));
+for (const x of K.deskXs) { chair(x, K.row1.seatZ); chair(x, K.row2.seatZ); }
+for (const x of K.meet.chairXs) { chair(x, K.meet.z - K.meet.d / 2 - 0.42); chair(x, K.meet.z + K.meet.d / 2 + 0.42); }
+chair(K.boss.x, K.boss.chairZ); chair(K.boss.x, K.boss.guestZ);
+colliders.push(box(K.boss.x - K.boss.w / 2, 0, K.boss.z - K.boss.d / 2, K.boss.x + K.boss.w / 2, K.boss.top - 0.06, K.boss.z + K.boss.d / 2));
+colliders.push(box(K.meet.x - K.meet.w / 2, 0, K.meet.z - K.meet.d / 2, K.meet.x + K.meet.w / 2, K.meet.top - 0.06, K.meet.z + K.meet.d / 2));
+colliders.push(box(K.pantry.x - 0.35, 0, K.pantry.z0, K.pantry.x + 0.35, K.pantry.top - 0.05, K.pantry.z1));
+colliders.push(box(K.dispenser.x - 0.2, 0, K.dispenser.z - 0.2, K.dispenser.x + 0.2, 1.45, K.dispenser.z + 0.2));
+colliders.push(box(K.printer.x - 0.4, 0, K.printer.z - 0.3, K.printer.x + 0.4, 1.0, K.printer.z + 0.3));
+// boss room glass frame posts
+for (const p of [[K.boss.room.x0, -K.D], [K.boss.room.x0, K.boss.room.z1], [K.W, K.boss.room.z1]]) colliders.push(box(p[0] - 0.05, 0, p[1] - 0.05, p[0] + 0.05, K.H, p[1] + 0.05));
+colliders.push(box(K.boss.room.x0 - 0.04, 0, -K.D, K.boss.room.x0 + 0.04, 0.9, K.boss.room.z1 - 1.2));
+colliders.push(box(-K.W - 1, 0, -K.D - 1, K.W + 1, K.H + 1, -K.D + 0.05));
+colliders.push(box(-K.W - 1, 0, K.D - 0.05, K.W + 1, K.H + 1, K.D + 1));
+colliders.push(box(-K.W - 1, 0, -K.D, -K.W + 0.05, K.H + 1, K.D));
+colliders.push(box(K.W - 0.05, 0, -K.D, K.W + 1, K.H + 1, K.D));
+
+export const KANTOR_META: SetMeta = {
+  id: "kantor", theme: "kantor", indoor: true,
+  about: "an open office: desks meja-1…6 with monitors, the boss's glass room (meja-bos), meeting table rapat-1…6, pantry + water dispenser, printer, whiteboard, window wall",
+  spots,
+  colliders,
+  bounds: { min: [-K.W + 0.3, 0.2, -K.D + 0.3], max: [K.W - 0.3, K.H - 0.2, K.D - 0.3] },
+  views: { establish: { a: { pos: [5.2, 2.65, 4.4], target: [-1.5, 0.9, -1.5], fov: 50 }, b: { pos: [4.9, 2.55, 4.2], target: [-1.6, 0.9, -1.7], fov: 49 } } },
+  crowd: K.deskXs.flatMap((_, i) => [`meja-${i + 1}`, `meja-${i + 4}`]),
+};
+
+==== 9665 project/src/tipikal/sets/Kantor.tsx
+// SET "kantor" picture — built from KANTOR (kantor.ts). Light grey-blue walls, carpet tiles, white desks with
+// monitors, office chairs, the boss's glass room (frames only), meeting table, pantry with a galon dispenser,
+// printer, whiteboard, window wall with a flat city skyline. No brands, no logos.
+import React from "react";
+import { Solid } from "../../core/qa/scene-qa.tsx";
+import { at, basis, flat, lamp, M, toon } from "../../kits/tipikal/mats.ts";
+import { hash } from "../../kits/tipikal/math.ts";
+import { Galon } from "./Jalan.tsx";
+import { Bx, Ceiling, Clock, Floor, GEO, OfficeChair, PictureFrame, Plant, SignBoard, Table, Tb, TubeLamp, Wall } from "./pieces.tsx";
+import { KANTOR } from "./kantor.ts";
+
+const K = KANTOR;
+const Monitor: React.FC<{ x: number; z: number; face: number; seed: number }> = ({ x, z, face, seed }) => {
+  const scr = ["#7cc6ee", "#a6e3b5", "#f2d27a", "#f4b6a0"][seed % 4];
+  return (
+    <group position={[x, K.desk.top, z]} rotation={[0, face, 0]}>
+      <M g={GEO.box} m={at([0, 0.01, 0], [0.22, 0.02, 0.16])} material={flat("#2c2d31", 0.6, false)} />
+      <M g={GEO.box} m={at([0, 0.13, -0.02], [0.04, 0.22, 0.04])} material={flat("#2c2d31", 0.6, false)} />
+      <M g={GEO.box} m={at([0, 0.3, 0], [0.62, 0.38, 0.035])} material={flat("#2c2d31", 0.6, false)} />
+      <M g={GEO.box} m={at([0, 0.3, 0.022], [0.56, 0.32, 0.004])} material={lamp(scr)} shadow={false} />
+      {[0.06, -0.02, -0.1].map((y, i) => <M key={i} g={GEO.box} m={at([-0.08 + hash(seed + i) * 0.05, 0.3 + y, 0.029], [0.3 - i * 0.06, 0.03, 0.002])} material={lamp("#ffffff")} shadow={false} />)}
+      <M g={GEO.box} m={at([0, 0.012, 0.3], [0.42, 0.02, 0.14])} material={flat("#e9e6de", 0.7, false)} />
+    </group>
+  );
+};
+
+export const Kantor: React.FC<{ t: number }> = () => {
+  const wall = "#e3e8ec";
+  return (
+    <group>
+      <Floor x0={-K.W} x1={K.W} z0={-K.D} z1={K.D} tex={["#8f97a3", "#848b96", 12]} />
+      {/* window wall (−z): big windows with a flat skyline */}
+      <Wall along="x" at={-K.D - 0.1} a={-K.W - 0.2} b={K.W + 0.2} h={K.H} c={wall} holes={[[-5.6, -2.0, 0.6, 2.6], [-1.6, 2.0, 0.6, 2.6], [2.8, 5.6, 0.6, 2.6]]} />
+      {[[-5.6, -2.0], [-1.6, 2.0], [2.8, 5.6]].map(([a, b], i) => (
+        <group key={i}>
+          <M g={GEO.box} m={at([(a + b) / 2, 1.6, -K.D - 0.6], [b - a + 0.4, 2.2, 0.05])} material={lamp("#bfe2f5")} shadow={false} />
+          {[0, 1, 2, 3].map((k) => { const w = (b - a) / 4; const h = 0.5 + hash(i * 7 + k) * 1.2; return <M key={k} g={GEO.box} m={at([a + w * (k + 0.5), 0.6 + h / 2, -K.D - 0.55], [w * 0.8, h, 0.04])} material={lamp(["#9fb4c6", "#b8c6d3", "#8ea4b8", "#aebccb"][k])} shadow={false} />; })}
+          {[a, (a + b) / 2, b].map((x, k) => <Bx key={"f" + k} p={[x, 1.6, -K.D - 0.08]} s={[0.07, 2.0, 0.16]} c="#c9ced3" />)}
+          <Bx p={[(a + b) / 2, 0.6, -K.D - 0.05]} s={[b - a, 0.06, 0.24]} c="#c9ced3" />
+          <Bx p={[(a + b) / 2, 2.6, -K.D - 0.05]} s={[b - a, 0.06, 0.24]} c="#c9ced3" />
+        </group>
+      ))}
+      <Wall along="x" at={K.D + 0.1} a={-K.W - 0.2} b={K.W + 0.2} h={K.H} c={wall} holes={[[K.door.x0, K.door.x1, 0, 2.2]]} />
+      <Bx p={[(K.door.x0 + K.door.x1) / 2, 1.1, K.D + 0.02]} s={[K.door.x1 - K.door.x0 - 0.06, 2.2, 0.06]} c="#9a6a3f" />
+      <Wall along="z" at={-K.W - 0.1} a={-K.D} b={K.D} h={K.H} c={wall} />
+      <Wall along="z" at={K.W + 0.1} a={-K.D} b={K.D} h={K.H} c={wall} />
+      <Ceiling x0={-K.W - 0.2} x1={K.W + 0.2} z0={-K.D - 0.2} z1={K.D + 0.2} y={K.H} />
+      {[[-3, -2], [0, -2], [3, -2], [-3, 1.5], [0, 1.5], [3, 1.5]].map(([x, z], i) => <TubeLamp key={i} p={[x, K.H - 0.05, z]} />)}
+      {/* desks */}
+      {K.deskXs.flatMap((x, i) => [K.row1, K.row2].map((r, j) => {
+        const toward = r === K.row1 ? -1 : 1; // monitors on the far side from the worker
+        return (
+          <group key={`${i}${j}`}>
+            <Table id={`meja-k${i}${j}`} p={[x, 0, r.z]} w={K.desk.w} d={K.desk.d} h={K.desk.top} c="#f2f1ec" leg="#8d9096" />
+            <Monitor x={x} z={r.z + toward * 0.15} face={r === K.row1 ? 0 : Math.PI} seed={i + j * 3} />
+            <Tb p={[x + 0.55, K.desk.top + 0.06, r.z + toward * 0.1]} s={[0.08, 0.12, 0.08]} c={["#e2563d", "#2f6fd0", "#f2c94c"][(i + j) % 3]} />
+            <OfficeChair id={`kursi-k${i}${j}`} p={[x, 0, r.seatZ]} face={r.face} h={K.seatH} c={j ? "#2c3e63" : "#2c2d31"} />
+          </group>
+        );
+      }))}
+      {/* boss room: low wall + glass frames, big desk, leather chair, plant, shelf */}
+      <Bx p={[K.boss.room.x0, 0.45, (-K.D + K.boss.room.z1 - 1.2) / 2]} s={[0.08, 0.9, -K.boss.room.z1 + K.D - 1.2]} c="#c9ced3" />
+      <Bx p={[(K.boss.room.x0 + K.W) / 2 + 0.6, 0.45, K.boss.room.z1]} s={[K.W - K.boss.room.x0 - 1.2, 0.9, 0.08]} c="#c9ced3" />
+      {[[K.boss.room.x0, -K.D + 0.05], [K.boss.room.x0, K.boss.room.z1], [K.W - 0.05, K.boss.room.z1], [K.boss.room.x0, -2.2]].map(([x, z], i) => <Bx key={i} p={[x, K.H / 2, z]} s={[0.08, K.H, 0.08]} c="#c9ced3" />)}
+      <Bx p={[K.boss.room.x0, K.H - 0.1, (-K.D + K.boss.room.z1) / 2]} s={[0.08, 0.08, -K.boss.room.z1 + K.D]} c="#c9ced3" />
+      <Bx p={[(K.boss.room.x0 + K.W) / 2, K.H - 0.1, K.boss.room.z1]} s={[K.W - K.boss.room.x0, 0.08, 0.08]} c="#c9ced3" />
+      <SignBoard p={[K.boss.room.x0 + 1.0, 2.35, K.boss.room.z1 + 0.06]} w={1.0} h={0.3} text="DIREKTUR" bg="#2c3e63" facing={[0, 0, 1]} />
+      <Solid id="meja-bos" kind="set" touch={["*"]}>
+        <group>
+          <Bx p={[K.boss.x, K.boss.top - 0.03, K.boss.z]} s={[K.boss.w, 0.06, K.boss.d]} c="#6b3f22" />
+          <Bx p={[K.boss.x, (K.boss.top - 0.06) / 2, K.boss.z + K.boss.d / 2 - 0.05]} s={[K.boss.w - 0.04, K.boss.top - 0.06, 0.06]} c="#5a3420" />
+          <Bx p={[K.boss.x - K.boss.w / 2 + 0.05, (K.boss.top - 0.06) / 2, K.boss.z]} s={[0.08, K.boss.top - 0.06, K.boss.d - 0.06]} c="#5a3420" />
+          <Bx p={[K.boss.x + K.boss.w / 2 - 0.05, (K.boss.top - 0.06) / 2, K.boss.z]} s={[0.08, K.boss.top - 0.06, K.boss.d - 0.06]} c="#5a3420" />
+        </group>
+      </Solid>
+      <Tb p={[K.boss.x - 0.55, K.boss.top + 0.03, K.boss.z]} s={[0.3, 0.04, 0.22]} c="#2c2d31" />
+      <Tb p={[K.boss.x + 0.5, K.boss.top + 0.05, K.boss.z - 0.05]} s={[0.18, 0.06, 0.12]} c="#f2c94c" />
+      <OfficeChair id="kursi-bos" p={[K.boss.x, 0, K.boss.chairZ]} face={0} h={0.42} c="#5a1d22" />
+      <OfficeChair id="kursi-tamu-bos" p={[K.boss.x, 0, K.boss.guestZ]} face={Math.PI} c="#2c2d31" />
+      <Bx p={[K.W - 0.25, 0.9, -3.2]} s={[0.4, 1.8, 1.4]} c="#7b5634" />
+      {[0.5, 1.1, 1.6].map((y) => <Bx key={y} p={[K.W - 0.46, y, -3.2]} s={[0.02, 0.04, 1.3]} c="#5a3420" shadow={false} />)}
+      <Plant p={[K.boss.room.x0 + 0.5, 0, -4.4]} s={1.2} />
+      {/* meeting table + chairs + whiteboard */}
+      <Table id="meja-rapat" p={[K.meet.x, 0, K.meet.z]} w={K.meet.w} d={K.meet.d} h={K.meet.top} c="#e9e6de" leg="#8d9096" />
+      {K.meet.chairXs.flatMap((x, i) => [-1, 1].map((sd) => <OfficeChair key={`${i}${sd}`} id={`kursi-r${i}${sd}`} p={[x, 0, K.meet.z + sd * (K.meet.d / 2 + 0.42)]} face={sd < 0 ? 0 : Math.PI} c="#2c3e63" />))}
+      <Bx p={[K.board.x, 1.45, (K.board.z0 + K.board.z1) / 2]} s={[0.04, 1.1, K.board.z1 - K.board.z0]} c="#fbfaf6" />
+      <Bx p={[K.board.x + 0.03, 0.88, (K.board.z0 + K.board.z1) / 2]} s={[0.08, 0.04, K.board.z1 - K.board.z0]} c="#9ea3a9" />
+      {[[1.75, -0.8, 1.2, "#2f6fd0"], [1.55, -0.6, 0.9, "#d63b30"], [1.3, -1.0, 0.6, "#3fa45b"]].map(([y, z, w, c], i) => <M key={i} g={GEO.box} m={at([K.board.x + 0.032, y as number, (z as number) + 0.6], [0.005, 0.05, w as number])} material={flat(c as string, 0.8, false)} shadow={false} />)}
+      {/* pantry, dispenser, fridge, printer */}
+      <Solid id="pantry" kind="set" touch={["*"]}>
+        <Bx p={[K.pantry.x, K.pantry.top / 2, (K.pantry.z0 + K.pantry.z1) / 2]} s={[0.7, K.pantry.top, K.pantry.z1 - K.pantry.z0]} c="#f2f1ec" />
+      </Solid>
+      <Bx p={[K.pantry.x, K.pantry.top + 0.015, (K.pantry.z0 + K.pantry.z1) / 2]} s={[0.72, 0.03, K.pantry.z1 - K.pantry.z0]} c="#3a3d42" />
+      <Tb p={[K.pantry.x, K.pantry.top + 0.18, 2.4]} s={[0.3, 0.33, 0.3]} c="#2c2d31" />
+      <Tb p={[K.pantry.x, K.pantry.top + 0.06, 3.3]} s={[0.1, 0.1, 0.1]} c="#f4f1e8" />
+      <Bx p={[K.pantry.x, 0.95, K.pantry.z1 + 0.35]} s={[0.7, 1.9, 0.6]} c="#d9dde0" />
+      <Solid id="dispenser" kind="set" touch={["*"]}>
+        <group>
+          <Bx p={[K.dispenser.x, 0.5, K.dispenser.z]} s={[0.34, 1.0, 0.34]} c="#f2f1ec" />
+          <Bx p={[K.dispenser.x - 0.18, 0.8, K.dispenser.z - 0.06]} s={[0.04, 0.05, 0.04]} c="#2f6fd0" shadow={false} />
+          <Bx p={[K.dispenser.x - 0.18, 0.8, K.dispenser.z + 0.06]} s={[0.04, 0.05, 0.04]} c="#d63b30" shadow={false} />
+        </group>
+      </Solid>
+      <group position={[K.dispenser.x, 1.0, K.dispenser.z]} rotation={[Math.PI, 0, 0]}><Galon p={[0, -0.5, 0]} /></group>
+      <Bx p={[K.printer.x, 0.4, K.printer.z]} s={[0.8, 0.8, 0.6]} c="#9a6a3f" />
+      <Tb p={[K.printer.x, 0.92, K.printer.z]} s={[0.55, 0.24, 0.45]} c="#e9e6de" />
+      <M g={GEO.box} m={basis([K.printer.x, 1.06, K.printer.z - 0.15], [1, 0, 0], [0, 0.9, 0.43], [0, -0.43, 0.9], [0.3, 0.002, 0.2])} material={toon("#fbfaf4")} />
+      <Clock p={[0, 2.5, K.D - 0.04]} facing={[0, 0, -1]} />
+      <PictureFrame p={[-1.4, 1.8, K.D - 0.04]} facing={[0, 0, -1]} w={1.2} h={0.8} seed={5} />
+      <SignBoard p={[-4.2, 2.3, K.D - 0.05]} w={1.6} h={0.4} text="RUANG RAPAT" bg="#f6f4ec" fg="#2c3e63" facing={[0, 0, -1]} />
+      <Plant p={[-5.5, 0, -4.4]} s={1.1} /><Plant p={[0.6, 0, 4.4]} s={1.0} /><Plant p={[-5.5, 0, 4.4]} s={1.1} />
+      <Bx p={[-K.W + 0.15, 2.5, 3.0]} s={[0.25, 0.28, 0.9]} c="#f2f1ec" />
+    </group>
+  );
+};
+
+==== 6719 project/src/tipikal/sets/Kelas.tsx
+// SET "kelas" picture — built from KELAS (kelas.ts). Cream walls with a green lower band, chalkboard with chalk
+// writing, wooden desks with grey frames, tiled floor, windows with a sky view, door, clock, fan, cabinet.
+import React from "react";
+import { Solid } from "../../core/qa/scene-qa.tsx";
+import { at, flat, M } from "../../kits/tipikal/mats.ts";
+import { canvasTex } from "./Jalan.tsx";
+import { Bx, Ceiling, CeilingFan, Chair, Clock, Floor, GEO, PictureFrame, Plant, SignBoard, TubeLamp, Wall, WindowPane } from "./pieces.tsx";
+import { KELAS } from "./kelas.ts";
+
+const K = KELAS;
+const boardTex = () => canvasTex("kelas-board", 1024, 300, (g) => {
+  g.fillStyle = "#2f5a45"; g.fillRect(0, 0, 1024, 300);
+  g.strokeStyle = "rgba(240,240,230,0.85)"; g.fillStyle = "rgba(240,240,230,0.9)";
+  g.font = "800 64px TipikalBaloo, sans-serif"; g.textAlign = "left"; g.textBaseline = "top";
+  g.fillText("ULANGAN HARIAN", 60, 34);
+  g.font = "700 46px TipikalBaloo, sans-serif";
+  g.fillText("1.  3x + 5 = 20", 70, 128);
+  g.fillText("2.  12 : 4 x 2 = ...", 70, 196);
+  g.lineWidth = 6; g.beginPath(); g.moveTo(60, 110); g.lineTo(560, 110); g.stroke();
+  g.beginPath(); g.arc(840, 170, 70, 0, Math.PI * 2); g.stroke();
+  g.beginPath(); g.moveTo(770, 170); g.lineTo(910, 170); g.moveTo(840, 100); g.lineTo(840, 240); g.stroke();
+});
+
+export const Kelas: React.FC<{ t: number }> = ({ t }) => {
+  const wall = "#f1e7cf", band = "#7fb28f";
+  return (
+    <group>
+      <Floor x0={-K.W} x1={K.W} z0={-K.D} z1={K.D} tex={["#ece6d9", "#cfc6b4", 9]} />
+      {/* walls: left with windows, right with the door, front with the board, back */}
+      <Wall along="z" at={-K.W - 0.1} a={-K.D} b={K.D} h={K.H} c={wall} holes={K.windows.map(([a, b]) => [a, b, 1.0, 2.3])} />
+      <Wall along="z" at={K.W + 0.1} a={-K.D} b={K.D} h={K.H} c={wall} holes={[[K.door.z0, K.door.z1, 0, 2.15]]} />
+      <Wall along="x" at={-K.D - 0.1} a={-K.W - 0.2} b={K.W + 0.2} h={K.H} c={wall} />
+      <Wall along="x" at={K.D + 0.1} a={-K.W - 0.2} b={K.W + 0.2} h={K.H} c={wall} />
+      {/* green lower band (wainscot) on all walls */}
+      <Bx p={[-K.W + 0.01, 0.5, 0]} s={[0.02, 1.0, 2 * K.D]} c={band} shadow={false} />
+      <Bx p={[K.W - 0.01, 0.5, -0.3]} s={[0.02, 1.0, 2 * K.D - 0.6]} c={band} shadow={false} />
+      <Bx p={[0, 0.5, -K.D + 0.01]} s={[2 * K.W, 1.0, 0.02]} c={band} shadow={false} />
+      <Bx p={[0, 0.5, K.D - 0.01]} s={[2 * K.W, 1.0, 0.02]} c={band} shadow={false} />
+      {K.windows.map(([a, b], i) => <WindowPane key={i} along="z" at={-K.W - 0.1} u0={a} u1={b} sill={1.0} top={2.3} frame="#f4f1e8" view="#a9d8f2" />)}
+      {/* door */}
+      <Bx p={[K.W + 0.02, 1.07, (K.door.z0 + K.door.z1) / 2]} s={[0.06, 2.14, K.door.z1 - K.door.z0 - 0.06]} c="#8a5a3a" />
+      <Bx p={[K.W - 0.03, 1.0, K.door.z0 + 0.15]} s={[0.04, 0.06, 0.12]} c="#c9cdd2" shadow={false} />
+      <Ceiling x0={-K.W - 0.2} x1={K.W + 0.2} z0={-K.D - 0.2} z1={K.D + 0.2} y={K.H} />
+      <TubeLamp p={[-1.5, K.H - 0.05, -1.5]} /><TubeLamp p={[1.5, K.H - 0.05, -1.5]} /><TubeLamp p={[-1.5, K.H - 0.05, 1.8]} /><TubeLamp p={[1.5, K.H - 0.05, 1.8]} />
+      <CeilingFan p={[0, K.H, 0.3]} t={t} />
+      {/* chalkboard */}
+      <Bx p={[0, (K.board.y0 + K.board.y1) / 2, K.board.z - 0.05]} s={[K.board.x1 - K.board.x0 + 0.16, K.board.y1 - K.board.y0 + 0.16, 0.06]} c="#8a5a3a" />
+      <mesh position={[0, (K.board.y0 + K.board.y1) / 2, K.board.z - 0.015]}>
+        <planeGeometry args={[K.board.x1 - K.board.x0, K.board.y1 - K.board.y0]} />
+        <meshStandardMaterial map={boardTex()} roughness={0.95} />
+      </mesh>
+      <Bx p={[0, K.board.y0 - 0.06, K.board.z + 0.02]} s={[K.board.x1 - K.board.x0, 0.04, 0.1]} c="#8a5a3a" />
+      <Clock p={[0, 2.62, -K.D + 0.04]} facing={[0, 0, 1]} />
+      <SignBoard p={[-3.4, 1.85, -K.D + 0.05]} w={1.1} h={0.62} text="JADWAL PIKET" bg="#f6f4ec" fg="#2c3e63" facing={[0, 0, 1]} />
+      <PictureFrame p={[3.4, 1.8, -K.D + 0.04]} facing={[0, 0, 1]} w={0.9} h={0.6} seed={3} />
+      <PictureFrame p={[K.W - 0.04, 1.75, 1.6]} facing={[-1, 0, 0]} w={1.0} h={0.7} seed={8} />
+      <PictureFrame p={[-1.6, 1.8, K.D - 0.04]} facing={[0, 0, -1]} w={1.2} h={0.75} seed={12} />
+      <SignBoard p={[1.4, 1.85, K.D - 0.05]} w={1.2} h={0.55} text="KELAS XI-2" bg="#2c3e63" facing={[0, 0, -1]} />
+      {/* teacher's desk + chair */}
+      <Solid id="meja-guru" kind="set" touch={["*"]}>
+        <group>
+          <Bx p={[K.tDesk.x, K.tDesk.top - 0.025, K.tDesk.z]} s={[K.tDesk.w, 0.05, K.tDesk.d]} c="#9a6a3f" />
+          <Bx p={[K.tDesk.x, (K.tDesk.top - 0.05) / 2, K.tDesk.z + K.tDesk.d / 2 - 0.03]} s={[K.tDesk.w - 0.04, K.tDesk.top - 0.05, 0.04]} c="#7b5634" />
+          <Bx p={[K.tDesk.x - K.tDesk.w / 2 + 0.03, (K.tDesk.top - 0.05) / 2, K.tDesk.z]} s={[0.05, K.tDesk.top - 0.05, K.tDesk.d - 0.04]} c="#7b5634" />
+          <Bx p={[K.tDesk.x + K.tDesk.w / 2 - 0.03, (K.tDesk.top - 0.05) / 2, K.tDesk.z]} s={[0.05, K.tDesk.top - 0.05, K.tDesk.d - 0.04]} c="#7b5634" />
+        </group>
+      </Solid>
+      <Bx p={[K.tDesk.x + 0.35, K.tDesk.top + 0.03, K.tDesk.z]} s={[0.24, 0.06, 0.32]} c="#2f6fd0" />
+      <Bx p={[K.tDesk.x + 0.35, K.tDesk.top + 0.075, K.tDesk.z + 0.01]} s={[0.22, 0.03, 0.3]} c="#e2563d" />
+      <Chair id="kursi-guru" p={[K.tDesk.x, 0, K.tChairZ]} face={0} h={0.4} c="#7b5634" />
+      {/* student desks + chairs */}
+      {K.rows.flatMap((rz, r) => K.cols.map((cx, c) => (
+        <group key={`d${r}${c}`}>
+          <Solid id={`meja-${r * 3 + c + 1}`} kind="set" touch={["*"]}>
+            <group>
+              <Bx p={[cx, K.desk.top - 0.02, rz]} s={[K.desk.w, 0.04, K.desk.d]} c="#c9935a" />
+              <Bx p={[cx, K.desk.top - 0.075, rz - 0.12]} s={[K.desk.w - 0.06, 0.025, K.desk.d - 0.26]} c="#8d9096" />
+              {[[-1, -1], [-1, 1], [1, -1], [1, 1]].map(([x, z], i) => <Bx key={i} p={[cx + x * (K.desk.w / 2 - 0.04), (K.desk.top - 0.04) / 2, rz + z * (K.desk.d / 2 - 0.04)]} s={[0.035, K.desk.top - 0.04, 0.035]} c="#8d9096" />)}
+            </group>
+          </Solid>
+          {[-1, 1].map((sd) => <Chair key={sd} id={`kursi-${r}${c}${sd}`} p={[cx + sd * K.seatX, 0, rz + K.chairBack]} face={Math.PI} h={K.seatH} c="#b07a48" />)}
+        </group>
+      )))}
+      {/* cabinet, bin, broom corner */}
+      <Bx p={[K.cabinet.x, K.cabinet.h / 2, K.cabinet.z]} s={[K.cabinet.w, K.cabinet.h, K.cabinet.d]} c="#9a6a3f" />
+      {[0.35, 0.95, 1.5].map((y) => <Bx key={y} p={[K.cabinet.x, y, K.cabinet.z - K.cabinet.d / 2 - 0.005]} s={[K.cabinet.w - 0.1, 0.02, 0.01]} c="#6b4a2a" shadow={false} />)}
+      <M g={GEO.cyl} m={at([-3.9, 0, 4.0], [0.18, 0.4, 0.18])} material={flat("#3fa45b", 0.8, false)} />
+      <Plant p={[4.0, 0, -4.05]} s={0.9} />
+    </group>
+  );
+};
+
+==== 5615 project/src/tipikal/sets/kondangan.ts
+// SET "kondangan" — a wedding party under a tent (tenda hajatan): the pelaminan stage with the couple's chairs and a
+// flower backdrop, the prasmanan buffet, guest chairs, a small organ-tunggal stage with speakers, a dance floor, the
+// guestbook table and the envelope box at the entrance under a janur arch. Pure data + the director's meta.
+import type { Box, SetMeta, Spot } from "../types.ts";
+
+export const KONDANGAN = {
+  W: 8, D: 6.5, H: 3.4,
+  stage: { x0: -3.2, x1: 3.2, z0: -6.4, z1: -4.2, top: 0.35 },
+  thrones: [-0.65, 0.65], throneZ: -5.65,
+  buffet: { x: -6.6, z0: -3.0, z1: 2.6, d: 0.8, top: 0.8 },
+  chairs: { rows: [0.4, 1.6], xs: [2.2, 2.9, 3.6, 4.3, 5.0] },
+  organ: { x0: 5.6, x1: 7.6, z0: -3.8, z1: -1.6, top: 0.3 },
+  book: { x: 2.6, z: 5.0, w: 1.4, d: 0.6, top: 0.76 },
+  box: { x: 4.6, z: 5.0 },
+};
+const K = KONDANGAN;
+const box = (x0: number, y0: number, z0: number, x1: number, y1: number, z1: number): Box => ({ min: [Math.min(x0, x1), y0, Math.min(z0, z1)], max: [Math.max(x0, x1), y1, Math.max(z0, z1)] });
+const spots: Record<string, Spot> = {
+  "pengantin-pria": { pos: [-0.6, K.stage.top, -5.15], face: 0, about: "groom standing on the stage, facing the guests" },
+  "pengantin-wanita": { pos: [0.6, K.stage.top, -5.15], face: 0, about: "bride standing on the stage" },
+  "kursi-pengantin-1": { pos: [K.thrones[0], K.stage.top, K.throneZ + 0.12], face: 0, seat: 0.4, about: "groom's chair" },
+  "kursi-pengantin-2": { pos: [K.thrones[1], K.stage.top, K.throneZ + 0.12], face: 0, seat: 0.4, about: "bride's chair" },
+  salaman: { pos: [-0.25, K.stage.top, -4.45], face: Math.PI, about: "a guest on the stage shaking hands with the couple" },
+  "salaman-2": { pos: [0.85, K.stage.top, -4.45], face: Math.PI, about: "next guest on the stage" },
+  "antre-salaman": { pos: [1.7, 0, -3.55], face: -Math.PI * 0.8, about: "queue at the stage steps" },
+  "antre-salaman-2": { pos: [2.3, 0, -3.0], face: -Math.PI * 0.8, about: "queue at the stage steps (second)" },
+  "depan-pelaminan": { pos: [0, 0, -3.3], face: Math.PI, about: "in front of the stage, facing it (photo spot)" },
+  "pintu-masuk": { pos: [0, 0, 6.0], face: Math.PI, about: "the entrance under the janur arch" },
+  "meja-tamu": { pos: [K.book.x, 0, K.book.z + 0.6], face: Math.PI, surface: { y: K.book.top, ahead: 0.3 }, about: "guest at the guestbook table" },
+  "penerima-tamu": { pos: [K.book.x, 0, K.book.z - 0.65], face: 0, surface: { y: K.book.top, ahead: 0.35 }, about: "receptionist behind the guestbook table" },
+  "kotak-amplop": { pos: [K.box.x, 0, K.box.z + 0.6], face: Math.PI, surface: { y: 0.95, ahead: 0.35 }, about: "at the envelope box" },
+  "panggung-organ": { pos: [6.3, K.organ.top, -2.7], face: -Math.PI / 2, about: "singer on the organ stage, facing the guests" },
+  "pemain-organ": { pos: [7.1, K.organ.top, -3.2], face: -Math.PI / 2, about: "keyboard player" },
+  "lantai-joget": { pos: [3.6, 0, -2.3], face: Math.PI / 2, about: "dance floor in front of the organ stage" },
+  "lantai-joget-2": { pos: [3.0, 0, -1.4], face: Math.PI / 2, about: "dance floor (second)" },
+  "tengah-tenda": { pos: [-0.5, 0, 1.0], face: Math.PI, about: "middle of the tent" },
+  "pojok-tenda": { pos: [-5.4, 0, 4.6], face: Math.PI * 0.75, about: "corner of the tent near the entrance" },
+};
+["prasmanan-1", "prasmanan-2", "prasmanan-3"].forEach((n, i) => { spots[n] = { pos: [K.buffet.x + K.buffet.d / 2 + 0.45, 0, [-2.0, -0.2, 1.6][i]], face: -Math.PI / 2, surface: { y: K.buffet.top, ahead: 0.45 }, about: `at the buffet table (${i + 1})` }; });
+K.chairs.rows.forEach((z, r) => K.chairs.xs.forEach((x, i) => { spots[`kursi-${r * 5 + i + 1}`] = { pos: [x, 0, z], face: Math.PI, seat: 0.38, about: `guest chair, row ${r + 1}` }; }));
+
+const colliders: Box[] = [
+  box(K.stage.x0, 0, K.stage.z0, K.stage.x1, K.stage.top - 0.02, K.stage.z1),
+  box(K.stage.x0, K.stage.top, K.stage.z0, K.stage.x1, 3.0, K.stage.z0 + 0.25),
+  box(K.buffet.x - K.buffet.d / 2, 0, K.buffet.z0, K.buffet.x + K.buffet.d / 2, K.buffet.top - 0.05, K.buffet.z1),
+  box(K.organ.x0, 0, K.organ.z0, K.organ.x1, K.organ.top - 0.02, K.organ.z1),
+  box(K.book.x - K.book.w / 2, 0, K.book.z - K.book.d / 2, K.book.x + K.book.w / 2, K.book.top - 0.05, K.book.z + K.book.d / 2),
+  box(K.box.x - 0.35, 0, K.box.z - 0.35, K.box.x + 0.35, 0.95, K.box.z + 0.35),
+  box(7.2, 0, -1.4, 7.8, 1.3, -0.8), box(7.2, 0, -4.6, 7.8, 1.3, -4.0),
+];
+for (const x of [-K.W, -K.W / 3, K.W / 3, K.W]) for (const z of [-K.D, 0, K.D]) colliders.push(box(x - 0.08, 0, z - 0.08, x + 0.08, K.H, z + 0.08));
+K.chairs.rows.forEach((z) => K.chairs.xs.forEach((x) => colliders.push(box(x - 0.21, 0, z - 0.2, x + 0.21, 0.4, z + 0.21))));
+for (const x of [-1.1, 1.1]) colliders.push(box(x - 0.15, 0, K.D - 0.15, x + 0.15, 3.0, K.D + 0.15));
+
+export const KONDANGAN_META: SetMeta = {
+  id: "kondangan", theme: "kondangan",
+  about: "a wedding tent: pelaminan stage (pengantin-pria / -wanita, salaman), prasmanan-1…3 buffet, guest chairs kursi-1…10, organ stage + dance floor, guestbook (meja-tamu) and envelope box at the entrance",
+  spots,
+  colliders,
+  bounds: { min: [-K.W + 0.3, 0.2, -K.D + 0.6], max: [K.W - 0.3, K.H - 0.15, K.D + 2] },
+  views: { establish: { a: { pos: [5.4, 2.9, 6.6], target: [-0.8, 0.8, -2.2], fov: 50 }, b: { pos: [5.0, 2.8, 6.3], target: [-0.9, 0.85, -2.4], fov: 49 } } },
+  floor: [{ y: K.stage.top, box: box(K.stage.x0, 0, K.stage.z0, K.stage.x1, 1, K.stage.z1) }, { y: K.organ.top, box: box(K.organ.x0, 0, K.organ.z0, K.organ.x1, 1, K.organ.z1) }],
+  crowd: K.chairs.rows.flatMap((_, r) => K.chairs.xs.map((__, i) => `kursi-${r * 5 + i + 1}`)),
+};
+
+==== 10418 project/src/tipikal/sets/Kondangan.tsx
+// SET "kondangan" picture — built from KONDANGAN (kondangan.ts): white tent with a maroon / gold scalloped valance,
+// pelaminan with a flat flower backdrop and two tall chairs, buffet with silver chafing dishes, red carpet aisle,
+// plastic guest chairs, organ stage with speakers and a keyboard, guestbook + envelope box, janur arch, houses and
+// trees outside. Flat colours only (no gradients, no glow).
+import React from "react";
+import { Solid } from "../../core/qa/scene-qa.tsx";
+import { at, basis, flat, M, toon } from "../../kits/tipikal/mats.ts";
+import { hash } from "../../kits/tipikal/math.ts";
+import { Bx, Floor, GEO, PlasticChair, Table, Tb, Tree } from "./pieces.tsx";
+import { KONDANGAN } from "./kondangan.ts";
+
+const K = KONDANGAN;
+const MAROON = "#8e2a32", GOLD = "#e2b54a", CREAM = "#f6f1e2";
+
+const Flowers: React.FC<{ p: [number, number, number]; s?: number; seed: number }> = ({ p, s = 1, seed }) => (
+  <group position={p} scale={s}>
+    {[0, 1, 2, 3, 4, 5, 6].map((i) => {
+      const a = i * 2.4 + seed, r = 0.12 + 0.1 * hash(i + seed);
+      const c = ["#f4f1e8", "#e94b6a", "#f29bbb", GOLD][(i + seed) % 4];
+      return <M key={i} g={GEO.sph} m={at([Math.cos(a) * r, 0.1 + hash(i * 3 + seed) * 0.25, Math.sin(a) * r * 0.5], [0.09, 0.09, 0.09])} material={toon(c)} />;
+    })}
+    {[0, 1, 2].map((i) => <M key={"l" + i} g={GEO.ico} m={at([(i - 1) * 0.15, 0.05, 0], [0.12, 0.06, 0.08])} material={flat("#4f9a45")} />)}
+  </group>
+);
+const Throne: React.FC<{ id: string; x: number }> = ({ id, x }) => (
+  <Solid id={id} kind="set" touch={["*"]}>
+    <group position={[x, K.stage.top, K.throneZ]}>
+      <M g={GEO.soft} m={at([0, 0.18, 0], [0.56, 0.36, 0.5])} material={flat(GOLD, 0.6, false)} />
+      <M g={GEO.soft} m={at([0, 0.37, 0.0], [0.5, 0.06, 0.46])} material={flat(MAROON, 0.85, false)} />
+      <M g={GEO.soft} m={at([0, 0.95, -0.27], [0.6, 1.0, 0.08])} material={flat(GOLD, 0.6, false)} />
+      <M g={GEO.soft} m={at([0, 0.9, -0.225], [0.46, 0.8, 0.02])} material={flat(MAROON, 0.85, false)} />
+      <M g={GEO.sph} m={at([0, 1.5, -0.24], [0.14, 0.14, 0.06])} material={flat(GOLD, 0.6, false)} />
+    </group>
+  </Solid>
+);
+
+export const Kondangan: React.FC<{ t: number }> = () => {
+  const out: React.ReactNode[] = [];
+  // ground outside + paving inside + red carpet aisle
+  out.push(<Bx key="ground" p={[0, -0.06, 0]} s={[60, 0.1, 60]} c="#8fae64" shadow={false} />);
+  out.push(<Floor key="floor" x0={-K.W} x1={K.W} z0={-K.D} z1={K.D + 1} tex={["#d8d0bf", "#c4bba8", 10]} y={0.01} />);
+  out.push(<Bx key="carpet" p={[0, 0.022, 1.2]} s={[1.5, 0.012, 10.2]} c="#b8323a" shadow={false} />);
+  // tent: poles, canopy, valance, back + side drapes
+  for (const x of [-K.W, -K.W / 3, K.W / 3, K.W]) for (const z of [-K.D, 0, K.D]) out.push(<M key={`p${x}${z}`} g={GEO.cyl} m={at([x, 0, z], [0.07, K.H, 0.07])} material={flat("#d9d6cc", 0.6, false)} />);
+  out.push(<M key="roof" g={GEO.box} m={at([0, K.H + 0.06, 0], [2 * K.W + 0.6, 0.12, 2 * K.D + 0.6])} material={flat(CREAM, 0.95, false)} shadow={false} />);
+  out.push(<M key="roofTop" g={GEO.box} m={basis([0, K.H + 0.55, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1], [2 * K.W + 0.4, 0.9, 2 * K.D * 0.6])} material={flat("#efe8d6", 0.95, false)} shadow={false} />);
+  const val = (x0: number, z0: number, x1: number, z1: number, k: string) => {
+    const L = Math.hypot(x1 - x0, z1 - z0), n = Math.round(L / 0.8);
+    for (let i = 0; i < n; i++) {
+      const u = (i + 0.5) / n, x = x0 + (x1 - x0) * u, z = z0 + (z1 - z0) * u;
+      out.push(<M key={`${k}${i}`} g={GEO.box} m={at([x, K.H - 0.25, z], [Math.abs(x1 - x0) > 0.1 ? L / n - 0.04 : 0.06, 0.42 + (i % 2) * 0.12, Math.abs(z1 - z0) > 0.1 ? L / n - 0.04 : 0.06])} material={flat(i % 2 ? GOLD : MAROON, 0.85, false)} shadow={false} />);
+    }
+  };
+  val(-K.W, K.D + 0.2, K.W, K.D + 0.2, "vf"); val(-K.W - 0.2, -K.D, -K.W - 0.2, K.D, "vl"); val(K.W + 0.2, -K.D, K.W + 0.2, K.D, "vr");
+  out.push(<Bx key="backdrape" p={[0, K.H / 2, -K.D - 0.15]} s={[2 * K.W, K.H, 0.06]} c="#f2e9e4" shadow={false} />);
+  for (let i = 0; i < 16; i++) out.push(<Bx key={"fold" + i} p={[-K.W + 0.5 + i, K.H / 2, -K.D - 0.1]} s={[0.06, K.H, 0.05]} c="#e6dbd2" shadow={false} />);
+  // pelaminan: stage, steps, backdrop panel with gold frame + flowers, thrones, flower stands
+  out.push(
+    <Solid key="stage" id="pelaminan" kind="set" touch={["*"]}>
+      <group>
+        <Bx p={[(K.stage.x0 + K.stage.x1) / 2, K.stage.top / 2, (K.stage.z0 + K.stage.z1) / 2]} s={[K.stage.x1 - K.stage.x0, K.stage.top, K.stage.z1 - K.stage.z0]} c="#f2e9e4" />
+        <Bx p={[0, 0.085, K.stage.z1 + 0.17]} s={[1.4, 0.17, 0.34]} c="#f2e9e4" />
+      </group>
+    </Solid>,
+  );
+  out.push(<Bx key="stageCarpet" p={[(K.stage.x0 + K.stage.x1) / 2, K.stage.top + 0.006, (K.stage.z0 + K.stage.z1) / 2 + 0.1]} s={[K.stage.x1 - K.stage.x0 - 0.3, 0.012, K.stage.z1 - K.stage.z0 - 0.3]} c="#b8323a" shadow={false} />);
+  out.push(<Bx key="panel" p={[0, 1.7, K.stage.z0 + 0.1]} s={[5.6, 2.7, 0.12]} c={CREAM} />);
+  for (const x of [-2.8, 2.8]) out.push(<Bx key={"pf" + x} p={[x, 1.7, K.stage.z0 + 0.17]} s={[0.16, 2.7, 0.04]} c={GOLD} shadow={false} />);
+  out.push(<Bx key="pft" p={[0, 3.0, K.stage.z0 + 0.17]} s={[5.8, 0.16, 0.04]} c={GOLD} shadow={false} />);
+  out.push(<M key="arch" g={GEO.torus} m={basis([0, 1.75, K.stage.z0 + 0.18], [1, 0, 0], [0, 1, 0], [0, 0, 1], [1.5, 1.2, 0.6])} material={flat(GOLD, 0.6, false)} shadow={false} />);
+  for (let i = 0; i < 9; i++) out.push(<Flowers key={"bf" + i} p={[-2.4 + i * 0.6, 2.75 + (i % 2) * 0.1, K.stage.z0 + 0.25]} s={1.1} seed={i} />);
+  for (const x of [-2.6, 2.6]) {
+    out.push(<M key={"st" + x} g={GEO.cyl} m={at([x, K.stage.top, -4.7], [0.08, 0.9, 0.08])} material={flat(GOLD, 0.6, false)} />);
+    out.push(<Flowers key={"sf" + x} p={[x, K.stage.top + 0.9, -4.7]} s={1.6} seed={x > 0 ? 3 : 7} />);
+  }
+  out.push(<Throne key="t1" id="kursi-pengantin-1" x={K.thrones[0]} />, <Throne key="t2" id="kursi-pengantin-2" x={K.thrones[1]} />);
+  // buffet: table with cloth, chafing dishes, plate stack, spoons
+  out.push(<Table key="buffet" id="prasmanan" p={[K.buffet.x, 0, (K.buffet.z0 + K.buffet.z1) / 2]} w={K.buffet.d} d={K.buffet.z1 - K.buffet.z0} h={K.buffet.top} cloth="#f6f4ec" />);
+  out.push(<Bx key="bskirt" p={[K.buffet.x + K.buffet.d / 2 + 0.005, K.buffet.top - 0.12, (K.buffet.z0 + K.buffet.z1) / 2]} s={[0.01, 0.2, K.buffet.z1 - K.buffet.z0]} c={GOLD} shadow={false} />);
+  [-2.2, -1.0, 0.2, 1.4].forEach((z, i) => out.push(
+    <group key={"cd" + i} position={[K.buffet.x - 0.02, K.buffet.top, z]}>
+      <M g={GEO.box} m={at([0, 0.06, 0], [0.44, 0.12, 0.62])} material={flat("#c9cdd2", 0.35, false)} />
+      <M g={GEO.sph} m={at([0, 0.13, 0], [0.22, 0.08, 0.3])} material={flat("#d9dde0", 0.3, false)} />
+      <M g={GEO.box} m={at([0, 0.2, 0], [0.08, 0.03, 0.04])} material={flat("#2c2d31", 0.5, false)} />
+      <M g={GEO.box} m={at([0.05, 0.125, 0.28], [0.12, 0.03, 0.08])} material={toon(["#f2c230", "#8a5a3a", "#3fa45b", "#e2563d"][i])} />
+    </group>,
+  ));
+  for (let i = 0; i < 6; i++) out.push(<M key={"pl" + i} g={GEO.cyl} m={at([K.buffet.x + 0.1, K.buffet.top + i * 0.018, 2.1], [0.12, 0.016, 0.12])} material={toon("#f4f3ee")} />);
+  // guest chairs
+  K.chairs.rows.forEach((z, r) => K.chairs.xs.forEach((x, i) => out.push(<PlasticChair key={`c${r}${i}`} id={`kursi-k${r}${i}`} p={[x, 0, z]} face={Math.PI} c={(r + i) % 2 ? "#d63b30" : "#2f6fd0"} />)));
+  // organ stage
+  out.push(
+    <Solid key="organ" id="panggung-organ" kind="set" touch={["*"]}>
+      <Bx p={[(K.organ.x0 + K.organ.x1) / 2, K.organ.top / 2, (K.organ.z0 + K.organ.z1) / 2]} s={[K.organ.x1 - K.organ.x0, K.organ.top, K.organ.z1 - K.organ.z0]} c="#3a3d42" />
+    </Solid>,
+  );
+  out.push(<Bx key="kstand" p={[6.7, K.organ.top + 0.38, -3.2]} s={[0.05, 0.76, 0.5]} c="#2c2d31" />);
+  out.push(<Tb key="keys" p={[6.7, K.organ.top + 0.8, -3.2]} s={[0.32, 0.08, 1.0]} c="#26272c" />);
+  out.push(<Bx key="ivory" p={[6.58, K.organ.top + 0.845, -3.2]} s={[0.1, 0.012, 0.92]} c="#f6f4ec" shadow={false} />);
+  for (const z of [-1.1, -4.3]) {
+    out.push(<Tb key={"sp" + z} p={[7.5, 0.65, z]} s={[0.55, 1.3, 0.55]} c="#26272c" />);
+    out.push(<M key={"cone" + z} g={GEO.cyl} m={basis([7.22, 0.85, z], [0, 1, 0], [-1, 0, 0], [0, 0, 1], [0.16, 0.02, 0.16])} material={flat("#55585e", 0.6, false)} shadow={false} />);
+  }
+  out.push(<M key="micstand" g={GEO.cyl} m={at([5.9, K.organ.top, -2.7], [0.012, 1.3, 0.012])} material={flat("#2c2d31", 0.5, false)} />);
+  // entrance: guestbook table, envelope box, janur arch
+  out.push(<Table key="book" id="meja-tamu" p={[K.book.x, 0, K.book.z]} w={K.book.w} d={K.book.d} h={K.book.top} cloth="#f6f4ec" />);
+  out.push(<Tb key="bk" p={[K.book.x, K.book.top + 0.015, K.book.z]} s={[0.4, 0.025, 0.28]} c="#8e2a32" />);
+  out.push(
+    <Solid key="kotak" id="kotak-amplop" kind="set" touch={["*"]}>
+      <group>
+        <Bx p={[K.box.x, 0.35, K.box.z]} s={[0.6, 0.7, 0.6]} c="#f6f4ec" />
+        <Bx p={[K.box.x, 0.83, K.box.z]} s={[0.46, 0.26, 0.42]} c={GOLD} />
+        <Bx p={[K.box.x, 0.97, K.box.z]} s={[0.18, 0.02, 0.04]} c="#26272c" shadow={false} />
+      </group>
+    </Solid>,
+  );
+  for (const sd of [-1, 1]) {
+    out.push(<M key={"jp" + sd} g={GEO.cyl} m={at([sd * 1.1, 0, K.D], [0.06, 3.0, 0.06])} material={flat("#9a6a3f", 0.8, false)} />);
+    for (let i = 0; i < 6; i++) out.push(<M key={`jl${sd}${i}`} g={GEO.box} m={basis([sd * 1.1 + sd * 0.12 * (i % 2 ? 1 : -1), 2.0 + i * 0.18, K.D], [1, 0, 0], [0, 1, 0], [0, 0, 1], [0.05, 0.4, 0.02])} material={toon(i % 2 ? "#e9d46a" : "#9bc45a")} />);
+  }
+  out.push(<M key="jarc" g={GEO.torus} m={basis([0, 3.0, K.D], [1, 0, 0], [0, 1, 0], [0, 0, 1], [1.1, 0.5, 0.8])} material={toon("#e9d46a")} />);
+  // outside: houses and trees for depth
+  [[-11, -9, "#f2e3c6"], [-3, -10.5, "#b9e3cf"], [6, -10, "#f4b6a0"], [12, -6, "#f6d76b"], [12, 4, "#a9d4ec"], [-12, 2, "#d2c4ea"], [-10, 10, "#f7c99a"], [9, 11, "#f1efe8"]].forEach(([x, z, c], i) => {
+    out.push(<Bx key={"h" + i} p={[x as number, 1.6, z as number]} s={[5, 3.2, 5]} c={c as string} />);
+    out.push(<M key={"hr" + i} g={GEO.cone} m={at([x as number, 3.2, z as number], [3.8, 1.4, 3.8])} material={flat("#c4573f")} />);
+  });
+  [[-10, -4], [10, -1], [-9.5, 6], [3, -11], [9.5, 8], [-4, 10]].forEach(([x, z], i) => out.push(<Tree key={"tr" + i} p={[x, 0, z]} seed={i} />));
+  return <group>{out}</group>;
+};
+
+==== 4673 project/src/tipikal/sets/rumah.ts
+// SET "rumah" — an Indonesian living + dining room: sofa set around a coffee table with cookie jars, TV cabinet,
+// dining table with 4 chairs, front door, window with curtains, kitchen doorway, clock, family frames, standing fan,
+// carpet. Pure data: layout (drawn by Rumah.tsx) + the director's meta.
+import type { Box, SetMeta, Spot } from "../types.ts";
+
+export const RUMAH = {
+  W: 5, D: 4, H: 3.0,
+  sofa: { x: -1.6, z: -3.25, w: 2.0 }, arm: { l: [-3.45, -1.75] as [number, number], r: [0.25, -1.75] as [number, number] },
+  coffee: { x: -1.6, z: -1.75, w: 1.15, d: 0.6, top: 0.42 },
+  tv: { x: -1.6, z: 3.65, w: 1.9 },
+  dine: { x: 2.9, z: 0.4, w: 1.5, d: 0.9, top: 0.7, chairXs: [2.5, 3.3] },
+  door: { z0: 0.6, z1: 1.7 }, win: { x0: 1.0, x1: 3.8 }, kitchen: { z0: -3.3, z1: -2.2 },
+};
+const K = RUMAH;
+const box = (x0: number, y0: number, z0: number, x1: number, y1: number, z1: number): Box => ({ min: [Math.min(x0, x1), y0, Math.min(z0, z1)], max: [Math.max(x0, x1), y1, Math.max(z0, z1)] });
+const spots: Record<string, Spot> = {
+  "kursi-kiri": { pos: [K.arm.l[0] + 0.14, 0, K.arm.l[1]], face: Math.PI / 2, seat: 0.38, about: "armchair on the left, facing the sofa side" },
+  "kursi-kanan": { pos: [K.arm.r[0] - 0.14, 0, K.arm.r[1]], face: -Math.PI / 2, seat: 0.38, about: "armchair on the right" },
+  "depan-tv": { pos: [K.tv.x + 0.3, 0, 2.55], face: 0, about: "standing in front of the TV, facing it" },
+  lesehan: { pos: [-2.4, 0, 0.7], face: 0, seat: 0.0, about: "sitting on the floor (carpet), facing the TV" },
+  "lesehan-2": { pos: [-1.0, 0, 0.9], face: 0, seat: 0.0, about: "sitting on the floor, second spot" },
+  pintu: { pos: [-4.35, 0, (K.door.z0 + K.door.z1) / 2], face: Math.PI / 2, about: "just inside the front door" },
+  dapur: { pos: [4.35, 0, (K.kitchen.z0 + K.kitchen.z1) / 2], face: -Math.PI / 2, about: "at the kitchen doorway" },
+  jendela: { pos: [2.4, 0, -3.35], face: Math.PI, about: "at the window, looking out" },
+  "tengah-rumah": { pos: [0.4, 0, 1.6], face: Math.PI, about: "middle of the room" },
+  "depan-sofa": { pos: [-1.6, 0, -0.75], face: Math.PI, about: "standing in front of the coffee table, facing the sofa" },
+};
+[-0.6, 0, 0.6].forEach((dx, i) => { spots[`sofa-${i + 1}`] = { pos: [K.sofa.x + dx, 0, K.sofa.z + 0.2], face: 0, seat: 0.38, surface: { y: K.coffee.top, ahead: K.coffee.z - K.coffee.d / 2 - K.sofa.z - 0.2 }, about: `sofa seat ${i + 1} of 3 (left to right as you face the sofa: 3, 2, 1)` }; });
+K.dine.chairXs.forEach((x, i) => {
+  spots[`meja-makan-${i + 1}`] = { pos: [x, 0, K.dine.z - K.dine.d / 2 - 0.42], face: 0, seat: 0.4, surface: { y: K.dine.top, ahead: 0.42 }, about: `dining chair ${i + 1} (window side)` };
+  spots[`meja-makan-${i + 3}`] = { pos: [x, 0, K.dine.z + K.dine.d / 2 + 0.42], face: Math.PI, seat: 0.4, surface: { y: K.dine.top, ahead: 0.42 }, about: `dining chair ${i + 3} (TV side)` };
+});
+
+const colliders: Box[] = [
+  box(K.sofa.x - K.sofa.w / 2 - 0.15, 0, K.sofa.z - 0.4, K.sofa.x + K.sofa.w / 2 + 0.15, 0.4, K.sofa.z + 0.33),
+  box(K.sofa.x - K.sofa.w / 2 - 0.15, 0, K.sofa.z - 0.42, K.sofa.x + K.sofa.w / 2 + 0.15, 0.95, K.sofa.z - 0.2),
+  box(K.coffee.x - K.coffee.w / 2, 0, K.coffee.z - K.coffee.d / 2, K.coffee.x + K.coffee.w / 2, K.coffee.top - 0.04, K.coffee.z + K.coffee.d / 2),
+  box(K.tv.x - 1.1, 0, K.tv.z - 0.25, K.tv.x + 1.1, 1.5, K.tv.z + 0.3),
+  box(K.dine.x - K.dine.w / 2, 0, K.dine.z - K.dine.d / 2, K.dine.x + K.dine.w / 2, K.dine.top - 0.05, K.dine.z + K.dine.d / 2),
+  box(-K.W - 1, 0, -K.D - 1, K.W + 1, K.H + 1, -K.D + 0.05), box(-K.W - 1, 0, K.D - 0.05, K.W + 1, K.H + 1, K.D + 1),
+  box(-K.W - 1, 0, -K.D, -K.W + 0.05, K.H + 1, K.D), box(K.W - 0.05, 0, -K.D, K.W + 1, K.H + 1, K.D),
+];
+for (const [x, z] of [K.arm.l, K.arm.r]) colliders.push(box(x - 0.42, 0, z - 0.42, x + 0.42, 0.4, z + 0.42));
+for (const x of K.dine.chairXs) for (const sd of [-1, 1]) { const z = K.dine.z + sd * (K.dine.d / 2 + 0.42); colliders.push(box(x - 0.24, 0, z - 0.22, x + 0.24, 0.38, z + 0.22)); }
+
+export const RUMAH_META: SetMeta = {
+  id: "rumah", theme: "rumah", indoor: true,
+  about: "a living + dining room: sofa-1…3 around a coffee table (cookie jars), armchairs, TV, dining table meja-makan-1…4, floor seats (lesehan), front door, kitchen doorway",
+  spots,
+  colliders,
+  bounds: { min: [-K.W + 0.3, 0.2, -K.D + 0.3], max: [K.W - 0.3, K.H - 0.2, K.D - 0.3] },
+  views: { establish: { a: { pos: [3.9, 2.55, 3.4], target: [-1.6, 0.75, -1.8], fov: 50 }, b: { pos: [3.6, 2.45, 3.2], target: [-1.7, 0.8, -2.0], fov: 49 } } },
+  crowd: ["sofa-1", "sofa-2", "sofa-3", "kursi-kiri", "kursi-kanan", "meja-makan-1", "meja-makan-2", "meja-makan-3", "meja-makan-4"],
+};
+
+==== 5793 project/src/tipikal/sets/Rumah.tsx
+// SET "rumah" picture — built from RUMAH (rumah.ts): warm cream walls, ceramic floor, maroon sofa set, coffee table
+// with Lebaran cookie jars, TV on a wooden cabinet, dining table, front door, window with curtains, kitchen doorway,
+// clock, frames, standing fan, carpet, plants.
+import React from "react";
+import { Solid } from "../../core/qa/scene-qa.tsx";
+import { at, basis, flat, lamp, M, toon } from "../../kits/tipikal/mats.ts";
+import { Bx, Ceiling, Chair, Clock, Floor, GEO, PictureFrame, Plant, Sofa, Table, Tb, TubeLamp, Wall, WindowPane } from "./pieces.tsx";
+import { RUMAH } from "./rumah.ts";
+
+const K = RUMAH;
+const Jar: React.FC<{ p: [number, number, number]; c: string }> = ({ p, c }) => (
+  <group position={p}>
+    <M g={GEO.cyl} m={at([0, 0, 0], [0.07, 0.14, 0.07])} material={flat("#d9ecf2", 0.3, false)} />
+    <M g={GEO.cyl} m={at([0, 0.01, 0], [0.064, 0.1, 0.064])} material={toon("#e2a65a")} />
+    <M g={GEO.cyl} m={at([0, 0.14, 0], [0.075, 0.03, 0.075])} material={toon(c)} />
+  </group>
+);
+
+export const Rumah: React.FC<{ t: number }> = () => {
+  const wall = "#f3e6cc";
+  return (
+    <group>
+      <Floor x0={-K.W} x1={K.W} z0={-K.D} z1={K.D} tex={["#efe9dd", "#d8cfbd", 8]} />
+      <Wall along="x" at={-K.D - 0.1} a={-K.W - 0.2} b={K.W + 0.2} h={K.H} c={wall} holes={[[K.win.x0, K.win.x1, 0.9, 2.3]]} base="#b98a5c" />
+      <WindowPane along="x" at={-K.D - 0.1} u0={K.win.x0} u1={K.win.x1} sill={0.9} top={2.3} frame="#f4f1e8" view="#a9d8f2" curtain="#3fa45b" />
+      <Wall along="x" at={K.D + 0.1} a={-K.W - 0.2} b={K.W + 0.2} h={K.H} c={wall} base="#b98a5c" />
+      <Wall along="z" at={-K.W - 0.1} a={-K.D} b={K.D} h={K.H} c={wall} holes={[[K.door.z0, K.door.z1, 0, 2.15]]} base="#b98a5c" />
+      <Bx p={[-K.W - 0.02, 1.07, (K.door.z0 + K.door.z1) / 2]} s={[0.06, 2.14, K.door.z1 - K.door.z0 - 0.06]} c="#7a4a2b" />
+      <Bx p={[-K.W + 0.03, 1.0, K.door.z1 - 0.15]} s={[0.04, 0.06, 0.12]} c="#e2b54a" shadow={false} />
+      <Wall along="z" at={K.W + 0.1} a={-K.D} b={K.D} h={K.H} c={wall} holes={[[K.kitchen.z0, K.kitchen.z1, 0, 2.1]]} base="#b98a5c" />
+      <Bx p={[K.W + 0.6, 1.05, (K.kitchen.z0 + K.kitchen.z1) / 2]} s={[0.05, 2.1, 1.4]} c="#f2c94c" />
+      <Bx p={[K.W + 0.35, 0.45, (K.kitchen.z0 + K.kitchen.z1) / 2 + 0.3]} s={[0.4, 0.9, 0.4]} c="#d9dde0" />
+      <Ceiling x0={-K.W - 0.2} x1={K.W + 0.2} z0={-K.D - 0.2} z1={K.D + 0.2} y={K.H} c="#f6f1e6" />
+      <TubeLamp p={[-1.6, K.H - 0.05, -1.2]} /><TubeLamp p={[2.6, K.H - 0.05, 0.5]} />
+      {/* carpet, sofa set, coffee table + jars */}
+      <Bx p={[K.coffee.x, 0.008, K.coffee.z + 0.1]} s={[3.2, 0.01, 2.2]} c="#a3473c" shadow={false} />
+      <Bx p={[K.coffee.x, 0.02, K.coffee.z + 0.1]} s={[2.9, 0.01, 1.9]} c="#c46a4f" shadow={false} />
+      <Sofa id="sofa" p={[K.sofa.x, 0, K.sofa.z]} face={0} w={K.sofa.w} c="#8e2a32" />
+      <Sofa id="kursi-kiri" p={[K.arm.l[0], 0, K.arm.l[1]]} face={Math.PI / 2} w={0.6} c="#8e2a32" />
+      <Sofa id="kursi-kanan" p={[K.arm.r[0], 0, K.arm.r[1]]} face={-Math.PI / 2} w={0.6} c="#8e2a32" />
+      <Table id="meja-tamu" p={[K.coffee.x, 0, K.coffee.z]} w={K.coffee.w} d={K.coffee.d} h={K.coffee.top} c="#7a4a2b" />
+      <Jar p={[K.coffee.x - 0.3, K.coffee.top, K.coffee.z]} c="#d63b30" /><Jar p={[K.coffee.x, K.coffee.top, K.coffee.z + 0.05]} c="#3fa45b" /><Jar p={[K.coffee.x + 0.3, K.coffee.top, K.coffee.z - 0.03]} c="#f2c94c" />
+      {/* TV cabinet + TV */}
+      <Solid id="lemari-tv" kind="set" touch={["*"]}>
+        <Bx p={[K.tv.x, 0.3, K.tv.z]} s={[K.tv.w + 0.2, 0.6, 0.5]} c="#7a4a2b" />
+      </Solid>
+      {[-0.55, 0.55].map((dx) => <Bx key={dx} p={[K.tv.x + dx, 0.3, K.tv.z - 0.255]} s={[0.8, 0.45, 0.01]} c="#6b3f22" shadow={false} />)}
+      <M g={GEO.box} m={at([K.tv.x, 0.62, K.tv.z + 0.05], [0.4, 0.04, 0.22])} material={flat("#26272c", 0.5, false)} />
+      <M g={GEO.box} m={at([K.tv.x, 1.05, K.tv.z + 0.08], [1.5, 0.86, 0.06])} material={flat("#1d1e22", 0.5, false)} />
+      <M g={GEO.box} m={basis([K.tv.x, 1.05, K.tv.z + 0.045], [1, 0, 0], [0, 1, 0], [0, 0, 1], [1.4, 0.78, 0.004])} material={lamp("#7cc6ee")} shadow={false} />
+      <Plant p={[K.tv.x + 1.4, 0, K.tv.z]} s={1.1} />
+      {/* dining table + chairs */}
+      <Table id="meja-makan" p={[K.dine.x, 0, K.dine.z]} w={K.dine.w} d={K.dine.d} h={K.dine.top} c="#9a6a3f" />
+      <Bx p={[K.dine.x, K.dine.top + 0.006, K.dine.z]} s={[0.9, 0.012, 0.5]} c="#f6f4ec" shadow={false} />
+      <Tb p={[K.dine.x + 0.2, K.dine.top + 0.05, K.dine.z]} s={[0.16, 0.1, 0.16]} c="#f2c230" />
+      {K.dine.chairXs.flatMap((x, i) => [-1, 1].map((sd) => <Chair key={`${i}${sd}`} id={`kursi-m${i}${sd}`} p={[x, 0, K.dine.z + sd * (K.dine.d / 2 + 0.42)]} face={sd < 0 ? 0 : Math.PI} h={0.4} c="#7a4a2b" />))}
+      {/* walls: clock, frames, fan, shoe rack, plant */}
+      <Clock p={[-1.6, 2.45, -K.D + 0.04]} facing={[0, 0, 1]} />
+      <PictureFrame p={[-2.6, 1.75, -K.D + 0.04]} facing={[0, 0, 1]} w={0.6} h={0.45} seed={2} />
+      <PictureFrame p={[-0.6, 1.75, -K.D + 0.04]} facing={[0, 0, 1]} w={0.6} h={0.45} seed={9} />
+      <PictureFrame p={[K.W - 0.04, 1.8, 1.5]} facing={[-1, 0, 0]} w={1.0} h={0.7} seed={4} />
+      <PictureFrame p={[2.9, 1.8, K.D - 0.04]} facing={[0, 0, -1]} w={0.9} h={0.6} seed={14} />
+      <group position={[0.8, 0, -3.3]}>
+        <M g={GEO.cyl} m={at([0, 0, 0], [0.18, 0.04, 0.18])} material={flat("#e9e6de", 0.6, false)} />
+        <M g={GEO.cyl} m={at([0, 0.04, 0], [0.02, 1.0, 0.02])} material={flat("#e9e6de", 0.6, false)} />
+        <M g={GEO.cyl} m={basis([0, 1.12, 0.05], [1, 0, 0], [0, 0, 1], [0, -1, 0], [0.22, 0.1, 0.22])} material={flat("#9fd2f0", 0.6, false)} />
+      </group>
+      <Bx p={[-K.W + 0.25, 0.3, 2.4]} s={[0.4, 0.6, 0.9]} c="#9a6a3f" />
+      <Plant p={[-K.W + 0.4, 0, -3.5]} s={1.0} />
+    </group>
+  );
+};
+
+==== 4805 project/src/tipikal/track.ts
+// TIPIKAL motion tracks (pure): where a person / vehicle is at time t. A track is a list of segments: a placement
+// (one point) or a move along a smooth path (Catmull-Rom through the points, arc-length timed: eased start / stop,
+// or constant speed when `pass`). Used by the director (cameras) and the renderer (positions, heading, wheel spin,
+// walk phase, lean).
+import type { Seg, Track, V3 } from "./types.ts";
+
+type Cache = { pts: V3[]; cum: number[]; L: number };
+const cache = new WeakMap<Seg, Cache>();
+const cr = (p0: V3, p1: V3, p2: V3, p3: V3, t: number): V3 => {
+  const t2 = t * t, t3 = t2 * t;
+  const f = (a: number, b: number, c: number, d: number) => 0.5 * (2 * b + (-a + c) * t + (2 * a - 5 * b + 4 * c - d) * t2 + (-a + 3 * b - 3 * c + d) * t3);
+  return [f(p0[0], p1[0], p2[0], p3[0]), f(p0[1], p1[1], p2[1], p3[1]), f(p0[2], p1[2], p2[2], p3[2])];
+};
+const sampled = (s: Seg): Cache => {
+  const hit = cache.get(s);
+  if (hit) return hit;
+  const P = s.pts;
+  const pts: V3[] = [P[0]];
+  for (let i = 0; i < P.length - 1; i++) {
+    const p0 = P[Math.max(0, i - 1)], p1 = P[i], p2 = P[i + 1], p3 = P[Math.min(P.length - 1, i + 2)];
+    const n = P.length === 2 ? 1 : 24;
+    for (let k = 1; k <= n; k++) pts.push(n === 1 ? p2 : cr(p0, p1, p2, p3, k / n));
+  }
+  const cum = [0];
+  for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][2] - pts[i - 1][2]));
+  const c = { pts, cum, L: cum[cum.length - 1] };
+  cache.set(s, c);
+  return c;
+};
+const at = (c: Cache, d: number): V3 => {
+  if (d <= 0) return c.pts[0];
+  if (d >= c.L) return c.pts[c.pts.length - 1];
+  let lo = 0, hi = c.cum.length - 1;
+  while (hi - lo > 1) { const m = (lo + hi) >> 1; if (c.cum[m] <= d) lo = m; else hi = m; }
+  const u = (d - c.cum[lo]) / Math.max(1e-9, c.cum[hi] - c.cum[lo]);
+  const a = c.pts[lo], b = c.pts[hi];
+  return [a[0] + (b[0] - a[0]) * u, a[1] + (b[1] - a[1]) * u, a[2] + (b[2] - a[2]) * u];
+};
+const smoother = (x: number) => { const t = Math.min(1, Math.max(0, x)); return t * t * t * (t * (t * 6 - 15) + 10); };
+const ease = (s: Seg, t: number) => { const u = (t - s.t0) / Math.max(1e-6, s.t1 - s.t0); return s.pass ? Math.min(1, Math.max(0, u)) : smoother(u); };
+const headingOf = (c: Cache, d: number) => {
+  const a = at(c, Math.max(0, d - 0.08)), b = at(c, Math.min(c.L, d + 0.08));
+  return Math.atan2(b[0] - a[0], b[2] - a[2]);
+};
+
+export type TrackState = { pos: V3; face: number; speed: number; dist: number; moving: boolean; walk: boolean; run: boolean; arrived: number };
+
+/** State of a track at time t. `arrived` = seconds since the last move ended (for turning to the final facing). */
+export const segAt = (tr: Track, t: number): TrackState => {
+  let k = -1;
+  for (let i = 0; i < tr.segs.length; i++) if (tr.segs[i].t0 <= t + 1e-6) k = i;
+  let dist = 0;
+  for (let i = 0; i < Math.max(0, k); i++) { const s = tr.segs[i]; if (s.pts.length > 1 && s.t1 > s.t0) dist += sampled(s).L * ease(s, Math.min(t, s.t1)); }
+  if (k < 0) { const s0 = tr.segs[0]; return { pos: s0 ? s0.pts[0] : [0, 0, 0], face: tr.face0, speed: 0, dist: 0, moving: false, walk: false, run: false, arrived: 99 }; }
+  const s = tr.segs[k];
+  if (s.pts.length < 2 || s.t1 <= s.t0) return { pos: s.pts[0], face: s.face, speed: 0, dist, moving: false, walk: false, run: false, arrived: t - s.t0 };
+  const c = sampled(s);
+  const e = ease(s, t), d = c.L * e;
+  dist += d;
+  const pos = at(c, d);
+  const dt = 0.02, e2 = ease(s, t + dt), e1 = ease(s, t - dt);
+  const speed = (c.L * (e2 - e1)) / (2 * dt);
+  const moving = t < s.t1;
+  let head = headingOf(c, Math.min(d, c.L - 0.01));
+  // turn smoothly from the facing before the move into the path direction (no snap when setting off)
+  const prev = tr.segs[k - 1];
+  const before = !prev ? tr.face0 : prev.pts.length > 1 ? headingOf(sampled(prev), sampled(prev).L - 0.01) : prev.face;
+  const turnIn = smoother((t - s.t0) / 0.35);
+  if (turnIn < 1) head = before + Math.atan2(Math.sin(head - before), Math.cos(head - before)) * turnIn;
+  return { pos, face: head, speed: moving ? speed : 0, dist, moving, walk: !!s.walk, run: !!s.run, arrived: moving ? -1 : t - s.t1 };
+};
+
+/** Heading the walker had when the move ended (to turn smoothly to the final facing). */
+export const endHeading = (tr: Track, t: number) => {
+  let k = -1;
+  for (let i = 0; i < tr.segs.length; i++) if (tr.segs[i].t0 <= t + 1e-6) k = i;
+  const s = tr.segs[k];
+  if (!s || s.pts.length < 2) return s?.face ?? tr.face0;
+  const c = sampled(s);
+  return headingOf(c, c.L - 0.01);
+};
+/** The final facing of the current segment. */
+export const segFace = (tr: Track, t: number) => {
+  let k = -1;
+  for (let i = 0; i < tr.segs.length; i++) if (tr.segs[i].t0 <= t + 1e-6) k = i;
+  return k < 0 ? tr.face0 : tr.segs[k].face;
+};
+
+==== 8899 project/src/tipikal/types.ts
+// TIPIKAL director — data types. A Story is what an author writes (stories/<id>/story.json); a Plan is the compiled
+// film. Both are plain JSON: the same Plan drives the picture (Film.tsx), the sound (scripts/lib/tipikal-sound.mjs)
+// and QA. Pure TypeScript (no React / three): node runs the compiler directly.
+
+export type V3 = [number, number, number];
+export type Box = { min: V3; max: V3 };
+
+// ------------------------------------------------------------------ sets
+/** A named place in a set. `face` = yaw a person there faces (rad; 0 = +z). seat = sit here (seat height);
+ *  surface = a table / desk / counter in front (top height, distance ahead); lane = a vehicle place (road). */
+export type Spot = { pos: V3; face: number; about?: string; seat?: number; surface?: { y: number; ahead: number }; lane?: boolean };
+export type CamKeySpec = { pos: V3; target: V3; fov: number };
+export type LabelTheme = "jalan" | "kelas" | "kantor" | "kondangan" | "rumah" | "warung";
+export type TimeOfDay = "day" | "sore" | "malam";
+export type SetMeta = {
+  id: string;
+  about: string;
+  theme: LabelTheme;
+  spots: Record<string, Spot>;
+  /** solid volumes: cameras stay out of them and need a clear line of sight past them */
+  colliders: Box[];
+  /** cameras stay inside (x, z) and above y = 0.2 */
+  bounds: Box;
+  /** the intro view (a → b) */
+  views: { establish: { a: CamKeySpec; b: CamKeySpec } };
+  indoor?: boolean;
+  /** raised floors (sidewalks, stages): y on the box */
+  floor?: { y: number; box: Box }[];
+  /** speed bumps across a lane at x (smooth profile, width w, height h) */
+  bumps?: { x: number; w: number; h: number; z0: number; z1: number }[];
+  /** crowd places for extras */
+  crowd?: string[];
+  time?: TimeOfDay;
+};
+
+// ------------------------------------------------------------------ story (authored)
+export type ShotKind = "establish" | "wide" | "medium" | "close" | "reaction" | "low" | "top" | "insert" | "follow" | "ots";
+export type Move = "push" | "pull" | "still" | "orbit" | "rise" | "track";
+export type Place = string | { at: string; side?: number; ahead?: number };
+
+export type CastEntry = { preset: string; tokoh?: string; look?: Record<string, unknown>; name?: string; /** stay on stage in later types even when not mentioned */ keep?: boolean };
+
+export type ActorBeat = {
+  /** stand / sit at a place (from the beat start) */
+  at?: Place;
+  /** walk or ride to a place (starts at the beat start, keeps going across cuts until it arrives) */
+  go?: Place;
+  /** start the walk / ride here (default: where they are) */
+  from?: Place;
+  via?: Place[];
+  speed?: "slow" | "normal" | "fast" | number;
+  /** keep the speed: enter already moving and do not stop at the end (traffic passing) */
+  pass?: boolean;
+  /** get on a vehicle (prop id); "" gets off */
+  ride?: string;
+  /** seat on the vehicle: 0 rider / driver, 1 pillion, 2 second pillion, 3 kid on the floorboard (scooter) */
+  seat?: number;
+  face?: string | number;
+  do?: string;
+  /** target of point / salam / whisper / look: a person, a prop or a place */
+  to?: string;
+  expr?: string;
+  then?: { at: string | number; do?: string; expr?: string; to?: string }[];
+  /** hold a prop (id); "" lets go */
+  hold?: string;
+  /** mouth moves for the whole beat (or use a bubble: its owner talks while it shows) */
+  says?: boolean;
+  gone?: boolean;
+};
+
+export type PropBeat = {
+  kind?: string;
+  at?: Place;
+  /** "surface" = on the place's table / counter; default the ground */
+  on?: "surface" | "ground";
+  yaw?: number;
+  scale?: number;
+  gone?: boolean;
+  /** vehicles / any prop: main + second colour, plate text */
+  color?: string;
+  color2?: string;
+  plate?: string;
+  /** vehicles without a rider can drive too */
+  go?: Place;
+  from?: Place;
+  via?: Place[];
+  speed?: "slow" | "normal" | "fast" | number;
+  pass?: boolean;
+  /** brake / blinker lamps of a vehicle: "brake" | "left" | "right" | "hazard" | "off" */
+  lamps?: string;
+  /** cargo: carried on a vehicle's rack / basket / roof (vehicle prop id; several stack up in order); "" = off again */
+  ride?: string;
+};
+
+export type PopKind = "?" | "!" | "?!" | "..." | "♥" | "zzz" | "sticker" | "bubble" | "sfx" | "tag" | "stamp";
+export type PopSpec = { kind: PopKind; text?: string; on?: string; at?: string | number; until?: string | number; sound?: string; color?: string; side?: "left" | "right" };
+
+export type BeatSpec = {
+  /** first beat: the type start; next beats: seconds after the type start, or a word of its voice line */
+  at?: string | number;
+  shot?: ShotKind;
+  on?: string | string[];
+  over?: string;
+  move?: Move;
+  side?: "left" | "right";
+  cast?: Record<string, ActorBeat>;
+  props?: Record<string, PropBeat>;
+  pop?: PopSpec[];
+  /** extra sound cues at the beat start: horn, brake, thud, crash, boing, slide, scratch, pop, whoosh, tick, ding, cheer, snore, splash */
+  sound?: string[];
+  /** freeze the picture (punchline) */
+  freeze?: boolean;
+  /** traffic light on the road set: red / yellow / green (+ countdown) */
+  light?: "red" | "yellow" | "green";
+};
+
+export type TypeSpec = BeatSpec & {
+  /** the type card text ("Yang ngerem pakai *sandal*": *word* = red) */
+  text: string;
+  /** the voice line for this type when there is a voice-over (default: the card text without stars) */
+  say?: string;
+  /** seconds (without a voice-over; default 4.4) */
+  dur?: number;
+  /** a different set for this type */
+  set?: string;
+  time?: TimeOfDay;
+  beats?: BeatSpec[];
+};
+
+export type Story = {
+  id: string;
+  title: string;
+  /** header card: "PENGENDARA MOTOR" (small line defaults to "TIPE-TIPE") or { "small", "big" } */
+  header: string | { small?: string; big: string };
+  set: string;
+  theme?: LabelTheme;
+  format?: "portrait" | "landscape";
+  time?: TimeOfDay;
+  /** intro before type 1 (header lands on a view of the set); false = none */
+  intro?: false | { say?: string; dur?: number };
+  /** closing card ("Kamu tipe yang mana?"); false = none */
+  outro?: false | string | { text?: string; say?: string; dur?: number };
+  cast: Record<string, CastEntry>;
+  props?: Record<string, PropBeat & { kind: string }>;
+  extras?: { at: string; n?: number; mode?: "idle" | "queue" | "watch" | "laugh" | "dance" | "sit"; from?: number; until?: number }[];
+  types: TypeSpec[];
+};
+
+// ------------------------------------------------------------------ timing
+export type Word = { w: string; t: number };
+export type Timed = { text: string; t0: number; t1: number; words: Word[] };
+
+// ------------------------------------------------------------------ plan (compiled)
+/** A move along a path (pts) between t0 and t1 (a single point = placed there at t0). face = facing at the end. */
+export type Seg = { t0: number; t1: number; pts: V3[]; pass: boolean; walk?: boolean; run?: boolean; face: number };
+export type Track = { id: string; segs: Seg[]; face0: number };
+export type ActKey = { t: number; do: string; expr: string; to?: V3; toId?: string };
+export type PMount = { kind: "stand" | "sit" | "ride"; veh?: string; seat?: number; seatY?: number; surface?: { y: number; ahead: number } };
+export type PActor = {
+  id: string;
+  look: Record<string, unknown>;
+  pos: V3;
+  face: number;
+  /** walking path (persons) — riders follow their vehicle's track */
+  track?: string;
+  faceEnd?: number;
+  mount: PMount;
+  keys: ActKey[];
+  hold: string[];
+  talk: [number, number][];
+  seed: number;
+  extra?: boolean;
+};
+export type PProp = { id: string; kind: string; pos: V3; yaw: number; scale: number; held?: { by: string; hand: "R" | "L" | "both" }; color?: string; color2?: string; plate?: string; track?: string; lamps?: string; auto?: boolean; cargo?: { veh: string; y: number } };
+export type PCam = { pos: V3; target: V3; fov: number };
+export type PMark = { kind: PopKind; text: string; on: string; t0: number; t1: number; color?: string; side: 1 | -1; sound?: string };
+export type PShot = {
+  i: number;
+  t0: number;
+  t1: number;
+  kind: ShotKind;
+  type: number;
+  set: string;
+  a: PCam;
+  b: PCam;
+  /** camera follows this mover: position offset k (0 = pan only), target offset 1 */
+  follow?: { id: string; tRef: number; kPos: number };
+  shadowAt: V3;
+  shadowBox: number;
+  time: TimeOfDay;
+  actors: PActor[];
+  props: PProp[];
+  marks: PMark[];
+  freeze?: number;
+  light?: "red" | "yellow" | "green";
+  vis: number;
+  sounds: { t: number; kind: string }[];
+};
+export type PType = { n: number; text: string; t0: number; t1: number };
+export type Plan = {
+  id: string;
+  title: string;
+  header: { small: string; big: string };
+  theme: LabelTheme;
+  duration: number;
+  aspect: number;
+  shots: PShot[];
+  types: PType[];
+  tracks: Record<string, Track>;
+  outro?: { text: string; t0: number };
+  intro?: { t1: number };
+  words: { w: string; t0: number; t1: number }[];
+  lines: Timed[];
+  voice: boolean;
+  audio?: string;
+  warnings: string[];
+};
+
+==== 5873 project/src/tipikal/vehicles/lib.ts
+// TIPIKAL vehicles — pure data: sizes, seats, grips, foot rests. Shared by the director (cameras, occluders,
+// placement), the poses (hands on grips, bums on seats, feet on floorboards / pegs / pedals / the road) and the
+// renderer (Vehicle.tsx). Local frame: faces +z, up +y, LEFT side = +x, origin on the ground between the wheels.
+// No brand marks anywhere; plates carry made-up text only.
+
+export type V3 = [number, number, number];
+export type VehKind = "matic" | "bebek" | "sepeda" | "mobil" | "angkot";
+export type SeatKind = "rider" | "pillion" | "floor" | "driver" | "passenger";
+export type Seat = { kind: SeatKind; x: number; z: number; top: number; about: string };
+export type VehDef = {
+  kind: VehKind;
+  about: string;
+  /** width, height, length (camera framing, occluders, collisions) */
+  size: V3;
+  wheelR: number;
+  wheelbase: number;
+  seats: Seat[];
+  /** handlebar grips (left = +x) before steering, and the steering axis top → bottom */
+  grip?: V3;
+  axisTop?: V3;
+  axisBot?: V3;
+  /** feet of the rider while moving: a floorboard, pegs or pedals */
+  floor?: { y: number; z: [number, number] };
+  pegs?: V3;
+  pillionPegs?: V3;
+  pedals?: { c: V3; r: number; x: number };
+  /** car: steering wheel centre, tilt (rad back from vertical), radius; pedal-well foot spot */
+  wheel?: { c: V3; tilt: number; r: number };
+  footwell?: V3;
+  /** where cargo sits (rack / basket / roof), bottom centre */
+  rack?: V3;
+  /** default colours */
+  color: string;
+  color2: string;
+};
+
+const K = 0.88;
+const k3 = (v: V3): V3 => [v[0] * K, v[1] * K, v[2] * K];
+
+export const VEHICLES: Record<string, VehDef> = {
+  motor: {
+    kind: "matic", about: "motor matic (scooter): rider + 2 pillions + a kid standing on the floorboard (seat 3)",
+    size: [0.62, 1.15, 1.75], wheelR: 0.235 * K, wheelbase: 1.24 * K, color: "#d63b30", color2: "#1f2024",
+    seats: [
+      { kind: "rider", x: 0, z: -0.2 * K, top: 0.815 * K, about: "rider" },
+      { kind: "pillion", x: 0, z: -0.5 * K, top: 0.815 * K, about: "pillion (boncengan)" },
+      { kind: "pillion", x: 0, z: -0.765 * K, top: 0.815 * K, about: "second pillion (kids)" },
+      { kind: "floor", x: 0, z: 0.205, top: 0.345 * K, about: "small kid standing on the floorboard in front" },
+    ],
+    grip: k3([0.3, 1.045, 0.42]), axisTop: k3([0, 1.02, 0.45]), axisBot: k3([0, 0.235, 0.64]),
+    floor: { y: 0.345 * K, z: [-0.06 * K, 0.37 * K] }, pillionPegs: k3([0.2, 0.36, -0.42]), rack: [0, 0.845 * K, -0.98],
+  },
+  bebek: {
+    kind: "bebek", about: "motor bebek (underbone): rider + 1 pillion, feet on pegs, engine in the middle",
+    size: [0.6, 1.12, 1.82], wheelR: 0.3 * K, wheelbase: 1.24 * K, color: "#2f72c9", color2: "#f2f2ee",
+    seats: [
+      { kind: "rider", x: 0, z: -0.22 * K, top: 0.79 * K, about: "rider" },
+      { kind: "pillion", x: 0, z: -0.55 * K, top: 0.8 * K, about: "pillion (boncengan)" },
+    ],
+    grip: k3([0.3, 1.06, 0.4]), axisTop: k3([0, 1.02, 0.44]), axisBot: k3([0, 0.3, 0.64]),
+    pegs: k3([0.225, 0.32, -0.02]), pillionPegs: k3([0.22, 0.37, -0.45]), rack: [0, 0.9 * K, -0.98],
+  },
+  sepeda: {
+    kind: "sepeda", about: "sepeda (bicycle): rider pedals; feet down when stopped",
+    size: [0.56, 1.05, 1.62], wheelR: 0.3, wheelbase: 1.0, color: "#2f9c8e", color2: "#f2f2ee",
+    seats: [{ kind: "rider", x: 0, z: -0.3, top: 0.77, about: "rider" }],
+    grip: [0.27, 1.0, 0.36], axisTop: [0, 0.98, 0.38], axisBot: [0, 0.3, 0.5],
+    pedals: { c: [0, 0.28, -0.02], r: 0.15, x: 0.13 }, rack: [0, 0.962, 0.54],
+  },
+  mobil: {
+    kind: "mobil", about: "mobil (small family car, open windows): driver on the right (seat 0), passenger (seat 1)",
+    size: [1.72, 1.5, 3.9], wheelR: 0.32, wheelbase: 2.5, color: "#e8e6df", color2: "#2a2b30",
+    seats: [
+      { kind: "driver", x: -0.36, z: -0.05, top: 0.5, about: "driver (steering wheel on the right)" },
+      { kind: "passenger", x: 0.36, z: -0.05, top: 0.5, about: "front passenger" },
+    ],
+    wheel: { c: [-0.36, 0.93, 0.42], tilt: 0.5, r: 0.17 }, footwell: [0, 0.1, 0.78], rack: [0, 1.52, -0.4],
+  },
+  angkot: {
+    kind: "angkot", about: "angkot (minivan, tinted windows: nobody visible inside)",
+    size: [1.66, 2.0, 4.0], wheelR: 0.3, wheelbase: 2.53, color: "#58b7da", color2: "#f4f1e6",
+    seats: [], rack: [0, 1.98, -0.25],
+  },
+};
+
+export const isVehicle = (kind: string) => !!VEHICLES[kind];
+
+/** Rodrigues rotation of p about the axis through a (unit direction k) by angle th. */
+const rotAxis = (p: V3, a: V3, k: V3, th: number): V3 => {
+  const v: V3 = [p[0] - a[0], p[1] - a[1], p[2] - a[2]];
+  const c = Math.cos(th), s = Math.sin(th);
+  const kxv: V3 = [k[1] * v[2] - k[2] * v[1], k[2] * v[0] - k[0] * v[2], k[0] * v[1] - k[1] * v[0]];
+  const kv = k[0] * v[0] + k[1] * v[1] + k[2] * v[2];
+  return [a[0] + v[0] * c + kxv[0] * s + k[0] * kv * (1 - c), a[1] + v[1] * c + kxv[1] * s + k[1] * kv * (1 - c), a[2] + v[2] * c + kxv[2] * s + k[2] * kv * (1 - c)];
+};
+export const steerAxis = (d: VehDef): V3 => {
+  const a = d.axisTop!, b = d.axisBot!;
+  const v: V3 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+  const l = Math.hypot(...v) || 1;
+  return [v[0] / l, v[1] / l, v[2] / l];
+};
+/** Grip centre (vehicle-local) of the left (+1) / right (−1) hand with the bars turned by `steer` (rad, + = left). */
+export const gripOf = (d: VehDef, side: 1 | -1, steer = 0, scale = 1): V3 => {
+  const g: V3 = [d.grip![0] * side, d.grip![1], d.grip![2]];
+  const p = rotAxis(g, d.axisTop!, steerAxis(d), -steer);
+  return [p[0] * scale, p[1] * scale, p[2] * scale];
+};
+
+/** Head height above the ground of a person sitting on a seat (camera framing). */
+export const seatHead = (d: VehDef, seat: number, s = 1, scale = 1) => {
+  const S = d.seats[seat] ?? d.seats[0];
+  if (!S) return 1.5 * s;
+  if (S.kind === "floor") return S.top * scale + 1.5 * s;
+  return S.top * scale + 0.115 * s + 0.72 * s;
+};
+
+==== 4664 project/stories/bukapuasa/story.json
+{
+  "id": "bukapuasa",
+  "title": "Tipe-tipe Orang Pas Buka Puasa",
+  "header": "ORANG PAS BUKA PUASA",
+  "set": "rumah",
+  "time": "sore",
+  "cast": {
+    "bapak": { "preset": "bapak", "name": "Bapak", "look": { "hat": { "kind": "peci", "color": "#1c1a1e" }, "top": { "kind": "koko", "color": "#f1ede4", "accent": "#c9b98a" } } },
+    "ibu": { "preset": "ibu", "name": "Ibu", "look": { "hat": { "kind": "kerudung", "color": "#3fa45b" } } },
+    "mbak": { "preset": "mbak", "name": "Mbak Tika", "look": { "top": { "kind": "hoodie", "color": "#e94b6a" }, "hair": { "color": "#2a1a12", "style": "ponytail" } } },
+    "penjual": { "preset": "pedagang", "name": "Penjual" },
+    "andi": { "preset": "mas", "name": "Andi", "look": { "hat": { "kind": "half-helmet", "color": "#26272c", "color2": "#f2c94c" }, "top": { "kind": "jacket", "color": "#2f6fd0", "accent": "#f2f2ee" } } },
+    "kakek": { "preset": "kakek", "name": "Kakek" },
+    "bocil": { "preset": "bocil", "name": "Bocil" }
+  },
+  "props": {
+    "teh": { "kind": "gelas", "at": "meja-makan-1", "on": "surface" }
+  },
+  "types": [
+    {
+      "text": "Yang standby di meja *dari jam 4*",
+      "cast": {
+        "bapak": { "at": "meja-makan-1", "do": "cross", "expr": "focus" },
+        "ibu": { "at": "dapur", "do": "stand", "expr": "neutral" }
+      },
+      "beats": [
+        { "shot": "wide", "on": "bapak" },
+        { "at": 1.4, "shot": "close", "on": "bapak", "cast": { "bapak": { "do": "stand", "expr": "bored" } }, "pop": [{ "kind": "...", "on": "bapak", "at": 0.2 }] },
+        { "at": 2.9, "shot": "reaction", "on": "ibu", "cast": { "ibu": { "do": "akimbo", "expr": "annoyed", "to": "bapak" } }, "pop": [{ "kind": "bubble", "text": "Masih sejam, Pak!", "on": "ibu", "at": 0.15 }] }
+      ]
+    },
+    {
+      "text": "Yang beli takjil *satu warung*",
+      "set": "gang",
+      "dur": 5.0,
+      "props": {
+        "sp1": { "kind": "sepeda", "color": "#2e9a8e", "color2": "#f2c94c", "at": "gang-a" },
+        "kresek1": { "kind": "kresek", "at": "warung", "on": "surface" },
+        "dus1": { "kind": "kardus", "at": "warung", "on": "surface", "scale": 0.7 }
+      },
+      "cast": {
+        "mbak": { "ride": "sp1", "go": "depan-warung", "speed": 3.2, "expr": "happy" },
+        "penjual": { "at": "penjaga-warung", "do": "stand", "expr": "happy" }
+      },
+      "beats": [
+        { "shot": "follow", "on": "mbak" },
+        { "at": 1.6, "shot": "medium", "on": "mbak", "cast": { "mbak": { "ride": "", "at": "warung", "do": "point", "to": "penjual", "expr": "grin" }, "penjual": { "do": "nod" } }, "pop": [{ "kind": "bubble", "text": "Semuanya ya, Bu!", "on": "mbak", "at": 0.2 }] },
+        { "at": 3.1, "shot": "reaction", "on": "penjual", "cast": { "penjual": { "do": "shock", "expr": "wow" } }, "pop": [{ "kind": "sfx", "text": "BORONG!", "on": "penjual", "at": 0.2, "color": "#f2c94c" }] },
+        { "at": 4.1, "shot": "wide", "on": "mbak", "cast": { "mbak": { "ride": "sp1", "go": "gang-b", "speed": 3.0, "expr": "proud" } }, "props": { "dus1": { "ride": "sp1" }, "kresek1": { "gone": true } } }
+      ]
+    },
+    {
+      "text": "Yang ngebut biar *keburu* buka",
+      "set": "gang",
+      "props": {
+        "m1": { "kind": "bebek", "color": "#d63b30", "plate": "TPK 09", "at": "gang-barat" }
+      },
+      "cast": {
+        "andi": { "ride": "m1", "go": "gang-timur", "speed": "fast", "pass": true, "do": "ride", "expr": "focus" },
+        "kakek": { "at": "pos-ronda", "do": "sit", "expr": "neutral" },
+        "bocil": { "at": "depan-pos-ronda", "do": "stand", "expr": "happy" }
+      },
+      "beats": [
+        { "shot": "follow", "on": "andi" },
+        { "at": 1.2, "shot": "wide", "on": "andi", "cast": { "andi": { "expr": "shock" } }, "pop": [{ "kind": "sfx", "text": "GEDUBRAK!", "on": "andi", "at": 0.45 }] },
+        { "at": 2.7, "shot": "reaction", "on": "kakek", "cast": { "kakek": { "do": "shock", "expr": "shock", "to": "andi" }, "bocil": { "do": "laugh", "expr": "laugh" } }, "pop": [{ "kind": "!", "on": "kakek" }] }
+      ]
+    },
+    {
+      "text": "Yang langsung *tidur* habis buka",
+      "cast": {
+        "bapak": { "at": "kursi-kiri", "do": "sleep", "expr": "sleep" },
+        "ibu": { "at": "sofa-2", "do": "sit", "expr": "neutral" },
+        "bocil": { "at": "lesehan", "do": "sit", "expr": "happy" }
+      },
+      "beats": [
+        { "shot": "medium", "on": "bapak", "pop": [{ "kind": "zzz", "on": "bapak", "at": 0.3 }] },
+        { "at": 1.6, "shot": "wide", "on": ["bapak", "ibu", "bocil"] },
+        { "at": 2.9, "shot": "reaction", "on": "ibu", "cast": { "ibu": { "do": "facepalm", "expr": "annoyed" } }, "sound": ["snore"] }
+      ]
+    }
+  ]
+}
+
+==== 4964 project/stories/kondangan/story.json
+{
+  "id": "kondangan",
+  "title": "Tipe-tipe Orang di Kondangan",
+  "header": "ORANG DI KONDANGAN",
+  "set": "kondangan",
+  "cast": {
+    "andi": { "preset": "mas", "name": "Andi", "look": { "top": { "kind": "shirt", "color": "#7a4fa3" }, "feet": { "kind": "shoe", "color": "#2b2622" } } },
+    "ibu": { "preset": "ibu", "name": "Bu Ida", "look": { "hat": { "kind": "kerudung", "color": "#2e9a8e" }, "top": { "kind": "blouse", "color": "#f2c94c", "short": false } } },
+    "pria": { "preset": "pengantin-pria", "name": "Pengantin pria" },
+    "wanita": { "preset": "pengantin-wanita", "name": "Pengantin wanita" },
+    "pak": { "preset": "bapak", "name": "Pak Darto", "look": { "hat": { "kind": "peci", "color": "#1c1a1e" }, "top": { "kind": "shirt", "color": "#8a5a3a" } } },
+    "mbak": { "preset": "mbak", "name": "Mbak antre", "look": { "top": { "kind": "blouse", "color": "#e94b6a", "short": false }, "bottom": { "kind": "long-skirt", "color": "#2c3e63" }, "hair": { "color": "#2a1a12", "style": "bun" } } },
+    "kakek": { "preset": "kakek", "name": "Kakek" },
+    "biduan": { "preset": "mbak", "name": "Biduan", "look": { "top": { "kind": "blouse", "color": "#d63b30", "short": false }, "bottom": { "kind": "long-skirt", "color": "#26272c" }, "hair": { "color": "#1d1712", "style": "long" } } },
+    "dina": { "preset": "murid-cewek", "name": "Dina", "look": { "hat": { "kind": "kerudung", "color": "#f29bbb" }, "top": { "kind": "blouse", "color": "#f6f5f0", "short": false }, "bottom": { "kind": "long-skirt", "color": "#7a4fa3" }, "bag": "#f6f5f0", "build": { "s": 0.95 } } }
+  },
+  "props": {
+    "tumpeng1": { "kind": "tumpeng", "at": "prasmanan-1", "on": "surface" }
+  },
+  "extras": [{ "at": "kursi-3", "n": 6, "mode": "sit" }],
+  "types": [
+    {
+      "text": "Yang datang cuma buat *makan*",
+      "cast": {
+        "andi": { "at": "prasmanan-2", "do": "eat", "expr": "chew" },
+        "ibu": { "at": "prasmanan-3", "do": "stand", "expr": "neutral", "face": "andi" }
+      },
+      "beats": [
+        { "shot": "wide", "on": ["andi", "ibu"] },
+        { "at": 1.5, "shot": "close", "on": "andi", "pop": [{ "kind": "sfx", "text": "NYAM!", "on": "andi", "at": 0.2 }] },
+        { "at": 2.9, "shot": "reaction", "on": "ibu", "cast": { "ibu": { "do": "shock", "expr": "shock", "to": "andi" } }, "pop": [{ "kind": "?", "on": "ibu" }] }
+      ]
+    },
+    {
+      "text": "Yang salamannya *kelamaan*",
+      "cast": {
+        "pak": { "at": "salaman", "do": "salam", "to": "pria", "expr": "happy", "says": true },
+        "pria": { "at": "pengantin-pria", "do": "salam", "to": "pak", "expr": "neutral" },
+        "wanita": { "at": "pengantin-wanita", "do": "stand", "expr": "happy" },
+        "mbak": { "at": "antre-salaman", "do": "queue", "expr": "neutral" }
+      },
+      "beats": [
+        { "shot": "medium", "on": ["pak", "pria"], "side": "right" },
+        { "at": 1.5, "shot": "close", "on": "pria", "cast": { "pria": { "expr": "huh" } }, "pop": [{ "kind": "...", "on": "pria", "at": 0.2 }] },
+        { "at": 2.9, "shot": "reaction", "on": "mbak", "cast": { "mbak": { "do": "akimbo", "expr": "annoyed", "to": "pak" } }, "pop": [{ "kind": "stamp", "text": "5 MENIT", "at": 0.3 }] }
+      ]
+    },
+    {
+      "text": "Yang jogetnya paling *heboh*",
+      "dur": 4.8,
+      "cast": {
+        "kakek": { "at": "lantai-joget", "do": "dance", "expr": "grin", "face": "biduan" },
+        "biduan": { "at": "panggung-organ", "do": "sing", "expr": "happy" }
+      },
+      "beats": [
+        { "shot": "wide", "on": ["kakek", "biduan"] },
+        { "at": 1.4, "shot": "medium", "on": "kakek", "cast": { "kakek": { "expr": "laugh" } }, "pop": [{ "kind": "♥", "on": "kakek", "at": 0.3 }] },
+        { "at": 2.6, "shot": "wide", "on": "kakek", "cast": { "kakek": { "do": "fall", "expr": "shock" } }, "pop": [{ "kind": "sfx", "text": "GUBRAK!", "on": "kakek", "at": 0.35 }] },
+        { "at": 3.7, "shot": "reaction", "on": "biduan", "cast": { "biduan": { "do": "shock", "expr": "shock", "to": "kakek" } }, "pop": [{ "kind": "!", "on": "biduan" }] }
+      ]
+    },
+    {
+      "text": "Yang datang cuma buat *foto*",
+      "cast": {
+        "dina": { "at": "depan-pelaminan", "do": "selfie", "expr": "grin", "face": 0 },
+        "wanita": { "at": "pengantin-wanita", "do": "stand", "expr": "happy" },
+        "pria": { "at": "pengantin-pria", "do": "stand", "expr": "happy" }
+      },
+      "beats": [
+        { "shot": "medium", "on": "dina" },
+        { "at": 1.4, "shot": "close", "on": "dina", "cast": { "dina": { "do": "peace", "expr": "proud" } }, "pop": [{ "kind": "sfx", "text": "CEKREK!", "on": "dina", "at": 0.1, "color": "#ffffff" }] },
+        { "at": 2.6, "shot": "wide", "on": "dina", "cast": { "dina": { "go": "pintu-masuk", "do": "phone", "expr": "happy" } } },
+        { "at": 3.5, "shot": "reaction", "on": "wanita", "cast": { "wanita": { "expr": "huh", "do": "shrug" } }, "pop": [{ "kind": "?", "on": "wanita" }] }
+      ]
+    }
+  ]
+}
+
+==== 7116 project/stories/motor/story.json
+{
+  "id": "motor",
+  "title": "Tipe-tipe Pengendara Motor",
+  "header": "PENGENDARA MOTOR",
+  "set": "jalan",
+  "cast": {
+    "dodi": { "preset": "mas", "name": "Dodi", "look": { "hat": { "kind": "helmet", "color": "#e0412f", "color2": "#ffffff" }, "feet": { "kind": "sandal", "color": "#7a4b2a" } } },
+    "rina": { "preset": "mbak", "name": "Rina", "look": { "hat": { "kind": "helmet", "color": "#f4f1e8", "color2": "#2e9a8e" }, "top": { "kind": "jacket", "color": "#2e9a8e" }, "bottom": { "kind": "long", "color": "#2a2c33" } } },
+    "ucok": { "preset": "kurir", "name": "Ucok" },
+    "bude": { "preset": "ibu", "name": "Bude", "look": { "hat": { "kind": "helmet", "color": "#f29bbb", "color2": "#ffffff" }, "top": { "kind": "jacket", "color": "#f0b631" } } },
+    "kid1": { "preset": "bocil", "name": "Kid 1", "look": { "hair": { "color": "#1d1712", "style": "spiky" } } },
+    "kid2": { "preset": "bocil", "name": "Kid 2", "look": { "build": { "s": 0.56 }, "hair": { "color": "#231a14", "style": "bob" }, "top": { "kind": "tee", "color": "#43b36a" }, "bottom": { "kind": "shorts", "color": "#7a4fa3" }, "face": { "lashes": true } } },
+    "kid3": { "preset": "bocil", "name": "Kid 3", "look": { "build": { "s": 0.52 }, "top": { "kind": "tee", "color": "#f4d23e" }, "bottom": { "kind": "shorts", "color": "#d0473a" }, "feet": { "kind": "bare", "color": "#d39a66" } } },
+    "pak": { "preset": "bapak", "name": "Pak Warung", "look": { "top": { "kind": "tee", "color": "#f2efe6" } } },
+    "pakman": { "preset": "bapak", "name": "Pak Man", "look": { "hat": { "kind": "half-helmet", "color": "#2f6b43" }, "top": { "kind": "tee", "color": "#f1ede2" }, "bottom": { "kind": "shorts", "color": "#a0825b" }, "feet": { "kind": "sandal", "color": "#1f6fc1" } } },
+    "bimo": { "preset": "mas", "name": "Bimo", "look": { "hat": { "kind": "half-helmet", "color": "#232428", "color2": "#f4c534" }, "top": { "kind": "hoodie", "color": "#d8432f" }, "feet": { "kind": "shoe", "color": "#f2f2ee" } } },
+    "mbak2": { "preset": "mbak", "name": "Mbak", "look": { "hat": { "kind": "helmet", "color": "#2d6fd0" }, "top": { "kind": "jacket", "color": "#7a4fa3" } } }
+  },
+  "types": [
+    {
+      "text": "Yang sein *kiri*, beloknya *kanan*",
+      "dur": 4.6,
+      "props": {
+        "m1": { "kind": "motor", "color": "#d63b30", "plate": "TPK 01", "at": "jalan-a", "lamps": "left" },
+        "m2": { "kind": "motor", "color": "#eeeee8", "color2": "#d63b30", "plate": "TPK 03", "at": { "at": "jalan-a", "ahead": -7 } },
+        "m3": { "kind": "bebek", "color": "#2f72c9", "plate": "TPK 07", "at": "seberang-b" }
+      },
+      "cast": {
+        "dodi": { "ride": "m1", "go": "gang", "via": ["jalan-b", "mulut-gang"], "speed": 6, "pass": true, "do": "ride", "expr": "innocent" },
+        "rina": { "ride": "m2", "go": { "at": "jalan-b", "ahead": -4 }, "do": "ride", "expr": "neutral" },
+        "ucok": { "ride": "m3", "go": "seberang-a", "speed": "slow", "do": "ride", "expr": "neutral" }
+      },
+      "beats": [
+        { "shot": "follow", "on": "dodi", "pop": [{ "kind": "sticker", "text": "◀", "on": "m1", "at": 0.4, "color": "#ffb21f" }] },
+        { "at": 1.5, "shot": "wide", "on": ["dodi", "rina"], "cast": { "rina": { "expr": "shock" } } },
+        { "at": 3.0, "shot": "reaction", "on": "rina", "cast": { "rina": { "expr": "huh", "do": "shrug" }, "ucok": { "expr": "angry" } }, "pop": [{ "kind": "?", "on": "rina" }] }
+      ]
+    },
+    {
+      "text": "Yang bawa galon, kardus, sama *anak tiga*",
+      "dur": 4.6,
+      "props": {
+        "m4": { "kind": "motor", "color": "#2f72c9", "color2": "#f2f2ee", "plate": "TPK 02", "at": { "at": "jalan-c", "ahead": -6 } },
+        "galon1": { "kind": "galon", "ride": "m4" },
+        "box1": { "kind": "kardus", "ride": "m4" },
+        "box2": { "kind": "kardus", "ride": "m4", "scale": 0.8 }
+      },
+      "cast": {
+        "bude": { "ride": "m4", "go": "jalan-d", "speed": 3.6, "pass": true, "do": "ride", "expr": "happy" },
+        "kid3": { "ride": "m4", "seat": 3, "expr": "happy" },
+        "kid1": { "ride": "m4", "seat": 1, "expr": "grin" },
+        "kid2": { "ride": "m4", "seat": 2, "expr": "innocent" },
+        "pak": { "at": "bangku-warung", "do": "sit", "expr": "neutral", "face": "front" }
+      },
+      "beats": [
+        { "shot": "medium", "on": "bude", "side": "left" },
+        { "at": 1.4, "shot": "wide", "on": ["bude", "kid1", "kid2"] },
+        { "at": 2.5, "shot": "close", "on": "bude", "cast": { "bude": { "do": "thumb", "expr": "grin" } }, "pop": [{ "kind": "bubble", "text": "AMAN!", "on": "bude", "at": 0.15 }] },
+        { "at": 3.4, "shot": "reaction", "on": "pak", "cast": { "pak": { "expr": "shock", "do": "shock" } }, "pop": [{ "kind": "?", "on": "pak" }] }
+      ]
+    },
+    {
+      "text": "Yang ngerem pakai *sandal*",
+      "dur": 4.4,
+      "props": {
+        "m5": { "kind": "bebek", "color": "#3c9a62", "plate": "TPK 04", "at": { "at": "jalan-e", "ahead": -14 } },
+        "ang1": { "kind": "angkot", "color": "#58b7da", "color2": "#f4f1e6", "at": { "at": "jalan-e", "ahead": 2.6, "side": 0.15 }, "lamps": "brake" }
+      },
+      "cast": {
+        "pakman": { "ride": "m5", "go": { "at": "jalan-e", "ahead": -1.4 }, "speed": "fast", "do": "ride", "expr": "neutral" }
+      },
+      "beats": [
+        { "shot": "follow", "on": "pakman" },
+        { "at": 0.95, "shot": "medium", "on": "pakman", "side": "left", "cast": { "pakman": { "do": "ride-brake", "expr": "panic" } }, "pop": [{ "kind": "sfx", "text": "CIIIIT!", "on": "pakman", "at": 0.05 }] },
+        { "at": 2.3, "shot": "low", "on": "pakman", "cast": { "pakman": { "do": "ride", "expr": "relief" } }, "freeze": true, "pop": [{ "kind": "tag", "text": "REM SANDAL", "on": "pakman", "at": 0.2 }] }
+      ]
+    },
+    {
+      "text": "Yang lampu merah maju sampai *tengah*",
+      "dur": 4.8,
+      "light": "red",
+      "props": {
+        "m6": { "kind": "motor", "color": "#2b2d33", "color2": "#f4c534", "plate": "TPK 05", "at": "lampu-merah" },
+        "m7": { "kind": "motor", "color": "#eeeee8", "color2": "#7a4fa3", "plate": "TPK 08", "at": "antre-2" },
+        "ang2": { "kind": "angkot", "color": "#47a85a", "color2": "#f2d23a", "at": "simpang-utara" }
+      },
+      "cast": {
+        "bimo": { "ride": "m6", "do": "ride", "expr": "focus" },
+        "mbak2": { "ride": "m7", "do": "ride", "expr": "neutral" }
+      },
+      "beats": [
+        { "shot": "medium", "on": "bimo" },
+        { "at": 0.9, "shot": "top", "on": "bimo", "cast": { "bimo": { "go": "tengah-simpang", "speed": 2.4, "do": "ride-paddle" }, "mbak2": { "expr": "huh", "to": "bimo", "do": "look" } }, "props": { "ang2": { "go": { "at": "simpang-utara", "ahead": 12.6 }, "speed": 7 } } },
+        { "at": 2.7, "shot": "reaction", "on": "mbak2", "cast": { "mbak2": { "expr": "smug", "do": "stand", "to": "bimo" } } },
+        { "at": 3.5, "shot": "close", "on": "bimo", "cast": { "bimo": { "do": "ride", "expr": "shock", "to": "ang2" } }, "pop": [{ "kind": "sfx", "text": "TIIIN!", "on": "ang2", "at": 0.0, "color": "#ffffff" }, { "kind": "?", "on": "bimo", "at": 0.35 }] }
+      ]
+    }
+  ]
+}

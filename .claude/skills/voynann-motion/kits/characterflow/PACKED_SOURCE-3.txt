@@ -1,0 +1,3366 @@
+VOYNANN Motion - packed source files of this folder. Do not edit by hand.
+The skill upload in the Claude app accepts at most 200 files, so the source files are packed here.
+`node <skill folder>/new-project.mjs <project folder> --kit=<style>` unpacks them into the project.
+Format: per file one line with four '=' signs, the byte length and the path, then exactly that many bytes.
+
+==== 162 root.json
+{
+  "marker": "CharacterFlowFilms",
+  "import": "import { CharacterFlowFilms } from \"./kits/characterflow/Films.tsx\";",
+  "element": "<CharacterFlowFilms />"
+}
+
+==== 6401 scripts/transcribe.mjs
+// Word timings for a voice-over → JSON [[word, start, end], …] (VO seconds).
+//   node scripts/transcribe.mjs <vo.mp3> --out=stories/<id>/words.json [--script=script.txt] [--lang=id]
+//   node scripts/transcribe.mjs <any/path/vo.mp3> --id=<id> [--script=…]   copies the VO to public/audio/<id>.<ext>
+//                                                                          and writes stories/<id>/words.json
+//
+// 1. whisper.cpp when available (WHISPER_CLI + WHISPER_MODEL, or `whisper-cli` on PATH with a model in
+//    ~/.cache/whisper.cpp or ./models) — real word timings.
+// 2. otherwise, with the script text: the VO's speech segments (silence detection) are matched to the
+//    script's sentences and words are spread by length inside each segment — close enough for beats
+//    and captions, not exact per word.
+// Without whisper and without a script there is nothing to align: the script text must be provided.
+
+import { spawnSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
+const args = process.argv.slice(2);
+const file = args.find((a) => !a.startsWith("--"));
+const opt = (k, d) => (args.find((a) => a.startsWith(`--${k}=`)) ?? `=${d ?? ""}`).split("=").slice(1).join("=");
+const id = opt("id");
+if (id && !/^[a-z0-9-]+$/.test(id)) { console.error(`--id "${id}" must use only a-z, 0-9 and "-"`); process.exit(1); }
+const out = opt("out") || (id ? `stories/${id}/words.json` : "");
+if (file && fs.existsSync(file) && id) {
+  const dst = path.join("public", "audio", `${id}${path.extname(file).toLowerCase() || ".mp3"}`);
+  fs.mkdirSync(path.dirname(dst), { recursive: true });
+  if (path.resolve(dst) !== path.resolve(file)) fs.copyFileSync(file, dst);
+  console.log(`vo: ${dst}  →  story.json "vo": { "file": "${path.relative("public", dst)}", "offset": 0.4 }`);
+}
+if (!file || !fs.existsSync(file) || !out) {
+  console.error("usage: node scripts/transcribe.mjs <vo.mp3> (--id=<id> | --out=stories/<id>/words.json) [--script=script.txt] [--lang=id]");
+  process.exit(1);
+}
+const run = (cmd, a) => spawnSync(cmd, a, { encoding: "utf8", maxBuffer: 1 << 28 });
+const duration = Number(run("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", file]).stdout.trim());
+
+const findWhisper = () => {
+  const home = os.homedir();
+  const cands = [process.env.WHISPER_CLI, run("sh", ["-c", "command -v whisper-cli"]).stdout.trim(), "/opt/homebrew/bin/whisper-cli", "/usr/local/bin/whisper-cli"].filter(Boolean);
+  const cli = cands.find((c) => fs.existsSync(c));
+  const modelDirs = [path.join(home, ".cache/whisper.cpp"), path.resolve("models"), "/opt/homebrew/share/whisper-cpp"];
+  let model = process.env.WHISPER_MODEL && fs.existsSync(process.env.WHISPER_MODEL) ? process.env.WHISPER_MODEL : null;
+  if (!model) for (const d of modelDirs) { if (!fs.existsSync(d)) continue; const m = fs.readdirSync(d).filter((f) => f.endsWith(".bin")).sort((a, b) => (b.includes("large") ? 1 : 0) - (a.includes("large") ? 1 : 0))[0]; if (m) { model = path.join(d, m); break; } }
+  return cli && model ? { cli, model } : null;
+};
+
+let words = null, method = "";
+const W = findWhisper();
+if (W) {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "cf-vo-"));
+  const wav = path.join(tmp, "vo16k.wav");
+  run("ffmpeg", ["-v", "error", "-y", "-i", file, "-ar", "16000", "-ac", "1", wav]);
+  run(W.cli, ["-m", W.model, "-f", wav, "-l", opt("lang", "id"), "-ml", "1", "-sow", "-ojf", "-of", path.join(tmp, "w")]);
+  try {
+    const j = JSON.parse(fs.readFileSync(path.join(tmp, "w.json"), "utf8"));
+    words = j.transcription.map((s) => [s.text.trim(), s.offsets.from / 1000, s.offsets.to / 1000]).filter((w) => w[0]);
+    method = `whisper.cpp (${path.basename(W.model)})`;
+  } catch { words = null; }
+  fs.rmSync(tmp, { recursive: true, force: true });
+}
+
+if (!words) {
+  const scriptFile = opt("script");
+  if (!scriptFile || !fs.existsSync(scriptFile)) {
+    console.error("No whisper.cpp found and no --script given. Provide the narration text (e.g. --script=stories/<id>/script.txt) or install whisper.cpp (see the skill's references/setup.md).");
+    process.exit(2);
+  }
+  const text = fs.readFileSync(scriptFile, "utf8").replace(/\s+/g, " ").trim();
+  // speech segments from silence detection
+  const log = run("ffmpeg", ["-v", "info", "-i", file, "-af", "silencedetect=n=-38dB:d=0.18", "-f", "null", "-"]).stderr;
+  const st = [...log.matchAll(/silence_start: ([\d.]+)/g)].map((m) => Number(m[1]));
+  const en = [...log.matchAll(/silence_end: ([\d.]+)/g)].map((m) => Number(m[1]));
+  const segs = [];
+  let cur = 0;
+  st.forEach((s, i) => { if (s - cur > 0.12) segs.push([cur, s]); cur = en[i] ?? duration; });
+  if (duration - cur > 0.12) segs.push([cur, duration]);
+  const toks = text.split(" ").filter(Boolean);
+  // sentences / clauses = groups ending in punctuation; map groups to segments by cumulative length
+  const total = toks.reduce((s, w) => s + w.length + 1, 0);
+  const speech = segs.reduce((s, [a, b]) => s + (b - a), 0);
+  // speech-time position for a fraction of the text, then into real time through the segments
+  const toTime = (frac) => {
+    let need = frac * speech;
+    for (const [a, b] of segs) { if (need <= b - a) return a + need; need -= b - a; }
+    return segs.length ? segs[segs.length - 1][1] : duration;
+  };
+  // snap clause ends to the nearest segment end when one is close
+  let acc = 0;
+  words = toks.map((w) => {
+    const a = acc / total;
+    acc += w.length + 1;
+    const b = (acc - 1) / total;
+    let t0 = toTime(a), t1 = toTime(b);
+    if (/[.,?!;:]$/.test(w)) { const near = segs.map((s) => s[1]).reduce((best, e) => (Math.abs(e - t1) < Math.abs(best - t1) ? e : best), t1); if (Math.abs(near - t1) < 0.6) t1 = near; }
+    return [w, +t0.toFixed(2), +Math.max(t0 + 0.08, t1).toFixed(2)];
+  });
+  // keep times monotonic
+  for (let i = 1; i < words.length; i++) if (words[i][1] < words[i - 1][2]) words[i][1] = words[i - 1][2];
+  method = `script aligned to ${segs.length} speech segments (approximate word timing)`;
+}
+
+fs.mkdirSync(path.dirname(out), { recursive: true });
+fs.writeFileSync(out, JSON.stringify(words.map(([w, a, b]) => [w, +a.toFixed(2), +b.toFixed(2)])));
+console.log(`words: ${out} — ${words.length} words, ${duration.toFixed(2)} s, via ${method}`);
+console.log(words.map(([w, a]) => `${a.toFixed(2)} ${w}`).join("  "));
+
+==== 2573 src/kits/characterflow/captions/Cards.tsx
+// Full-frame 2D cards for storytelling beats: a cartoon "time skip" title card and a VHS-style rewind
+// overlay. Laid out at 1080 × 1920 (a 16:9 film passes its own `top` for the 1920 × 1080 canvas); text comes from the topic.
+
+import React from "react";
+import { ease, remap } from "../../../core/motion/easing.ts";
+import { FONT } from "../../../core/type/fonts.ts";
+
+/** Bouncy title card over the shot (e.g. "5 DETIK KEMUDIAN…"). */
+export const TitleCard: React.FC<{ t: number; t0: number; t1: number; text: string; sub?: string; top?: number }> = ({ t, t0, t1, text, sub, top = 300 }) => {
+  if (t < t0 || t > t1) return null;
+  const inK = ease.out(remap(t, t0, t0 + 0.3));
+  const outK = 1 - ease.in(remap(t, t1 - 0.25, t1));
+  const pop = 0.7 + 0.3 * inK + 0.06 * Math.sin(Math.min(1, (t - t0) / 0.5) * Math.PI);
+  return (
+    <div style={{ position: "absolute", left: 0, right: 0, top, display: "flex", justifyContent: "center", opacity: outK }}>
+      <div style={{ transform: `scale(${pop}) rotate(${-3 + 1.5 * Math.sin(t * 2)}deg)`, background: "#ffd166", color: "#1d2a4d", fontFamily: FONT, fontWeight: 600, fontSize: 78, letterSpacing: "0.02em", padding: "22px 46px 26px", borderRadius: 30, border: "8px solid #1d2a4d", boxShadow: "0 14px 0 #1d2a4d, 0 24px 60px rgba(0,0,0,0.25)", textAlign: "center" }}>
+        {text}
+        {sub ? <div style={{ fontSize: 38, fontWeight: 500, marginTop: 6 }}>{sub}</div> : null}
+      </div>
+    </div>
+  );
+};
+
+/** VHS rewind: scan lines, a rolling bar, ◀◀ icon. */
+export const RewindOverlay: React.FC<{ t: number; t0: number; t1: number; label?: string }> = ({ t, t0, t1, label }) => {
+  if (t < t0 || t > t1) return null;
+  const a = ease.out(remap(t, t0, t0 + 0.12)) * (1 - ease.in(remap(t, t1 - 0.15, t1)));
+  const bar = ((t - t0) * 1.7) % 1;
+  return (
+    <div style={{ position: "absolute", inset: 0, opacity: a, pointerEvents: "none" }}>
+      <div style={{ position: "absolute", inset: 0, background: "repeating-linear-gradient(0deg, rgba(0,0,0,0.18) 0px, rgba(0,0,0,0.18) 3px, transparent 3px, transparent 7px)" }} />
+      <div style={{ position: "absolute", left: 0, right: 0, top: `${bar * 100}%`, height: 90, background: "linear-gradient(180deg, transparent, rgba(255,255,255,0.22), transparent)" }} />
+      <div style={{ position: "absolute", left: 70, top: 120, fontFamily: FONT, fontWeight: 600, fontSize: 96, color: "#ffffff", textShadow: "4px 4px 0 #ff4fa3, -4px -2px 0 #4fd8ff", opacity: Math.floor(t * 4) % 2 ? 1 : 0.65 }}>
+        ◀◀ {label ?? ""}
+      </div>
+    </div>
+  );
+};
+
+==== 5800 src/kits/characterflow/character/materials.ts
+// One material set per (character, variant). "hero" materials are opaque; "mini" materials (the
+// little imagined versions of the cast inside thought bubbles) can be faded and tinted together
+// without touching the lead's look.
+
+import { Color, DoubleSide, type MeshPhysicalMaterial, type Material, MeshBasicMaterial } from "three";
+import { canvasTex, eyeTex, mulberry32, phys, shade, weaveTex } from "../lib/mats.ts";
+import type { CharacterSpec } from "./spec.ts";
+
+export type Variant = "hero" | "mini";
+
+export type CharMats = {
+  skin: MeshPhysicalMaterial; hair: MeshPhysicalMaterial; scarf: MeshPhysicalMaterial; top: MeshPhysicalMaterial; topTrim: MeshPhysicalMaterial;
+  bottom: MeshPhysicalMaterial; skirt: MeshPhysicalMaterial; foot: MeshPhysicalMaterial; sole: MeshPhysicalMaterial;
+  eye: MeshPhysicalMaterial; lash: MeshPhysicalMaterial; brow: MeshPhysicalMaterial;
+  mouth: MeshPhysicalMaterial; lipLine: MeshPhysicalMaterial; teeth: MeshPhysicalMaterial; tongue: MeshPhysicalMaterial;
+  blush: MeshBasicMaterial; glint: MeshBasicMaterial; frame: MeshPhysicalMaterial; nail: MeshPhysicalMaterial;
+  all: Material[];
+};
+
+const sets = new Map<string, CharMats>();
+
+/** Soft knit for t-shirts: fine rib + a few slubs. */
+const knitTex = (key: string, color: string) =>
+  canvasTex(`knit${key}`, 256, 256, (g, w, h) => {
+    const r = mulberry32(17);
+    g.fillStyle = color;
+    g.fillRect(0, 0, w, h);
+    for (let x = 0; x < w; x += 3) {
+      g.fillStyle = `rgba(${x % 6 ? "255,255,255" : "0,0,0"},0.035)`;
+      g.fillRect(x, 0, 1.5, h);
+    }
+    for (let k = 0; k < 90; k++) {
+      g.fillStyle = `rgba(${r() > 0.5 ? "255,255,255" : "60,40,20"},${0.03 + r() * 0.04})`;
+      g.fillRect(r() * w, r() * h, 1 + r() * 2, 6 + r() * 18);
+    }
+  }, [5, 5]);
+
+export const charMats = (spec: CharacterSpec, variant: Variant = "hero"): CharMats => {
+  const key = `${spec.id}:${variant}`;
+  let s = sets.get(key);
+  if (s) return s;
+  const k = (n: string) => `${key}:${n}`;
+  const fabric = { roughness: 0.82, sheen: 0.55, sheenRoughness: 0.55 };
+  const skin = phys(k("skin"), { color: spec.skin, roughness: 0.48, sheen: 0.45, sheenColor: "#ffb196", sheenRoughness: 0.45, clearcoat: 0.12, clearcoatRoughness: 0.5 });
+  const hair = phys(k("hair"), { color: spec.hair, roughness: 0.46, sheen: 1, sheenColor: spec.hairSheen, sheenRoughness: 0.35, clearcoat: 0.12, clearcoatRoughness: 0.5 });
+  const scarf = phys(k("scarf"), { color: spec.scarf ?? spec.hair, roughness: 0.85, sheen: 0.7, sheenColor: shade(spec.scarf ?? spec.hair, 1.5), sheenRoughness: 0.5, side: DoubleSide });
+  const top = phys(k("top"), { color: "#ffffff", map: spec.top.kind === "hoodie" ? weaveTex(`${spec.id}top`, spec.top.color, [6, 6]) : knitTex(spec.id, spec.top.color), sheenColor: shade(spec.top.color, 1.3), ...fabric });
+  const topTrim = phys(k("trim"), { color: spec.top.accent, sheenColor: "#ffffff", ...fabric });
+  const bottom = phys(k("bottom"), { color: spec.bottom.color, sheenColor: shade(spec.bottom.color, 2.2), ...fabric, roughness: 0.78 });
+  const skirt = phys(k("skirt"), { color: spec.bottom.color, sheenColor: shade(spec.bottom.color, 2.2), ...fabric, roughness: 0.78, side: DoubleSide });
+  const foot = phys(k("foot"), { color: spec.feet.kind === "bare" ? spec.skin : spec.feet.color, ...fabric, roughness: spec.feet.kind === "shoes" ? 0.5 : 0.85 });
+  const sole = phys(k("sole"), { color: "#4a4a50", roughness: 0.8 });
+  const eye = phys(k("eye"), { map: eyeTex(spec.id, spec.iris), roughness: 0.04, clearcoat: 1, clearcoatRoughness: 0.02 });
+  const lash = phys(k("lash"), { color: shade(spec.hair, 0.6), roughness: 0.6 });
+  const brow = phys(k("brow"), { color: spec.brow, roughness: 0.75, sheen: 0.4, sheenColor: spec.hairSheen });
+  const decal = { polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4, side: DoubleSide };
+  const mouth = phys(k("mouth"), { color: "#5a2226", roughness: 0.7, ...decal });
+  const lipLine = phys(k("lip"), { color: shade(spec.lip, 0.62), roughness: 0.55, ...decal, polygonOffsetFactor: -6, polygonOffsetUnits: -6 });
+  const teeth = phys(k("teeth"), { color: "#f6f1e8", roughness: 0.3, ...decal, polygonOffsetFactor: -5, polygonOffsetUnits: -5 });
+  const tongue = phys(k("tongue"), { color: "#c4636a", roughness: 0.5, ...decal, polygonOffsetFactor: -5, polygonOffsetUnits: -5 });
+  const blush = new MeshBasicMaterial({ color: new Color("#ff6f6a"), transparent: true, opacity: 0.16 * spec.blush, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3, map: blushTex() });
+  const glint = new MeshBasicMaterial({ color: "#ffffff", toneMapped: false });
+  const frame = phys(k("frame"), { color: "#2b2522", roughness: 0.35, clearcoat: 0.6 });
+  const nail = phys(k("nail"), { color: shade(spec.skin, 1.18), roughness: 0.3, clearcoat: 0.5 });
+  const all: Material[] = [skin, hair, scarf, top, topTrim, bottom, skirt, foot, sole, eye, lash, brow, mouth, lipLine, teeth, tongue, frame, nail];
+  s = { skin, hair, scarf, top, topTrim, bottom, skirt, foot, sole, eye, lash, brow, mouth, lipLine, teeth, tongue, blush, glint, frame, nail, all };
+  sets.set(key, s);
+  return s;
+};
+
+const blushTex = () =>
+  canvasTex("blush", 128, 128, (g, w, h) => {
+    const gr = g.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, w / 2);
+    gr.addColorStop(0, "rgba(255,255,255,1)");
+    gr.addColorStop(1, "rgba(255,255,255,0)");
+    g.fillStyle = gr;
+    g.fillRect(0, 0, w, h);
+  });
+
+/** Fade every mini material of a character (thought-bubble imagery). */
+export const setMiniFade = (spec: CharacterSpec, opacity: number) => {
+  const s = charMats(spec, "mini");
+  for (const m of s.all) {
+    m.opacity = opacity;
+    m.transparent = opacity < 0.999;
+  }
+  s.blush.opacity = 0.16 * spec.blush * opacity;
+};
+
+==== 7920 src/kits/characterflow/character/pose.ts
+// Character pose: a plain number tree, computed per frame from film time (no state, no clocks).
+// Angles in radians. Conventions (character faces +Z, his left is +X):
+//   hips/spine/chest/neck/head [pitch fwd +, yaw to his left +, roll to his left +]
+//   legs [swing fwd +, abduct out +, twist], knee bend +, ankle toes-up +
+//   arms: FK [swing fwd +, abduct out +, twist] + elbow bend, optionally pulled to an IK target.
+// IK targets are written in "chest", "head" or "world" space by presets; the performance resolves
+// them to chest space (skeleton.ts) before poses are blended, so blending is always like-for-like.
+
+import { Quaternion } from "three";
+import type { V3 } from "./spec.ts";
+
+export type E3 = [number, number, number];
+export type IKSpace = "chest" | "head" | "world";
+
+export type Face = {
+  /** both brows: +1 raised, −1 lowered */
+  browUp: number;
+  /** inner brow ends: +1 raised (worry), −1 pulled down (focus/anger) */
+  browIn: number;
+  /** his left brow up / right down */
+  browAsym: number;
+  /** upper lids: 1 open, 0 closed, >1 wide */
+  lid: number;
+  /** lower lid raise (smile squint / tension) 0…1 */
+  squint: number;
+  /** mouth corners −1 frown … 1 smile */
+  smile: number;
+  /** mouth open 0…1 */
+  open: number;
+  /** mouth width −1 pucker … 1 wide/grimace */
+  wide: number;
+  /** gaze yaw (to his left +) and pitch (up +), radians */
+  eyeX: number;
+  eyeY: number;
+  /** extra blush 0…1 */
+  blush: number;
+};
+
+export type Hand = { curl: number; index: number; thumb: number; spread: number };
+/** `q` optionally fixes the hand orientation (same space as `t`; quaternion x, y, z, w). */
+export type IK = { t: V3; space: IKSpace; pole: V3; w: number; q?: [number, number, number, number] };
+export type Arm = { sw: number; ab: number; tw: number; el: number; wr: E3; ik?: IK };
+/** Legs are FK, or (ik.w ≥ 0.5) planted by IK on a world ankle target with a world foot orientation. */
+export type LegIK = { t: V3; q: [number, number, number, number]; w: number };
+export type Leg = { sw: number; ab: number; tw: number; kn: number; an: number; ik?: LegIK };
+
+export type Pose = {
+  x: number; y: number; z: number; yaw: number;
+  hipY: number; hips: E3;
+  spine: E3; chest: E3; neck: E3; head: E3;
+  /** shoulder shrug 0…1 (both), raises the arm roots */
+  shrug: number;
+  armL: Arm; armR: Arm;
+  legL: Leg; legR: Leg;
+  handL: Hand; handR: Hand;
+  face: Face;
+  /** breathing amplitude (0…1), breaths per second, hand tremble (0…1) */
+  breath: number; breathRate: number; tremble: number;
+};
+
+export const FACE0: Face = { browUp: 0, browIn: 0, browAsym: 0, lid: 1, squint: 0.1, smile: 0.08, open: 0, wide: 0, eyeX: 0, eyeY: 0, blush: 0 };
+export const HAND0: Hand = { curl: 0.35, index: 0.3, thumb: 0.25, spread: 0.1 };
+
+export const arm0 = (): Arm => ({ sw: 0.04, ab: 0.1, tw: 0, el: 0.2, wr: [0, 0, 0] });
+export const leg0 = (): Leg => ({ sw: 0, ab: 0.02, tw: 0, kn: 0.04, an: 0 });
+
+export const restPose = (): Pose => ({
+  x: 0, y: 0, z: 0, yaw: 0,
+  hipY: 0, hips: [0, 0, 0],
+  spine: [0, 0, 0], chest: [0, 0, 0], neck: [0, 0, 0], head: [0, 0, 0],
+  shrug: 0,
+  armL: arm0(), armR: arm0(),
+  legL: leg0(), legR: leg0(),
+  handL: { ...HAND0 }, handR: { ...HAND0 },
+  face: { ...FACE0 },
+  breath: 1, breathRate: 0.24, tremble: 0,
+});
+
+export const clonePose = (p: Pose): Pose => ({
+  ...p,
+  hips: [...p.hips], spine: [...p.spine], chest: [...p.chest], neck: [...p.neck], head: [...p.head],
+  armL: cloneArm(p.armL), armR: cloneArm(p.armR),
+  legL: { ...p.legL }, legR: { ...p.legR },
+  handL: { ...p.handL }, handR: { ...p.handR },
+  face: { ...p.face },
+});
+export const cloneArm = (a: Arm): Arm => ({ ...a, wr: [...a.wr], ik: a.ik ? { ...a.ik, t: [...a.ik.t], pole: [...a.ik.pole] } : undefined });
+
+export const lerpN = (a: number, b: number, k: number) => a + (b - a) * k;
+export const lerp3 = (a: E3 | V3, b: E3 | V3, k: number): E3 => [lerpN(a[0], b[0], k), lerpN(a[1], b[1], k), lerpN(a[2], b[2], k)];
+
+const slerpQ = (a: IK["q"], b: IK["q"], k: number): IK["q"] => {
+  if (!a || !b) return k < 0.5 ? a : b;
+  const q = new Quaternion(...a).slerp(new Quaternion(...b), k);
+  return [q.x, q.y, q.z, q.w];
+};
+
+/** Blend arms. Both IK targets must already be in the same space (the performance resolves to chest). */
+export const lerpArm = (a: Arm, b: Arm, k: number): Arm => {
+  if (k <= 0) return a;
+  if (k >= 1) return b;
+  const ia = a.ik, ib = b.ik;
+  return {
+    sw: lerpN(a.sw, b.sw, k), ab: lerpN(a.ab, b.ab, k), tw: lerpN(a.tw, b.tw, k), el: lerpN(a.el, b.el, k), wr: lerp3(a.wr, b.wr, k),
+    ik: ia || ib ? {
+      t: lerp3((ia ?? ib)!.t, (ib ?? ia)!.t, k),
+      pole: lerp3((ia ?? ib)!.pole, (ib ?? ia)!.pole, k),
+      space: (ib ?? ia)!.space,
+      w: lerpN(ia?.w ?? 0, ib?.w ?? 0, k),
+      q: slerpQ(ia?.q, ib?.q, k),
+    } : undefined,
+  };
+};
+export const lerpLeg = (a: Leg, b: Leg, k: number): Leg => {
+  const ia = a.ik, ib = b.ik;
+  const ik = ia && ib ? { t: lerp3(ia.t, ib.t, k) as V3, q: slerpQ(ia.q, ib.q, k)!, w: lerpN(ia.w, ib.w, k) } : k < 0.5 ? ia : ib;
+  return { sw: lerpN(a.sw, b.sw, k), ab: lerpN(a.ab, b.ab, k), tw: lerpN(a.tw, b.tw, k), kn: lerpN(a.kn, b.kn, k), an: lerpN(a.an, b.an, k), ik };
+};
+export const lerpHand = (a: Hand, b: Hand, k: number): Hand => ({ curl: lerpN(a.curl, b.curl, k), index: lerpN(a.index, b.index, k), thumb: lerpN(a.thumb, b.thumb, k), spread: lerpN(a.spread, b.spread, k) });
+export const lerpFace = (a: Face, b: Face, k: number): Face => {
+  const o = { ...a };
+  for (const key of Object.keys(a) as (keyof Face)[]) o[key] = lerpN(a[key], b[key], k);
+  return o;
+};
+
+/** Blend two whole poses (yaw the short way round). */
+export const blend = (a: Pose, b: Pose, k: number): Pose => {
+  if (k <= 0) return a;
+  if (k >= 1) return b;
+  let dy = b.yaw - a.yaw;
+  while (dy > Math.PI) dy -= Math.PI * 2;
+  while (dy < -Math.PI) dy += Math.PI * 2;
+  return {
+    x: lerpN(a.x, b.x, k), y: lerpN(a.y, b.y, k), z: lerpN(a.z, b.z, k), yaw: a.yaw + dy * k,
+    hipY: lerpN(a.hipY, b.hipY, k), hips: lerp3(a.hips, b.hips, k),
+    spine: lerp3(a.spine, b.spine, k), chest: lerp3(a.chest, b.chest, k), neck: lerp3(a.neck, b.neck, k), head: lerp3(a.head, b.head, k),
+    shrug: lerpN(a.shrug, b.shrug, k),
+    armL: lerpArm(a.armL, b.armL, k), armR: lerpArm(a.armR, b.armR, k),
+    legL: lerpLeg(a.legL, b.legL, k), legR: lerpLeg(a.legR, b.legR, k),
+    handL: lerpHand(a.handL, b.handL, k), handR: lerpHand(a.handR, b.handR, k),
+    face: lerpFace(a.face, b.face, k),
+    breath: lerpN(a.breath, b.breath, k), breathRate: lerpN(a.breathRate, b.breathRate, k), tremble: lerpN(a.tremble, b.tremble, k),
+  };
+};
+
+const TAU = Math.PI * 2;
+const D = Math.PI / 180;
+
+/** Walk/run cycle at gait phase `p` (cycles). `amt` scales the stride (1 walk, 1.6 run). */
+export const walkCycle = (pose: Pose, p: number, amt = 1): Pose => {
+  const o = clonePose(pose);
+  const run = Math.max(0, amt - 1);
+  const legAt = (ph: number, l: Leg) => {
+    const s = Math.sin(TAU * ph), c = Math.cos(TAU * ph);
+    l.sw = (22 * D * s) * amt;
+    l.kn = (6 * D + (52 + 40 * run) * D * Math.pow(Math.max(0, c), 1.4)) * (0.55 + 0.45 * Math.min(1, amt));
+    l.an = (10 * D * Math.max(0, c) - 14 * D * Math.max(0, -Math.sin(TAU * ph + 0.9))) * amt;
+  };
+  legAt(p, o.legL);
+  legAt(p + 0.5, o.legR);
+  o.hipY = pose.hipY - (0.012 + 0.012 * amt) * (0.5 - 0.5 * Math.cos(TAU * 2 * p - Math.PI));
+  const sway = Math.sin(TAU * p);
+  o.hips = [pose.hips[0] + run * 8 * D, pose.hips[1] + 5 * D * sway * amt, pose.hips[2] + 2 * D * Math.cos(TAU * p) * amt];
+  o.chest = [pose.chest[0] + run * 6 * D, pose.chest[1] - 7 * D * sway * amt, pose.chest[2]];
+  if (!o.armL.ik) { o.armL.sw = pose.armL.sw - 0.32 * sway * amt; o.armL.el = pose.armL.el + 0.12 * amt + run * 0.9; }
+  if (!o.armR.ik) { o.armR.sw = pose.armR.sw + 0.32 * sway * amt; o.armR.el = pose.armR.el + 0.12 * amt + run * 0.9; }
+  return o;
+};
+
+==== 5765 src/kits/characterflow/character/presets/bodies.ts
+// Full-body pose presets. A preset is placed by an Anchor:
+//   standing poses — a floor point, facing `yaw`;
+//   bed poses      — a point on the mattress top under the pelvis, `yaw` = direction toward the feet.
+// Arms here are only defaults; gestures (gestures.ts) override them per beat.
+
+import { arm0, clonePose, restPose, walkCycle, type Pose } from "../pose.ts";
+import { DIMS, type CharacterSpec } from "../spec.ts";
+
+export type Anchor = { x: number; y: number; z: number; yaw: number };
+
+const D = Math.PI / 180;
+
+const at = (p: Pose, a: Anchor, spec: CharacterSpec, pelvisLift: number) => {
+  p.x = a.x;
+  p.z = a.z;
+  p.yaw = a.yaw;
+  p.y = a.y + pelvisLift - DIMS.pelvisH * spec.scale;
+  return p;
+};
+
+export type BodyFn = (a: Anchor, spec: CharacterSpec, t: number) => Pose;
+
+export const BODY: Record<
+  "stand" | "standSlump" | "standCower" | "standProud" | "run" | "lie" | "sit" | "sitHunch" | "sitWrite" | "sitReachRight" | "lieReachRight",
+  BodyFn
+> = {
+  stand: (a: Anchor, spec: CharacterSpec) => {
+    const p = restPose();
+    p.legL.kn = p.legR.kn = 0.05;
+    p.legL.ab = p.legR.ab = 0.035;
+    p.armL = { ...arm0(), sw: 0.02, ab: 0.12, el: 0.22 };
+    p.armR = { ...arm0(), sw: 0.04, ab: 0.11, el: 0.26 };
+    p.hips = [0, 0, 1.5 * D];
+    p.chest = [-2 * D, 0, -1 * D];
+    return at(p, a, spec, DIMS.pelvisH * spec.scale);
+  },
+
+  standSlump: (a: Anchor, spec: CharacterSpec) => {
+    const p = BODY.stand(a, spec, 0);
+    p.spine = [8 * D, 0, 0];
+    p.chest = [14 * D, 0, 0];
+    p.neck = [14 * D, 0, 0];
+    p.head = [10 * D, 0, 0];
+    p.shrug = 0.3;
+    p.legL.kn = p.legR.kn = 0.12;
+    p.hipY = -0.02;
+    return p;
+  },
+
+  standCower: (a: Anchor, spec: CharacterSpec) => {
+    const p = BODY.stand(a, spec, 0);
+    p.hipY = -0.08;
+    p.legL.kn = p.legR.kn = 0.4;
+    p.legL.sw = p.legR.sw = 0.2;
+    p.legL.an = p.legR.an = 0.18;
+    p.spine = [14 * D, 0, 0];
+    p.chest = [16 * D, 0, 0];
+    p.neck = [10 * D, 0, 0];
+    p.head = [16 * D, 0, 0];
+    p.shrug = 0.8;
+    return p;
+  },
+
+  standProud: (a: Anchor, spec: CharacterSpec) => {
+    const p = BODY.stand(a, spec, 0);
+    p.chest = [-7 * D, 0, 0];
+    p.head = [-6 * D, 0, 0];
+    p.hipY = 0.005;
+    return p;
+  },
+
+  run: (a: Anchor, spec: CharacterSpec, t: number) => {
+    const p = BODY.stand(a, spec, 0);
+    p.spine = [10 * D, 0, 0];
+    p.armL = { ...p.armL, el: 0.9 };
+    p.armR = { ...p.armR, el: 0.9 };
+    return walkCycle(p, t * 1.7, 1.55);
+  },
+
+  /** On his back in bed, head on the pillow, arms along the body. */
+  lie: (a: Anchor, spec: CharacterSpec) => {
+    const p = restPose();
+    p.hips = [-90 * D, 0, 0];
+    p.spine = [-3 * D, 0, 0];
+    p.chest = [-4 * D, 0, 0];
+    p.neck = [24 * D, 0, 0];
+    p.head = [12 * D, 0, 0];
+    p.legL = { sw: 1 * D, ab: 3 * D, tw: 6 * D, kn: 5 * D, an: -26 * D };
+    p.legR = { sw: 1 * D, ab: 4 * D, tw: 8 * D, kn: 6 * D, an: -24 * D };
+    p.armL = { ...arm0(), sw: 6 * D, ab: 14 * D, el: 0.32 };
+    p.armR = { ...arm0(), sw: 6 * D, ab: 14 * D, el: 0.32 };
+    p.breath = 0.8;
+    p.breathRate = 0.2;
+    return at(p, a, spec, 0.105);
+  },
+
+  /** Sitting up in bed, legs straight under the blanket, a soft slouch. */
+  sit: (a: Anchor, spec: CharacterSpec) => {
+    const p = restPose();
+    const lean = -9 * D;
+    p.hips = [lean, 0, 0];
+    p.spine = [6 * D, 0, 0];
+    p.chest = [7 * D, 0, 0];
+    p.neck = [4 * D, 0, 0];
+    p.head = [3 * D, 0, 0];
+    p.legL = { sw: Math.PI / 2 + lean - 1 * D, ab: 4 * D, tw: 4 * D, kn: 7 * D, an: -30 * D };
+    p.legR = { sw: Math.PI / 2 + lean - 2 * D, ab: 5 * D, tw: 6 * D, kn: 9 * D, an: -28 * D };
+    p.armL = { ...arm0(), sw: 0.3, ab: 0.16, el: 0.7 };
+    p.armR = { ...arm0(), sw: 0.3, ab: 0.16, el: 0.7 };
+    return at(p, a, spec, 0.1);
+  },
+
+  /** Curled forward over the lap — overwhelmed. */
+  sitHunch: (a: Anchor, spec: CharacterSpec) => {
+    const p = BODY.sit(a, spec, 0);
+    p.hips = [2 * D, 0, 0];
+    p.legL.sw = Math.PI / 2 + 2 * D - 1 * D;
+    p.legR.sw = Math.PI / 2 + 2 * D - 2 * D;
+    p.legL.kn = p.legR.kn = 14 * D;
+    p.spine = [16 * D, 0, 0];
+    p.chest = [20 * D, 0, 0];
+    p.neck = [16 * D, 0, 0];
+    p.head = [16 * D, 0, 0];
+    p.shrug = 0.55;
+    return p;
+  },
+
+  /** Sitting tall, looking down at the lap (reading / writing). */
+  sitWrite: (a: Anchor, spec: CharacterSpec) => {
+    const p = BODY.sit(a, spec, 0);
+    p.hips = [-4 * D, 0, 0];
+    p.legL.sw = Math.PI / 2 - 4 * D - 1 * D;
+    p.legR.sw = Math.PI / 2 - 4 * D - 2 * D;
+    p.spine = [9 * D, 0, 0];
+    p.chest = [11 * D, 3 * D, 0];
+    p.neck = [18 * D, 0, 0];
+    p.head = [16 * D, 0, 0];
+    return p;
+  },
+
+  /** Sitting, leaning out to his right (toward a nightstand on that side). */
+  sitReachRight: (a: Anchor, spec: CharacterSpec) => {
+    const p = BODY.sit(a, spec, 0);
+    // twist distributed low (hips/spine) so the shirt hem never swings out of the waist
+    p.hips = [-2 * D, -12 * D, -8 * D];
+    p.legL.sw = Math.PI / 2 - 2 * D;
+    p.legR.sw = Math.PI / 2 - 3 * D;
+    p.spine = [12 * D, -16 * D, -14 * D];
+    p.chest = [8 * D, -5 * D, -5 * D];
+    p.neck = [10 * D, -12 * D, 0];
+    p.head = [12 * D, -8 * D, 4 * D];
+    return p;
+  },
+
+  /** Lying, rolled a little to his right to reach the nightstand. */
+  lieReachRight: (a: Anchor, spec: CharacterSpec) => {
+    const p = BODY.lie(a, spec, 0);
+    p.hips = [-90 * D, 0, -11 * D];
+    p.spine = [-2 * D, -6 * D, -9 * D];
+    p.chest = [-3 * D, -3 * D, -3 * D];
+    p.neck = [18 * D, -22 * D, 0];
+    p.head = [8 * D, -18 * D, 0];
+    return p;
+  },
+};
+
+export type BodyName = keyof typeof BODY;
+
+/** Clone a preset result so beats can tweak it safely. */
+export const bodyPose = (name: BodyName, a: Anchor, spec: CharacterSpec, t: number) => clonePose(BODY[name](a, spec, t));
+
+==== 2599 src/kits/characterflow/character/presets/expressions.ts
+// Expression presets. Each is a full Face (gaze left at 0 — the performance aims the eyes).
+// Names describe the feeling, not a topic, so any script can cast them.
+
+import { FACE0, type Face } from "../pose.ts";
+
+const f = (o: Partial<Face>): Face => ({ ...FACE0, ...o });
+
+export const EXPR = {
+  neutral: f({}),
+  content: f({ smile: 0.35, squint: 0.3, lid: 0.92, browUp: 0.05 }),
+  happy: f({ smile: 0.85, squint: 0.55, lid: 0.9, browUp: 0.3, open: 0.18, blush: 0.4 }),
+  sleepy: f({ lid: 0.32, smile: 0.05, browUp: -0.1, squint: 0.2 }),
+  asleep: f({ lid: 0, smile: 0.12, squint: 0.15, browUp: -0.1 }),
+  asleepSmile: f({ lid: 0, smile: 0.42, squint: 0.35, browUp: 0.05, blush: 0.3 }),
+  startled: f({ lid: 1.32, browUp: 1, browIn: 0.25, smile: -0.1, open: 0.12, squint: 0 }),
+  alert: f({ lid: 1.14, browUp: 0.5, browIn: 0.2, smile: -0.05, squint: 0.05 }),
+  thinking: f({ lid: 0.96, browUp: 0.25, browAsym: 0.7, browIn: 0.1, smile: -0.08, wide: -0.35 }),
+  worried: f({ lid: 1.04, browUp: 0.45, browIn: 0.9, smile: -0.32, wide: -0.1, squint: 0.1 }),
+  anxious: f({ lid: 1.12, browUp: 0.55, browIn: 1, smile: -0.45, open: 0.08, wide: 0.15, squint: 0.15 }),
+  overwhelmed: f({ lid: 0.55, browUp: 0.2, browIn: 1, smile: -0.6, open: 0.22, wide: 0.55, squint: 0.6 }),
+  dread: f({ lid: 1.2, browUp: 0.8, browIn: 1, smile: -0.55, open: 0.32, wide: 0.25 }),
+  exhale: f({ lid: 0.35, browUp: 0.15, browIn: 0.3, smile: 0.0, open: 0.3, wide: -0.45, squint: 0.2 }),
+  calm: f({ lid: 0.88, browUp: 0.05, browIn: 0.1, smile: 0.15, squint: 0.25 }),
+  focused: f({ lid: 0.82, browUp: -0.15, browIn: -0.35, smile: 0.0, wide: -0.15, squint: 0.3 }),
+  relieved: f({ lid: 0.8, browUp: 0.35, browIn: 0.35, smile: 0.45, squint: 0.4, blush: 0.2 }),
+  embarrassed: f({ lid: 0.9, browUp: 0.4, browIn: 0.7, smile: -0.15, wide: 0.25, blush: 1 }),
+  angry: f({ lid: 0.95, browUp: -0.6, browIn: -1, smile: -0.5, open: 0.2, wide: 0.4, squint: 0.35 }),
+  laughing: f({ lid: 0.6, smile: 1, squint: 0.85, open: 0.55, wide: 0.4, browUp: 0.4 }),
+  sad: f({ lid: 0.85, browUp: 0.3, browIn: 1, smile: -0.55, squint: 0.1 }),
+  talk: f({ lid: 1, browUp: 0.3, smile: 0.2, open: 0.3 }),
+  confused: f({ lid: 1.0, browUp: 0.35, browAsym: 0.85, browIn: 0.35, smile: -0.22, wide: -0.3, open: 0.06 }),
+  surprised: f({ lid: 1.36, browUp: 1, browIn: 0.1, smile: 0.05, open: 0.42, wide: -0.2, squint: 0 }),
+  shy: f({ lid: 0.85, browUp: 0.3, browIn: 0.5, smile: 0.3, squint: 0.35, blush: 1 }),
+  proud: f({ lid: 0.9, browUp: 0.2, smile: 0.6, squint: 0.4 }),
+} satisfies Record<string, Face>;
+
+export type ExprName = keyof typeof EXPR;
+
+==== 6627 src/kits/characterflow/character/presets/gestures.ts
+// Arm + hand gesture presets, written for his LEFT arm; the rig mirrors them for the right
+// (FK by side, chest/head IK targets by x). World-space targets (reaching for a prop) are not
+// mirrored — build those with `reach()` at performance time.
+// IK targets are wrist positions; chest space is in rig metres, head space in head units.
+
+import { arm0, HAND0, type Arm, type Hand, type IK } from "../pose.ts";
+import type { V3 } from "../spec.ts";
+
+export type Gesture = { arm: Arm; hand: Hand };
+
+const hand = (o: Partial<Hand>): Hand => ({ ...HAND0, ...o });
+export const HANDS = {
+  relaxed: hand({}),
+  soft: hand({ curl: 0.25, index: 0.2, thumb: 0.2, spread: 0.15 }),
+  open: hand({ curl: 0.06, index: 0.04, thumb: 0.05, spread: 0.6 }),
+  fist: hand({ curl: 1.05, index: 1.0, thumb: 0.9, spread: 0 }),
+  grip: hand({ curl: 0.72, index: 0.62, thumb: 0.65, spread: 0.05 }),
+  pen: hand({ curl: 0.85, index: 0.45, thumb: 0.7, spread: 0 }),
+  point: hand({ curl: 1.0, index: 0.0, thumb: 0.8, spread: 0 }),
+  claw: hand({ curl: 0.55, index: 0.5, thumb: 0.4, spread: 0.7 }),
+  flat: hand({ curl: 0.08, index: 0.06, thumb: 0.12, spread: 0.12 }),
+};
+
+const ik = (t: V3, space: IK["space"], pole: V3, w = 1): IK => ({ t, space, pole, w });
+const fk = (o: Partial<Arm>): Arm => ({ ...arm0(), ...o });
+const g = (arm: Arm, h: Hand): Gesture => ({ arm, hand: h });
+
+export const GESTURE = {
+  rest: g(fk({}), HANDS.relaxed),
+  hangLoose: g(fk({ sw: 0.02, ab: 0.06, el: 0.12 }), HANDS.soft),
+  /** lying: arm along the body on top of the blanket */
+  lieSide: g(fk({ sw: 0.1, ab: 0.24, el: 0.3, wr: [0, 0, 0.2] }), HANDS.soft),
+  /** sitting: hand resting on the thigh */
+  onLap: g(fk({ wr: [0.35, 0, 0.25], ik: ik([0.14, -0.27, 0.27], "chest", [1, -0.3, -0.6]) }), HANDS.soft),
+  /** hands meeting over the lap, fingers fidgeting */
+  clasp: g(fk({ ik: ik([0.05, -0.26, 0.31], "chest", [1, -0.5, -0.4]), wr: [0.2, 0.3, 0.5] }), HANDS.grip),
+  /** palm flat on the chest (calming breath) */
+  onChest: g(fk({ ik: ik([0.1, -0.06, 0.2], "chest", [1, -1, -0.2]), wr: [-0.3, 0.2, 1.25] }), HANDS.flat),
+  onBelly: g(fk({ ik: ik([0.05, -0.2, 0.25], "chest", [1, -0.9, 0]), wr: [0, 0, 0.8] }), HANDS.flat),
+  /** fingertips to the temple — "wait, what did I say?" */
+  temple: g(fk({ ik: ik([0.14, -0.075, 0.075], "head", [0.6, -0.6, 1]), wr: [0, 0.2, -0.25] }), hand({ curl: 0.35, index: 0.12, thumb: 0.5, spread: 0.2 })),
+  /** rubbing the back of the neck */
+  rubNeck: g(fk({ ik: ik([0.07, -0.2, -0.13], "head", [1, 0.45, 0.25]), wr: [0.4, 0, -0.6] }), HANDS.soft),
+  /** chin on the knuckles — thinking */
+  chin: g(fk({ ik: ik([0.01, -0.15, 0.1], "head", [1, -1, 0.3]), wr: [0, 0, 0.5] }), HANDS.fist),
+  /** both hands over the face/temples — overwhelmed (use on both arms) */
+  headInHands: g(fk({ ik: ik([0.105, -0.12, 0.085], "head", [0.8, -1, 0.4]), wr: [0, 0.55, 0.15] }), HANDS.claw),
+  /** fingers in the hair above the ears */
+  grabHair: g(fk({ ik: ik([0.125, -0.02, -0.02], "head", [1, -0.2, 0.2]), wr: [0, 0.5, -0.4] }), HANDS.claw),
+  /** palm up shrug */
+  palmUp: g(fk({ sw: 0.42, ab: 0.34, tw: 0.9, el: 1.35, wr: [0, 0, -0.35] }), HANDS.open),
+  /** open explaining hand, forearm forward */
+  explain: g(fk({ sw: 0.55, ab: 0.22, tw: 0.6, el: 1.25, wr: [-0.2, 0, -0.2] }), HANDS.open),
+  point: g(fk({ sw: 1.25, ab: 0.18, tw: 0.2, el: 0.15, wr: [0, 0, 0] }), HANDS.point),
+  pointUp: g(fk({ sw: 0.5, ab: 0.2, tw: 0.3, el: 1.9, wr: [0, 0, 0] }), HANDS.point),
+  crossArms: g(fk({ ik: ik([-0.1, -0.06, 0.2], "chest", [1, -1, 0.2]), wr: [0, 0, 0.6] }), HANDS.flat),
+  /** hand behind the head — relaxed, lying or leaning */
+  behindHead: g(fk({ ik: ik([0.085, 0.02, -0.15], "head", [1, 1.2, -0.4]), wr: [0, 0, -0.3] }), HANDS.soft),
+  /** cover mouth (embarrassed / shock) */
+  coverMouth: g(fk({ ik: ik([0.03, -0.21, 0.13], "head", [1, -1, 0.2]), wr: [0, 0.3, 0.9] }), HANDS.flat),
+  /** holding a book/notebook in front of the body (left hand under it) */
+  holdBook: g(fk({ ik: ik([0.05, -0.29, 0.36], "chest", [1, -1, -0.2]), wr: [0.25, 0, 0.6] }), HANDS.grip),
+  wave: g(fk({ sw: 0.3, ab: 0.9, tw: 0.4, el: 1.7, wr: [0, 0, 0] }), HANDS.open),
+  /** a greeting that stops halfway (hand at chest height, unsure) */
+  halfWave: g(fk({ sw: 0.62, ab: 0.42, tw: 0.55, el: 1.75, wr: [0.1, 0, -0.2] }), hand({ curl: 0.22, index: 0.12, thumb: 0.2, spread: 0.45 })),
+  /** hand into the trouser pocket (same side) */
+  pocket: g(fk({ ik: ik([0.15, -0.44, 0.06], "chest", [1, 0.3, -0.6]), wr: [0, 0, 0.3] }), HANDS.grip),
+  /** palm over the eyes and forehead — "aduh" */
+  facepalm: g(fk({ ik: ik([0.035, -0.035, 0.165], "head", [1, -1.2, 0.25]), wr: [-0.1, 0.15, 0.2] }), HANDS.flat),
+  /** index finger at his own chest — "me?" */
+  pointSelf: g(fk({ ik: ik([-0.04, -0.06, 0.24], "chest", [1, -1, 0]), wr: [0, 0, 0.4] }), HANDS.point),
+  thumbsUp: g(fk({ sw: 0.95, ab: 0.25, tw: 0.9, el: 1.5, wr: [0, 0, -0.3] }), hand({ curl: 1.05, index: 1.0, thumb: 0, spread: 0 })),
+  /** scratching the side of the head — confused */
+  scratchHead: g(fk({ ik: ik([0.115, 0.02, -0.02], "head", [1, 0.3, 0.3]), wr: [0, 0.3, -0.5] }), HANDS.claw),
+  /** hands on hips — confident / waiting */
+  onHip: g(fk({ ik: ik([0.2, -0.38, 0.02], "chest", [1, 0.2, -1]), wr: [0, 0, 1.2] }), HANDS.fist),
+  /** pointing forward at something / someone */
+  pointFwd: g(fk({ sw: 1.3, ab: 0.12, tw: 0.15, el: 0.15, wr: [0, 0, 0] }), HANDS.point),
+};
+
+/** Talking with the hands: an explaining hand that moves in small beats. */
+export const explaining = (rate = 1.3) => (t: number): Gesture => ({
+  arm: fk({ sw: 0.55 + 0.12 * Math.sin(t * rate * 6.3), ab: 0.22, tw: 0.6, el: 1.25 + 0.15 * Math.sin(t * rate * 6.3 + 1), wr: [-0.2, 0, -0.2] }),
+  hand: HANDS.open,
+});
+
+/** Hello wave that keeps waving (rate in waves per second). */
+export const waving = (rate = 2.2, size = 1) => (t: number): Gesture => ({
+  arm: fk({ sw: 0.3, ab: 0.95 + 0.2 * size * Math.sin(t * rate * Math.PI * 2), tw: 0.4, el: 1.6 + 0.18 * size * Math.sin(t * rate * Math.PI * 2 + 1.1) }),
+  hand: HANDS.open,
+});
+
+/** High five toward a world point (open palm forward). */
+export const highFive = (p: V3, pole: V3 = [1, -0.5, -0.3]): Gesture => ({ arm: { ...arm0(), wr: [-0.6, 0, 0], ik: { t: p, space: "world", pole, w: 1 } }, hand: HANDS.open });
+
+export type GestureName = keyof typeof GESTURE;
+
+/** Wrist IK toward a world point (props, switches). */
+export const reach = (t: V3, pole: V3 = [1, -0.6, -0.4], hnd: Hand = HANDS.grip, wr: Arm["wr"] = [0, 0, 0]): Gesture => ({
+  arm: { ...arm0(), wr, ik: { t, space: "world", pole, w: 1 } },
+  hand: hnd,
+});
+
+==== 9815 src/kits/characterflow/character/skeleton.ts
+// Forward kinematics + 2-bone arm IK. The renderer (Character.tsx) nests its groups with exactly these
+// local matrices, so anything a performance asks about the body — where the eyes are, where the right
+// hand is, which way the chest faces — is answered by the same maths that draws it. Props held in a
+// hand, cameras framing a face, and look-at / reach targets all go through here.
+
+import { Euler, Matrix4, Quaternion, Vector3 } from "three";
+import type { Arm, IK, Leg, Pose } from "./pose.ts";
+import { DIMS, type CharacterSpec, type V3 } from "./spec.ts";
+
+const m4 = () => new Matrix4();
+const T = (x: number, y: number, z: number) => m4().makeTranslation(x, y, z);
+const R = (e: Euler) => m4().makeRotationFromEuler(e);
+const Q = (q: Quaternion) => m4().makeRotationFromQuaternion(q);
+const mul = (...ms: Matrix4[]) => ms.reduce((a, b) => a.multiply(b), m4());
+
+export type ArmRig = { shoulder: Matrix4; elbow: Matrix4; wrist: Matrix4; bend: number };
+export type LegRig = { hip: Matrix4; knee: Matrix4; ankle: Matrix4 };
+export type Skeleton = {
+  /** local matrices (parent → child), in rig units; `root` carries world placement + spec scale */
+  root: Matrix4; hips: Matrix4; spine: Matrix4; chest: Matrix4; neck: Matrix4; head: Matrix4; headGeo: Matrix4;
+  armL: ArmRig; armR: ArmRig; legL: LegRig; legR: LegRig;
+  /** world matrices of the main joints */
+  W: { hips: Matrix4; chest: Matrix4; head: Matrix4; headGeo: Matrix4; wristL: Matrix4; wristR: Matrix4; kneeL: Matrix4; kneeR: Matrix4; ankleL: Matrix4; ankleR: Matrix4; elbowL: Matrix4; elbowR: Matrix4; shoulderL: Matrix4; shoulderR: Matrix4 };
+};
+
+const eul = (e: [number, number, number], extraPitch = 0) => new Euler(e[0] + extraPitch, e[1], -e[2], "YXZ");
+
+/** Shoulder joint position in chest space. */
+export const shoulderPos = (spec: CharacterSpec, s: number, shrug: number) =>
+  new Vector3(s * DIMS.shoulder[0] * spec.build, DIMS.shoulder[1] + shrug * 0.032, DIMS.shoulder[2]);
+
+// ── 2-bone IK (root joint → end joint), result in the parent's space ─────────
+const ik2 = (S: Vector3, Tg: Vector3, pole: Vector3, UA: number, FA: number) => {
+  const d0 = new Vector3().subVectors(Tg, S);
+  const d = Math.min(Math.max(d0.length(), Math.abs(UA - FA) + 1e-3), UA + FA - 1e-3);
+  const u = d0.normalize();
+  const cosA = (UA * UA + d * d - FA * FA) / (2 * UA * d);
+  const sinA = Math.sqrt(Math.max(0, 1 - cosA * cosA));
+  const w = pole.clone().addScaledVector(u, -pole.dot(u));
+  if (w.lengthSq() < 1e-8) w.set(0, 0, -1).addScaledVector(u, -u.z);
+  w.normalize();
+  const upper = u.clone().multiplyScalar(cosA).addScaledVector(w, sinA).normalize();
+  const E = S.clone().addScaledVector(upper, UA);
+  const fore = new Vector3().subVectors(S.clone().addScaledVector(u, d), E).normalize();
+  const bend = Math.acos(Math.min(1, Math.max(-1, upper.dot(fore))));
+  const Y = upper.clone().negate();
+  let Z = fore.clone().addScaledVector(upper, -fore.dot(upper));
+  if (Z.lengthSq() < 1e-8) Z = w.clone().negate();
+  Z.normalize();
+  const X = new Vector3().crossVectors(Y, Z).normalize();
+  Z.crossVectors(X, Y).normalize();
+  return { q: new Quaternion().setFromRotationMatrix(m4().makeBasis(X, Y, Z)), bend };
+};
+
+const armRig = (spec: CharacterSpec, s: number, a: Arm, shrug: number): ArmRig => {
+  const S = shoulderPos(spec, s, shrug);
+  const fk = new Quaternion().setFromEuler(new Euler(-a.sw, s * a.tw, s * a.ab, "XZY"));
+  let q = fk, el = a.el;
+  if (a.ik && a.ik.w > 0) {
+    if (a.ik.space !== "chest") throw new Error("IK target must be resolved to chest space before FK");
+    const tg = new Vector3(a.ik.t[0], a.ik.t[1], a.ik.t[2]);
+    const pole = new Vector3(a.ik.pole[0] * s, a.ik.pole[1], a.ik.pole[2]);
+    const r = ik2(S, tg, pole, DIMS.upperArm, DIMS.foreArm);
+    q = fk.clone().slerp(r.q, a.ik.w);
+    el = el + (r.bend - el) * a.ik.w;
+  }
+  let wq = new Quaternion().setFromEuler(new Euler(a.wr[0], s * a.wr[1], s * a.wr[2], "XYZ"));
+  if (a.ik && a.ik.q && a.ik.w > 0) {
+    // hand orientation given in chest space: wrist = inverse(forearm) × hand
+    const fore = q.clone().multiply(new Quaternion().setFromEuler(new Euler(-el, 0, 0)));
+    const want = fore.invert().multiply(new Quaternion(...a.ik.q));
+    wq = wq.slerp(want, a.ik.w);
+  }
+  return {
+    shoulder: mul(T(S.x, S.y, S.z), Q(q)),
+    elbow: mul(T(0, -DIMS.upperArm, 0), R(new Euler(-el, 0, 0))),
+    wrist: mul(T(0, -DIMS.foreArm, 0), Q(wq)),
+    bend: el,
+  };
+};
+
+const legRig = (spec: CharacterSpec, s: number, l: Leg, Whips: Matrix4): LegRig => {
+  const H = new Vector3(s * DIMS.hip[0] * spec.build, DIMS.hip[1], DIMS.hip[2]);
+  if (l.ik && l.ik.w >= 0.5) {
+    // planted leg: ankle on a world target, knee forward, foot turned to a world orientation
+    const tg = new Vector3(...l.ik.t).applyMatrix4(Whips.clone().invert());
+    const r = ik2(H, tg, new Vector3(s * 0.12, -0.05, 1), DIMS.thigh, DIMS.shin);
+    const hq = new Quaternion();
+    Whips.decompose(new Vector3(), hq, new Vector3());
+    const kneeWorld = hq.clone().multiply(r.q).multiply(new Quaternion().setFromEuler(new Euler(-r.bend, 0, 0)));
+    const ankle = kneeWorld.invert().multiply(new Quaternion(...l.ik.q));
+    return {
+      hip: mul(T(H.x, H.y, H.z), Q(r.q)),
+      knee: mul(T(0, -DIMS.thigh, 0), R(new Euler(-r.bend, 0, 0))),
+      ankle: mul(T(0, -DIMS.shin, 0), Q(ankle)),
+    };
+  }
+  return {
+    hip: mul(T(H.x, H.y, H.z), R(new Euler(-l.sw, s * l.tw, s * l.ab, "XZY"))),
+    knee: mul(T(0, -DIMS.thigh, 0), R(new Euler(l.kn, 0, 0))),
+    ankle: mul(T(0, -DIMS.shin, 0), R(new Euler(-l.an, 0, 0))),
+  };
+};
+
+/** Torso-only chain (root → chest, neck, head) — used to resolve IK and look targets. */
+const torso = (p: Pose, spec: CharacterSpec, breathPitch = 0) => {
+  const root = mul(T(p.x, p.y, p.z), R(new Euler(0, p.yaw, 0)), m4().makeScale(spec.scale, spec.scale, spec.scale));
+  const hips = mul(T(0, DIMS.pelvisH + p.hipY, 0), R(eul(p.hips)));
+  const spine = mul(T(0, DIMS.spineY, 0), R(eul(p.spine)));
+  const chest = mul(T(0, DIMS.chestY, 0), R(eul(p.chest, breathPitch)));
+  const neck = mul(T(0, DIMS.neckY, -0.01), R(eul(p.neck)));
+  const head = mul(T(0, DIMS.headY, 0.01), R(eul(p.head)));
+  const hc = DIMS.headCenter;
+  const headGeo = mul(T(hc[0], hc[1], hc[2]), m4().makeScale(spec.headScale, spec.headScale, spec.headScale));
+  const Whips = mul(root, hips);
+  const Wchest = mul(Whips, spine, chest);
+  const Whead = mul(Wchest, neck, head);
+  return { root, hips, spine, chest, neck, head, headGeo, Whips, Wchest, Whead, WheadGeo: mul(Whead, headGeo) };
+};
+
+/** Breathing as a chest pitch (rad) at time t — shared by the renderer and the skeleton. */
+export const breathPitch = (p: Pose, t: number) => p.breath * 0.014 * Math.sin(t * p.breathRate * Math.PI * 2);
+
+export const skeleton = (p: Pose, spec: CharacterSpec, t = 0): Skeleton => {
+  const b = torso(p, spec, breathPitch(p, t));
+  const armL = armRig(spec, 1, p.armL, p.shrug), armR = armRig(spec, -1, p.armR, p.shrug);
+  const legL = legRig(spec, 1, p.legL, b.Whips), legR = legRig(spec, -1, p.legR, b.Whips);
+  const hs = spec.handScale;
+  const handS = m4().makeScale(hs, hs, hs);
+  const wShL = mul(b.Wchest, armL.shoulder), wShR = mul(b.Wchest, armR.shoulder);
+  const wElL = mul(wShL, armL.elbow), wElR = mul(wShR, armR.elbow);
+  const wKL = mul(b.Whips, legL.hip, legL.knee), wKR = mul(b.Whips, legR.hip, legR.knee);
+  return {
+    root: b.root, hips: b.hips, spine: b.spine, chest: b.chest, neck: b.neck, head: b.head, headGeo: b.headGeo,
+    armL, armR, legL, legR,
+    W: {
+      hips: b.Whips, chest: b.Wchest, head: b.Whead, headGeo: b.WheadGeo,
+      shoulderL: wShL, shoulderR: wShR, elbowL: wElL, elbowR: wElR,
+      wristL: mul(wElL, armL.wrist, handS), wristR: mul(wElR, armR.wrist, handS),
+      kneeL: wKL, kneeR: wKR, ankleL: mul(wKL, legL.ankle), ankleR: mul(wKR, legR.ankle),
+    },
+  };
+};
+
+/** Turn an IK target given in head or world space into chest space for this pose. */
+export const resolveIK = (ik: IK, p: Pose, spec: CharacterSpec, side: 1 | -1): IK => {
+  if (ik.space === "chest") return { ...ik, t: [ik.t[0] * side, ik.t[1], ik.t[2]] };
+  const b = torso(p, spec);
+  const v = new Vector3(...ik.t);
+  if (ik.space === "head") {
+    v.x *= side;
+    v.applyMatrix4(mul(b.neck, b.head, b.headGeo));
+  } else {
+    v.applyMatrix4(b.Wchest.clone().invert());
+  }
+  let q = ik.q;
+  if (q && ik.space === "world") {
+    const cq = new Quaternion();
+    b.Wchest.decompose(new Vector3(), cq, new Vector3());
+    const r = cq.invert().multiply(new Quaternion(...q));
+    q = [r.x, r.y, r.z, r.w];
+  }
+  return { ...ik, t: [v.x, v.y, v.z], space: "chest", q };
+};
+
+/** Direction from the head to a world point, in chest space → [yaw, pitch] for neck+head+eyes. */
+export const lookAngles = (p: Pose, spec: CharacterSpec, w: V3): [number, number] => {
+  const b = torso(p, spec);
+  const inv = b.Wchest.clone().invert();
+  const tgt = new Vector3(...w).applyMatrix4(inv);
+  const eye = new Vector3(0, 0, 0.06).applyMatrix4(mul(b.neck, b.head, b.headGeo));
+  const d = tgt.sub(eye);
+  const yaw = Math.atan2(d.x, d.z);
+  const pitch = Math.atan2(-d.y, Math.hypot(d.x, d.z));
+  return [yaw, pitch];
+};
+
+export const point = (m: Matrix4, local: V3 = [0, 0, 0]): V3 => {
+  const v = new Vector3(...local).applyMatrix4(m);
+  return [v.x, v.y, v.z];
+};
+
+/** World position of a point on the face (head units, e.g. [0, 0.01, 0.1] = between the eyes). */
+export const facePoint = (sk: Skeleton, local: V3 = [0, 0.005, 0.1]) => point(sk.W.headGeo, local);
+/** World forward direction of the face. */
+export const faceDir = (sk: Skeleton): V3 => {
+  const a = new Vector3(...facePoint(sk, [0, 0, 0])), b = new Vector3(...facePoint(sk, [0, 0, 1]));
+  const d = b.sub(a).normalize();
+  return [d.x, d.y, d.z];
+};
+
+==== 6587 src/kits/characterflow/character/spec.ts
+// CHARACTERFLOW character specs: everything that makes one character look like himself (palette,
+// proportions, hair, clothing) lives here, so the same rig, poses and performances drive any cast
+// member. Rig dimensions (DIMS) are shared by every character; a spec only scales them.
+
+export type V3 = [number, number, number];
+
+export type HairStyle = "swoop" | "crop" | "bun" | "curly" | "long" | "hijab";
+export type TopKind = "tee" | "shirt" | "hoodie";
+
+export type CharacterSpec = {
+  id: string;
+  /** overall height scale (1 = 1.80 m rig) */
+  scale: number;
+  /** stylisation: head and hand size relative to the realistic rig */
+  headScale: number;
+  handScale: number;
+  /** body width (1 = average) */
+  build: number;
+  skin: string;
+  /** cheek blush strength 0…1 */
+  blush: number;
+  hair: string;
+  hairSheen: string;
+  hairStyle: HairStyle;
+  brow: string;
+  iris: string;
+  lip: string;
+  top: { kind: TopKind; color: string; accent: string; sleeve: "short" | "long" };
+  bottom: { color: string; kind: "pants" | "shorts" | "skirt" };
+  feet: { kind: "socks" | "shoes" | "bare"; color: string };
+  glasses?: boolean;
+  beard?: boolean;
+  /** hijab colour (hairStyle "hijab") */
+  scarf?: string;
+  /** moustache (older men) */
+  moustache?: boolean;
+};
+
+/** Shared rig dimensions in unscaled metres (character faces +Z, his left is +X). */
+export const DIMS = {
+  pelvisH: 0.96,
+  spineY: 0.1,
+  chestY: 0.2,
+  neckY: 0.27,
+  headY: 0.075,
+  headCenter: [0, 0.11, 0.012] as V3,
+  shoulder: [0.185, 0.205, -0.012] as V3,
+  upperArm: 0.28,
+  foreArm: 0.25,
+  hip: [0.095, -0.05, 0] as V3,
+  thigh: 0.43,
+  shin: 0.42,
+};
+
+/** The CHARACTERFLOW lead: a young adult man — warm, slightly scruffy, instantly readable. */
+export const RAKA: CharacterSpec = {
+  id: "raka",
+  scale: 0.94,
+  headScale: 1.36,
+  handScale: 1.1,
+  build: 1,
+  skin: "#c98c62",
+  blush: 0.55,
+  hair: "#231812",
+  hairSheen: "#8a6248",
+  hairStyle: "swoop",
+  brow: "#20150f",
+  iris: "#5a3417",
+  lip: "#a35f52",
+  top: { kind: "tee", color: "#f0b23e", accent: "#fff3d6", sleeve: "short" },
+  bottom: { color: "#3c4a6b", kind: "pants" },
+  feet: { kind: "socks", color: "#e8e4dc" },
+};
+
+/** Supporting cast for imagined scenes — same rig, different specs. */
+export const FRIEND: CharacterSpec = {
+  ...RAKA,
+  id: "friend",
+  scale: 0.9,
+  headScale: 1.3,
+  skin: "#a8724e",
+  hair: "#120d0a",
+  hairStyle: "crop",
+  iris: "#3a2414",
+  top: { kind: "shirt", color: "#4f9fd6", accent: "#e9f4ff", sleeve: "short" },
+  bottom: { color: "#2d2f36", kind: "pants" },
+  feet: { kind: "shoes", color: "#f1f1f1" },
+};
+
+export const BOSS: CharacterSpec = {
+  ...RAKA,
+  id: "boss",
+  scale: 0.97,
+  headScale: 1.28,
+  build: 1.12,
+  skin: "#d9a07a",
+  hair: "#4a4440",
+  hairStyle: "crop",
+  iris: "#2a2a30",
+  glasses: true,
+  beard: true,
+  top: { kind: "shirt", color: "#dedad2", accent: "#9b2f3a", sleeve: "long" },
+  bottom: { color: "#26293a", kind: "pants" },
+  feet: { kind: "shoes", color: "#2a2120" },
+};
+
+export const NAYA: CharacterSpec = {
+  ...RAKA,
+  id: "naya",
+  scale: 0.88,
+  headScale: 1.32,
+  skin: "#b77d55",
+  hair: "#1a110c",
+  hairStyle: "bun",
+  iris: "#43260f",
+  lip: "#b05a55",
+  top: { kind: "hoodie", color: "#e76f6f", accent: "#ffe0d6", sleeve: "long" },
+  bottom: { color: "#e9d9bd", kind: "pants" },
+  feet: { kind: "shoes", color: "#fafafa" },
+};
+
+/** Raka outdoors: same character, sneakers instead of socks. */
+export const RAKA_OUT: CharacterSpec = { ...RAKA, feet: { kind: "shoes", color: "#f4f2ec" } };
+
+/** Bima — Raka's old friend: taller, broader, curly hair, round glasses, sage hoodie, khakis. */
+export const BIMA: CharacterSpec = {
+  ...RAKA,
+  id: "bima",
+  scale: 0.98,
+  headScale: 1.3,
+  handScale: 1.1,
+  build: 1.07,
+  skin: "#94603f",
+  blush: 0.45,
+  hair: "#16100c",
+  hairSheen: "#6b4a36",
+  hairStyle: "curly",
+  brow: "#140e0a",
+  iris: "#3a2312",
+  lip: "#8f4f45",
+  glasses: true,
+  top: { kind: "hoodie", color: "#7fb59a", accent: "#f3ead8", sleeve: "long" },
+  bottom: { color: "#c9b48c", kind: "pants" },
+  feet: { kind: "shoes", color: "#2f3a4f" },
+};
+
+/** Sari — a young woman in a hijab: tunic, long skirt. */
+export const SARI: CharacterSpec = {
+  ...RAKA,
+  id: "sari",
+  scale: 0.87,
+  headScale: 1.33,
+  build: 0.96,
+  skin: "#c58b63",
+  blush: 0.6,
+  hair: "#1a110c",
+  hairStyle: "hijab",
+  scarf: "#e8a0b4",
+  iris: "#43260f",
+  lip: "#b5605a",
+  top: { kind: "shirt", color: "#e4ddd1", accent: "#e8a0b4", sleeve: "long" },
+  bottom: { color: "#5b6e8c", kind: "skirt" },
+  feet: { kind: "shoes", color: "#f4f2ec" },
+};
+
+/** Dinda — a young woman with shoulder-length hair, tee and jeans. */
+export const DINDA: CharacterSpec = {
+  ...RAKA,
+  id: "dinda",
+  scale: 0.87,
+  headScale: 1.33,
+  build: 0.95,
+  skin: "#d39b72",
+  blush: 0.6,
+  hair: "#2a1a12",
+  hairSheen: "#8a6248",
+  hairStyle: "long",
+  iris: "#4a2a14",
+  lip: "#b5605a",
+  top: { kind: "tee", color: "#7fb7e6", accent: "#ffffff", sleeve: "short" },
+  bottom: { color: "#3c4a6b", kind: "pants" },
+  feet: { kind: "shoes", color: "#fafafa" },
+};
+
+/** Ibu — a mother in a hijab: older, softer build, long tunic. */
+export const IBU: CharacterSpec = {
+  ...RAKA,
+  id: "ibu",
+  scale: 0.86,
+  headScale: 1.26,
+  build: 1.1,
+  skin: "#b98159",
+  blush: 0.4,
+  hair: "#2a2420",
+  hairStyle: "hijab",
+  scarf: "#6f8f6a",
+  iris: "#3a2312",
+  lip: "#9c564e",
+  top: { kind: "shirt", color: "#c97b5a", accent: "#f3e3d3", sleeve: "long" },
+  bottom: { color: "#4a3a32", kind: "skirt" },
+  feet: { kind: "shoes", color: "#3a2e28" },
+};
+
+/** Ayah — a father: greying hair, moustache, glasses, batik-like shirt colour. */
+export const AYAH: CharacterSpec = {
+  ...RAKA,
+  id: "ayah",
+  scale: 0.95,
+  headScale: 1.26,
+  build: 1.1,
+  skin: "#b07a55",
+  blush: 0.35,
+  hair: "#5a524c",
+  hairSheen: "#a09890",
+  hairStyle: "crop",
+  brow: "#3a332e",
+  iris: "#2a2a30",
+  glasses: true,
+  moustache: true,
+  top: { kind: "shirt", color: "#8c5a3c", accent: "#f2d7a8", sleeve: "short" },
+  bottom: { color: "#2f3340", kind: "pants" },
+  feet: { kind: "shoes", color: "#2a2120" },
+};
+
+/** Adit — a teenager / school student: smaller, crop hair, white school shirt, grey trousers. */
+export const ADIT: CharacterSpec = {
+  ...RAKA,
+  id: "adit",
+  scale: 0.84,
+  headScale: 1.4,
+  build: 0.92,
+  skin: "#c48a5e",
+  blush: 0.55,
+  hair: "#16100c",
+  hairStyle: "swoop",
+  iris: "#3a2312",
+  top: { kind: "shirt", color: "#e3e1db", accent: "#7a8794", sleeve: "short" },
+  bottom: { color: "#7a8794", kind: "pants" },
+  feet: { kind: "shoes", color: "#1f1f22" },
+};
+
+==== 4035 src/kits/characterflow/director/story.ts
+// The story spec — the ONLY thing written per video. The AI reads the voice-over transcript, splits it
+// into visual beats and writes this JSON; the director (compile.ts) turns it into blocking, acting,
+// props, thoughts, camera shots and sound cues. Cues are VO words ("lewat", "dia#1" = 2nd "dia") or
+// film seconds. See references/story-format.md in the skill for the full guide and examples.
+
+import type { V3 } from "../character/spec.ts";
+import type { ExprName } from "../character/presets/expressions.ts";
+import type { ShotKind } from "../camera/shots.ts";
+import type { EnvId, TimeOfDay } from "../env/registry.ts";
+import type { IconName } from "../fx/icons.ts";
+import type { VignetteName } from "../fx/vignettes.tsx";
+import type { BoardFace } from "../fx/comedy.tsx";
+import type { Word } from "../timing/cues.ts";
+import type { HairStyle, TopKind } from "../character/spec.ts";
+
+export type CastLook = "raka" | "bima" | "naya" | "dimas" | "boss" | "sari" | "dinda" | "ibu" | "ayah" | "adit";
+/** Optional changes to a look (colours as "#rrggbb"). */
+export type Outfit = {
+  top?: string; topKind?: TopKind; sleeve?: "short" | "long";
+  bottom?: string; bottomKind?: "pants" | "shorts" | "skirt";
+  hair?: string; hairStyle?: HairStyle; scarf?: string; glasses?: boolean; skin?: string; shoes?: string;
+};
+/** How someone starts a scene: walking the path, standing, seated, in bed — or the name of a seat / mark. */
+export type StartAs = "walk" | "stand" | "sit" | "lie" | "sitBed" | (string & {});
+/** A cut to another place at a VO cue (the story's own env / time / start are the first scene). */
+export type Scene = { at: Cue; env: EnvId; time?: TimeOfDay; start?: Record<string, StartAs>; cast?: string[] };
+export type Cue = string | number;
+
+/** Blocking verbs move people; acting verbs play on top of whatever the body is doing. */
+export const BLOCKING_VERBS = ["walk", "stop", "pass", "meet", "sitDown", "standUp", "turn", "lieDown", "sitUp"] as const;
+export const ACTING_VERBS = [
+  "idle", "talk", "explain", "point", "think", "confused", "happy", "laugh", "sad", "embarrassed", "surprised", "wave",
+  "facepalm", "notice", "eyeContact", "phone", "bag", "lookBack", "highFive", "nod", "shake", "shrug", "overwhelmed",
+  "calm", "smile", "proud", "shy", "lampOff", "lampOn",
+] as const;
+export type Verb = (typeof BLOCKING_VERBS)[number] | (typeof ACTING_VERBS)[number];
+
+export type StoryBeat = {
+  at: Cue;
+  do: Verb;
+  /** cast id(s); default: the first cast member (both for eyeContact / pass / meet / highFive) */
+  who?: string | string[];
+  /** another cast id to look at / wave at / point at / notice */
+  target?: string;
+  /** a thought bubble above `who` while the beat lasts */
+  thought?: { text?: string; icon?: IconName; vignette?: VignetteName; cast?: [string, string] };
+  /** override the automatic camera choice */
+  shot?: ShotKind;
+  /** override the expression */
+  face?: ExprName;
+};
+
+export type Story = {
+  id: string;
+  title: string;
+  /** VO file inside public/ and where it starts in the film (s) */
+  vo: { file: string; offset?: number };
+  /** transcript words (VO seconds), from scripts/transcribe.mjs */
+  words: Word[];
+  env: EnvId;
+  time?: TimeOfDay;
+  cast: { id: string; look: CastLook; prop?: "phone" | "bag" | "both"; outfit?: Outfit }[];
+  /** how each person starts: walking the path, standing, seated, (bedroom) lying / sitting in bed, or a seat / mark name */
+  start?: Record<string, StartAs>;
+  /** who is in the first scene (default: everyone) */
+  inScene?: string[];
+  /** later places: each cuts to a new environment at its cue */
+  scenes?: Scene[];
+  beats: StoryBeat[];
+  highlights?: string[];
+  cards?: { at: Cue; until?: Cue; text: string }[];
+  board?: { at: Cue; swap?: Cue; until: Cue; face1: BoardFace; face2?: BoardFace };
+  tumbleweed?: { at: Cue; until: Cue };
+  /** music baseline */
+  mood?: "playful" | "warm" | "tense" | "calm";
+  /** seconds of picture after the VO ends (default 1.8) */
+  tail?: number;
+};
+
+export type { V3 };
+
+==== 9678 src/kits/characterflow/director/validate.ts
+// Story checks with plain-language errors, run before compiling. A story is written by an AI from a
+// transcript, so every mistake it can make should stop the build with a message that says what to fix.
+
+import { EXPR } from "../character/presets/expressions.ts";
+import type { ShotKind } from "../camera/shots.ts";
+import { ENVS } from "../env/registry.ts";
+import type { IconName } from "../fx/icons.ts";
+import type { VignetteName } from "../fx/vignettes.tsx";
+import { ACTING_VERBS, BLOCKING_VERBS, type Story } from "./story.ts";
+
+const LOOK_NAMES = ["raka", "bima", "naya", "dimas", "boss", "sari", "dinda", "ibu", "ayah", "adit"];
+const HAIR_NAMES = ["swoop", "crop", "bun", "curly", "long", "hijab"];
+const HEX = /^#[0-9a-fA-F]{6}$/;
+const ICON_NAMES = ["question", "exclaim", "cross", "clock", "chat", "cloud", "heart", "chart", "bell", "dots"] satisfies IconName[];
+// only the vignettes cast from the story's own people (the others carry topic-specific text/cast)
+const VIGNETTE_NAMES = ["friends", "forgot", "weird"] satisfies VignetteName[];
+const SHOT_NAMES = ["establish", "wide", "closeUp", "medium", "mediumWide", "twoShot", "ots", "track", "pathDown", "reaction", "explain", "think", "sitStand", "turn", "boardWide", "bedWide", "bedClose", "bedThink"] satisfies ShotKind[];
+const BED_ONLY = ["lieDown", "sitUp", "lampOff", "lampOn"];
+const norm = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+
+/** Every problem in the story, in plain words (empty = fine). */
+export const validateStory = (s: Story): string[] => {
+  const e: string[] = [];
+  const one = (v: unknown, list: readonly string[], what: string) => { if (typeof v === "string" && !list.includes(v)) e.push(`${what} "${v}" is not available (use one of: ${list.join(", ")})`); };
+  if (!s.id || !/^[a-z0-9-]+$/.test(s.id)) e.push(`id "${s.id}" must use only a-z, 0-9 and "-"`);
+  const env = ENVS[s.env];
+  if (!env) { e.push(`env "${s.env}" does not exist (use one of: ${Object.keys(ENVS).join(", ")})`); return e; }
+  if (s.time && !env.times.includes(s.time)) e.push(`time "${s.time}" is not available in ${s.env} (use one of: ${env.times.join(", ")})`);
+  if (!Array.isArray(s.words) || !s.words.length) e.push("words is empty — run scripts/transcribe.mjs (or tts.mjs) first");
+  if (!s.cast?.length) e.push("cast is empty — at least one character is needed");
+  const most = s.scenes?.length ? 4 : 2;
+  if (s.cast?.length > most) e.push(`cast has ${s.cast.length} people — at most 2 in one place${s.scenes?.length ? " and 4 in the whole story" : " (with scenes: up to 4 in the story, 2 per scene)"}`);
+  if (s.scenes?.length && s.cast?.length > 2 && !s.inScene) e.push(`the story has ${s.cast.length} people: say who is in the first scene with "inScene" (at most 2)`);
+  for (const [k, sc] of (s.scenes ?? []).entries()) if (s.cast?.length > 2 && !sc.cast) e.push(`scene ${k + 2} (at "${sc.at}"): the story has ${s.cast.length} people — list who is in this scene with "cast" (at most 2)`);
+  const ids = (s.cast ?? []).map((c) => c.id);
+  for (const c of s.cast ?? []) {
+    one(c.look, LOOK_NAMES, `look of "${c.id}"`);
+    if (c.prop && !["phone", "bag", "both"].includes(c.prop)) e.push(`prop "${c.prop}" of "${c.id}" is not available (phone, bag, both)`);
+    const o = c.outfit;
+    if (o) {
+      for (const k of ["top", "bottom", "hair", "scarf", "skin", "shoes"] as const) if (o[k] !== undefined && !HEX.test(o[k]!)) e.push(`outfit.${k} of "${c.id}" must be a colour like "#3a7bd5"`);
+      one(o.hairStyle, HAIR_NAMES, `outfit.hairStyle of "${c.id}"`);
+      one(o.topKind, ["tee", "shirt", "hoodie"], `outfit.topKind of "${c.id}"`);
+      one(o.bottomKind, ["pants", "shorts", "skirt"], `outfit.bottomKind of "${c.id}"`);
+      one(o.sleeve, ["short", "long"], `outfit.sleeve of "${c.id}"`);
+    }
+  }
+  const multi = !!s.scenes?.length;
+  const startCheck = (start: Record<string, string> | undefined, e2: typeof env, where: string, cast: string[]) => {
+    for (const [id, st] of Object.entries(start ?? {})) {
+      if (!cast.includes(id)) e.push(`${where}start: "${id}" is not in ${where ? "this scene's" : "the"} cast (${cast.join(", ")})`);
+      const named = [...Object.keys(e2.seats), ...Object.keys(e2.marks)];
+      if (!["walk", "stand", "sit", "lie", "sitBed", ...named].includes(st)) e.push(`${where}start "${st}" for "${id}" is not available in ${e2.id} (walk, stand, sit${e2.bed ? ", lie, sitBed" : ""}; seats: ${Object.keys(e2.seats).join(", ") || "none"}; marks: ${Object.keys(e2.marks).join(", ")})`);
+      if ((st === "lie" || st === "sitBed") && !e2.bed) e.push(`${where}start "${st}" for "${id}" needs a bed — only in: ${Object.values(ENVS).filter((x) => x.bed).map((x) => x.id).join(", ")}`);
+      if (st === "walk" && !e2.path) e.push(`${where}start "walk" for "${id}": ${e2.id} has no walking path`);
+    }
+  };
+  for (const id of s.inScene ?? []) if (!ids.includes(id)) e.push(`inScene: "${id}" is not in the cast`);
+  startCheck(s.start, env, "", s.inScene ?? ids);
+  for (const [k, sc] of (s.scenes ?? []).entries()) {
+    const where = `scene ${k + 2} (at "${sc.at}"): `;
+    const e2 = ENVS[sc.env];
+    if (!e2) { e.push(`${where}env "${sc.env}" does not exist (use one of: ${Object.keys(ENVS).join(", ")})`); continue; }
+    if (sc.time && !e2.times.includes(sc.time)) e.push(`${where}time "${sc.time}" is not available in ${sc.env} (use one of: ${e2.times.join(", ")})`);
+    for (const id of sc.cast ?? []) if (!ids.includes(id)) e.push(`${where}cast "${id}" is not in the story's cast`);
+    if (sc.cast && !sc.cast.length) e.push(`${where}cast is empty`);
+    startCheck(sc.start, e2, where, sc.cast ?? ids);
+  }
+  const words = new Map<string, number>();
+  for (const w of s.words ?? []) words.set(norm(w[0]), (words.get(norm(w[0])) ?? 0) + 1);
+  const cue = (c: unknown, where: string) => {
+    if (typeof c === "number") return;
+    if (typeof c !== "string") { e.push(`${where}: cue must be a VO word or seconds`); return; }
+    const [w, n] = c.split("#");
+    const have = words.get(norm(w)) ?? 0;
+    if (!have) e.push(`${where}: word "${w}" is not in the transcript (cues are spoken words, written without punctuation)`);
+    else if (n && Number(n) >= have) e.push(`${where}: "${c}" — "${w}" is spoken only ${have}× (#0 … #${have - 1})`);
+  };
+  const verbs: readonly string[] = [...BLOCKING_VERBS, ...ACTING_VERBS];
+  (s.beats ?? []).forEach((b, i) => {
+    const where = `beat ${i + 1} (${b.do} at "${b.at}")`;
+    cue(b.at, where);
+    if (!verbs.includes(b.do)) e.push(`${where}: action "${b.do}" does not exist (see references/actions.md)`);
+    for (const w of [b.who ?? []].flat()) if (!ids.includes(w)) e.push(`${where}: who "${w}" is not in the cast (${ids.join(", ")})`);
+    if (b.target && !ids.includes(b.target)) e.push(`${where}: target "${b.target}" is not in the cast`);
+    if (!multi && BED_ONLY.includes(b.do) && !env.bed) e.push(`${where}: "${b.do}" needs the bedroom`);
+    if (!multi && (b.do === "pass" || b.do === "meet") && (!env.path || ids.length < 2)) e.push(`${where}: "${b.do}" needs two people and an environment with a path (campus)`);
+    if (!multi && (b.do === "walk") && !env.path) e.push(`${where}: ${s.env} has no walking path`);
+    if ((b.do === "eyeContact" || b.do === "highFive") && ids.length < 2) e.push(`${where}: "${b.do}" needs two people`);
+    if ((b.do === "phone" || b.do === "bag") && !s.cast.some((c) => (c.prop === b.do || c.prop === "both") && [b.who ?? s.cast[0].id].flat().includes(c.id))) e.push(`${where}: give that person prop "${b.do}" (or "both") in cast`);
+    one(b.shot, SHOT_NAMES, `${where}: shot`);
+    one(b.face, Object.keys(EXPR), `${where}: face`);
+    if (b.thought) { one(b.thought.icon, ICON_NAMES, `${where}: icon`); one(b.thought.vignette, VIGNETTE_NAMES, `${where}: vignette`); if (!b.thought.text && !b.thought.icon && !b.thought.vignette) e.push(`${where}: thought needs text, icon or vignette`); }
+  });
+  // blocking limits: a person walks only from the first frame (campus path) until stop / meet / after a pass
+  for (const id of multi ? [] : ids) {
+    const mine = (s.beats ?? []).filter((b) => (b.who ? [b.who].flat() : ["eyeContact", "pass", "meet", "highFive"].includes(b.do) ? ids : [ids[0]]).includes(id)).map((b) => b.do as string);
+    const walks = s.start?.[id] ? s.start[id] === "walk" : mine.includes("pass") || mine.includes("meet") || (!!env.path && mine[0] === "walk");
+    if (!walks && mine.some((v) => v === "walk" || v === "stop")) e.push(`"${id}" does not start walking, so "walk"/"stop" cannot be used — walking only starts at the beginning: make "walk" their first beat (campus) or set start.${id} = "walk"`);
+    if (walks && mine.some((v) => v === "sitDown" || v === "standUp")) e.push(`"${id}" walks, so "sitDown"/"standUp" cannot be used — a person who sits starts at a seat (start.${id} = "sit" or "stand")`);
+  }
+  for (const [i, c] of (s.cards ?? []).entries()) { cue(c.at, `card ${i + 1}`); if (c.until !== undefined) cue(c.until, `card ${i + 1} until`); }
+  for (const [k, sc] of (s.scenes ?? []).entries()) cue(sc.at, `scene ${k + 2}`);
+  if (s.board) { if (!multi && !env.path) e.push("board needs the campus path"); cue(s.board.at, "board"); cue(s.board.until, "board until"); if (s.board.swap !== undefined) cue(s.board.swap, "board swap"); }
+  if (s.tumbleweed) { if (!multi && !env.path) e.push("tumbleweed needs the campus path"); cue(s.tumbleweed.at, "tumbleweed"); cue(s.tumbleweed.until, "tumbleweed until"); }
+  if (s.mood && !["playful", "warm", "tense", "calm"].includes(s.mood)) e.push(`mood "${s.mood}" is not available (playful, warm, tense, calm)`);
+  return e;
+};
+
+==== 1224 src/kits/characterflow/env/bedroom.data.ts
+// Bedroom layout data (Node-safe) — the Bedroom component draws it, the director plans on it.
+
+import type { V3 } from "../character/spec.ts";
+import type { BedFrame } from "./Blanket.tsx";
+
+export type BedroomLayout = {
+  room: { x0: number; x1: number; z0: number; z1: number; h: number };
+  bed: BedFrame & { z0: number };
+  pillow: V3;
+  nightstand: { x: number; z: number; w: number; d: number; h: number };
+  lamp: V3;
+  clock: V3;
+  window: { z0: number; z1: number; y0: number; y1: number };
+  palette: { wall: string; floor: string; duvet: string; duvetInk: string; cuff: string; sheet: string; headboard: string; wood: string; accent: string };
+};
+
+export const BEDROOM: BedroomLayout = {
+  room: { x0: -2.4, x1: 2.0, z0: -1.3, z1: 2.8, h: 2.75 },
+  bed: { x: -0.05, z0: -1.14, z1: 1.0, halfW: 0.74, top: 0.56 },
+  pillow: [-0.16, 0.62, -0.86],
+  nightstand: { x: -1.08, z: -0.74, w: 0.48, d: 0.44, h: 0.58 },
+  lamp: [-1.14, 0.58, -0.84],
+  clock: [-0.99, 0.58, -0.6],
+  window: { z0: -0.95, z1: 0.35, y0: 0.95, y1: 2.25 },
+  palette: { wall: "#8ea6c4", floor: "#a77b55", duvet: "#9ec3ea", duvetInk: "#f5d77a", cuff: "#e0dbd0", sheet: "#e3dfd6", headboard: "#2f7d84", wood: "#c89a6a", accent: "#f2b544" },
+};
+
+
+==== 6273 src/kits/characterflow/env/Blanket.tsx
+// A duvet that drapes over whoever is in the bed. Every frame it rebuilds a height field over the
+// mattress from the character's body capsules (pelvis, torso, thighs, shins, feet — taken from the
+// skeleton, so it follows any pose), softens it like fabric, hangs a skirt over the sides and the foot,
+// and turns a cuff back at its top edge. Fixed topology: positions are rewritten in place.
+
+import React, { useLayoutEffect, useMemo } from "react";
+import { BufferAttribute, BufferGeometry, type Material, Vector3 } from "three";
+import type { Skeleton } from "../character/skeleton.ts";
+import type { V3 } from "../character/spec.ts";
+
+export type Capsule = { a: V3; b: V3; r: number };
+export type BedFrame = { x: number; z0: number; z1: number; halfW: number; top: number };
+
+/** Body capsules for the blanket, from a skeleton (world space). Arms are left out: they rest on top. */
+export const bodyCapsules = (sk: Skeleton, scale: number): Capsule[] => {
+  const P = (m: { elements: number[] }, l: V3 = [0, 0, 0]) => {
+    const v = new Vector3(...l).applyMatrix4(m as never);
+    return [v.x, v.y, v.z] as V3;
+  };
+  const W = sk.W;
+  const hip = P(W.hips), chestTop = P(W.chest, [0, 0.12, 0]), chestLow = P(W.chest, [0, -0.2, 0]);
+  const caps: Capsule[] = [{ a: P(W.hips, [0.1, -0.02, 0]), b: P(W.hips, [-0.1, -0.02, 0]), r: 0.15 * scale }];
+  // the torso only lifts the duvet while it lies down (an upright torso is above the top edge)
+  const horiz = (a: V3, b: V3) => Math.abs(b[1] - a[1]) < 0.45 * Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
+  if (horiz(hip, chestTop)) caps.push({ a: chestLow, b: chestTop, r: 0.17 * scale }, { a: hip, b: chestLow, r: 0.16 * scale });
+  for (const [knee, ankle] of [[W.kneeL, W.ankleL], [W.kneeR, W.ankleR]] as const) {
+    const k = P(knee), an = P(ankle);
+    const h = P(knee, [0, 0.43, 0]);
+    caps.push({ a: h, b: k, r: 0.1 * scale });
+    caps.push({ a: k, b: an, r: 0.08 * scale });
+    caps.push({ a: P(knee, [0, -0.36, 0]), b: P(ankle, [0, -0.05, 0.2]), r: 0.075 * scale });
+  }
+  return caps;
+};
+
+const NX = 46, NZ = 56;
+
+export const Blanket: React.FC<{
+  bed: BedFrame;
+  /** z of the turned-back top edge (toward the headboard = smaller z) */
+  edge: number;
+  caps: Capsule[];
+  /** [duvet, cuff] */
+  materials: [Material, Material];
+}> = ({ bed, edge, caps, materials }) => {
+  const geo = useMemo(() => {
+    const g = new BufferGeometry();
+    g.setAttribute("position", new BufferAttribute(new Float32Array(NX * NZ * 3), 3));
+    const uv = new Float32Array(NX * NZ * 2);
+    for (let j = 0; j < NZ; j++) for (let i = 0; i < NX; i++) { uv[(j * NX + i) * 2] = (i / (NX - 1)) * 1.6; uv[(j * NX + i) * 2 + 1] = (j / (NZ - 1)) * 1.8; }
+    g.setAttribute("uv", new BufferAttribute(uv, 2));
+    const idx: number[] = [];
+    for (let j = 0; j < NZ - 1; j++) for (let i = 0; i < NX - 1; i++) {
+      const a = j * NX + i, b = a + 1, c = a + NX, d = c + 1;
+      idx.push(a, c, b, b, c, d);
+    }
+    g.setIndex(idx);
+    // cuff band: first rows near the edge (separate group)
+    const cuffTris = (NX - 1) * 6 * 7;
+    g.addGroup(0, cuffTris, 1);
+    g.addGroup(cuffTris, idx.length - cuffTris, 0);
+    return g;
+  }, []);
+  useLayoutEffect(() => () => geo.dispose(), [geo]);
+
+  const { x: bx, halfW, top, z1 } = bed;
+  const skirt = 0.3, over = 0.13;
+  const H = new Float32Array(NX * NZ), X = new Float32Array(NX * NZ), Z = new Float32Array(NX * NZ), B = new Float32Array(NX * NZ);
+  for (let j = 0; j < NZ; j++) {
+    const v = j / (NZ - 1);
+    for (let i = 0; i < NX; i++) {
+      const u = i / (NX - 1);
+      const lx = -halfW - over + u * 2 * (halfW + over);
+      const lzRaw = edge + v * (z1 + over - edge);
+      // skirt: beyond the mattress the fabric hangs (x/z clamp to the edge, y drops)
+      const ox = Math.max(0, Math.abs(lx) - halfW), oz = Math.max(0, lzRaw - z1);
+      const o = Math.max(ox, oz);
+      const k = Math.min(1, o / over);
+      const drop = skirt * (1 - Math.cos((k * Math.PI) / 2)) + 0.05 * Math.sin(k * Math.PI);
+      const x = bx + Math.sign(lx) * Math.min(Math.abs(lx), halfW + 0.035 * Math.sin((k * Math.PI) / 2));
+      const z = Math.min(lzRaw, z1 + 0.035 * Math.sin((Math.min(1, oz / over) * Math.PI) / 2));
+      // body: highest capsule top under this point
+      let hb = -1;
+      for (const c of caps) {
+        const ax = c.b[0] - c.a[0], az = c.b[2] - c.a[2];
+        const L2 = ax * ax + az * az;
+        let s = L2 > 1e-8 ? ((x - c.a[0]) * ax + (z - c.a[2]) * az) / L2 : 0;
+        s = Math.min(1, Math.max(0, s));
+        const px = c.a[0] + ax * s, pz = c.a[2] + az * s, py = c.a[1] + (c.b[1] - c.a[1]) * s;
+        const d2 = (x - px) ** 2 + (z - pz) ** 2;
+        const rr = c.r + 0.05;
+        if (d2 < rr * rr) {
+          const inner = Math.sqrt(Math.max(0, c.r * c.r - Math.min(d2, c.r * c.r)));
+          const soft = d2 < c.r * c.r ? inner : -(Math.sqrt(d2) - c.r) * 1.2;
+          hb = Math.max(hb, py + soft + 0.022);
+        }
+      }
+      const n = j * NX + i;
+      X[n] = x; Z[n] = z;
+      B[n] = hb;
+      H[n] = Math.max(top + 0.03 - drop, hb);
+    }
+  }
+  // fabric softening: blur, then never sink below the body
+  const T = new Float32Array(NX * NZ);
+  for (let pass = 0; pass < 3; pass++) {
+    for (let j = 0; j < NZ; j++)
+      for (let i = 0; i < NX; i++) {
+        let s = 0, w = 0;
+        for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
+          const ii = Math.min(NX - 1, Math.max(0, i + di)), jj = Math.min(NZ - 1, Math.max(0, j + dj));
+          const ww = di === 0 && dj === 0 ? 2 : 1;
+          s += H[jj * NX + ii] * ww; w += ww;
+        }
+        T[j * NX + i] = s / w;
+      }
+    for (let n = 0; n < NX * NZ; n++) H[n] = Math.max(T[n], B[n]);
+  }
+  const p = geo.attributes.position as BufferAttribute;
+  for (let j = 0; j < NZ; j++)
+    for (let i = 0; i < NX; i++) {
+      const n = j * NX + i;
+      // top edge: the first row tucks down to give the duvet thickness
+      const tuck = j === 0 ? -0.045 : j === 1 ? -0.008 : 0;
+      p.setXYZ(n, X[n], H[n] + tuck, Z[n] + (j === 0 ? 0.012 : 0));
+    }
+  p.needsUpdate = true;
+  geo.computeVertexNormals();
+  geo.computeBoundingSphere();
+  return (
+    <mesh geometry={geo} material={materials} castShadow receiveShadow />
+  );
+};
+
+==== 1928 src/kits/characterflow/env/campus.data.ts
+// Campus layout data (Node-safe) — the Campus component draws it, the director plans on it.
+
+import { mulberry32 } from "../lib/rng.ts";
+import type { V3 } from "../character/spec.ts";
+
+export type CampusLayout = {
+  /** main walkway along X at z, from x0 to x1 */
+  path: { x0: number; x1: number; z: number; width: number };
+  /** a side path from the walkway to the building entrance at x */
+  entrance: { x: number };
+  building: { z: number; x0: number; x1: number; depth: number; floors: number; sign: string };
+  trees: V3[];
+  benches: { p: V3; yaw: number }[];
+  lamps: V3[];
+  bushes: V3[];
+  bins: V3[];
+  palette: { grass: string; paver: string; curb: string; wall: string; band: string; roof: string; glass: string; trunk: string; leaf: string[]; accent: string };
+};
+
+const ROW = (x0: number, x1: number, step: number, z: number, jitter = 0, seed = 1): V3[] => {
+  const r = mulberry32(seed);
+  const out: V3[] = [];
+  for (let x = x0; x <= x1; x += step) out.push([x + (r() - 0.5) * jitter, 0, z + (r() - 0.5) * jitter]);
+  return out;
+};
+
+export const CAMPUS: CampusLayout = {
+  path: { x0: -34, x1: 34, z: 0, width: 2.8 },
+  entrance: { x: 5.5 },
+  building: { z: -12, x0: -26, x1: 22, depth: 9, floors: 3, sign: "GEDUNG KULIAH B" },
+  // camera-side row only outside the central action zone (cameras live on the +z side)
+  trees: [...ROW(-30, 30, 7.5, -3.3, 1.2, 3), ...ROW(-26.5, 30, 9, 3.6, 1.5, 7).filter((p) => p[0] < -24 || p[0] > 16)],
+  benches: [-19, -5, 9.5, 23].map((x) => ({ p: [x, 0, -2.25] as V3, yaw: 0 })),
+  lamps: ROW(-31, 31, 10, 2.2, 0, 1),
+  bushes: [...ROW(-25, 21, 2.3, -7.1, 0.6, 11), ...ROW(-33, 33, 3.1, 5.6, 1.2, 13)],
+  bins: [[-12.5, 0, -2.2], [16, 0, -2.2]],
+  palette: { grass: "#7cc46b", paver: "#e6d8c3", curb: "#f4efe6", wall: "#f2e6d3", band: "#d9805f", roof: "#8a5a44", glass: "#8fc4ec", trunk: "#8a6243", leaf: ["#4fae5b", "#6cc46a", "#3f9a54"], accent: "#2f7d84" },
+};
+
+
+==== 1367 src/kits/characterflow/env/components.tsx
+// Environment components by id (the drawing side of registry.ts). Add new environments here.
+
+import React from "react";
+import type { Cam } from "../render/FilmPost.tsx";
+import type { Skeleton } from "../character/skeleton.ts";
+import { Bedroom, bedroomMats, BEDROOM } from "./Bedroom.tsx";
+import { Blanket, bodyCapsules } from "./Blanket.tsx";
+import { Campus, CAMPUS } from "./Campus.tsx";
+import { Room } from "./Room.tsx";
+import { ROOMS } from "./room.data.ts";
+import type { EnvId, TimeOfDay } from "./registry.ts";
+import { Solid } from "../../../core/qa/scene-qa.tsx";
+
+export const EnvView: React.FC<{ id: EnvId; time: TimeOfDay; cam: Cam; lamp: number; wide?: boolean; bedSk?: { sk: Skeleton; scale: number; edge: number } }> = ({ id, time, cam, lamp, wide, bedSk }) => {
+  if (id === "campus") return <Campus L={CAMPUS} wide={wide} />;
+  if (id !== "bedroom") return <Room L={ROOMS[id]} time={time} />;
+  const M = bedroomMats(BEDROOM);
+  return (
+    <>
+      <Bedroom L={BEDROOM} lamp={lamp} clockText={time === "night" ? "02:00" : "07:30"} clockGlow={time === "night" ? 0.9 : 0.4} ceiling={cam.pos[1] < 2.6} wide={wide} />
+      <Solid id="blanket" kind="prop" touch={["*"]}><Blanket bed={BEDROOM.bed} edge={bedSk ? bedSk.edge : -0.62} caps={bedSk ? bodyCapsules(bedSk.sk, bedSk.scale) : []} materials={[M.duvet, M.cuff]} /></Solid>
+    </>
+  );
+};
+
+==== 2446 src/kits/characterflow/Films.tsx
+import React from "react";
+import { Composition } from "remotion";
+import { PRESETS, PRESETS_WIDE } from "../../core/film/frame.ts";
+import { STORIES } from "../../stories/registry.ts";
+import { CharLook, CARDS } from "./look/CharLook.tsx";
+import { StoryFilm, productionOf } from "./director/StoryFilm.tsx";
+
+// CHARACTER FLOW compositions. scripts/make.mjs adds <CharacterFlowFilms /> to src/Root.tsx once; every story in
+// src/stories/data is then registered twice: <id>-preview (540 × 960 @ 30, with the mix) and <id>-final
+// (1080 × 1920 @ 60, muted — render-final lays the mastered mix in), and again for 16:9 (`make.mjs --wide`) as
+// <id>-previewWide (960 × 540 @ 30) and <id>-finalWide (1920 × 1080 @ 60): StoryFilm directs those for the wide frame.
+const { preview, final } = PRESETS;
+const W = PRESETS_WIDE;
+
+export const CharacterFlowFilms: React.FC = () => (
+  <>
+    {STORIES.map((s) => {
+      // a story that does not compile (being edited, a typo) is left out instead of breaking every other story's render
+      let d: number;
+      try { d = productionOf(s).duration; } catch (e) { console.warn(`story "${s.id}" skipped: ${(e as Error).message.split("\n")[0]}`); return null; }
+      return (
+        <React.Fragment key={s.id}>
+          <Composition id={`${s.id}-preview`} component={StoryFilm} defaultProps={{ story: s, audio: `audio/${s.id}-mix.wav` }} durationInFrames={Math.round(d * preview.fps)} fps={preview.fps} width={preview.width} height={preview.height} />
+          <Composition id={`${s.id}-final`} component={StoryFilm} defaultProps={{ story: s }} durationInFrames={Math.round(d * final.fps)} fps={final.fps} width={final.width} height={final.height} />
+          <Composition id={`${s.id}-previewWide`} component={StoryFilm} defaultProps={{ story: s, audio: `audio/${s.id}-mix.wav` }} durationInFrames={Math.round(d * W.preview.fps)} fps={W.preview.fps} width={W.preview.width} height={W.preview.height} />
+          <Composition id={`${s.id}-finalWide`} component={StoryFilm} defaultProps={{ story: s }} durationInFrames={Math.round(d * W.final.fps)} fps={W.final.fps} width={W.final.width} height={W.final.height} />
+        </React.Fragment>
+      );
+    })}
+    {/* character proof sheet: every look, expression and gesture */}
+    <Composition id="CharacterFlowLook" component={CharLook} durationInFrames={CARDS.length} fps={preview.fps} width={preview.width} height={preview.height} />
+  </>
+);
+
+==== 5441 src/kits/characterflow/fx/comedy.tsx
+// Comedy props for CHARACTERFLOW: a scoreboard that springs out of the ground (any "competition"
+// joke), and a tumbleweed for awkward silences. Text comes from the topic.
+
+import React from "react";
+import { PlaneGeometry } from "three";
+import { box, cached, cyl, lathe, sphere, torus } from "../lib/geo.ts";
+import { canvasTex, hash1, phys } from "../lib/mats.ts";
+import { FONT } from "../../../core/type/fonts.ts";
+import type { V3 } from "../character/spec.ts";
+
+const springUp = (x: number) => {
+  if (x <= 0) return 0;
+  if (x >= 1) return 1;
+  return 1 - Math.exp(-6 * x) * Math.cos(9 * x);
+};
+
+export type BoardFace = { kicker: string; title: string; left?: string; right?: string };
+
+const boardTex = (f: BoardFace) =>
+  canvasTex(`cfboard${f.kicker}${f.title}${f.left}${f.right}`, 1024, 640, (g, w, h) => {
+    g.fillStyle = "#1d2a4d";
+    g.beginPath();
+    g.roundRect(0, 0, w, h, 40);
+    g.fill();
+    // marquee bulbs
+    for (let i = 0; i < 26; i++) {
+      g.fillStyle = i % 2 ? "#ffd166" : "#fff3c4";
+      g.beginPath();
+      g.arc(40 + i * 37.5, 28, 9, 0, Math.PI * 2);
+      g.arc(40 + i * 37.5, h - 28, 9, 0, Math.PI * 2);
+      g.fill();
+    }
+    g.textAlign = "center";
+    g.fillStyle = "#ffd166";
+    g.font = `600 46px ${FONT}, sans-serif`;
+    g.fillText(f.kicker, w / 2, 120);
+    g.fillStyle = "#ffffff";
+    g.font = `600 84px ${FONT}, sans-serif`;
+    const words = f.title.split(" ");
+    const lines: string[] = [];
+    let cur = "";
+    for (const wd of words) { if (g.measureText(cur + " " + wd).width > w - 120 && cur) { lines.push(cur); cur = wd; } else cur = cur ? cur + " " + wd : wd; }
+    lines.push(cur);
+    lines.forEach((l, i) => g.fillText(l, w / 2, 230 + i * 92));
+    if (f.left || f.right) {
+      const y = 230 + lines.length * 92 + 40;
+      g.font = `600 70px ${FONT}, sans-serif`;
+      g.fillStyle = "#7fe0ff";
+      g.fillText(f.left ?? "", w * 0.25, y);
+      g.fillStyle = "#ff8fab";
+      g.fillText(f.right ?? "", w * 0.75, y);
+      g.fillStyle = "#ffd166";
+      g.font = `600 56px ${FONT}, sans-serif`;
+      g.fillText("VS", w / 2, y - 4);
+    }
+  });
+
+/**
+ * A scoreboard on two posts that springs up from the ground at `upAt`, swaps to `face2` at `swapAt`
+ * (flip), and sinks at `downAt`. Facing +Z at `p` (rotate with `yaw`).
+ */
+export const PopBoard: React.FC<{ p: V3; yaw?: number; scale?: number; t: number; upAt: number; swapAt: number; downAt: number; face1: BoardFace; face2: BoardFace }> = ({ p, yaw = 0, scale = 1, t, upAt, swapAt, downAt, face1, face2 }) => {
+  const up = springUp((t - upAt) / 0.9) * (1 - Math.min(1, Math.max(0, (t - downAt) / 0.45)) ** 2);
+  if (up <= 0.001) return null;
+  const flip = Math.min(1, Math.max(0, (t - swapAt) / 0.35));
+  const face = flip < 0.5 ? face1 : face2;
+  const rot = Math.PI * (flip < 0.5 ? flip : flip - 1);
+  const W = 2.2, H = 1.375;
+  const sink = (1 - up) * 3.4;
+  const post = phys("cfboardpost2", { color: "#2d3340", roughness: 0.4, metalness: 0.5 });
+  const gold = phys("cftrophy", { color: "#f4c542", metalness: 1, roughness: 0.25 });
+  return (
+    <group position={[p[0], p[1] - sink * scale, p[2]]} rotation={[0, yaw, 0]} scale={scale}>
+      {[-1, 1].map((s) => <mesh key={s} geometry={cyl(0.06, 0.06, 2.6, 12)} material={post} position={[s * 0.85, 1.3, -0.04]} castShadow />)}
+      <group position={[0, 2.35, 0]} rotation={[rot, 0, 0]}>
+        <mesh geometry={box(W + 0.12, H + 0.12, 0.12, 0.05)} material={phys("cfboardframe", { color: "#f2b544", roughness: 0.4, clearcoat: 0.5 })} castShadow />
+        <mesh geometry={cached("cfpopboard", () => new PlaneGeometry(W, H))} material={phys(`cfpopface${face.title}${face.left}`, { map: boardTex(face), emissive: "#ffffff", emissiveMap: boardTex(face), emissiveIntensity: 0.35, roughness: 0.4 })} position={[0, 0, 0.065]} />
+      </group>
+      {/* trophy on top */}
+      <group position={[0, 3.2 + 0.05 * Math.sin(t * 3), 0]} rotation={[0, t * 1.2, 0]}>
+        <mesh geometry={lathe("cftrophycup", [[0, 0], [0.16, 0], [0.16, 0.04], [0.05, 0.08], [0.04, 0.2], [0.1, 0.26], [0.19, 0.42], [0.21, 0.52], [0.0, 0.52]], 32)} material={gold} castShadow />
+        {[-1, 1].map((s) => <mesh key={s} geometry={torus(0.07, 0.016, 8, 20)} material={gold} position={[s * 0.22, 0.4, 0]} rotation={[0, Math.PI / 2, 0]} />)}
+      </group>
+    </group>
+  );
+};
+
+/** Tumbleweed rolling from `a` to `b` between t0 and t1, bouncing. */
+export const Tumbleweed: React.FC<{ a: V3; b: V3; t: number; t0: number; t1: number; r?: number }> = ({ a, b, t, t0, t1, r = 0.32 }) => {
+  if (t < t0 || t > t1) return null;
+  const k = (t - t0) / (t1 - t0);
+  const x = a[0] + (b[0] - a[0]) * k, z = a[2] + (b[2] - a[2]) * k;
+  const dist = Math.hypot(b[0] - a[0], b[2] - a[2]) * k;
+  const bounce = Math.abs(Math.sin(k * Math.PI * 5)) * 0.25 * (1 - 0.5 * k);
+  const roll = dist / r;
+  const dir = Math.atan2(b[0] - a[0], b[2] - a[2]);
+  const twig = phys("cftwig", { color: "#b08a55", roughness: 0.85 });
+  return (
+    <group position={[x, a[1] + r + bounce, z]} rotation={[0, dir, 0]}>
+      <group rotation={[roll, 0, 0]}>
+        {Array.from({ length: 14 }, (_, i) => (
+          <mesh key={i} geometry={torus(r * (0.6 + 0.4 * hash1(i, 3)), 0.012, 4, 24)} material={twig} rotation={[hash1(i, 5) * 6.3, hash1(i, 7) * 6.3, hash1(i, 9) * 6.3]} castShadow />
+        ))}
+        <mesh geometry={sphere(r * 0.35, 8, 6)} material={twig} />
+      </group>
+    </group>
+  );
+};
+
+==== 6232 src/kits/characterflow/fx/icons.ts
+// Flat glyph textures for thought bubbles and the swarm (drawn, not emoji — every machine renders them
+// the same). White glyph on transparent; bubbles tint them.
+
+import { canvasTex } from "../lib/mats.ts";
+import { FONT } from "../../../core/type/fonts.ts";
+
+export type IconName = "question" | "exclaim" | "cross" | "clock" | "chat" | "cloud" | "heart" | "chart" | "bell" | "dots";
+
+export const ICONS: IconName[] = ["question", "exclaim", "cross", "clock", "chat", "cloud", "heart", "chart"];
+
+export const iconTex = (name: IconName) =>
+  canvasTex(`cficon${name}`, 256, 256, (g, w, h) => {
+    g.clearRect(0, 0, w, h);
+    g.fillStyle = "#ffffff";
+    g.strokeStyle = "#ffffff";
+    g.lineCap = "round";
+    g.lineJoin = "round";
+    const cx = w / 2, cy = h / 2;
+    if (name === "question" || name === "exclaim") {
+      g.font = `600 170px ${FONT}, sans-serif`;
+      g.textAlign = "center";
+      g.textBaseline = "middle";
+      g.fillText(name === "question" ? "?" : "!", cx, cy + 8);
+    } else if (name === "cross") {
+      g.lineWidth = 30;
+      g.beginPath();
+      g.moveTo(cx - 55, cy - 55); g.lineTo(cx + 55, cy + 55);
+      g.moveTo(cx + 55, cy - 55); g.lineTo(cx - 55, cy + 55);
+      g.stroke();
+    } else if (name === "clock" || name === "bell") {
+      if (name === "bell") {
+        g.beginPath();
+        g.moveTo(cx - 70, cy + 45);
+        g.quadraticCurveTo(cx - 60, cy - 85, cx, cy - 85);
+        g.quadraticCurveTo(cx + 60, cy - 85, cx + 70, cy + 45);
+        g.closePath();
+        g.fill();
+        g.fillRect(cx - 85, cy + 40, 170, 20);
+        g.beginPath();
+        g.arc(cx, cy + 75, 18, 0, Math.PI * 2);
+        g.fill();
+        g.lineWidth = 12;
+        for (const s of [-1, 1]) {
+          g.beginPath();
+          g.arc(cx, cy - 10, 105, s > 0 ? -0.5 : Math.PI - 0.3, s > 0 ? 0.3 : Math.PI + 0.5);
+          g.stroke();
+        }
+      } else {
+        g.lineWidth = 18;
+        g.beginPath();
+        g.arc(cx, cy, 80, 0, Math.PI * 2);
+        g.stroke();
+        g.lineWidth = 16;
+        g.beginPath();
+        g.moveTo(cx, cy); g.lineTo(cx, cy - 50);
+        g.moveTo(cx, cy); g.lineTo(cx + 38, cy + 14);
+        g.stroke();
+      }
+    } else if (name === "chat" || name === "dots") {
+      g.beginPath();
+      g.roundRect(cx - 95, cy - 70, 190, 120, 40);
+      g.fill();
+      g.beginPath();
+      g.moveTo(cx - 40, cy + 40); g.lineTo(cx - 70, cy + 90); g.lineTo(cx - 5, cy + 48);
+      g.fill();
+      g.globalCompositeOperation = "destination-out";
+      for (const dx of [-45, 0, 45]) {
+        g.beginPath();
+        g.arc(cx + dx, cy - 10, 15, 0, Math.PI * 2);
+        g.fill();
+      }
+      g.globalCompositeOperation = "source-over";
+    } else if (name === "cloud") {
+      for (const [dx, dy, r] of [[-45, 10, 45], [10, -20, 60], [60, 15, 40], [0, 25, 45]]) {
+        g.beginPath();
+        g.arc(cx + dx, cy + dy - 20, r, 0, Math.PI * 2);
+        g.fill();
+      }
+      g.lineWidth = 10;
+      for (const dx of [-40, 0, 40]) {
+        g.beginPath();
+        g.moveTo(cx + dx, cy + 55); g.lineTo(cx + dx - 12, cy + 95);
+        g.stroke();
+      }
+    } else if (name === "heart") {
+      g.beginPath();
+      g.moveTo(cx, cy + 80);
+      g.bezierCurveTo(cx - 140, cy - 10, cx - 60, cy - 110, cx, cy - 40);
+      g.bezierCurveTo(cx + 60, cy - 110, cx + 140, cy - 10, cx, cy + 80);
+      g.fill();
+      g.globalCompositeOperation = "destination-out";
+      g.lineWidth = 12;
+      g.beginPath();
+      g.moveTo(cx - 5, cy - 40); g.lineTo(cx + 15, cy); g.lineTo(cx - 12, cy + 25); g.lineTo(cx + 6, cy + 70);
+      g.stroke();
+      g.globalCompositeOperation = "source-over";
+    } else if (name === "chart") {
+      g.lineWidth = 18;
+      g.beginPath();
+      g.moveTo(cx - 90, cy - 60); g.lineTo(cx - 30, cy - 10); g.lineTo(cx + 5, cy - 35); g.lineTo(cx + 80, cy + 55);
+      g.stroke();
+      g.beginPath();
+      g.moveTo(cx + 85, cy + 60); g.lineTo(cx + 35, cy + 60); g.lineTo(cx + 85, cy + 10);
+      g.closePath();
+      g.fill();
+    }
+  });
+
+/** Soft round bubble backdrop: bright core, rim highlight, transparent outside. */
+export const bubbleTex = () =>
+  canvasTex("cfbubble", 512, 512, (g, w, h) => {
+    const cx = w / 2, cy = h / 2, r = w * 0.47;
+    const gr = g.createRadialGradient(cx, cy - r * 0.2, r * 0.1, cx, cy, r);
+    gr.addColorStop(0, "rgba(255,255,255,0.96)");
+    gr.addColorStop(0.75, "rgba(255,255,255,0.88)");
+    gr.addColorStop(0.93, "rgba(255,255,255,0.96)");
+    gr.addColorStop(1, "rgba(255,255,255,0)");
+    g.fillStyle = gr;
+    g.beginPath();
+    g.arc(cx, cy, r, 0, Math.PI * 2);
+    g.fill();
+  });
+
+/** Outer glow halo. */
+export const haloTex = () =>
+  canvasTex("cfhalo", 256, 256, (g, w, h) => {
+    const gr = g.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, w / 2);
+    gr.addColorStop(0, "rgba(255,255,255,0.6)");
+    gr.addColorStop(0.45, "rgba(255,255,255,0.22)");
+    gr.addColorStop(1, "rgba(255,255,255,0)");
+    g.fillStyle = gr;
+    g.fillRect(0, 0, w, h);
+  });
+
+/** Small label texture (speech bubble text, phone UI, screen text). */
+export const labelTex = (key: string, w: number, h: number, draw: (g: CanvasRenderingContext2D, w: number, h: number) => void) => canvasTex(`cflabel${key}`, w, h, draw);
+
+/** Text for a thought bubble: up to ~4 short lines, auto-wrapped and sized to fit the circle. */
+export const textTex = (text: string) =>
+  canvasTex(`cftext${text}`, 512, 512, (g, w, h) => {
+    g.clearRect(0, 0, w, h);
+    g.fillStyle = "#0d1430";
+    g.textAlign = "center";
+    g.textBaseline = "middle";
+    const words = text.split(/\s+/);
+    let size = 92;
+    let lines: string[] = [];
+    for (; size >= 40; size -= 6) {
+      g.font = `600 ${size}px ${FONT}, sans-serif`;
+      lines = [];
+      let cur = "";
+      for (const wd of words) {
+        const next = cur ? `${cur} ${wd}` : wd;
+        if (g.measureText(next).width > w * 0.72 && cur) { lines.push(cur); cur = wd; } else cur = next;
+      }
+      lines.push(cur);
+      if (lines.length * size * 1.12 < h * 0.62 && lines.every((l) => g.measureText(l).width < w * 0.78)) break;
+    }
+    const lh = size * 1.12, y0 = h / 2 - ((lines.length - 1) * lh) / 2;
+    lines.forEach((l, i) => g.fillText(l, w / 2, y0 + i * lh));
+  });
+
+==== 4099 src/kits/characterflow/lib/geo.ts
+// Small geometry kit for architecture: struts between points, merged lattices, lathe and
+// arch profiles, geodesic frames. Geometries are cached by key so a film builds each once.
+
+import {
+  BufferGeometry,
+  CylinderGeometry,
+  IcosahedronGeometry,
+  LatheGeometry,
+  Matrix4,
+  Quaternion,
+  Shape,
+  SphereGeometry,
+  TorusGeometry,
+  Vector2,
+  Vector3,
+} from "three";
+import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+
+const cache = new Map<string, BufferGeometry>();
+export const cached = <G extends BufferGeometry>(key: string, make: () => G): G => {
+  let g = cache.get(key);
+  if (!g) {
+    g = make();
+    cache.set(key, g);
+  }
+  return g as G;
+};
+
+export const cyl = (rt: number, rb: number, h: number, seg = 32, open = false, ts = 0, tl = Math.PI * 2) =>
+  cached(`cyl${rt},${rb},${h},${seg},${open},${ts},${tl}`, () => new CylinderGeometry(rt, rb, h, seg, 1, open, ts, tl));
+export const box = (w: number, h: number, d: number, r = 0.04, seg = 2) =>
+  cached(`box${w},${h},${d},${r}`, () => new RoundedBoxGeometry(w, h, d, seg, Math.min(r, w / 2.01, h / 2.01, d / 2.01)));
+export const sphere = (r: number, ws = 32, hs = 16, phiLen = Math.PI * 2, thetaLen = Math.PI) =>
+  cached(`sph${r},${ws},${hs},${phiLen},${thetaLen}`, () => new SphereGeometry(r, ws, hs, 0, phiLen, 0, thetaLen));
+export const torus = (R: number, r: number, rs = 8, ts = 48, arc = Math.PI * 2) =>
+  cached(`tor${R},${r},${rs},${ts},${arc}`, () => new TorusGeometry(R, r, rs, ts, arc));
+export const lathe = (key: string, pts: [number, number][], seg = 64) =>
+  cached(`lathe${key}`, () => new LatheGeometry(pts.map(([x, y]) => new Vector2(x, y)), seg));
+
+const UP = new Vector3(0, 1, 0);
+/** A cylinder from p to q (world-free; positions in the caller's frame). */
+export const strutGeo = (p: Vector3, q: Vector3, r: number, seg = 6) => {
+  const d = new Vector3().subVectors(q, p);
+  const len = d.length();
+  const g = new CylinderGeometry(r, r, len, seg, 1, false);
+  const m = new Matrix4().compose(
+    new Vector3().addVectors(p, q).multiplyScalar(0.5),
+    new Quaternion().setFromUnitVectors(UP, d.normalize()),
+    new Vector3(1, 1, 1),
+  );
+  g.applyMatrix4(m);
+  return g;
+};
+
+export const merged = (key: string, make: () => BufferGeometry[]) =>
+  cached(key, () => {
+    const parts = make().map((g) => (g.index ? g.toNonIndexed() : g));
+    for (const p of parts) {
+      for (const name of Object.keys(p.attributes)) if (name !== "position" && name !== "normal" && name !== "uv") p.deleteAttribute(name);
+    }
+    return mergeGeometries(parts, false)!;
+  });
+
+/** Geodesic frame over the upper hemisphere (edges of a subdivided icosahedron). */
+export const geodesicFrame = (R: number, detail: number, strutR: number) =>
+  merged(`geo${R},${detail},${strutR}`, () => {
+    const ico = new IcosahedronGeometry(R, detail);
+    const p = ico.attributes.position;
+    const key = (v: Vector3) => `${v.x.toFixed(3)},${v.y.toFixed(3)},${v.z.toFixed(3)}`;
+    const edges = new Map<string, [Vector3, Vector3]>();
+    for (let i = 0; i < p.count; i += 3) {
+      const tri = [0, 1, 2].map((k) => new Vector3(p.getX(i + k), p.getY(i + k), p.getZ(i + k)));
+      for (let k = 0; k < 3; k++) {
+        const a = tri[k], b = tri[(k + 1) % 3];
+        if (a.y < -0.01 || b.y < -0.01) continue;
+        const ka = key(a), kb = key(b);
+        const id = ka < kb ? ka + "|" + kb : kb + "|" + ka;
+        if (!edges.has(id)) edges.set(id, [a, b]);
+      }
+    }
+    return [...edges.values()].map(([a, b]) => strutGeo(a, b, strutR, 5));
+  });
+
+/** Arch outline (flat sides, rounded roof) in the x-y plane, base on y = 0. */
+export const archShape = (w: number, h: number, shoulder: number, inset = 0) => {
+  const s = new Shape();
+  const hw = w / 2 - inset;
+  s.moveTo(-hw, inset > 0 ? 0 : 0);
+  s.lineTo(-hw, h - shoulder);
+  s.quadraticCurveTo(-hw, h - inset, 0, h - inset);
+  s.quadraticCurveTo(hw, h - inset, hw, h - shoulder);
+  s.lineTo(hw, 0);
+  s.lineTo(-hw, 0);
+  return s;
+};
+
+==== 4182 src/kits/characterflow/lib/mats.ts
+// Shared materials, deterministic randomness and procedural canvas textures. Every material is built
+// once per key and shared; textures are drawn from seeded randomness, so nothing depends on files.
+
+import {
+  CanvasTexture,
+  Color,
+  type Material,
+  MeshBasicMaterial,
+  type MeshBasicMaterialParameters,
+  MeshPhysicalMaterial,
+  type MeshPhysicalMaterialParameters,
+  RepeatWrapping,
+  SRGBColorSpace,
+  type Texture,
+} from "three";
+
+export { mulberry32, hash1, noise1 } from "./rng.ts";
+import { mulberry32 } from "./rng.ts";
+
+const cache = new Map<string, Material>();
+export const phys = (key: string, p: MeshPhysicalMaterialParameters): MeshPhysicalMaterial => {
+  let m = cache.get(key) as MeshPhysicalMaterial | undefined;
+  if (!m) {
+    m = new MeshPhysicalMaterial(p);
+    cache.set(key, m);
+  }
+  return m;
+};
+export const basic = (key: string, p: MeshBasicMaterialParameters): MeshBasicMaterial => {
+  let m = cache.get(key) as MeshBasicMaterial | undefined;
+  if (!m) {
+    m = new MeshBasicMaterial(p);
+    cache.set(key, m);
+  }
+  return m;
+};
+
+const texCache = new Map<string, Texture>();
+export const canvasTex = (key: string, w: number, h: number, draw: (g: CanvasRenderingContext2D, w: number, h: number) => void, repeat?: [number, number], srgb = true) => {
+  let t = texCache.get(key);
+  if (!t) {
+    const c = document.createElement("canvas");
+    c.width = w;
+    c.height = h;
+    const g = c.getContext("2d")!;
+    draw(g, w, h);
+    t = new CanvasTexture(c);
+    if (srgb) t.colorSpace = SRGBColorSpace;
+    t.anisotropy = 8;
+    if (repeat) {
+      t.wrapS = t.wrapT = RepeatWrapping;
+      t.repeat.set(...repeat);
+    }
+    texCache.set(key, t);
+  }
+  return t;
+};
+
+export const shade = (hex: string, k: number) => {
+  const c = new Color(hex);
+  c.multiplyScalar(k);
+  return `#${c.getHexString()}`;
+};
+export const mixHex = (a: string, b: string, k: number) => `#${new Color(a).lerp(new Color(b), Math.min(1, Math.max(0, k))).getHexString()}`;
+
+/** Soft woven fabric. */
+export const weaveTex = (key: string, color: string, rep: [number, number], stripe?: string) =>
+  canvasTex(`weave${key}`, 256, 256, (g, w, h) => {
+    const r = mulberry32(3);
+    g.fillStyle = color;
+    g.fillRect(0, 0, w, h);
+    for (let y = 0; y < h; y += 4)
+      for (let x = 0; x < w; x += 4) {
+        g.fillStyle = `rgba(${(x + y) % 8 ? "255,255,255" : "0,0,0"},${0.02 + r() * 0.03})`;
+        g.fillRect(x, y, 4, 2);
+      }
+    if (stripe) {
+      g.fillStyle = stripe;
+      for (let y = 0; y < h; y += 64) g.fillRect(0, y + 20, w, 10);
+    }
+  }, rep);
+
+/** Stylised eye: equirect sphere texture with the iris centred on +Z (u = 0.25, v = 0.5). */
+export const eyeTex = (key: string, iris: string) =>
+  canvasTex(`eye${key}`, 1024, 512, (g, w, h) => {
+    g.fillStyle = "#f7f3ee";
+    g.fillRect(0, 0, w, h);
+    // faint warm vignette toward the back of the eyeball
+    const bg = g.createRadialGradient(w * 0.25, h * 0.5, w * 0.05, w * 0.25, h * 0.5, w * 0.3);
+    bg.addColorStop(0, "rgba(0,0,0,0)");
+    bg.addColorStop(1, "rgba(150,90,80,0.18)");
+    g.fillStyle = bg;
+    g.fillRect(0, 0, w, h);
+    const cx = w * 0.25, cy = h * 0.5;
+    const rx = w * 0.108, ry = h * 0.216;
+    const gr = g.createRadialGradient(cx, cy - ry * 0.25, 0, cx, cy, rx);
+    gr.addColorStop(0, shade(iris, 2.1));
+    gr.addColorStop(0.5, shade(iris, 1.25));
+    gr.addColorStop(0.85, iris);
+    gr.addColorStop(1, shade(iris, 0.35));
+    g.fillStyle = gr;
+    g.beginPath();
+    g.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+    g.fill();
+    g.strokeStyle = "rgba(255,225,170,0.22)";
+    g.lineWidth = 2;
+    for (let k = 0; k < 64; k++) {
+      const a = (k / 64) * Math.PI * 2;
+      g.beginPath();
+      g.moveTo(cx + Math.cos(a) * rx * 0.5, cy + Math.sin(a) * ry * 0.5);
+      g.lineTo(cx + Math.cos(a) * rx * 0.88, cy + Math.sin(a) * ry * 0.88);
+      g.stroke();
+    }
+    g.fillStyle = "#0b0706";
+    g.beginPath();
+    g.ellipse(cx, cy, rx * 0.44, ry * 0.44, 0, 0, Math.PI * 2);
+    g.fill();
+    g.strokeStyle = shade(iris, 0.25);
+    g.lineWidth = 6;
+    g.beginPath();
+    g.ellipse(cx, cy, rx * 0.985, ry * 0.985, 0, 0, Math.PI * 2);
+    g.stroke();
+  });
+
+==== 811 src/kits/characterflow/lib/rng.ts
+// Deterministic randomness (Node-safe).
+export const mulberry32 = (seed: number) => {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+};
+/** Integer hash → [0, 1). */
+export const hash1 = (x: number, seed = 0) => {
+  let h = (Math.imul(x | 0, 374761393) + Math.imul(seed | 0, 668265263)) | 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  h ^= h >>> 16;
+  return (h >>> 0) / 4294967296;
+};
+/** Smooth 1-D value noise in [-1, 1]. */
+export const noise1 = (x: number, seed = 0) => {
+  const i = Math.floor(x), f = x - i;
+  const u = f * f * (3 - 2 * f);
+  return (hash1(i, seed) * (1 - u) + hash1(i + 1, seed) * u) * 2 - 1;
+};
+
+==== 7100 src/kits/characterflow/locomotion/stand.ts
+// Standing and sitting blocking with planted feet (leg IK), for any character.
+//
+//   standBody — standing on a mark: living idle (slow weight shift), turns in place with real steps
+//               (each foot lifts and re-plants at the new heading, staggered), optional base preset.
+//   seatBody  — a chair/bench/bed-edge seat: sits down and stands up through a forward-lean crouch
+//               while the feet stay planted in front of the seat.
+// Pure maths — the director and the sound department (footsteps on turns) share it.
+
+import { BODY, type BodyName } from "../character/presets/bodies.ts";
+import { blend, clonePose, type Pose } from "../character/pose.ts";
+import { DIMS, type CharacterSpec, type V3 } from "../character/spec.ts";
+
+const D = Math.PI / 180;
+const smooth = (x: number) => { const k = Math.min(1, Math.max(0, x)); return k * k * (3 - 2 * k); };
+const ANKLE_H = 0.087;
+
+export type Turn = { at: number; dur: number; to: number };
+const wrap = (a: number) => { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; return a; };
+
+/** Heading at time t after a list of turns (shortest way round). */
+export const yawAt = (yaw0: number, turns: Turn[], t: number, lag = 0) => {
+  let y = yaw0;
+  for (const tr of turns) {
+    if (t < tr.at) break;
+    const k = smooth((t - tr.at - lag * tr.dur) / tr.dur);
+    y = y + wrap(tr.to - y) * k;
+  }
+  return y;
+};
+
+const quatYXZ = (yaw: number, pitch: number): [number, number, number, number] => {
+  const cy = Math.cos(yaw / 2), sy = Math.sin(yaw / 2), cx = Math.cos(pitch / 2), sx = Math.sin(pitch / 2);
+  return [cy * sx, sy * cx, -sy * sx, cy * cx];
+};
+
+/** Foot (ankle target + orientation) standing at `pos` with heading `yaw`; side −1 = left, +1 = right. */
+const footAt = (pos: V3, yaw: number, side: number, spec: CharacterSpec, lift = 0, back = 0.02): { t: V3; q: [number, number, number, number] } => {
+  const gap = 0.1 * spec.scale;
+  const fx = Math.sin(yaw), fz = Math.cos(yaw);
+  const rx = -fz, rz = fx; // his right
+  return {
+    t: [pos[0] + rx * gap * side - fx * back, pos[1] + ANKLE_H * spec.scale + lift, pos[2] + rz * gap * side - fz * back],
+    q: quatYXZ(yaw - side * 0.07, 0),
+  };
+};
+
+/** Turn progress of one foot inside a turn: left steps first, right follows. */
+const stepK = (turns: Turn[], t: number, first: boolean) => {
+  for (const tr of turns) {
+    const u = (t - tr.at) / tr.dur;
+    if (u > 0 && u < 1) {
+      const [a, b] = first ? [0.05, 0.55] : [0.45, 0.95];
+      const k = smooth((u - a) / (b - a));
+      return { k, lift: 0.06 * Math.sin(Math.PI * Math.min(1, Math.max(0, (u - a) / (b - a)))) };
+    }
+  }
+  return null;
+};
+
+export const standBody = (spec: CharacterSpec, pos: V3, yaw0: number, turns: Turn[] = [], base: BodyName = "stand", mod?: (p: Pose, t: number) => void) => (t: number): Pose => {
+  const yaw = yawAt(yaw0, turns, t);
+  const p = clonePose(BODY[base]({ x: pos[0], y: pos[1], z: pos[2], yaw }, spec, t));
+  // idle: slow weight shift between the feet
+  const w = Math.sin(t * 2 * Math.PI * 0.11 + spec.scale * 10);
+  p.hips = [p.hips[0], p.hips[1] + 1.2 * D * w, p.hips[2] + 1.8 * D * w];
+  p.chest = [p.chest[0], p.chest[1] - 0.8 * D * w, p.chest[2] - 1.0 * D * w];
+  p.x += Math.cos(yaw) * 0.012 * w;
+  p.z += -Math.sin(yaw) * 0.012 * w;
+  p.hipY -= 0.008;
+  // turning: dip a little while stepping round
+  for (const tr of turns) { const u = (t - tr.at) / tr.dur; if (u > 0 && u < 1) p.hipY -= 0.018 * Math.sin(Math.PI * u); }
+  // feet: each re-plants at the new heading on its own step
+  const prevYaw = (side: -1 | 1) => {
+    const s = stepK(turns, t, side === -1);
+    if (!s) return { yaw, lift: 0 };
+    // heading this foot has reached
+    let y = yaw0;
+    for (const tr of turns) { if (t < tr.at) break; if (t > tr.at + tr.dur) y = y + wrap(tr.to - y); else y = y + wrap(tr.to - y) * s.k; }
+    return { yaw: y, lift: s.lift };
+  };
+  const L = prevYaw(-1), R = prevYaw(1);
+  const fl = footAt(pos, L.yaw, -1, spec, L.lift), fr = footAt(pos, R.yaw, 1, spec, R.lift);
+  p.legL = { ...p.legL, ik: { t: fl.t, q: fl.q, w: 1 } };
+  p.legR = { ...p.legR, ik: { t: fr.t, q: fr.q, w: 1 } };
+  if (mod) mod(p, t);
+  return p;
+};
+
+/** Steps of a turn (for footstep sounds). */
+export const turnSteps = (turns: Turn[]) => turns.flatMap((tr) => [tr.at + tr.dur * 0.55, tr.at + tr.dur * 0.95]);
+
+// ── sitting ─────────────────────────────────────────────────────────────────
+export type Seat = { pos: V3; yaw: number; height: number; floor?: number };
+/** sit = 1 seated, 0 standing in front of the seat; transitions take ~1 s each */
+export type SeatChange = { at: number; sit: boolean; dur?: number };
+
+export const sitAmount = (start: boolean, changes: SeatChange[], t: number) => {
+  let k = start ? 1 : 0;
+  for (const c of changes) {
+    if (t < c.at) break;
+    const d = c.dur ?? 1.1;
+    const target = c.sit ? 1 : 0;
+    k = k + (target - k) * smooth((t - c.at) / d);
+  }
+  return k;
+};
+
+/** Position where he stands when he gets up from the seat (feet stay where they were). */
+export const seatStandPos = (s: Seat, spec: CharacterSpec): V3 => {
+  const f = 0.36 * spec.scale / 0.94;
+  return [s.pos[0] + Math.sin(s.yaw) * f, s.floor ?? 0, s.pos[2] + Math.cos(s.yaw) * f];
+};
+
+export const seatBody = (spec: CharacterSpec, seat: Seat, startSeated: boolean, changes: SeatChange[], mod?: (p: Pose, t: number) => void) => (t: number): Pose => {
+  const k = sitAmount(startSeated, changes, t);
+  const floor = seat.floor ?? 0;
+  const standPos = seatStandPos(seat, spec);
+  const fx = Math.sin(seat.yaw), fz = Math.cos(seat.yaw);
+  // standing
+  const st = BODY.stand({ x: standPos[0], y: floor, z: standPos[2], yaw: seat.yaw }, spec, t);
+  // seated: pelvis on the seat, thighs forward, upright back
+  const se = clonePose(BODY.stand({ x: seat.pos[0], y: floor, z: seat.pos[2], yaw: seat.yaw }, spec, t));
+  se.y = seat.height + 0.1 * spec.scale - DIMS.pelvisH * spec.scale;
+  se.hips = [-4 * D, 0, 0];
+  se.spine = [5 * D, 0, 0];
+  se.chest = [5 * D, 0, 0];
+  se.armL = { ...se.armL, sw: 0.45, ab: 0.14, el: 0.7 };
+  se.armR = { ...se.armR, sw: 0.45, ab: 0.14, el: 0.7 };
+  // half-way: weight forward over the feet
+  const cr = clonePose(st);
+  cr.x = (seat.pos[0] + standPos[0]) / 2 + fx * 0.06;
+  cr.z = (seat.pos[2] + standPos[2]) / 2 + fz * 0.06;
+  cr.y = floor + (seat.height + 0.1 * spec.scale - DIMS.pelvisH * spec.scale - floor) * 0.55;
+  cr.hips = [22 * D, 0, 0];
+  cr.spine = [16 * D, 0, 0];
+  cr.chest = [10 * D, 0, 0];
+  cr.armL = { ...cr.armL, sw: 0.5, el: 0.5 };
+  cr.armR = { ...cr.armR, sw: 0.5, el: 0.5 };
+  const p = k < 0.5 ? blend(st, cr, smooth(k * 2)) : blend(cr, se, smooth((k - 0.5) * 2));
+  const fl = footAt(standPos, seat.yaw, -1, spec, 0, 0.03), fr = footAt(standPos, seat.yaw, 1, spec, 0, 0.03);
+  p.legL = { ...p.legL, ik: { t: fl.t, q: fl.q, w: 1 } };
+  p.legR = { ...p.legR, ik: { t: fr.t, q: fr.q, w: 1 } };
+  if (mod) mod(p, t);
+  return p;
+};
+
+==== 9724 src/kits/characterflow/locomotion/walk.ts
+// Locomotion: characters really walk through the set — no treadmill, no sliding feet.
+//
+// A Walker integrates a speed profile (m/s keys) into distance and gait phase. Step length follows
+// speed, so cadence and stride change together; when the speed drops to zero the gait finishes its
+// step and both feet come to rest. Each foot is planted at the body's position at mid-stance and
+// swings to its next plant with a lift arc, toe-off and heel strike; the legs reach the plants with
+// IK (skeleton.ts), so foot contact is exact. walkBody() layers the upper-body motion on any body
+// preset: pelvis bob and yaw, counter-rotating chest, arm swing (unless a gesture owns the arm).
+//
+// Pure maths (no rendering), so the sound department can place footsteps on the same plants.
+
+import { BODY, type BodyName } from "../character/presets/bodies.ts";
+import { clonePose, type Pose } from "../character/pose.ts";
+import { DIMS, type CharacterSpec, type V3 } from "../character/spec.ts";
+
+export type SpeedKey = [t: number, v: number];
+export type WalkerDef = {
+  /** ground point where distance 0 is */
+  start: V3;
+  /** horizontal travel direction (normalised internally) */
+  dir: V3;
+  /** speed keys (m/s), eased between keys */
+  speed: SpeedKey[];
+  spec: CharacterSpec;
+  /** distance already covered at speed[0][0] */
+  d0?: number;
+  /** gait phase at speed[0][0] (cycles) — continue another walker's stride */
+  phi0?: number;
+  /** sideways offset from the line (m, + = his right) over time — lane changes */
+  lane?: (t: number) => number;
+};
+export type Foot = { t: V3; q: [number, number, number, number]; lift: number; planted: boolean };
+export type WalkState = { d: number; v: number; phi: number; pos: V3; yaw: number; amt: number };
+
+const DT = 1 / 240;
+const smooth = (x: number) => { const k = Math.min(1, Math.max(0, x)); return k * k * (3 - 2 * k); };
+const smoother = (x: number) => { const k = Math.min(1, Math.max(0, x)); return k * k * k * (k * (k * 6 - 15) + 10); };
+
+/** Step length (m) at speed v for a character of this scale. */
+export const stepLength = (v: number, scale: number) => Math.min(0.8, Math.max(0.3, 0.3 + 0.38 * v)) * (scale / 0.94);
+const ankleH = (spec: CharacterSpec) => 0.087 * spec.scale;
+
+const quatYXZ = (yaw: number, pitch: number): [number, number, number, number] => {
+  const cy = Math.cos(yaw / 2), sy = Math.sin(yaw / 2), cx = Math.cos(pitch / 2), sx = Math.sin(pitch / 2);
+  // q = qy * qx
+  return [cy * sx, sy * cx, -sy * sx, cy * cx];
+};
+
+export class Walker {
+  def: WalkerDef;
+  t0: number;
+  dir: V3;
+  right: V3;
+  yaw: number;
+  private d: Float64Array;
+  private phi: Float64Array;
+  private v: Float64Array;
+
+  constructor(def: WalkerDef, t1: number) {
+    this.def = def;
+    this.t0 = def.speed[0][0];
+    const l = Math.hypot(def.dir[0], def.dir[2]);
+    this.dir = [def.dir[0] / l, 0, def.dir[2] / l];
+    this.right = [-this.dir[2], 0, this.dir[0]];
+    this.yaw = Math.atan2(this.dir[0], this.dir[2]);
+    const n = Math.ceil((t1 - this.t0) / DT) + 2;
+    this.d = new Float64Array(n);
+    this.phi = new Float64Array(n);
+    this.v = new Float64Array(n);
+    let d = def.d0 ?? 0, phi = def.phi0 ?? 0;
+    for (let i = 0; i < n; i++) {
+      const t = this.t0 + i * DT;
+      const v = this.speedAt(t);
+      this.d[i] = d;
+      this.phi[i] = phi;
+      this.v[i] = v;
+      const L = stepLength(v, def.spec.scale);
+      let rate = v / (2 * L);
+      // stopping: finish the current step so both feet end on the ground (rest at φ ≡ 0.06 mod 0.5)
+      if (v < 0.04) {
+        const u = (((phi - 0.06) % 0.5) + 0.5) % 0.5;
+        rate = u > 0.012 ? Math.max(rate, 0.9) : 0;
+      }
+      d += v * DT;
+      phi += rate * DT;
+    }
+  }
+
+  speedAt(t: number) {
+    const k = this.def.speed;
+    if (t <= k[0][0]) return k[0][1];
+    for (let i = 1; i < k.length; i++) if (t <= k[i][0]) return k[i - 1][1] + (k[i][1] - k[i - 1][1]) * smooth((t - k[i - 1][0]) / (k[i][0] - k[i - 1][0]));
+    return k[k.length - 1][1];
+  }
+
+  private sample(arr: Float64Array, t: number) {
+    const x = Math.min(arr.length - 1.001, Math.max(0, (t - this.t0) / DT));
+    const i = Math.floor(x), f = x - i;
+    return arr[i] * (1 - f) + arr[i + 1] * f;
+  }
+  /** distance at the moment the phase reaches `p` (binary search; phase is monotonic) */
+  private dAtPhase(p: number) {
+    const a = this.phi;
+    if (p <= a[0]) return this.d[0] - (a[0] - p) * 2 * stepLength(this.v[0], this.def.spec.scale);
+    let lo = 0, hi = a.length - 1;
+    if (p >= a[hi]) return this.d[hi];
+    while (hi - lo > 1) { const m = (lo + hi) >> 1; if (a[m] < p) lo = m; else hi = m; }
+    const f = (p - a[lo]) / Math.max(1e-9, a[hi] - a[lo]);
+    return this.d[lo] + (this.d[hi] - this.d[lo]) * f;
+  }
+  private at3(d: number, lateral = 0, t = this.t0): V3 {
+    const s = this.def.start;
+    lateral += this.def.lane ? this.def.lane(t) : 0;
+    return [s[0] + this.dir[0] * d + this.right[0] * lateral, s[1], s[2] + this.dir[2] * d + this.right[2] * lateral];
+  }
+
+  at(t: number): WalkState {
+    const d = this.sample(this.d, t), v = this.sample(this.v, t), phi = this.sample(this.phi, t);
+    return { d, v, phi, pos: this.at3(d, 0, t), yaw: this.yaw, amt: Math.min(1.2, v / 1.0) };
+  }
+
+  /** Ankle targets + foot orientations for both feet at time t. */
+  feet(t: number): { L: Foot; R: Foot } {
+    const st = this.at(t);
+    const spec = this.def.spec;
+    const gap = 0.1 * spec.scale;
+    const foot = (off: number, side: 1 | -1): Foot => {
+      const pf = st.phi + off;
+      const n = Math.floor(pf), u = pf - n;
+      const plant = (k: number) => this.dAtPhase(k + 0.3 - off) - 0.04;
+      let dd: number, lift = 0, pitch = 0, planted = true;
+      if (u < 0.6) {
+        dd = plant(n);
+        pitch = 0.16 * smooth((u - 0.42) / 0.18) * Math.min(1, st.v / 0.4); // heel rises late in stance
+      } else {
+        const k = smoother((u - 0.6) / 0.4);
+        dd = plant(n) + (plant(n + 1) - plant(n)) * k;
+        const amp = Math.min(1, 0.25 + st.v / 0.6);
+        lift = 0.075 * Math.sin(Math.PI * k) * amp;
+        pitch = 0.5 * Math.cos(Math.PI * k) * Math.sqrt(Math.sin(Math.PI * k)) * amp;
+        planted = false;
+      }
+      const p = this.at3(dd, side * gap, t);
+      const y = p[1] + ankleH(spec) + lift + Math.max(0, pitch) * 0.12 + Math.max(0, -pitch) * 0.05;
+      return { t: [p[0], y, p[2]], q: quatYXZ(this.yaw - side * 0.07, pitch), lift, planted };
+    };
+    // `right` points to his right: left foot −gap, right foot +gap; toes turn slightly out
+    return { L: foot(0, -1), R: foot(0.5, 1) };
+  }
+
+  /** Times (s) of heel strikes in [a, b] — for footstep sounds. */
+  heelStrikes(a: number, b: number): { t: number; side: "L" | "R" }[] {
+    const out: { t: number; side: "L" | "R" }[] = [];
+    let prevL = this.sample(this.phi, a), prevR = prevL + 0.5;
+    for (let t = a + DT; t <= b; t += DT) {
+      const p = this.sample(this.phi, t);
+      if (Math.floor(p) > Math.floor(prevL) && this.sample(this.v, t) > 0.02) out.push({ t, side: "L" });
+      if (Math.floor(p + 0.5) > Math.floor(prevR) && this.sample(this.v, t) > 0.02) out.push({ t, side: "R" });
+      prevL = p; prevR = p + 0.5;
+    }
+    return out;
+  }
+}
+
+/** Distance covered at time t by a speed profile (no walker needed). */
+export const distanceAt = (speed: SpeedKey[], t: number, d0 = 0) => {
+  const w = { speedAt: Walker.prototype.speedAt, def: { speed } } as unknown as Walker;
+  let d = d0;
+  for (let x = speed[0][0]; x < t; x += DT) d += w.speedAt(x) * DT;
+  return d;
+};
+
+/**
+ * Scale the cruise speed of a profile so the walk covers exactly `dist` by `tEnd`
+ * (`keys(v)` builds the profile for a cruise speed v; bisection, deterministic).
+ */
+export const fitCruise = (keys: (v: number) => SpeedKey[], dist: number, tEnd: number) => {
+  let lo = 0.05, hi = 3;
+  for (let i = 0; i < 40; i++) {
+    const m = (lo + hi) / 2;
+    if (distanceAt(keys(m), tEnd) < dist) lo = m; else hi = m;
+  }
+  return keys((lo + hi) / 2);
+};
+
+const D = Math.PI / 180;
+
+/**
+ * A walking body: `base` preset at the walker's position, plus gait motion and planted legs.
+ * `amtOverride` scales the upper-body swing (e.g. smaller while holding a phone).
+ */
+export const walkBody = (w: Walker, base: BodyName = "stand", mod?: (p: Pose, t: number) => void) => (t: number): Pose => {
+  const st = w.at(t);
+  const spec = w.def.spec;
+  const p = clonePose(BODY[base]({ x: st.pos[0], y: st.pos[1], z: st.pos[2], yaw: st.yaw }, spec, t));
+  const a = Math.min(1, st.amt);
+  const c = Math.cos(2 * Math.PI * st.phi);
+  p.hipY = p.hipY - 0.008 - 0.024 * a + 0.011 * a * Math.cos(4 * Math.PI * (st.phi - 0.3));
+  p.hips = [p.hips[0] + 3 * D * a, p.hips[1] - 6 * D * a * c, p.hips[2] + 2.2 * D * a * Math.sin(2 * Math.PI * (st.phi - 0.3))];
+  p.chest = [p.chest[0] + 1.5 * D * a, p.chest[1] + 8 * D * a * c, p.chest[2]];
+  p.neck = [p.neck[0] - 1 * D * a, p.neck[1] - 2 * D * a * c, p.neck[2]];
+  p.armL = { ...p.armL, sw: p.armL.sw - 0.34 * a * c, el: p.armL.el + 0.1 * a + 0.12 * a * Math.max(0, -c) };
+  p.armR = { ...p.armR, sw: p.armR.sw + 0.34 * a * c, el: p.armR.el + 0.1 * a + 0.12 * a * Math.max(0, c) };
+  const f = w.feet(t);
+  p.legL = { ...p.legL, ik: { t: f.L.t, q: f.L.q, w: 1 } };
+  p.legR = { ...p.legR, ik: { t: f.R.t, q: f.R.q, w: 1 } };
+  if (mod) mod(p, t);
+  return p;
+};
+
+/** World eye position of a walking character (for look-at between characters, no recursion). */
+export const eyeOf = (w: Walker, t: number): V3 => {
+  const st = w.at(t);
+  const h = (DIMS.pelvisH + DIMS.spineY + DIMS.chestY + DIMS.neckY + DIMS.headY + DIMS.headCenter[1]) * w.def.spec.scale;
+  return [st.pos[0] + w.dir[0] * 0.08, st.pos[1] + h - 0.03, st.pos[2] + w.dir[2] * 0.08];
+};
+
+==== 7012 src/kits/characterflow/look/CharLook.tsx
+// Look development + QA sheet for the character system. Each frame is one test card: turnarounds,
+// face close-ups for every expression, and the body presets with gestures. Render with
+//   node scripts/stills.mjs out/look 0,1,2,... CharLook
+// Nothing here is topic specific — it is the character system's proof sheet.
+
+import React from "react";
+import { useCurrentFrame, useVideoConfig } from "remotion";
+import { Stage3D } from "../../../core/film/Stage3D.tsx";
+import { FONT } from "../../../core/type/fonts.ts";
+import { Character } from "../character/Character.tsx";
+import { perform, type Beat } from "../character/performance.ts";
+import { EXPR, type ExprName } from "../character/presets/expressions.ts";
+import type { GestureName } from "../character/presets/gestures.ts";
+import type { BodyName } from "../character/presets/bodies.ts";
+import { facePoint, skeleton } from "../character/skeleton.ts";
+import { BOSS, FRIEND, NAYA, RAKA, type CharacterSpec, type V3 } from "../character/spec.ts";
+import { CameraRig, FilmPost, GRADE0, type Cam } from "../render/FilmPost.tsx";
+import { Lights, P_OFF, type LightState } from "../render/Lights.tsx";
+import { box, cyl } from "../lib/geo.ts";
+import { phys } from "../lib/mats.ts";
+
+type Card = { title: string; spec?: CharacterSpec; body: BodyName; armL?: GestureName; armR?: GestureName; face: ExprName; cam: "full" | "face" | "face34" | "profile" | "bed" | "bedTop" | "mid"; yaw?: number; look?: V3 };
+
+export const CARDS: Card[] = [
+  { title: "turnaround · front", body: "stand", face: "content", cam: "full" },
+  { title: "turnaround · 3/4", body: "stand", face: "neutral", cam: "full", yaw: 0.65 },
+  { title: "turnaround · side", body: "stand", face: "neutral", cam: "full", yaw: 1.5708 },
+  { title: "turnaround · back", body: "stand", face: "neutral", cam: "full", yaw: 3.1416 },
+  ...(["neutral", "content", "happy", "sleepy", "asleep", "startled", "worried", "anxious", "overwhelmed", "thinking", "calm", "focused", "relieved", "exhale", "sad", "angry"] as ExprName[]).map(
+    (e): Card => ({ title: `face · ${e}`, body: "stand", face: e, cam: "face" }),
+  ),
+  { title: "face 3/4 · worried", body: "stand", face: "worried", cam: "face34" },
+  { title: "face profile", body: "stand", face: "neutral", cam: "profile" },
+  { title: "lie", body: "lie", armL: "lieSide", armR: "lieSide", face: "asleep", cam: "bed" },
+  { title: "lie · behind head", body: "lie", armL: "lieSide", armR: "behindHead", face: "asleepSmile", cam: "bed" },
+  { title: "sit · lap", body: "sit", armL: "onLap", armR: "onLap", face: "worried", cam: "mid" },
+  { title: "sit · temple", body: "sit", armL: "onLap", armR: "temple", face: "thinking", cam: "mid" },
+  { title: "sit · rub neck", body: "sit", armL: "onLap", armR: "rubNeck", face: "worried", cam: "mid" },
+  { title: "sit hunch · head in hands", body: "sitHunch", armL: "headInHands", armR: "headInHands", face: "overwhelmed", cam: "mid" },
+  { title: "sit · grab hair", body: "sitHunch", armL: "grabHair", armR: "grabHair", face: "dread", cam: "mid" },
+  { title: "sit · hand on chest", body: "sit", armL: "onLap", armR: "onChest", face: "exhale", cam: "mid" },
+  { title: "sit write · hold book", body: "sitWrite", armL: "holdBook", armR: "clasp", face: "focused", cam: "mid" },
+  { title: "sit · reach right", body: "sitReachRight", armL: "onLap", armR: "point", face: "neutral", cam: "mid" },
+  { title: "stand · explain", spec: FRIEND, body: "stand", armL: "explain", armR: "rest", face: "talk", cam: "full" },
+  { title: "stand · cross arms", spec: FRIEND, body: "stand", armL: "crossArms", armR: "crossArms", face: "angry", cam: "full" },
+  { title: "boss · point", spec: BOSS, body: "standProud", armL: "rest", armR: "point", face: "angry", cam: "full" },
+  { title: "naya · wave", spec: NAYA, body: "stand", armL: "wave", armR: "rest", face: "happy", cam: "full" },
+  { title: "cower", body: "standCower", armL: "coverMouth", armR: "rest", face: "dread", cam: "full" },
+];
+
+const L: LightState = {
+  bg: "#d9dde4", fog: { color: "#d9dde4", density: 0 }, env: 0.55,
+  hemi: { sky: "#f4f1ec", ground: "#7a6f66", i: 0.75 },
+  moon: { dir: [0.55, 0.75, 0.6], color: "#fff4e6", i: 2.4, box: { min: [-1.6, -0.1, -1.6], max: [1.6, 2.2, 1.6] } },
+  spot: { pos: [-1.8, 2.6, -1.6], target: [0, 1.2, 0], color: "#bcd6ff", i: 14, angle: 0.6, penumbra: 0.8, dist: 8 },
+  pts: [{ pos: [-1.4, 1.6, 1.8], color: "#d8e6ff", i: 3, dist: 7 }, P_OFF, P_OFF, P_OFF],
+};
+
+export const CharLook: React.FC = () => {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+  const card = CARDS[Math.min(CARDS.length - 1, frame)];
+  const spec = card.spec ?? RAKA;
+  const t = 1.3 + frame * 0.37;
+  const anchor = card.body === "lie" || card.body.startsWith("sit") ? { x: 0, y: 0.5, z: 0, yaw: 0 } : { x: 0, y: 0, z: 0, yaw: card.yaw ?? 0 };
+  const beats: Beat[] = [{ at: 0, body: card.body, armL: card.armL ?? "rest", armR: card.armR ?? "rest", face: card.face, nervous: 0, breath: { amp: 0.3 } }];
+  const perf = { spec, anchor, beats };
+  const { pose } = perform(perf, t);
+  if (card.cam === "face" || card.cam === "face34" || card.cam === "profile") pose.face = { ...EXPR[card.face], eyeX: card.cam === "face" ? 0 : pose.face.eyeX, eyeY: 0 };
+  const sk = skeleton(pose, spec, t);
+  const fp = facePoint(sk);
+  let cam: Cam;
+  if (card.cam === "full") cam = { pos: [0, 1.0, 5.6], target: [0, 0.88, 0], fov: 26 };
+  else if (card.cam === "face") cam = { pos: [fp[0], fp[1] + 0.03, fp[2] + 1.6], target: [fp[0], fp[1] + 0.01, fp[2]], fov: 17 };
+  else if (card.cam === "face34") cam = { pos: [fp[0] + 1.0, fp[1] + 0.08, fp[2] + 1.25], target: [fp[0], fp[1] + 0.01, fp[2] - 0.03], fov: 17 };
+  else if (card.cam === "profile") cam = { pos: [fp[0] + 1.6, fp[1] + 0.03, fp[2] - 0.05], target: [fp[0], fp[1] + 0.01, fp[2] - 0.07], fov: 17 };
+  else if (card.cam === "bed") cam = { pos: [1.6, 1.9, 1.6], target: [0, 0.6, -0.15], fov: 30 };
+  else cam = { pos: [0.9, 1.25, 2.6], target: [0, 0.92, 0.1], fov: 30 };
+  return (
+    <Stage3D background="#d9dde4" overlay={() => (
+      <div style={{ position: "absolute", left: 40, top: 40, fontFamily: FONT, fontSize: 40, fontWeight: 600, color: "#2a2f38" }}>
+        {card.title}
+        <div style={{ fontSize: 26, fontWeight: 500, opacity: 0.6 }}>CHARACTERFLOW · {spec.id} · card {frame} · {fps} fps</div>
+      </div>
+    )}>
+      <Lights s={L} />
+      <mesh geometry={cyl(3, 3, 0.02, 64)} material={phys("lookFloor", { color: "#c9ccd2", roughness: 0.9 })} position={[0, -0.01, 0]} receiveShadow />
+      {anchor.y > 0 ? <mesh geometry={box(1.4, 0.5, 2.1, 0.08)} material={phys("lookBed", { color: "#e8e6e1", roughness: 0.9 })} position={[0, 0.25, 0.2]} receiveShadow castShadow /> : null}
+      <Character pose={pose} spec={spec} t={t} />
+      <CameraRig cam={cam} />
+      <FilmPost cam={cam} grade={{ ...GRADE0, exposure: 1.0, vignette: 0.12, grain: 0.01, bloom: 0.12, bloomThreshold: 1.2 }} frame={frame} />
+    </Stage3D>
+  );
+};
+
+==== 1671 src/kits/characterflow/props/attach.ts
+// Prop attach maths (pure, Node-safe): a prop's world matrix is a chain of states — resting
+// somewhere, or held by a hand. When a hand takes a prop the grip offset is measured at that instant
+// (prop rest × inverse hand), so the prop never jumps; when let go it settles onto its next rest pose.
+
+import { Euler, Matrix4, Quaternion, Vector3 } from "three";
+import type { V3 } from "../character/spec.ts";
+
+export const mat = (p: V3, yaw = 0, pitch = 0, roll = 0) => {
+  const q = new Quaternion().setFromEuler(new Euler(pitch, yaw, roll, "YXZ"));
+  return new Matrix4().compose(new Vector3(...p), q, new Vector3(1, 1, 1));
+};
+export const lerpMat = (a: Matrix4, b: Matrix4, k: number) => {
+  if (k <= 0) return a.clone();
+  if (k >= 1) return b.clone();
+  const pa = new Vector3(), qa = new Quaternion(), sa = new Vector3(), pb = new Vector3(), qb = new Quaternion(), sb = new Vector3();
+  a.decompose(pa, qa, sa);
+  b.decompose(pb, qb, sb);
+  return new Matrix4().compose(pa.lerp(pb, k), qa.slerp(qb, k), sa.lerp(sb, k));
+};
+/** Offset that keeps `prop` where it is when attached to `hand`. */
+export const gripOffset = (hand: Matrix4, prop: Matrix4) => hand.clone().invert().multiply(prop);
+export const held = (hand: Matrix4, offset: Matrix4) => hand.clone().multiply(offset);
+export const toPQ = (m: Matrix4) => {
+  const p = new Vector3(), q = new Quaternion(), s = new Vector3();
+  m.decompose(p, q, s);
+  return { position: [p.x, p.y, p.z] as V3, quaternion: [q.x, q.y, q.z, q.w] as [number, number, number, number] };
+};
+export const xform = (m: Matrix4, local: V3): V3 => {
+  const v = new Vector3(...local).applyMatrix4(m);
+  return [v.x, v.y, v.z];
+};
+
+
+==== 2360 src/kits/characterflow/props/grip.ts
+// Hand-prop poses (pure, Node-safe): the phone held in a right palm, the reading pose, and
+// `gripFor` — derive the HAND from where the prop must be (wrist target + hand orientation for IK).
+
+import { Matrix4, Quaternion, Vector3 } from "three";
+import type { V3 } from "../character/spec.ts";
+
+export const PHONE = { w: 0.072, h: 0.152, t: 0.009 };
+export const BAG = { w: 0.3, h: 0.21, d: 0.085 };
+
+/** Phone lying in a RIGHT palm (hand space): back on the palm (+X side), top toward the fingertips. */
+export const PHONE_IN_HAND = (() => {
+  const yAxis = new Vector3(0, -1, 0), zAxis = new Vector3(1, 0, 0);
+  const xAxis = new Vector3().crossVectors(yAxis, zAxis);
+  const q = new Quaternion().setFromRotationMatrix(new Matrix4().makeBasis(xAxis, yAxis, zAxis));
+  return new Matrix4().compose(new Vector3(0.024, -0.085, 0.005), q, new Vector3(1, 1, 1));
+})();
+
+/**
+ * Wrist target + hand orientation (world) that put `propInHand` at the world pose `prop`.
+ * `handScale` = character scale × spec.handScale (the wrist frame is scaled by both).
+ */
+export const gripFor = (prop: Matrix4, propInHand: Matrix4, handScale: number) => {
+  const pp = new Vector3(), pq = new Quaternion(), ps = new Vector3();
+  prop.decompose(pp, pq, ps);
+  const lp = new Vector3(), lq = new Quaternion(), ls = new Vector3();
+  propInHand.decompose(lp, lq, ls);
+  const hq = pq.clone().multiply(lq.clone().invert());
+  const wrist = pp.clone().sub(lp.clone().multiplyScalar(handScale).applyQuaternion(hq));
+  return { wrist: [wrist.x, wrist.y, wrist.z] as V3, q: [hq.x, hq.y, hq.z, hq.w] as [number, number, number, number] };
+};
+
+/** Phone held up to read: in front of and below the eyes, screen turned to them. */
+export const phoneReadPose = (eye: V3, forward: V3, right: V3, lower = 0.27, out = 0.27, side = -0.04) => {
+  const f = new Vector3(...forward).setY(0).normalize();
+  const r = new Vector3(...right).normalize();
+  const p = new Vector3(...eye).addScaledVector(f, out).add(new Vector3(0, -lower, 0)).addScaledVector(r, side);
+  const z = new Vector3(...eye).sub(p).normalize();
+  const y = new Vector3(0, 1, 0).addScaledVector(z, -z.y).normalize();
+  const x = new Vector3().crossVectors(y, z).normalize();
+  const q = new Quaternion().setFromRotationMatrix(new Matrix4().makeBasis(x, y, z));
+  return new Matrix4().compose(p, q, new Vector3(1, 1, 1));
+};
+
+
+==== 5555 src/kits/characterflow/props/handheld.tsx
+// Everyday hand props: a phone and a crossbody sling bag (with a live strap). The grip rule from the
+// notebook pen applies: when a prop's pose matters (a phone held up to the eyes), the HAND is derived
+// from the prop — `gripFor` returns the wrist target + hand orientation for arm IK.
+
+import React from "react";
+import { type Matrix4, PlaneGeometry, Quaternion, Vector3 } from "three";
+import { box, cached, cyl, sphere } from "../lib/geo.ts";
+import { canvasTex, phys } from "../lib/mats.ts";
+import { FONT } from "../../../core/type/fonts.ts";
+import { toPQ } from "./attach.ts";
+import { BAG, PHONE } from "./grip.ts";
+export { BAG, PHONE, PHONE_IN_HAND, gripFor, phoneReadPose } from "./grip.ts";
+import type { V3 } from "../character/spec.ts";
+
+// ── phone ───────────────────────────────────────────────────────────────────
+
+const homeTex = (clock: string) =>
+  canvasTex(`cfhome${clock}`, 256, 540, (g, w, h) => {
+    const gr = g.createLinearGradient(0, 0, w, h);
+    gr.addColorStop(0, "#5b8def");
+    gr.addColorStop(0.55, "#9b6be8");
+    gr.addColorStop(1, "#f08aa7");
+    g.fillStyle = gr;
+    g.fillRect(0, 0, w, h);
+    g.fillStyle = "#ffffff";
+    g.textAlign = "center";
+    g.font = `300 64px ${FONT}, sans-serif`;
+    g.fillText(clock, w / 2, 110);
+    g.font = `500 16px ${FONT}, sans-serif`;
+    g.fillText("Jumat, 31 Oktober", w / 2, 138);
+    const cols = ["#ffd166", "#06d6a0", "#ef476f", "#118ab2", "#ffffff", "#f78c6b", "#83d483", "#c3a6ff"];
+    for (let i = 0; i < 12; i++) {
+      const x = 38 + (i % 4) * 60, y = 220 + Math.floor(i / 4) * 72;
+      g.fillStyle = cols[i % cols.length];
+      g.beginPath();
+      g.roundRect(x - 20, y - 20, 40, 40, 11);
+      g.fill();
+    }
+    g.fillStyle = "rgba(255,255,255,0.35)";
+    g.beginPath();
+    g.roundRect(18, h - 78, w - 36, 56, 22);
+    g.fill();
+  });
+
+/** Phone: centre at the origin, screen faces +Z, top toward +Y. */
+export const Phone: React.FC<{ m: Matrix4; on: number; clock?: string }> = ({ m, on, clock = "07:42" }) => {
+  const { position, quaternion } = toPQ(m);
+  const scr = phys(`cfphonescr${clock}`, { color: "#000000", emissive: "#ffffff", emissiveMap: homeTex(clock), emissiveIntensity: 1, roughness: 0.15, clearcoat: 1 });
+  scr.emissiveIntensity = 0.15 + 0.75 * on;
+  return (
+    <group position={position} quaternion={quaternion}>
+      <mesh geometry={box(PHONE.w, PHONE.h, PHONE.t, 0.009)} material={phys("cfphonebody", { color: "#2a2d36", roughness: 0.3, metalness: 0.5, clearcoat: 0.6 })} castShadow />
+      <mesh geometry={cached("cfphonescreen", () => new PlaneGeometry(PHONE.w - 0.006, PHONE.h - 0.008))} material={scr} position={[0, 0, PHONE.t / 2 + 0.0004]} />
+      <mesh geometry={cyl(0.007, 0.007, 0.002, 16)} material={phys("cfphonecam", { color: "#111", roughness: 0.1, clearcoat: 1 })} position={[-0.02, 0.058, -PHONE.t / 2 - 0.0008]} rotation={[Math.PI / 2, 0, 0]} />
+    </group>
+  );
+};
+
+// ── sling bag ───────────────────────────────────────────────────────────────
+
+/** Sling bag: origin at the centre of its top edge, front faces +Z, hangs along −Y. */
+export const SlingBag: React.FC<{ m: Matrix4; flap: number; color?: string }> = ({ m, flap, color = "#e07a3f" }) => {
+  const { position, quaternion } = toPQ(m);
+  const body = phys(`cfbag${color}`, { color, roughness: 0.75, sheen: 0.6, sheenColor: "#ffd7b5" });
+  const dark = phys("cfbagtrim", { color: "#5b3a29", roughness: 0.6 });
+  const a = -2.3 * Math.min(1, Math.max(0, flap));
+  return (
+    <group position={position} quaternion={quaternion}>
+      <mesh geometry={box(BAG.w, BAG.h, BAG.d, 0.03)} material={body} position={[0, -BAG.h / 2, 0]} castShadow receiveShadow />
+      <mesh geometry={box(BAG.w - 0.04, 0.012, BAG.d - 0.03, 0.005)} material={phys("cfbaginside", { color: "#3a2a22", roughness: 0.9 })} position={[0, -0.004, 0]} />
+      {/* flap hinged at the back of the top edge */}
+      <group position={[0, 0.004, -BAG.d / 2]} rotation={[a, 0, 0]}>
+        <mesh geometry={box(BAG.w + 0.008, 0.012, BAG.d + 0.004, 0.005)} material={body} position={[0, 0, BAG.d / 2]} castShadow />
+        <mesh geometry={box(BAG.w + 0.01, 0.13, 0.012, 0.005)} material={body} position={[0, -0.065, BAG.d + 0.004]} castShadow />
+        <mesh geometry={box(0.05, 0.03, 0.006, 0.004)} material={dark} position={[0, -0.11, BAG.d + 0.012]} />
+      </group>
+    </group>
+  );
+};
+
+/** Strap as a tube through world points. */
+export const Strap: React.FC<{ pts: V3[]; r?: number; color?: string }> = ({ pts, r = 0.011, color = "#5b3a29" }) => {
+  const mat = phys(`cfstrap${color}`, { color, roughness: 0.7 });
+  const up = new Vector3(0, 1, 0);
+  return (
+    <group>
+      {pts.slice(1).map((b, i) => {
+        const a = new Vector3(...pts[i]), c = new Vector3(...b);
+        const len = a.distanceTo(c);
+        const mid = a.clone().add(c).multiplyScalar(0.5);
+        const q = new Quaternion().setFromUnitVectors(up, c.clone().sub(a).normalize());
+        return <mesh key={i} geometry={cyl(r, r, 1, 8)} material={mat} position={[mid.x, mid.y, mid.z]} quaternion={[q.x, q.y, q.z, q.w]} scale={[1.6, len, 0.55]} castShadow />;
+      })}
+      {pts.map((p, i) => <mesh key={`j${i}`} geometry={sphere(r * 1.05, 8, 6)} material={mat} position={p} scale={[1.6, 1, 0.55]} />)}
+    </group>
+  );
+};
+
+==== 7265 src/kits/characterflow/props/props.tsx
+// Hand props + the attach maths that lets a character pick things up and put them down.
+//
+// A prop's world matrix over time is a chain of states: resting somewhere, or held by a hand. When a
+// hand takes a prop, the grip offset is measured at that instant (prop rest × inverse hand), so the
+// prop never jumps; when it is let go it settles onto its next rest pose. All pure functions of t.
+
+import React, { useMemo } from "react";
+import { CanvasTexture, DoubleSide, type Matrix4, PlaneGeometry, SRGBColorSpace } from "three";
+import { box, cached, cyl, sphere } from "../lib/geo.ts";
+import { phys } from "../lib/mats.ts";
+
+export { mat, lerpMat, gripOffset, held, toPQ, xform } from "./attach.ts";
+import { toPQ } from "./attach.ts";
+
+// ── notebook with live handwriting ──────────────────────────────────────────
+export const NB = { w: 0.15, d: 0.21, t: 0.014 };
+const CW = 600, CH = Math.round((CW * NB.d) / NB.w);
+
+export type Writing = { header: string; lines: string[]; checkbox: boolean; font: string; ink: string };
+
+type Layout = { x0: number; y: number; w: number }[];
+const layoutLines = (g: CanvasRenderingContext2D, W: Writing): Layout => {
+  g.font = `64px ${W.font}`;
+  const out: Layout = [];
+  let y = 300;
+  W.lines.forEach((ln, i) => {
+    const x0 = i === 0 && W.checkbox ? 130 : 70;
+    out.push({ x0, y, w: g.measureText(ln).width });
+    y += 96;
+  });
+  return out;
+};
+const totalLen = (L: Layout, W: Writing) => L.reduce((s, l) => s + l.w, 0) + (W.checkbox ? 160 : 0);
+
+/** Page-space (0…1) position of the pen tip for writing progress p. */
+export const penOnPage = (W: Writing, p: number): [number, number] => {
+  const c = document.createElement("canvas").getContext("2d")!;
+  const L = layoutLines(c, W);
+  let d = Math.min(1, Math.max(0, p)) * totalLen(L, W);
+  if (W.checkbox) {
+    if (d < 160) {
+      const k = d / 160, s = 50;
+      const [x, y] = k < 0.25 ? [70 + s * (k / 0.25), 250] : k < 0.5 ? [70 + s, 250 + s * ((k - 0.25) / 0.25)] : k < 0.75 ? [70 + s - s * ((k - 0.5) / 0.25), 250 + s] : [70, 250 + s - s * ((k - 0.75) / 0.25)];
+      return [x / CW, y / CH];
+    }
+    d -= 160;
+  }
+  for (const l of L) {
+    if (d <= l.w) {
+      const wob = Math.sin(d * 0.21) * 9 + Math.sin(d * 0.057) * 6;
+      return [(l.x0 + d) / CW, (l.y - 14 + wob) / CH];
+    }
+    d -= l.w;
+  }
+  const last = L[L.length - 1];
+  return [(last.x0 + last.w + 6) / CW, (last.y - 10) / CH];
+};
+
+const drawPage = (g: CanvasRenderingContext2D, W: Writing, p: number) => {
+  g.fillStyle = "#fbf8f0";
+  g.fillRect(0, 0, CW, CH);
+  g.strokeStyle = "rgba(90,140,200,0.35)";
+  g.lineWidth = 2;
+  for (let y = 210; y < CH - 30; y += 96) {
+    g.beginPath();
+    g.moveTo(30, y + 112);
+    g.lineTo(CW - 30, y + 112);
+    g.stroke();
+  }
+  g.strokeStyle = "rgba(230,90,90,0.45)";
+  g.beginPath();
+  g.moveTo(52, 0);
+  g.lineTo(52, CH);
+  g.stroke();
+  g.fillStyle = "rgba(60,70,90,0.55)";
+  g.font = `600 30px Manrope, sans-serif`;
+  g.textAlign = "right";
+  g.fillText(W.header, CW - 40, 120);
+  g.textAlign = "left";
+  const L = layoutLines(g, W);
+  let d = Math.min(1, Math.max(0, p)) * totalLen(L, W);
+  g.strokeStyle = W.ink;
+  g.fillStyle = W.ink;
+  g.lineWidth = 6;
+  g.lineCap = "round";
+  if (W.checkbox) {
+    const k = Math.min(1, d / 160), s = 50;
+    g.beginPath();
+    const pts: [number, number][] = [[70, 250], [70 + s, 252], [72 + s, 250 + s], [69, 249 + s], [70, 250]];
+    const segs = 4 * k;
+    g.moveTo(...pts[0]);
+    for (let i = 0; i < 4; i++) {
+      if (segs <= i) break;
+      const f = Math.min(1, segs - i);
+      g.lineTo(pts[i][0] + (pts[i + 1][0] - pts[i][0]) * f, pts[i][1] + (pts[i + 1][1] - pts[i][1]) * f);
+    }
+    g.stroke();
+    d -= 160;
+  }
+  g.font = `64px ${W.font}`;
+  W.lines.forEach((ln, i) => {
+    const l = L[i];
+    if (d <= 0) return;
+    const show = Math.min(l.w, d);
+    g.save();
+    g.beginPath();
+    g.rect(l.x0 - 10, l.y - 90, show + 12, 140);
+    g.clip();
+    g.fillText(ln, l.x0, l.y);
+    g.restore();
+    d -= l.w;
+  });
+};
+
+export const Notebook: React.FC<{ m: Matrix4; open: number; writing: Writing; progress: number }> = ({ m, open, writing, progress }) => {
+  const page = useMemo(() => {
+    const c = document.createElement("canvas");
+    c.width = CW;
+    c.height = CH;
+    const tex = new CanvasTexture(c);
+    tex.colorSpace = SRGBColorSpace;
+    tex.anisotropy = 8;
+    return { c, tex, last: -1 };
+  }, []);
+  const q = Math.round(progress * 400) / 400;
+  if (q !== page.last) {
+    drawPage(page.c.getContext("2d")!, writing, q);
+    page.tex.needsUpdate = true;
+    page.last = q;
+  }
+  const pageMat = phys("cfnbpage", { color: "#ffffff", roughness: 0.75, side: DoubleSide });
+  pageMat.map = page.tex;
+  const cover = phys("cfnbcover", { color: "#e4572e", roughness: 0.55, clearcoat: 0.3 });
+  const { position, quaternion } = toPQ(m);
+  const ang = Math.PI * Math.min(1, Math.max(0, open));
+  return (
+    <group position={position} quaternion={quaternion}>
+      <mesh geometry={box(NB.w, 0.004, NB.d, 0.002)} material={cover} position={[0, 0.002, 0]} castShadow receiveShadow />
+      <mesh geometry={box(NB.w - 0.006, NB.t - 0.006, NB.d - 0.006, 0.002)} material={phys("cfnbpages", { color: "#f4efe2", roughness: 0.9 })} position={[0, NB.t / 2, 0]} castShadow receiveShadow />
+      <mesh geometry={cached("cfnbpageplane", () => new PlaneGeometry(NB.w - 0.008, NB.d - 0.008))} material={pageMat} position={[0, NB.t - 0.0025, 0]} rotation={[-Math.PI / 2, 0, 0]} />
+      {/* spiral along the left edge */}
+      {Array.from({ length: 11 }, (_, k) => (
+        <mesh key={k} geometry={cyl(0.0035, 0.0035, 0.004, 8)} material={phys("cfspiral", { color: "#cfd3d8", metalness: 0.9, roughness: 0.25 })} position={[-NB.w / 2, NB.t / 2, -NB.d / 2 + 0.012 + k * 0.0186]} rotation={[0, 0, Math.PI / 2]} scale={[1, 1, 2.2]} />
+      ))}
+      {/* cover hinges on the left edge and folds under */}
+      <group position={[-NB.w / 2, NB.t, 0]} rotation={[0, 0, ang]}>
+        <mesh geometry={box(NB.w, 0.004, NB.d, 0.002)} material={cover} position={[NB.w / 2, 0.002, 0]} castShadow receiveShadow />
+        <mesh geometry={box(0.05, 0.0012, NB.d * 0.7, 0.0005)} material={phys("cfnblabel", { color: "#fff3d6", roughness: 0.7 })} position={[NB.w / 2 + 0.03, 0.0048, 0]} />
+      </group>
+    </group>
+  );
+};
+
+/** Ball pen; tip at the local origin, body along +Y. */
+export const Pen: React.FC<{ m: Matrix4 }> = ({ m }) => {
+  const { position, quaternion } = toPQ(m);
+  return (
+    <group position={position} quaternion={quaternion}>
+      <mesh geometry={cyl(0.0012, 0.0035, 0.012, 10)} material={phys("cfpentip", { color: "#c9ccd2", metalness: 0.9, roughness: 0.25 })} position={[0, 0.006, 0]} />
+      <mesh geometry={cyl(0.0048, 0.0048, 0.11, 14)} material={phys("cfpen", { color: "#2b59c3", roughness: 0.3, clearcoat: 0.7 })} position={[0, 0.067, 0]} castShadow />
+      <mesh geometry={sphere(0.0048, 12, 8)} material={phys("cfpen", { color: "#2b59c3" })} position={[0, 0.122, 0]} />
+      <mesh geometry={box(0.0016, 0.045, 0.004, 0.0008)} material={phys("cfpenclip", { color: "#e8e8ea", metalness: 0.9, roughness: 0.2 })} position={[0.0055, 0.1, 0]} />
+    </group>
+  );
+};
+
+==== 7543 src/kits/characterflow/render/FilmPost.tsx
+// Camera + finishing chain (adapted from core/render/Post.tsx): MSAA → NaN guard → GTAO
+// → bokeh DOF → bloom → PBR Neutral tone map → film grade. The grade is driven per shot and
+// carries flash / fade for transitions.
+
+import React, { useLayoutEffect, useMemo } from "react";
+import { useFrame, useThree } from "@react-three/fiber";
+import { Color, HalfFloatType, NeutralToneMapping, PerspectiveCamera, Vector2, Vector3, WebGLRenderTarget } from "three";
+import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
+import { GTAOPass } from "three/examples/jsm/postprocessing/GTAOPass.js";
+import { BokehPass } from "three/examples/jsm/postprocessing/BokehPass.js";
+import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
+import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
+import { ShaderPass } from "three/examples/jsm/postprocessing/ShaderPass.js";
+import { FX_LAYER, withoutFx } from "../../../core/render/Post.tsx";
+import type { V3 } from "../character/spec.ts";
+
+export type Cam = { pos: V3; target: V3; fov: number; roll?: number; focus?: number; aperture?: number; maxBlur?: number; near?: number; far?: number };
+
+export type Grade = {
+  exposure: number;
+  /** additive lift in the shadows, multiplicative gain */
+  lift: V3; gain: V3;
+  sat: number; contrast: number;
+  vignette: number; grain: number;
+  bloom: number; bloomRadius: number; bloomThreshold: number;
+  /** 0..1 flash toward `flashColor`, 0..1 fade to black */
+  flash: number; flashColor: string; black: number;
+  ao: number;
+};
+
+export const GRADE0: Grade = {
+  exposure: 1, lift: [0, 0, 0], gain: [1, 1, 1], sat: 1, contrast: 1, vignette: 0.22, grain: 0.016,
+  bloom: 0.22, bloomRadius: 0.45, bloomThreshold: 1.05, flash: 0, flashColor: "#ffffff", black: 0, ao: 1,
+};
+
+export const CameraRig: React.FC<{ cam: Cam }> = ({ cam }) => {
+  const { camera } = useThree();
+  useLayoutEffect(() => {
+    const c = camera as PerspectiveCamera;
+    c.position.set(...cam.pos);
+    const f = new Vector3(...cam.target).sub(c.position).normalize();
+    const r = cam.roll ?? 0;
+    // roll about the view axis
+    const up = new Vector3(0, 1, 0);
+    const side = new Vector3().crossVectors(f, up).normalize();
+    const u2 = new Vector3().crossVectors(side, f).normalize();
+    c.up.copy(u2.multiplyScalar(Math.cos(r)).addScaledVector(side, Math.sin(r)));
+    c.lookAt(...cam.target);
+    c.fov = cam.fov;
+    c.near = cam.near ?? 0.05;
+    c.far = cam.far ?? 900;
+    c.updateProjectionMatrix();
+    c.updateMatrixWorld();
+    c.layers.enable(FX_LAYER);
+  }, [cam, camera]);
+  return null;
+};
+
+const NanGuardShader = {
+  uniforms: { tDiffuse: { value: null } },
+  vertexShader: /* glsl */ `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+  fragmentShader: /* glsl */ `uniform sampler2D tDiffuse; varying vec2 vUv;
+    void main(){ vec4 c = texture2D(tDiffuse, vUv);
+      if (any(isnan(c)) || any(isinf(c))) c = vec4(0.0, 0.0, 0.0, 1.0);
+      gl_FragColor = clamp(c, 0.0, 64.0); }`,
+};
+
+const GradeShader = {
+  uniforms: {
+    tDiffuse: { value: null },
+    uTime: { value: 0 },
+    uRes: { value: new Vector2(1080, 1920) },
+    uLift: { value: new Vector3() },
+    uGain: { value: new Vector3(1, 1, 1) },
+    uSat: { value: 1 },
+    uContrast: { value: 1 },
+    uVignette: { value: 0.2 },
+    uGrain: { value: 0.015 },
+    uFlash: { value: 0 },
+    uFlashColor: { value: new Color("#fff") },
+    uBlack: { value: 0 },
+  },
+  vertexShader: /* glsl */ `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+  fragmentShader: /* glsl */ `
+    uniform sampler2D tDiffuse; uniform float uTime; uniform vec2 uRes;
+    uniform vec3 uLift; uniform vec3 uGain; uniform float uSat; uniform float uContrast;
+    uniform float uVignette; uniform float uGrain; uniform float uFlash; uniform vec3 uFlashColor; uniform float uBlack;
+    varying vec2 vUv;
+    float hash(vec2 p){ p = fract(p * vec2(443.897, 441.423)); p += dot(p, p.yx + 19.19); return fract((p.x + p.y) * p.x); }
+    void main(){
+      vec4 c = texture2D(tDiffuse, vUv);
+      vec3 x = clamp(c.rgb, 0.0, 1.0);
+      x = x * uGain + uLift * (1.0 - x);
+      float l = dot(x, vec3(0.2126, 0.7152, 0.0722));
+      x = mix(vec3(l), x, uSat);
+      x = clamp((x - 0.5) * uContrast + 0.5, 0.0, 1.0);
+      x = mix(x, x * x * (3.0 - 2.0 * x), 0.18);
+      vec2 d = (vUv - 0.5) * vec2(1.0, 1.15);
+      x *= 1.0 - uVignette * smoothstep(0.3, 0.95, length(d));
+      float g = hash(vUv * uRes + uTime * 17.0) - 0.5;
+      x += g * uGrain * (0.5 + 0.5 * (1.0 - l));
+      x = mix(x, uFlashColor, clamp(uFlash, 0.0, 1.0));
+      x *= 1.0 - clamp(uBlack, 0.0, 1.0);
+      gl_FragColor = vec4(x, 1.0);
+    }`,
+};
+
+export const FilmPost: React.FC<{ cam: Cam; grade: Grade; frame: number }> = ({ cam, grade, frame }) => {
+  const { gl, scene, camera, size } = useThree();
+  const chain = useMemo(() => {
+    const w = size.width, h = size.height;
+    const rt = new WebGLRenderTarget(w, h, { type: HalfFloatType, samples: 4 });
+    const composer = new EffectComposer(gl, rt);
+    composer.setPixelRatio(1);
+    composer.setSize(w, h);
+    composer.addPass(new RenderPass(scene, camera));
+    composer.addPass(new ShaderPass(NanGuardShader));
+    const gtao = new GTAOPass(scene, camera, w, h);
+    gtao.blendIntensity = 1.0;
+    gtao.updateGtaoMaterial({ radius: 0.35, distanceExponent: 1.6, thickness: 0.6, scale: 1.0, samples: 16, distanceFallOff: 1.0, screenSpaceRadius: false });
+    gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 5, rings: 2, samples: 16 });
+    composer.addPass(withoutFx(gtao, camera));
+    const dof = withoutFx(new BokehPass(scene, camera, { focus: 3, aperture: 0.002, maxblur: 0.008 }), camera);
+    composer.addPass(dof);
+    const bloom = new UnrealBloomPass(new Vector2(w, h), 0.25, 0.5, 0.85);
+    composer.addPass(bloom);
+    composer.addPass(new OutputPass());
+    const g = new ShaderPass(GradeShader);
+    g.uniforms.uRes.value.set(w, h);
+    composer.addPass(g);
+    return { composer, dof, bloom, gtao, g };
+  }, [gl, scene, camera, size.width, size.height]);
+
+  useLayoutEffect(() => {
+    gl.toneMapping = NeutralToneMapping;
+    gl.toneMappingExposure = grade.exposure;
+    const u = chain.dof.uniforms as unknown as Record<string, { value: number }>;
+    const dist = new Vector3(...cam.pos).distanceTo(new Vector3(...cam.target));
+    u.focus.value = cam.focus ?? dist;
+    u.aperture.value = cam.aperture ?? 0;
+    u.maxblur.value = cam.maxBlur ?? 0;
+    chain.dof.enabled = (cam.aperture ?? 0) > 0 && (cam.maxBlur ?? 0) > 0;
+    chain.bloom.strength = grade.bloom;
+    chain.bloom.radius = grade.bloomRadius;
+    chain.bloom.threshold = grade.bloomThreshold;
+    chain.gtao.blendIntensity = grade.ao;
+    chain.gtao.enabled = grade.ao > 0.01;
+    const U = chain.g.uniforms;
+    U.uTime.value = frame % 997;
+    U.uLift.value.set(...grade.lift);
+    U.uGain.value.set(...grade.gain);
+    U.uSat.value = grade.sat;
+    U.uContrast.value = grade.contrast;
+    U.uVignette.value = grade.vignette;
+    U.uGrain.value = grade.grain;
+    U.uFlash.value = grade.flash;
+    U.uFlashColor.value.set(grade.flashColor);
+    U.uBlack.value = grade.black;
+  }, [frame, chain, cam, grade, gl]);
+
+  useFrame(() => {
+    chain.composer.render();
+  }, 1);
+  return null;
+};
+
+==== 5115 src/kits/characterflow/render/Lights.tsx
+// Fixed light rig for a whole film. The set of lights never changes (so three.js never recompiles
+// a shader mid-film); shots only move them and change colour/intensity. Two lights cast shadows:
+// the key (directional, frustum fitted to the shot box) and one spot (a practical lamp).
+
+import React, { useLayoutEffect, useMemo } from "react";
+import { useThree } from "@react-three/fiber";
+import {
+  Color,
+  DirectionalLight,
+  FogExp2,
+  HemisphereLight,
+  Matrix4,
+  Object3D,
+  PMREMGenerator,
+  PointLight,
+  SpotLight,
+  Vector3,
+} from "three";
+import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
+import type { V3 } from "../character/spec.ts";
+
+export type PointL = { pos: V3; color: string; i: number; dist: number };
+export type LightState = {
+  bg: string;
+  fog: { color: string; density: number };
+  env: number;
+  hemi: { sky: string; ground: string; i: number };
+  moon: { dir: V3; color: string; i: number; box: { min: V3; max: V3 } };
+  spot: { pos: V3; target: V3; color: string; i: number; angle: number; penumbra: number; dist: number };
+  pts: [PointL, PointL, PointL, PointL];
+};
+
+export const P_OFF: PointL = { pos: [0, -50, 0], color: "#ffffff", i: 0, dist: 1 };
+
+export const Lights: React.FC<{ s: LightState }> = ({ s }) => {
+  const { scene, gl } = useThree();
+  const rig = useMemo(() => {
+    const hemi = new HemisphereLight("#8899bb", "#221a14", 0.5);
+    const moon = new DirectionalLight("#9fb8ff", 1);
+    moon.castShadow = true;
+    moon.shadow.mapSize.set(2048, 2048);
+    moon.shadow.bias = -0.0004;
+    moon.shadow.normalBias = 0.025;
+    moon.shadow.radius = 3;
+    const mt = new Object3D();
+    moon.target = mt;
+    const spot = new SpotLight("#ffd9a8", 0);
+    spot.castShadow = true;
+    spot.shadow.mapSize.set(1024, 1024);
+    spot.shadow.bias = -0.0006;
+    spot.shadow.normalBias = 0.02;
+    spot.shadow.radius = 4;
+    spot.shadow.camera.near = 0.1;
+    const st = new Object3D();
+    spot.target = st;
+    const pts = [0, 1, 2, 3].map(() => {
+      const p = new PointLight("#fff", 0, 1, 2);
+      p.castShadow = false;
+      return p;
+    });
+    const pm = new PMREMGenerator(gl);
+    const env = pm.fromScene(new RoomEnvironment(), 0.04).texture;
+    return { hemi, moon, mt, spot, st, pts, env };
+  }, [gl]);
+
+  useLayoutEffect(() => {
+    scene.environment = rig.env;
+    scene.background = new Color(s.bg);
+    if (!(scene.fog instanceof FogExp2)) scene.fog = new FogExp2(s.fog.color, s.fog.density);
+    (scene.fog as FogExp2).color.set(s.fog.color);
+    (scene.fog as FogExp2).density = s.fog.density;
+    scene.environmentIntensity = s.env;
+
+    rig.hemi.color.set(s.hemi.sky);
+    rig.hemi.groundColor.set(s.hemi.ground);
+    rig.hemi.intensity = s.hemi.i;
+
+    // moon: fixed frustum fitted around the shot box in light space
+    const { min, max } = s.moon.box;
+    const L = new Vector3(...s.moon.dir).normalize();
+    const c = new Vector3(...min).add(new Vector3(...max)).multiplyScalar(0.5);
+    rig.mt.position.copy(c);
+    rig.mt.updateMatrixWorld();
+    rig.moon.position.copy(c).addScaledVector(L, 120);
+    const view = new Matrix4().lookAt(rig.moon.position, c, Math.abs(L.y) > 0.98 ? new Vector3(0, 0, 1) : new Vector3(0, 1, 0));
+    const inv = new Matrix4().makeTranslation(rig.moon.position.x, rig.moon.position.y, rig.moon.position.z).multiply(view).invert();
+    const lo = new Vector3(Infinity, Infinity, Infinity), hi = new Vector3(-Infinity, -Infinity, -Infinity);
+    for (let k = 0; k < 8; k++) {
+      const p = new Vector3(k & 1 ? max[0] : min[0], k & 2 ? max[1] : min[1], k & 4 ? max[2] : min[2]).applyMatrix4(inv);
+      lo.min(p);
+      hi.max(p);
+    }
+    const sc = rig.moon.shadow.camera;
+    sc.left = lo.x; sc.right = hi.x; sc.bottom = lo.y; sc.top = hi.y;
+    sc.near = Math.max(0.5, -hi.z - 5);
+    sc.far = -lo.z + 5;
+    sc.updateProjectionMatrix();
+    rig.moon.color.set(s.moon.color);
+    rig.moon.intensity = s.moon.i;
+    // shadow maps render every frame even for a dark light: an unrendered shadow map makes WebGL
+    // reject every draw call ("mismatch between texture format and sampler type")
+    rig.moon.shadow.autoUpdate = true;
+
+    rig.spot.position.set(...s.spot.pos);
+    rig.st.position.set(...s.spot.target);
+    rig.st.updateMatrixWorld();
+    rig.spot.color.set(s.spot.color);
+    rig.spot.intensity = s.spot.i;
+    rig.spot.angle = s.spot.angle;
+    rig.spot.penumbra = s.spot.penumbra;
+    rig.spot.distance = s.spot.dist;
+    rig.spot.decay = 2;
+    rig.spot.shadow.camera.far = s.spot.dist;
+    rig.spot.shadow.autoUpdate = true;
+
+    s.pts.forEach((p, i) => {
+      const l = rig.pts[i];
+      l.position.set(...p.pos);
+      l.color.set(p.color);
+      l.intensity = p.i;
+      l.distance = p.dist;
+      l.decay = 2;
+    });
+  }, [s, rig, scene]);
+
+  return (
+    <>
+      <primitive object={rig.hemi} />
+      <primitive object={rig.moon} />
+      <primitive object={rig.mt} />
+      <primitive object={rig.spot} />
+      <primitive object={rig.st} />
+      {rig.pts.map((p, i) => (
+        <primitive key={i} object={p} />
+      ))}
+    </>
+  );
+};
+
+==== 2822 src/kits/characterflow/render/looks.ts
+// Blending of light states and grades (scene moods change continuously: lamp off, alarm, calm).
+
+import { Color } from "three";
+import type { Grade } from "./FilmPost.tsx";
+import type { LightState, PointL } from "./Lights.tsx";
+import type { V3 } from "../character/spec.ts";
+
+const mixN = (a: number, b: number, k: number) => a + (b - a) * k;
+const mix3 = (a: V3, b: V3, k: number): V3 => [mixN(a[0], b[0], k), mixN(a[1], b[1], k), mixN(a[2], b[2], k)];
+const _a = new Color(), _b = new Color();
+const mixC = (a: string, b: string, k: number) => `#${_a.set(a).lerp(_b.set(b), k).getHexString()}`;
+const mixP = (a: PointL, b: PointL, k: number): PointL => {
+  // a light fading in/out keeps its position (no sliding across the room)
+  const pos = a.i === 0 ? b.pos : b.i === 0 ? a.pos : mix3(a.pos, b.pos, k);
+  return { pos, color: mixC(a.color, b.color, k), i: mixN(a.i, b.i, k), dist: mixN(a.dist, b.dist, k) };
+};
+
+export const mixLight = (a: LightState, b: LightState, k: number): LightState => {
+  if (k <= 0) return a;
+  if (k >= 1) return b;
+  return {
+    bg: mixC(a.bg, b.bg, k),
+    fog: { color: mixC(a.fog.color, b.fog.color, k), density: mixN(a.fog.density, b.fog.density, k) },
+    env: mixN(a.env, b.env, k),
+    hemi: { sky: mixC(a.hemi.sky, b.hemi.sky, k), ground: mixC(a.hemi.ground, b.hemi.ground, k), i: mixN(a.hemi.i, b.hemi.i, k) },
+    moon: { dir: mix3(a.moon.dir, b.moon.dir, k), box: a.moon.box, color: mixC(a.moon.color, b.moon.color, k), i: mixN(a.moon.i, b.moon.i, k) },
+    spot: a.spot.i === 0 ? { ...b.spot, i: b.spot.i * k } : b.spot.i === 0 ? { ...a.spot, i: a.spot.i * (1 - k) } : { ...b.spot, i: mixN(a.spot.i, b.spot.i, k) },
+    pts: [0, 1, 2, 3].map((i) => mixP(a.pts[i], b.pts[i], k)) as LightState["pts"],
+  };
+};
+
+export const mixGrade = (a: Grade, b: Grade, k: number): Grade => {
+  if (k <= 0) return a;
+  if (k >= 1) return b;
+  const o = { ...a };
+  for (const key of Object.keys(a) as (keyof Grade)[]) {
+    const va = a[key], vb = b[key];
+    if (typeof va === "number" && typeof vb === "number") (o as Record<string, unknown>)[key] = mixN(va, vb, k);
+    else if (Array.isArray(va) && Array.isArray(vb)) (o as Record<string, unknown>)[key] = mix3(va as V3, vb as V3, k);
+    else if (typeof va === "string" && typeof vb === "string") (o as Record<string, unknown>)[key] = mixC(va, vb, k);
+  }
+  return o;
+};
+
+/** Piecewise timeline of keyed states with smooth blends: [[t, state, blendSeconds], …]. */
+export const keyed = <S,>(keys: [number, S, number][], mix: (a: S, b: S, k: number) => S, t: number): S => {
+  let cur = keys[0][1];
+  for (let i = 1; i < keys.length; i++) {
+    const [t0, s, d] = keys[i];
+    if (t < t0) break;
+    const k = d <= 0 ? 1 : Math.min(1, (t - t0) / d);
+    const e = k * k * (3 - 2 * k);
+    cur = mix(cur, s, e);
+  }
+  return cur;
+};
+
+==== 1361 src/kits/characterflow/timing/cues.ts
+// Voice-over cues: scenes refer to words of the transcript ("the lamp clicks off on *mati*") instead of
+// seconds, so a re-recorded voice-over only needs a new transcript — the acting re-times itself.
+
+export type Word = [text: string, start: number, end: number];
+
+const norm = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+
+export type Cues = {
+  /** film time of a word (n = occurrence, 0-based); throws if the word is missing */
+  at: (word: string, n?: number, edge?: "start" | "end") => number;
+  end: (word: string, n?: number) => number;
+  /** film time of the k-th word overall */
+  word: (k: number) => number;
+  words: Word[];
+  offset: number;
+  voEnd: number;
+};
+
+export const makeCues = (words: Word[], offset: number): Cues => {
+  const find = (w: string, n = 0) => {
+    const key = norm(w);
+    let k = -1;
+    for (let i = 0, seen = 0; i < words.length; i++)
+      if (norm(words[i][0]) === key) {
+        if (seen === n) { k = i; break; }
+        seen++;
+      }
+    if (k < 0) throw new Error(`cue "${w}" #${n} not in transcript`);
+    return words[k];
+  };
+  return {
+    at: (w, n = 0, edge = "start") => offset + find(w, n)[edge === "start" ? 1 : 2],
+    end: (w, n = 0) => offset + find(w, n)[2],
+    word: (k) => offset + words[k][1],
+    words,
+    offset,
+    voEnd: offset + words[words.length - 1][2],
+  };
+};
+
+==== 202 src/stories/registry.ts
+// Generated by scripts/make.mjs — every story in src/stories/data becomes two compositions.
+import type { Story } from "../kits/characterflow/director/story.ts";
+
+export const STORIES: Story[] = [];

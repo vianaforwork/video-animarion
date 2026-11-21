@@ -1,0 +1,2968 @@
+VOYNANN Motion - packed source files of this folder. Do not edit by hand.
+The skill upload in the Claude app accepts at most 200 files, so the source files are packed here.
+`node <skill folder>/new-project.mjs <project folder> --kit=<style>` unpacks them into the project.
+Format: per file one line with four '=' signs, the byte length and the path, then exactly that many bytes.
+
+==== 41 project/.gitignore
+node_modules
+out
+.gl-mode
+public/stories
+
+==== 1181 project/package.json
+{
+  "name": "voynann-cerdik-project",
+  "version": "1.0.0",
+  "private": true,
+  "description": "VOYNANN Motion CERDIK project (Remotion + React Three Fiber): story.json (+ voice-over) -> round-head stick-figure story short in a rich 3D world, 9:16.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "scripts": {
+    "dev": "remotion studio",
+    "typecheck": "tsc --noEmit",
+    "check-env": "node scripts/check-env.mjs",
+    "make": "node scripts/make.mjs",
+    "library": "node scripts/make.mjs --library",
+    "menu": "node scripts/make.mjs --menu",
+    "smoke": "node scripts/make.mjs kendi --stills 1.2s,7s,33.5s --silent"
+  },
+  "dependencies": {
+    "@react-three/fiber": "9.8.2",
+    "@remotion/cli": "4.0.539",
+    "@remotion/google-fonts": "4.0.539",
+    "@remotion/three": "4.0.539",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "remotion": "4.0.539",
+    "three": "0.186.1",
+    "three-mesh-bvh": "0.9.16"
+  },
+  "devDependencies": {
+    "@remotion/bundler": "4.0.539",
+    "@remotion/renderer": "4.0.539",
+    "@types/react": "19.2.7",
+    "@types/three": "0.186.0",
+    "typescript": "5.9.3"
+  },
+  "overrides": {
+    "zod": "4.6.7"
+  }
+}
+
+==== 9586 project/scripts/lib/cerdik-sound.mjs
+// CERDIK sound from a Plan — original synth, no samples.
+// Music: a curious, playful storytelling bed (pizzicato bass, marimba melody in a "mystery-major" mode, light shaker
+// and woodblock), 104 bpm. It thins out in the twist (night / hot) and lands with a resolving chord at the end.
+// SFX follow the plan: a soft air move on each cut, a whoosh on dissolves, a bright "ding" when something glows,
+// sparkles, a sizzle under steam, a cool shimmer for "chill", a dull thud for dust, a heat drone in hot shots.
+// Mix: −14 LUFS / −1.5 dBTP; the music ducks under the voice.
+import fs from "node:fs";
+import path from "node:path";
+import { execFileSync, spawnSync } from "node:child_process";
+
+export const buildSound = (plan, { voice, outDir, mixFile, music = true }) => {
+  const DUR = plan.duration, SR = 48000, N = Math.ceil(DUR * SR);
+  const mk = () => [new Float32Array(N), new Float32Array(N)];
+  let seed = 4242;
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const add = (buf, t, pan, len, fn) => {
+    const i0 = Math.max(0, Math.round(t * SR)), n = Math.min(N - i0, Math.round(len * SR));
+    const gl = Math.cos((pan + 1) * Math.PI / 4), gr = Math.sin((pan + 1) * Math.PI / 4);
+    for (let i = 0; i < n; i++) { const v = fn(i / SR, i); buf[0][i0 + i] += v * gl; buf[1][i0 + i] += v * gr; }
+  };
+  const hz = (m) => 440 * Math.pow(2, (m - 69) / 12);
+  const shotAt = (t) => plan.shots.find((s) => t >= s.t0 && t < s.t1) ?? plan.shots[plan.shots.length - 1];
+  const timeAt = (t) => shotAt(t).time;
+  const rainAt = (t) => shotAt(t).weather === "rain";
+
+  // ---------------------------------------------------------------- music
+  const mus = mk();
+  if (music) {
+    const beat = 60 / 104, bar = beat * 4;
+    // F major with a raised 4th (Lydian) → curious; chords I – II – vi – IV
+    const CH = [[53, 57, 60, 64], [55, 59, 62, 66], [50, 57, 60, 65], [46, 53, 58, 62]];
+    const MEL = [72, 74, 76, 79, 81, 83, 84];
+    const fade = (t) => Math.min(1, Math.max(0, (DUR - 0.3 - t) / 1.6)) * Math.min(1, t / 0.6);
+    const bars = Math.ceil(DUR / bar);
+    for (let b = 0; b < bars; b++) {
+      const c = CH[b % 4], t0 = b * bar;
+      const mood = timeAt(t0 + 0.1);
+      const thin = mood === "hot" || mood === "night" || rainAt(t0 + 0.1) ? 0.55 : 1;
+      // pizzicato bass on 1 and 3 (+ a pickup on 4&)
+      for (const [bt, m] of [[0, c[0] - 12], [2, c[0] - 5], [3.5, c[0] - 10]]) {
+        const f = hz(m);
+        add(mus, t0 + bt * beat, -0.1, 0.5, (t) => (Math.sin(2 * Math.PI * f * t) + 0.35 * Math.sin(4 * Math.PI * f * t)) * 0.085 * Math.min(1, t / 0.004) * Math.exp(-t * 9) * fade(t0 + t));
+      }
+      // marimba: a light arpeggio, sparser in the twist
+      for (let e = 0; e < 8; e++) {
+        if (rnd() > 0.78 * thin + 0.1) continue;
+        const pool = MEL.filter((p) => c.some((x) => (p - x) % 12 === 0) || rnd() < 0.25);
+        const m = pool[Math.floor(rnd() * pool.length)] ?? 72;
+        const f = hz(m), vel = (e % 4 === 0 ? 0.06 : 0.042) * (0.75 + rnd() * 0.4), pan = (rnd() - 0.5) * 0.8;
+        add(mus, t0 + e * beat / 2 + (rnd() - 0.5) * 0.01, pan, 0.8, (t) => (Math.sin(2 * Math.PI * f * t) * Math.exp(-t * 8) + 0.35 * Math.sin(2 * Math.PI * f * 4 * t) * Math.exp(-t * 30)) * vel * Math.min(1, t / 0.002) * fade(t0 + t));
+      }
+      // soft pad under the whole bar
+      for (const [k, m] of c.entries()) add(mus, t0, (k - 1.5) * 0.2, bar + 0.4, (t) => Math.sin(2 * Math.PI * hz(m) * t) * 0.009 * Math.min(1, t / 0.8) * Math.min(1, (bar + 0.4 - t) / 0.6) * fade(t0 + t));
+      // shaker on the off-beats, woodblock on 2 and 4
+      for (let e = 1; e < 8; e += 2) { let lp = 0; add(mus, t0 + e * beat / 2, 0.3, 0.06, (t) => { const n = rnd() * 2 - 1; lp += (n - lp) * 0.7; return (n - lp) * 0.016 * thin * Math.exp(-t * 70) * fade(t0 + t); }); }
+      for (const bt of [1, 3]) add(mus, t0 + bt * beat, -0.3, 0.12, (t) => Math.sin(2 * Math.PI * 1150 * t) * Math.exp(-t * 55) * 0.03 * thin * fade(t0 + t));
+    }
+    // landing chord at the end
+    const endT = Math.max(0, DUR - 2.2);
+    for (const m of [53, 60, 65, 69, 72]) add(mus, endT, 0, 2.2, (t) => Math.sin(2 * Math.PI * hz(m) * t) * 0.03 * Math.min(1, t / 0.02) * Math.exp(-t * 1.4));
+  }
+
+  // ---------------------------------------------------------------- SFX
+  const sfx = mk();
+  const noise = (t, len, gain, lpK, hpK, env, pan = 0) => { let lp = 0, hp = 0; add(sfx, t, pan, len, (x) => { const n = rnd() * 2 - 1; lp += (n - lp) * lpK; hp += (lp - hp) * hpK; return (lp - hp) * gain * env(x); }); };
+  const air = (t) => noise(t - 0.12, 0.3, 0.09, 0.05, 0.002, (x) => Math.sin(Math.PI * Math.min(1, x / 0.3)) ** 2);
+  const whoosh = (t) => noise(t - 0.15, 0.8, 0.16, 0.08, 0.01, (x) => Math.sin(Math.PI * Math.min(1, x / 0.8)) ** 2, 0.2);
+  const ding = (t, m = 88) => { for (const [k, mm] of [m, m + 7, m + 12].entries()) add(sfx, t + k * 0.035, 0.15, 1.1, (x) => Math.sin(2 * Math.PI * hz(mm) * x) * (0.035 - k * 0.008) * Math.min(1, x / 0.003) * Math.exp(-x * 4.5)); };
+  const twinkle = (t) => { for (let k = 0; k < 4; k++) { const m = 93 + Math.floor(rnd() * 7); add(sfx, t + k * 0.09 + rnd() * 0.04, (rnd() - 0.5) * 0.8, 0.3, (x) => Math.sin(2 * Math.PI * hz(m) * x) * 0.014 * Math.exp(-x * 14)); } };
+  const thud = (t) => add(sfx, t, 0, 0.4, (x) => Math.sin(2 * Math.PI * 70 * x * (1 + Math.exp(-x * 40))) * Math.exp(-x * 14) * 0.16 * Math.min(1, x / 0.003));
+  const events = [];
+  plan.shots.forEach((S, i) => {
+    if (i) { if (S.dissolve) whoosh(S.t0); else air(S.t0); }
+    for (const f of S.fx) {
+      if (f.t0 < S.t0 - 0.01 || f.t0 >= S.t1) continue; // each effect sounds once, in the shot it starts in
+      if (f.kind === "glow") { ding(f.t0); events.push(`${f.t0.toFixed(2)} ding`); }
+      if (f.kind === "sparkle") { twinkle(f.t0 + 0.05); events.push(`${f.t0.toFixed(2)} sparkle`); }
+      if (f.kind === "chill") { ding(f.t0, 91); twinkle(f.t0 + 0.2); events.push(`${f.t0.toFixed(2)} chill`); }
+      if (f.kind === "dust") { thud(f.t0); events.push(`${f.t0.toFixed(2)} thud`); }
+      if (f.kind === "steam") { const len = Math.min(f.t1, S.t1) - f.t0; noise(f.t0, len, 0.035, 0.6, 0.15, (x) => Math.min(1, x / 0.4) * Math.min(1, (len - x) / 0.3)); events.push(`${f.t0.toFixed(2)} sizzle`); }
+      if (f.kind === "vapor") { const len = Math.min(f.t1, S.t1) - f.t0; noise(f.t0, len, 0.02, 0.3, 0.05, (x) => Math.min(1, x / 0.6) * Math.min(1, (len - x) / 0.4), -0.3); }
+    }
+    if (S.time === "hot") { const len = S.t1 - S.t0; add(sfx, S.t0, 0, len, (x) => (Math.sin(2 * Math.PI * 55 * x) + 0.5 * Math.sin(2 * Math.PI * 82.5 * x)) * 0.012 * Math.min(1, x / 0.3) * Math.min(1, (len - x) / 0.3)); }
+  });
+
+  // rain: a steady hiss (two filtered noise layers, stereo) that fades in / out over 0.6 s where shots are rainy
+  const wet = new Float32Array(N);
+  { let on = 0; const step = 1 / (0.6 * SR); for (let i = 0; i < N; i++) { const want = rainAt(i / SR) ? 1 : 0; on += Math.max(-step, Math.min(step, want - on)); wet[i] = on; } }
+  if (wet.some((v) => v > 0)) {
+    events.push("rain bed");
+    for (const c of [0, 1]) {
+      let lp = 0, hp = 0, lp2 = 0, hp2 = 0;
+      for (let i = 0; i < N; i++) {
+        if (!wet[i]) { lp = hp = lp2 = hp2 = 0; continue; }
+        const n = rnd() * 2 - 1;
+        lp += (n - lp) * 0.35; hp += (lp - hp) * 0.08; // bright hiss
+        lp2 += (n - lp2) * 0.04; hp2 += (lp2 - hp2) * 0.01; // low body
+        const drop = rnd() < 0.0009 ? (rnd() * 2 - 1) * 0.5 : 0; // the odd close drop
+        sfx[c][i] += ((lp - hp) * 0.032 + (lp2 - hp2) * 0.045 + drop * 0.03) * wet[i];
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------- write + mix
+  const wav = (file, buf) => {
+    const data = Buffer.alloc(N * 4);
+    for (let i = 0; i < N; i++) for (let c = 0; c < 2; c++) data.writeInt16LE(Math.round(Math.max(-1, Math.min(1, buf[c][i])) * 32767), i * 4 + c * 2);
+    const h = Buffer.alloc(44);
+    h.write("RIFF", 0); h.writeUInt32LE(36 + data.length, 4); h.write("WAVEfmt ", 8); h.writeUInt32LE(16, 16); h.writeUInt16LE(1, 20); h.writeUInt16LE(2, 22);
+    h.writeUInt32LE(SR, 24); h.writeUInt32LE(SR * 4, 28); h.writeUInt16LE(4, 32); h.writeUInt16LE(16, 34); h.write("data", 36); h.writeUInt32LE(data.length, 40);
+    fs.writeFileSync(file, Buffer.concat([h, data]));
+  };
+  fs.mkdirSync(outDir, { recursive: true });
+  fs.mkdirSync(path.dirname(mixFile), { recursive: true });
+  const mf = path.join(outDir, "music.wav"), sf = path.join(outDir, "sfx.wav");
+  wav(mf, mus);
+  wav(sf, sfx);
+  const tail = `apad=whole_dur=${DUR},atrim=0:${DUR},loudnorm=I=-14:TP=-1.5:LRA=11,aresample=48000[out]`;
+  const filter = voice
+    ? ["[0:a]highpass=f=70,acompressor=threshold=-20dB:ratio=2.5:attack=8:release=140:makeup=3,asplit=2[v][vk]", "[1:a]volume=1.1[m]", "[m][vk]sidechaincompress=threshold=0.03:ratio=6:attack=25:release=420[md]", "[2:a]volume=0.9[s]", `[v][md][s]amix=inputs=3:normalize=0:duration=longest,${tail}`].join(";")
+    : ["[0:a]volume=1.5[m]", "[1:a]volume=1.0[s]", `[m][s]amix=inputs=2:normalize=0:duration=longest,${tail}`].join(";");
+  execFileSync("ffmpeg", ["-y", "-v", "error", ...(voice ? ["-i", voice] : []), "-i", mf, "-i", sf, "-filter_complex", filter, "-map", "[out]", "-ac", "2", mixFile]);
+  const m = spawnSync("ffmpeg", ["-hide_banner", "-i", mixFile, "-af", "loudnorm=print_format=summary", "-f", "null", "-"], { encoding: "utf8" }).stderr;
+  return { lufs: (m.match(/Input Integrated:\s+(-?[\d.]+)/) ?? [])[1], peak: (m.match(/Input True Peak:\s+(-?[\d.]+)/) ?? [])[1], events: events.length };
+};
+
+==== 3814 project/scripts/stills.mjs
+// Visual QA: bundle once, render chosen frames of a composition, tile them into a contact sheet.
+//   node scripts/stills.mjs <outDir> <frame,frame,...> <compositionId> [scale]
+// Frames may be given in seconds with an "s" suffix (e.g. 4.5s), using the composition's fps.
+
+import path from "node:path";
+import fs from "node:fs";
+import { execFileSync } from "node:child_process";
+import { bundle } from "@remotion/bundler";
+import { openBrowser, renderStill, selectComposition } from "@remotion/renderer";
+import { glMode, isWebGLError, switchToSoftware, tolerateClosedTargets } from "./gl.mjs";
+
+tolerateClosedTargets();
+
+const [outDir, list, id, scaleArg = "1", propsFile] = process.argv.slice(2);
+const rawProps = propsFile ? JSON.parse(fs.readFileSync(propsFile, "utf8")) : {};
+// a props file is either { plan, … } or a bare plan
+const inputProps = propsFile ? (rawProps.plan ? rawProps : { plan: rawProps }) : {};
+if (!outDir || !list || !id) {
+  console.error("usage: node scripts/stills.mjs <outDir> <frame,frame,...|4.5s,...> <compositionId> [scale]");
+  process.exit(1);
+}
+fs.mkdirSync(outDir, { recursive: true });
+
+const serveUrl = await bundle({ entryPoint: path.resolve("src/index.ts") });
+// bundles are ~50 MB each; never leave them in the temp dir, even when a render throws
+const cleanup = () => fs.rmSync(serveUrl, { recursive: true, force: true });
+process.on("exit", cleanup);
+const composition = await selectComposition({ serveUrl, id, inputProps });
+const frames = list.split(",").map((t) => (t.endsWith("s") ? Math.round(parseFloat(t) * composition.fps) : parseInt(t, 10)));
+const files = [];
+const renderAll = async (gl) => {
+  // one browser for all stills: WebGL contexts are expensive to create and tear down
+  const puppeteerInstance = await openBrowser("chrome", { chromiumOptions: { gl } });
+  try {
+    files.length = 0;
+    for (const frame of frames) {
+      const output = path.join(outDir, `f${String(frame).padStart(4, "0")}.png`);
+      await renderStill({ composition, serveUrl, output, frame, inputProps, scale: Number(scaleArg), chromiumOptions: { gl }, timeoutInMilliseconds: 180000, puppeteerInstance });
+      files.push(output);
+      process.stdout.write(`${frame} `);
+    }
+  } finally {
+    // after a WebGL crash the tab may already be gone; closing must not hide the original error
+    await puppeteerInstance.close({ silent: true }).catch(() => {});
+  }
+};
+const gl = glMode();
+try {
+  await renderAll(gl);
+} catch (e) {
+  if (gl === "swangle" || !isWebGLError(e)) throw e;
+  await renderAll(switchToSoftware());
+}
+console.log();
+cleanup();
+
+// contact sheet (needs ffmpeg; skipped if missing)
+try {
+  const w = Math.round(composition.width * Number(scaleArg)), h = Math.round(composition.height * Number(scaleArg));
+  const cols = Math.min(4, files.length), rows = Math.ceil(files.length / cols), n = cols * rows;
+  if (n > 1) {
+    const inputs = files.flatMap((f) => ["-i", f]);
+    const pads = Array.from({ length: n - files.length }, () => ["-f", "lavfi", "-i", `color=c=black:s=${w}x${h}`]).flat();
+    const filter =
+      Array.from({ length: n }, (_, i) => `[${i}:v]scale=${w}:${h},setsar=1[v${i}]`).join(";") + ";" +
+      Array.from({ length: n }, (_, i) => `[v${i}]`).join("") +
+      `xstack=inputs=${n}:layout=` + Array.from({ length: n }, (_, i) => `${(i % cols) * w}_${Math.floor(i / cols) * h}`).join("|") +
+      `,scale='min(2160,iw)':-2`;
+    execFileSync("ffmpeg", ["-v", "error", "-y", ...inputs, ...pads, "-filter_complex", filter, "-frames:v", "1", path.join(outDir, "_sheet.jpg")]);
+    console.log(`sheet: ${path.join(outDir, "_sheet.jpg")}`);
+  }
+} catch {
+  console.log("(contact sheet skipped: ffmpeg not available)");
+}
+// a render that failed on the GPU path leaves its timeout timer behind; do not wait for it
+process.exit(0);
+
+==== 9921 project/src/cerdik/actions.ts
+// CERDIK body actions — names an author writes in story.json ("do": "laugh") → a pose at a time. Pure (node + browser).
+// Every action is a function of (seconds since it started, absolute time, options) returning a rig Pose in the
+// person's local frame (faces +z, left = +x). Changes between actions blend over ~0.25 s in the renderer.
+
+import { DIM, mixPose, POSES, type Pose, type V3 } from "../kits/cerdik/rig.ts";
+import type { PropDef } from "./props/lib.ts";
+
+const c01 = (x: number) => (x < 0 ? 0 : x > 1 ? 1 : x);
+const sm = (x: number) => { const t = c01(x); return t * t * (3 - 2 * t); };
+const wave = (t: number, hz: number, ph = 0) => 0.5 - 0.5 * Math.cos(2 * Math.PI * hz * t + ph); // 0…1, smooth
+const A = DIM.ankle;
+const PY = 0.655;
+
+type Opt = { to?: V3; prop?: PropDef; seed: number };
+
+const breathe = (p: Pose, t: number, seed: number, amt = 1): Pose => {
+  const b = Math.sin(t * 2.1 + seed) * 0.006 * amt, sw = Math.sin(t * 0.9 + seed * 2) * 0.012 * amt;
+  return { ...p, pelvis: [p.pelvis[0], p.pelvis[1] + b, p.pelvis[2]], pitch: p.pitch + sw * 0.4, turn: (p.turn ?? 0) + sw, handL: [p.handL[0], p.handL[1] + b, p.handL[2]], handR: [p.handR[0], p.handR[1] + b, p.handR[2]] };
+};
+const lift = (p: Pose, dy: number): Pose => ({ ...p, pelvis: [p.pelvis[0], p.pelvis[1] + dy, p.pelvis[2]], handL: [p.handL[0], p.handL[1] + dy, p.handL[2]], handR: [p.handR[0], p.handR[1] + dy, p.handR[2]] });
+
+/** Hands on a held prop's grips (the prop sits at its `holdAt` in front of the person). */
+export const holdHands = (def: PropDef): { L: V3; R: V3; at: V3 } => {
+  const at = def.holdAt ?? [0, 0.62, 0.3];
+  const g = def.grips ?? { L: [0.15, 0.1, 0], R: [-0.15, 0.1, 0] };
+  return { L: [at[0] + g.L[0], at[1] + g.L[1], at[2] + g.L[2]], R: [at[0] + g.R[0], at[1] + g.R[1], at[2] + g.R[2]], at };
+};
+
+/** A prop held in one hand (both grips at the same point). */
+export const oneHanded = (def: PropDef) => !!def.grips && def.grips.L.every((v, i) => Math.abs(v - def.grips!.R[i]) < 1e-6);
+
+export const ACTIONS: Record<string, { about: string; pose: (s: number, t: number, o: Opt) => Pose }> = {
+  stand: { about: "stand relaxed", pose: (_s, t, o) => breathe(POSES.stand(), t, o.seed) },
+  akimbo: { about: "hands on hips, chin up (proud, confident)", pose: (_s, t, o) => breathe(POSES.akimbo(), t, o.seed) },
+  crossed: { about: "arms folded (calm, unbothered, stubborn)", pose: (_s, t, o) => breathe(POSES.crossed(), t, o.seed) },
+  peer: { about: "lean in, hands behind the back (inspecting)", pose: (s, t, o) => breathe(mixPose(POSES.stand(), POSES.peer(), sm(s / 0.8)), t, o.seed, 0.5) },
+  laugh: { about: "belly laugh, bouncing", pose: (s, _t, o) => { const b = wave(s, 2.6, o.seed) * sm(s / 0.2); const p = POSES.laugh(); return { ...lift(p, 0.012 * b), pitch: p.pitch - 0.04 * b, nod: (p.nod ?? 0) - 0.07 * b }; } },
+  mock: { about: "point at something (`to`) and laugh at it", pose: (s, _t, o) => {
+    const pt = POSES.point(o.to ?? [0.2, 1.0, 2]); const b = wave(s, 2.4, o.seed);
+    return { ...lift(pt, 0.01 * b), pitch: -0.08 - 0.03 * b, nod: -0.12 - 0.05 * b, handL: [0.12, 0.7 + 0.01 * b, 0.155], elbowOut: 0.6 };
+  } },
+  point: { about: "point at something (`to`: a person, a prop or a spot)", pose: (s, t, o) => { const pt = POSES.point(o.to ?? [0.2, 1.0, 2]); return breathe(mixPose(POSES.stand(), pt, sm(s / 0.3)), t, o.seed, 0.5); } },
+  present: { about: "one arm out, palm up (showing, explaining, selling)", pose: (_s, t, o) => breathe(POSES.present(), t, o.seed) },
+  talk: { about: "talking with the hands", pose: (s, t, o) => {
+    const a = wave(s, 0.9, o.seed), b = wave(s, 0.7, o.seed + 2);
+    return breathe({ ...POSES.stand(), nod: -0.04, handL: [0.24 + 0.04 * a, 0.78 + 0.12 * a, 0.2 + 0.05 * a], handR: [-0.2, 0.55 + 0.1 * b, 0.12], elbowOut: 0.55 }, t, o.seed);
+  } },
+  shock: { about: "shocked: hands to the cheeks, leaning back", pose: (s, _t, o) => {
+    const k = sm(s / 0.25), j = Math.sin(s * 30) * 0.004 * (1 - sm(s / 0.6));
+    return mixPose(POSES.stand(), { pelvis: [0, PY + j, -0.03], pitch: -0.12, nod: -0.05, handL: [0.15, 1.18, 0.12], handR: [-0.15, 1.18, 0.12], footL: [0.09, A, 0.04], footR: [-0.09, A, -0.04], elbowOut: 0.9 }, k);
+    void o;
+  } },
+  think: { about: "hand on the chin, thinking", pose: (_s, t, o) => breathe({ ...POSES.crossed(), nod: 0.05, tilt: 0.12, handR: [-0.06, 1.06, 0.2], handL: [0.04, 0.85, 0.175], elbowOut: 0.7 }, t, o.seed) },
+  shrug: { about: "shrug, palms up", pose: (s, _t, o) => { const k = sm(s / 0.3); return mixPose(POSES.stand(), { ...POSES.stand(), tilt: 0.15, handL: [0.32, 0.82, 0.18], handR: [-0.32, 0.82, 0.18], elbowOut: 1.2 }, k); void o; } },
+  cheer: { about: "both arms up, cheering", pose: (s, _t, o) => { const b = wave(s, 2.2, o.seed); return lift({ ...POSES.stand(), pitch: -0.08, nod: -0.25, handL: [0.24, 1.42 + 0.03 * b, 0.05], handR: [-0.24, 1.4 + 0.03 * (1 - b), 0.05], elbowOut: 0.9 }, 0.02 * b); } },
+  wave: { about: "wave one hand (hello / calling someone)", pose: (s, t, o) => { const b = wave(s, 1.6, o.seed); return breathe({ ...POSES.stand(), handL: [0.32 + 0.08 * b, 1.32, 0.12], elbowOut: 1.0 }, t, o.seed); } },
+  angry: { about: "angry: fists down, leaning forward", pose: (s, t, o) => breathe({ ...POSES.stand(), pitch: 0.12, nod: 0.05, handL: [0.22, 0.6, 0.05], handR: [-0.22, 0.6, 0.05], elbowOut: 0.8, footL: [0.12, A, 0.05], footR: [-0.12, A, -0.08] }, t + Math.sin(s * 22) * 0.02, o.seed) },
+  sad: { about: "sad: head down, shoulders low", pose: (_s, t, o) => breathe({ ...POSES.stand(), pelvis: [0, PY - 0.01, 0], pitch: 0.12, nod: 0.38, handL: [0.12, 0.5, 0.06], handR: [-0.12, 0.5, 0.06] }, t, o.seed, 0.5) },
+  hot: { about: "too hot: fanning the face with one hand", pose: (s, t, o) => { const b = wave(s, 3.0, o.seed); return breathe({ ...POSES.stand(), nod: -0.1, pitch: -0.04, handL: [0.12 + 0.05 * b, 1.12 + 0.04 * b, 0.27], handR: [-0.2, 0.5, 0.03], elbowOut: 0.7 }, t, o.seed); } },
+  wipe: { about: "wipe sweat off the forehead", pose: (s, t, o) => { const b = wave(s, 0.8, o.seed); return breathe({ ...POSES.stand(), nod: 0.08, handR: [-0.1 + 0.2 * b, 1.34, 0.17], handL: [0.2, 0.5, 0.03], elbowOut: 0.9 }, t, o.seed); } },
+  drink: { about: "drink from a glass in the right hand", pose: (s, t, o) => { const k = sm((s % 2.4) / 0.5) * (1 - sm(((s % 2.4) - 1.6) / 0.5)); return breathe({ ...POSES.stand(), nod: -0.22 * k, handR: [-0.04, 0.92 + 0.15 * k, 0.33], handL: [0.2, 0.5, 0.03], elbowOut: 0.35 }, t, o.seed); } },
+  nod: { about: "nodding yes", pose: (s, t, o) => ({ ...breathe(POSES.stand(), t, o.seed), nod: 0.15 * wave(s, 1.6) }) },
+  shake: { about: "shaking the head no", pose: (s, t, o) => ({ ...breathe(POSES.crossed(), t, o.seed), turn: 0.3 * Math.sin(s * 9) * sm(s / 0.2) }) },
+  squat: { about: "squat, hands near the ground in front (working)", pose: (s, _t, o) => { const b = wave(s, 0.6, o.seed) * 0.03; return POSES.squat([0.11, 0.08 + b, 0.34], [-0.11, 0.08 + b, 0.34]); } },
+  hold: { about: "hold the prop given in `hold` in front with both hands", pose: (_s, t, o) => {
+    const h = o.prop ? holdHands(o.prop) : { L: [0.16, 0.75, 0.3] as V3, R: [-0.16, 0.75, 0.3] as V3 };
+    const one = !!o.prop && oneHanded(o.prop);
+    return breathe({ ...POSES.stand(), pitch: 0.04, nod: 0.12, handL: one ? [0.2, 0.5, 0.03] : h.L, handR: h.R, elbowOut: 0.7 }, t, o.seed, 0.4);
+  } },
+  offer: { about: "hold the prop out toward someone (selling, giving)", pose: (_s, t, o) => {
+    const h = o.prop ? holdHands(o.prop) : { L: [0.16, 0.85, 0.36] as V3, R: [-0.16, 0.85, 0.36] as V3 };
+    return breathe({ ...POSES.stand(), pitch: 0.12, nod: 0.05, handL: [h.L[0], h.L[1] + 0.12, h.L[2] + 0.08], handR: [h.R[0], h.R[1] + 0.12, h.R[2] + 0.08], elbowOut: 0.6 }, t, o.seed, 0.4);
+  } },
+  queue: { about: "waiting in a queue (shifting weight, looking ahead)", pose: (s, t, o) => { const p = breathe(POSES.stand(), t, o.seed); return { ...p, roll: 0.04 * Math.sin(s * 0.7 + o.seed), turn: 0.15 * Math.sin(s * 0.4 + o.seed * 3) }; } },
+  sit: { about: "sit on a seat (stool, bench, sofa, throne: a place made for sitting)", pose: (_s, t, o) => breathe({ pelvis: [0, 0.5, -0.06], pitch: 0.02, nod: -0.02, handL: [0.15, 0.56, 0.24], handR: [-0.15, 0.56, 0.24], footL: [0.1, A, 0.36], footR: [-0.1, A, 0.36], splay: 0.15, kneeOut: 0.12, elbowOut: 0.3 }, t, o.seed, 0.4) },
+  "sit-talk": { about: "sit and talk with one hand", pose: (s, t, o) => { const a = wave(s, 0.9, o.seed); return breathe({ pelvis: [0, 0.5, -0.06], pitch: 0.04, nod: -0.04, handL: [0.22 + 0.04 * a, 0.8 + 0.1 * a, 0.25], handR: [-0.15, 0.56, 0.24], footL: [0.1, A, 0.36], footR: [-0.1, A, 0.36], elbowOut: 0.5 }, t, o.seed, 0.4); } },
+  bow: { about: "bow respectfully (to a king, an elder)", pose: (s, _t, o) => { const k = sm(s / 0.5); return mixPose(POSES.stand(), { ...POSES.stand(), pitch: 0.55, nod: 0.3, handL: [0.05, 0.62, 0.22], handR: [-0.05, 0.62, 0.22], elbowOut: 0.4 }, k); void o; } },
+  walk: { about: "walk (use with `walk: true` and a new `at`)", pose: (s, _t, o) => walkPose(s * 1.9 + o.seed * 0.3) },
+};
+
+/** One walk cycle phase (0…1 = one stride pair) in place; the renderer moves the body along its path. */
+export const walkPose = (ph: number): Pose => {
+  const a = ph * Math.PI * 2;
+  const st = 0.16;
+  const zL = Math.sin(a) * st, zR = -Math.sin(a) * st;
+  const yL = Math.max(0, Math.cos(a)) * 0.06, yR = Math.max(0, -Math.cos(a)) * 0.06;
+  const bob = Math.abs(Math.cos(a)) * 0.012;
+  return {
+    pelvis: [0, PY - 0.02 + bob, 0], pitch: 0.06, nod: -0.02, turn: Math.sin(a) * 0.05,
+    handL: [0.19, 0.52, -zL * 0.8 + 0.02], handR: [-0.19, 0.52, -zR * 0.8 + 0.02],
+    footL: [0.075, A + yL, zL], footR: [-0.075, A + yR, zR], elbowOut: 0.25,
+  };
+};
+
+export const actionPose = (name: string, s: number, t: number, o: Opt): Pose => (ACTIONS[name] ?? ACTIONS.stand).pose(Math.max(0, s), t, o);
+export const ACTION_NAMES = Object.keys(ACTIONS);
+
+==== 11855 project/src/cerdik/Film.tsx
+// CERDIK film renderer: reads a compiled Plan (compile.ts) and draws it — the world, the people (pose from their
+// action keys, walking, holding props, talking), props (glow, cut open), effects, the camera move, dissolves and the
+// word captions. Every frame is a pure function of the plan and the frame number.
+
+import React, { useEffect, useMemo, useState } from "react";
+import { AbsoluteFill, continueRender, delayRender, Html5Audio, staticFile, useCurrentFrame, useVideoConfig, type CalculateMetadataFunction } from "remotion";
+import { Matrix4, Vector3 } from "three";
+import { ShotCanvas } from "../kits/cerdik/ShotCanvas.tsx";
+import { LOOKS, RAINY } from "../kits/cerdik/looks.ts";
+import { Rain } from "../kits/cerdik/rain.tsx";
+import { handheld, type Shot } from "../kits/bedah/cam.ts";
+import { fontsReady } from "../kits/bedah/fonts.ts";
+import { Frame } from "../kits/bedah/Overlay.tsx";
+import { chunkWords, WordCaption } from "../kits/cerdik/Caption.tsx";
+import { blinkAt, mouthAt, Toon } from "../kits/cerdik/Toon.tsx";
+import { mixPose, solve, type Pose } from "../kits/cerdik/rig.ts";
+import type { Look } from "../kits/cerdik/look.ts";
+import type { Expr } from "../kits/cerdik/face.ts";
+import { qaNoOverlay, Solid } from "../core/qa/scene-qa.tsx";
+import { actionPose, oneHanded, walkPose } from "./actions.ts";
+import { propLib, type PropDef } from "./props/lib.ts";
+import { Prop } from "./props/Prop.tsx";
+import { PropFx } from "./fx3d.tsx";
+import { SCENES } from "./worlds/scenes.tsx";
+import { floorAt, WORLDS } from "./worlds/index.ts";
+import type { PActor, Plan, PShot, V3 } from "./types.ts";
+
+/** `frames`: render only these film frames (30 fps), one per composition frame — the stills sheet renders them all
+ *  from one loaded page instead of one page per still (a world with heavy procedural textures loads in seconds). */
+export type FilmProps = { plan: Plan; extraProps?: Record<string, PropDef>; frames?: number[] };
+export const cerdikMetadata: CalculateMetadataFunction<FilmProps> = ({ props }) => ({ durationInFrames: Math.max(1, Math.round(props.plan.duration * 60)) });
+export const cerdikMetadata30: CalculateMetadataFunction<FilmProps> = ({ props }) => ({ durationInFrames: Math.max(1, Math.round(props.plan.duration * 30)) });
+export const cerdikStillsMetadata: CalculateMetadataFunction<FilmProps> = ({ props }) => ({ durationInFrames: Math.max(1, props.frames?.length ?? 1) });
+
+const c01 = (x: number) => (x < 0 ? 0 : x > 1 ? 1 : x);
+const smoother = (x: number) => { const t = c01(x); return t * t * t * (t * (t * 6 - 15) + 10); };
+const mix = (a: number, b: number, t: number) => a + (b - a) * t;
+const mix3 = (a: V3, b: V3, t: number): V3 => [mix(a[0], b[0], t), mix(a[1], b[1], t), mix(a[2], b[2], t)];
+const wrapA = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
+const DISSOLVE = 0.5;
+
+// ------------------------------------------------------------------ a person at time t
+type Live = { pose: Pose; pos: V3; face: number; expr: Expr; flush: number; open: number };
+const liveActor = (a: PActor, t: number, LIB: Record<string, PropDef>): Live => {
+  let ki = 0;
+  for (let i = 0; i < a.keys.length; i++) if (t >= a.keys[i].t - 1e-4) ki = i;
+  // the action / expression / flush in force: the latest key that set each one
+  let doI = 0, expr = "neutral", flush = 0;
+  for (let i = 0; i <= ki; i++) { if (a.keys[i].do) doI = i; if (a.keys[i].expr) expr = a.keys[i].expr; if (a.keys[i].flush >= 0) flush = a.keys[i].flush; }
+  const K = a.keys[doI];
+  const prop = a.hold ? LIB[propKindOf(a.hold)] : undefined;
+  const opt = { to: K.to, prop, seed: a.seed };
+  let pose = actionPose(K.do, t - K.t, t, opt);
+  // blend from the previous action over 0.25 s
+  if (doI > 0) {
+    const prevDo = a.keys.slice(0, doI).reverse().find((k) => k.do);
+    if (prevDo) {
+      const b = smoother((t - K.t) / 0.25);
+      if (b < 1) pose = mixPose(actionPose(prevDo.do, t - prevDo.t, t, { to: prevDo.to, prop, seed: a.seed }), pose, b);
+    }
+  }
+  // walking: move along the path, legs cycling, facing the way; turn to the final facing at the end
+  let pos = a.p1, face = a.face1;
+  if (a.walk) {
+    const [w0, w1] = a.walk;
+    const k = c01((t - w0) / Math.max(0.1, w1 - w0));
+    const e = smoother(k);
+    pos = mix3(a.p0, a.p1, e);
+    const walking = t > w0 && t < w1 + 0.05;
+    const inW = c01((t - w0) / 0.2) * c01((w1 + 0.15 - t) / 0.2);
+    if (walking) pose = mixPose(pose, walkPose((t - w0) * 1.9), inW);
+    const turn = smoother((t - w1) / 0.35);
+    face = t < w1 ? a.face0 : a.face0 + wrapA(a.face1 - a.face0) * turn;
+    if (t < w0) { pos = a.p0; face = a.face0; }
+  }
+  return { pose, pos, face, expr: expr as Expr, flush, open: mouthAt(t, a.talk) };
+};
+// held props carry their kind in the plan's prop list; the renderer looks it up there
+let PROP_KINDS: Record<string, string> = {};
+const propKindOf = (id: string) => PROP_KINDS[id] ?? id;
+
+/** World matrix of a held prop: between the hands (or in the right hand for one-handed props). */
+const heldMatrix = (live: Live, look: Look, def: PropDef) => {
+  const j = solve(live.pose, look.build ?? {});
+  const g = def.grips ?? { L: [0.15, 0.1, 0] as V3, R: [-0.15, 0.1, 0] as V3 };
+  const one = oneHanded(def);
+  const local: V3 = one ? [j.wristR[0] - g.R[0], j.wristR[1] - g.R[1], j.wristR[2] - g.R[2]]
+    : [(j.wristL[0] - g.L[0] + j.wristR[0] - g.R[0]) / 2, (j.wristL[1] - g.L[1] + j.wristR[1] - g.R[1]) / 2, (j.wristL[2] - g.L[2] + j.wristR[2] - g.R[2]) / 2];
+  const c = Math.cos(live.face), s = Math.sin(live.face);
+  const world: V3 = [live.pos[0] + local[0] * c + local[2] * s, live.pos[1] + local[1], live.pos[2] - local[0] * s + local[2] * c];
+  return { pos: world, yaw: live.face };
+};
+
+// ------------------------------------------------------------------ one shot
+const ShotView: React.FC<{ plan: Plan; S: PShot; t: number; frame: number; LIB: Record<string, PropDef>; hd: boolean }> = ({ plan, S, t, frame, LIB, hd }) => {
+  const s = t - S.t0, d = Math.max(0.01, S.t1 - S.t0);
+  const k = smoother(s / d);
+  const base: Shot = { pos: mix3(S.a.pos, S.b.pos, k), target: mix3(S.a.target, S.b.target, k), fov: mix(S.a.fov, S.b.fov, k) };
+  const cam = handheld(base, s, { drift: S.kind === "establish" || S.kind === "aerial" ? 0.0015 : 0.0032, seed: S.i + 1 });
+  const dist = Math.hypot(base.pos[0] - base.target[0], base.pos[1] - base.target[1], base.pos[2] - base.target[2]);
+  const shot: Shot = { ...cam, focus: dist, blur: S.blur, shadowAt: S.shadowAt, shadowBox: S.shadowBox };
+  const Scene = SCENES[plan.world];
+  const lives = S.actors.map((a) => ({ a, live: liveActor(a, t, LIB) }));
+  const avoid = lives.map((l) => l.live.pos);
+  const closeShot = S.kind === "close" || S.kind === "reaction";
+  const W = WORLDS[plan.world];
+  const rain = S.weather === "rain";
+  const light = rain ? RAINY[S.time] ?? RAINY.day : LOOKS[S.time] ?? LOOKS.day;
+  const rainAt = useMemo<[number, number]>(() => [(S.a.pos[0] + S.a.target[0] * 2) / 3, (S.a.pos[2] + S.a.target[2] * 2) / 3], [S]);
+  const ground = useMemo(() => (x: number, z: number) => (W ? floorAt(W, x, z) : 0.012), [W]);
+  return (
+    <ShotCanvas shot={shot} look={light} frame={frame} t={t}>
+      <Scene t={t} time={S.time} avoid={avoid} />
+      {rain && W && !W.indoor ? <Rain t={t} center={rainAt} eye={[S.a.pos, S.b.pos]} ground={ground} cover={W.colliders} /> : null}
+      <group key={S.i}>
+        {lives.map(({ a, live }) => {
+          const look = a.look as unknown as Look;
+          const toon = (
+            <Toon look={look} pose={live.pose} face={{ expr: live.expr, open: live.open, blink: blinkAt(t, a.seed) }} flush={live.flush} flushColor={a.flushColor}
+              pos={live.pos} rotY={live.face} faceRes={hd && closeShot ? 2048 : 1024} />
+          );
+          return a.extra ? <group key={a.id}>{toon}</group> : <Solid key={a.id} id={a.id} touch={a.hold ? [a.hold] : []}>{toon}</Solid>;
+        })}
+        {S.props.map((p) => {
+          const def = LIB[p.kind];
+          if (!def) return null;
+          let pos = p.pos, yaw = p.yaw;
+          if (p.held) {
+            const h = lives.find((l) => l.a.id === p.held!.by);
+            if (!h) return null;
+            const m = heldMatrix(h.live, h.a.look as unknown as Look, def);
+            pos = m.pos; yaw = m.yaw;
+          }
+          const glows = S.fx.filter((f) => f.on === p.id && (f.kind === "glow" || f.kind === "chill"));
+          const g = glows.reduce((acc, f) => Math.max(acc, c01((t - f.t0) / 0.22) * c01((f.t1 - t) / 0.3)), 0);
+          const gColor = glows.find((f) => f.kind === "chill") ? "#7fd0ff" : glows[0]?.color ?? "#ffc94a";
+          const big = Math.max(...def.size) > 0.6;
+          const node = <Prop kind={p.kind} def={def} pos={pos} yaw={yaw} scale={p.scale} cut={S.cut === p.id} cutYaw={S.cutYaw} glow={g} glowColor={gColor} t={t} fill={p.fill} />;
+          return big || p.held ? <Solid key={p.id} id={p.id} kind={big ? "set" : "prop"} touch={p.held ? [p.held.by] : ["*"]}>{node}</Solid> : <group key={p.id}>{node}</group>;
+        })}
+        {S.fx.filter((f) => f.kind !== "glow" && f.kind !== "cut").map((f, i) => {
+          const pr = S.props.find((p) => p.id === f.on);
+          const per = lives.find((l) => l.a.id === f.on);
+          if (!pr && !per) return null;
+          let pos: V3 = pr ? pr.pos : per!.live.pos, yaw = pr ? pr.yaw : per!.live.face;
+          if (pr?.held) { const hh = lives.find((l) => l.a.id === pr.held!.by); if (hh) { const m = heldMatrix(hh.live, hh.a.look as unknown as Look, LIB[pr.kind]); pos = m.pos; yaw = m.yaw; } }
+          return <PropFx key={i} kind={f.kind} def={pr ? LIB[pr.kind] : undefined} pos={pos} yaw={yaw} scale={pr?.scale ?? 1} t={t} t0={f.t0} t1={f.t1} amount={f.amount} color={f.color} person={!pr} />;
+        })}
+      </group>
+    </ShotCanvas>
+  );
+};
+
+// ------------------------------------------------------------------ the film
+export const CerdikFilm: React.FC<FilmProps> = ({ plan, extraProps, frames }) => {
+  const at = useCurrentFrame();
+  const frame = frames?.length ? frames[Math.min(frames.length - 1, at)] : at;
+  const { fps, width, height } = useVideoConfig();
+  const t = frame / fps;
+  const [h] = useState(() => delayRender("fonts"));
+  const [ok, setOk] = useState(false);
+  useEffect(() => { fontsReady().then(() => { setOk(true); continueRender(h); }); }, [h]);
+  const LIB = useMemo(() => propLib(extraProps), [extraProps]);
+  const chunks = useMemo(() => chunkWords(plan.words), [plan]);
+  PROP_KINDS = useMemo(() => Object.fromEntries(plan.shots.flatMap((S) => S.props.map((p) => [p.id, p.kind]))), [plan]);
+  if (!plan.shots.length) return <AbsoluteFill style={{ background: "#000" }} />;
+  let si = 0;
+  for (let i = 0; i < plan.shots.length; i++) if (t >= plan.shots[i].t0) si = i;
+  const S = plan.shots[si];
+  const prev = si > 0 ? plan.shots[si - 1] : null;
+  const fade = S.dissolve && prev ? c01((t - S.t0) / DISSOLVE) : 1;
+  const wide = width > height, LW = wide ? 1920 : 1080, LH = wide ? 1080 : 1920;
+  const hd = height >= 1500 || width >= 1500;
+  return (
+    <AbsoluteFill style={{ background: "#000" }}>
+      {ok && (
+        <>
+          <AbsoluteFill><ShotView plan={plan} S={S} t={t} frame={frame} LIB={LIB} hd={hd} /></AbsoluteFill>
+          {fade < 1 && prev ? <AbsoluteFill style={{ opacity: 1 - smoother(fade) }}><ShotView plan={plan} S={prev} t={Math.min(t, prev.t1 + DISSOLVE)} frame={frame} LIB={LIB} hd={hd} /></AbsoluteFill> : null}
+          {qaNoOverlay() ? null : (
+            <Frame scale={width / LW} w={LW} h={LH}>
+              <WordCaption t={t} chunks={chunks} y={wide ? 760 : 1170} size={wide ? 72 : 84} />
+            </Frame>
+          )}
+        </>
+      )}
+      {plan.audio && !frames ? <Html5Audio src={staticFile(plan.audio)} /> : null}
+    </AbsoluteFill>
+  );
+};
+
+void Matrix4; void Vector3;
+
+==== 7946 project/src/cerdik/fx3d.tsx
+// CERDIK story effects in 3D, placed on a prop (or a person) for a time window. All deterministic in time.
+//   sweat   water beads on the prop's surface, slowly running down       vapor  thin wisps rising off the surface
+//   steam   thick puffs from the top (a hot drink)                         sparkle  4-point glints round the prop
+//   heat    wavy hot-air lines rising round it (+ the "hot" time look)     chill  cold blue glow + drifting frost specks
+//   dust    a puff at its foot          (glow and cut are drawn by the Prop itself)
+import React, { useMemo } from "react";
+import { AdditiveBlending, BoxGeometry, CanvasTexture, CatmullRomCurve3, Color, MeshBasicMaterial, MeshStandardMaterial, SphereGeometry, SpriteMaterial, SRGBColorSpace, TubeGeometry, Vector3 } from "three";
+import { FX_LAYER } from "../kits/cerdik/Stage.tsx";
+import { Dust } from "../kits/cerdik/fx.tsx";
+import type { PropDef } from "./props/lib.ts";
+import type { FxKind } from "./types.ts";
+
+type V3 = [number, number, number];
+const c01 = (x: number) => (x < 0 ? 0 : x > 1 ? 1 : x);
+const h = (n: number) => { const x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
+const fx = (o: { layers: { set: (n: number) => void } }) => o.layers.set(FX_LAYER);
+
+const SPH = new SphereGeometry(1, 14, 10);
+const mDrop = new MeshStandardMaterial({ color: "#cfeaff", roughness: 0.02, metalness: 0.2, transparent: true, opacity: 0.55, emissive: new Color("#9fd2f5"), emissiveIntensity: 0.12 });
+// soft round puff (radial gradient) on camera-facing sprites
+const puffTex = (() => {
+  if (typeof document === "undefined") return null;
+  const cv = document.createElement("canvas");
+  cv.width = cv.height = 64;
+  const g = cv.getContext("2d")!;
+  const r = g.createRadialGradient(32, 32, 2, 32, 32, 31);
+  r.addColorStop(0, "rgba(255,255,255,1)");
+  r.addColorStop(0.45, "rgba(255,255,255,0.55)");
+  r.addColorStop(1, "rgba(255,255,255,0)");
+  g.fillStyle = r;
+  g.fillRect(0, 0, 64, 64);
+  const t = new CanvasTexture(cv);
+  t.colorSpace = SRGBColorSpace;
+  return t;
+})();
+const wispMats = Array.from({ length: 12 }, () => new SpriteMaterial({ map: puffTex, color: "#ffffff", transparent: true, depthWrite: false }));
+const glintMat = new MeshBasicMaterial({ color: new Color("#fff6d8").multiplyScalar(6), transparent: true, blending: AdditiveBlending, depthWrite: false, toneMapped: false });
+const frostMat = new MeshBasicMaterial({ color: new Color("#dff4ff").multiplyScalar(3), transparent: true, blending: AdditiveBlending, depthWrite: false, toneMapped: false });
+const heatMats = Array.from({ length: 5 }, () => new MeshBasicMaterial({ color: "#ffb35c", transparent: true, depthWrite: false, opacity: 0.35 }));
+const BAR = new BoxGeometry(1, 1, 1);
+
+/** Outer radius of a vessel at height y (from its lathe profile), else half the box width. */
+const radiusAt = (def: PropDef | undefined, y: number) => {
+  const p = def?.parts.find((q) => q.shape === "lathe") as { profile: [number, number][] } | undefined;
+  if (!p) return (def?.size[0] ?? 0.3) / 2;
+  const pr = p.profile;
+  for (let i = 1; i < pr.length; i++) if (pr[i][1] >= y) { const k = (y - pr[i - 1][1]) / Math.max(1e-6, pr[i][1] - pr[i - 1][1]); return pr[i - 1][0] + (pr[i][0] - pr[i - 1][0]) * k; }
+  return pr[pr.length - 1][0];
+};
+
+export const PropFx: React.FC<{ kind: FxKind; def?: PropDef; pos: V3; yaw: number; scale: number; t: number; t0: number; t1: number; amount: number; color?: string; person?: boolean }> = ({ kind, def, pos, yaw, scale, t, t0, t1, amount, person }) => {
+  const k = c01((t - t0) / 0.3) * c01((t1 - t) / 0.3);
+  const H = person ? 1.45 : (def?.size[1] ?? 0.3), Wd = person ? 0.4 : (def?.size[0] ?? 0.3);
+  // effects scale with the object (a glass gets small beads, a big jar bigger ones)
+  const unit = person ? 1 : Math.max(0.35, Math.min(1.6, Math.max(H, Wd) / 0.37));
+  const tubes = useMemo(() => Array.from({ length: 5 }, (_, i) => {
+    const pts = Array.from({ length: 8 }, (_, j) => new Vector3(Math.sin(j * 1.3 + i) * 0.035, j * 0.09, Math.cos(j * 1.1 + i * 2) * 0.02));
+    return new TubeGeometry(new CatmullRomCurve3(pts), 24, 0.006, 5);
+  }), []);
+  if (k <= 0) return null;
+  const s = scale;
+  if (kind === "sweat") {
+    const n = Math.round(26 * amount * (person ? 0.4 : 1));
+    return (
+      <group position={pos} rotation={[0, yaw, 0]} scale={s}>
+        {Array.from({ length: n }, (_, i) => {
+          const a = h(i) * Math.PI * 2, speed = 0.015 + 0.03 * h(i + 7);
+          const y0 = H * (0.25 + 0.6 * h(i + 3));
+          // each bead forms, runs down a little and fades before the next one forms (no jump back up)
+          const run = H * 0.2, ph = (((t - t0) * speed) / run + h(i + 9)) % 1;
+          const y = y0 - ph * run;
+          const r = (person ? 0.2 : radiusAt(def, y)) + 0.004;
+          const sz = (0.0035 + 0.0045 * h(i + 5)) * k * Math.sqrt(unit) * Math.min(1, Math.sin(Math.PI * ph) * 2.2);
+          if (sz < 0.0004) return null;
+          return <mesh key={i} geometry={SPH} material={mDrop} position={[Math.sin(a) * r, y + (person ? 1.1 : 0), Math.cos(a) * r]} scale={[sz, sz * 1.35, sz]} />;
+        })}
+      </group>
+    );
+  }
+  if (kind === "vapor" || kind === "steam") {
+    const n = kind === "steam" ? 9 : 12, life = kind === "steam" ? 1.6 : 2.2;
+    return (
+      <group position={pos} rotation={[0, yaw, 0]} scale={s}>
+        {wispMats.slice(0, n).map((m, i) => {
+          const ph = ((t - t0) / life + h(i)) % 1;
+          const a = h(i + 2) * Math.PI * 2;
+          const base: V3 = kind === "steam" ? [0, H * 0.95, 0] : [Math.sin(a) * radiusAt(def, H * 0.5), H * (0.3 + 0.4 * h(i + 4)), Math.cos(a) * radiusAt(def, H * 0.5)];
+          const rise = ph * (kind === "steam" ? 0.45 : 0.35);
+          const out = kind === "steam" ? 0 : ph * 0.06;
+          const r = (kind === "steam" ? 0.03 : 0.014) + ph * (kind === "steam" ? 0.06 : 0.03);
+          m.opacity = (kind === "steam" ? 0.3 : 0.16) * Math.sin(Math.PI * ph) * k * amount;
+          return <sprite key={i} material={m} position={[base[0] * (1 + out * 8) + Math.sin(ph * 6 + i) * 0.015, base[1] + rise, base[2] * (1 + out * 8)]} scale={[r * 2.4, r * 2.4, 1]} onUpdate={fx} />;
+        })}
+      </group>
+    );
+  }
+  if (kind === "sparkle" || kind === "chill") {
+    const n = kind === "sparkle" ? 6 : 10;
+    return (
+      <group position={pos} rotation={[0, yaw, 0]} scale={s}>
+        {Array.from({ length: n }, (_, i) => {
+          const per = 0.9 + h(i) * 0.6, ph = ((t - t0) / per + h(i + 1)) % 1;
+          const tw = Math.sin(Math.PI * ph) ** 3 * k;
+          const a = h(i + 3) * Math.PI * 2, y = H * (0.15 + 0.85 * h(i + 4));
+          const r = Wd * 0.5 + 0.03;
+          const p: V3 = [Math.sin(a) * r, y + (kind === "chill" ? -ph * 0.05 : 0), Math.cos(a) * r];
+          const sz = (kind === "sparkle" ? 0.022 : 0.012) * tw * unit;
+          if (sz < 0.002) return null;
+          return (
+            <group key={i} position={p} rotation={[0, -yaw, 0]}>
+              <mesh geometry={BAR} material={kind === "chill" ? frostMat : glintMat} scale={[sz * 2.2, sz * 0.18, sz * 0.18]} onUpdate={fx} />
+              <mesh geometry={BAR} material={kind === "chill" ? frostMat : glintMat} scale={[sz * 0.18, sz * 2.2, sz * 0.18]} onUpdate={fx} />
+            </group>
+          );
+        })}
+      </group>
+    );
+  }
+  if (kind === "heat") {
+    return (
+      <group position={pos}>
+        {tubes.map((g, i) => {
+          const ph = ((t - t0) / 1.4 + i / tubes.length) % 1;
+          const a = i * 1.26;
+          heatMats[i].opacity = 0.32 * Math.sin(Math.PI * ph) * k;
+          return <mesh key={i} geometry={g} material={heatMats[i]} position={[Math.sin(a) * (Wd * 0.7 + 0.15), (person ? 0.9 : H * 0.6) + ph * 0.5, Math.cos(a) * (Wd * 0.7 + 0.15)]} onUpdate={fx} />;
+        })}
+      </group>
+    );
+  }
+  if (kind === "dust") return <Dust pos={pos} t={t} t0={t0} size={0.15 * s} />;
+  return null;
+};
+
+==== 10581 project/src/cerdik/props/lib.ts
+// CERDIK prop library — every object is plain data: a list of simple parts (box, cylinder, sphere, cone, lathe
+// profile, torus) with a material name and colour. The renderer (Prop.tsx) builds the mesh; the director reads the
+// sizes for cameras and the grips for hands. Authors add objects in stories/<id>/props.json with the same format
+// (see `make.mjs --library`). Units: metres. Every part's `pos` is its BOTTOM centre (sphere/torus: centre).
+
+export type V3 = [number, number, number];
+export type MatName =
+  | "clay" | "clayDark" | "glass" | "water" | "ice" | "wood" | "woodDark" | "bamboo" | "metal" | "gold" | "cloth"
+  | "plastic" | "stone" | "paint" | "leaf" | "fruit" | "paper" | "rope" | "glow" | "liquid";
+
+export type Part =
+  | { shape: "box"; size: V3; pos?: V3; rot?: V3; mat: MatName; color?: string }
+  | { shape: "cyl"; r: number; r2?: number; h: number; pos?: V3; rot?: V3; mat: MatName; color?: string; seg?: number }
+  | { shape: "cone"; r: number; h: number; pos?: V3; rot?: V3; mat: MatName; color?: string; seg?: number }
+  | { shape: "sphere"; r: number; pos?: V3; scale?: V3; mat: MatName; color?: string }
+  | { shape: "torus"; r: number; tube: number; pos?: V3; rot?: V3; mat: MatName; color?: string }
+  | { shape: "lathe"; profile: [number, number][]; pos?: V3; rot?: V3; mat: MatName; color?: string; wall?: number; cut?: boolean };
+
+export type PropDef = {
+  about: string;
+  parts: Part[];
+  /** bounding size (w, h, d) — cameras frame this */
+  size: V3;
+  /** where the WRISTS go when held (prop space; the mitten hand reaches ~4.5 cm further toward the prop) */
+  grips?: { L: V3; R: V3 };
+  /** where the prop sits in front of the holder (holder space: x left, y up, z forward) */
+  holdAt?: V3;
+  /** the lathe part that can be shown cut open (insert shot "cutaway") and its inner liquid */
+  vessel?: { part: number; inner: [number, number][]; level?: number; liquid?: string };
+  /** built by code instead of parts (house frames, river stones): see Prop.tsx SPECIAL */
+  special?: string;
+};
+
+const P = (x: number, y: number, z: number): V3 => [x, y, z];
+
+export const PROPS: Record<string, PropDef> = {
+  // ---------------------------------------------------------------- vessels (can be cut open)
+  kendi: {
+    about: "kendi tanah liat (clay water jug) with a spout — sweats when cooled by evaporation",
+    size: P(0.34, 0.37, 0.32),
+    parts: [
+      { shape: "lathe", mat: "clay", cut: true, wall: 0.012, profile: [[0, 0], [0.07, 0], [0.1, 0.02], [0.14, 0.075], [0.155, 0.14], [0.145, 0.2], [0.11, 0.245], [0.055, 0.28], [0.038, 0.31], [0.04, 0.34], [0.05, 0.36], [0.04, 0.37]] },
+      { shape: "cyl", mat: "clay", r: 0.022, r2: 0.014, h: 0.16, pos: P(0.105, 0.13, 0), rot: [0, 0, -52] },
+      { shape: "torus", mat: "clayDark", r: 0.115, tube: 0.006, pos: P(0, 0.205, 0), rot: [90, 0, 0] },
+    ],
+    grips: { L: P(0.205, 0.14, 0.0), R: P(-0.205, 0.14, 0.0) },
+    holdAt: P(0, 0.62, 0.3),
+    vessel: { part: 0, inner: [[0, 0.012], [0.088, 0.015], [0.128, 0.075], [0.143, 0.14], [0.133, 0.2], [0.1, 0.24], [0.045, 0.275]], level: 0.75, liquid: "#5fb4e6" },
+  },
+  toples: {
+    about: "toples kaca (big clear glass jar) with a red lid — looks clean, heats up in the sun",
+    size: P(0.3, 0.4, 0.3),
+    parts: [
+      { shape: "lathe", mat: "glass", cut: true, wall: 0.006, profile: [[0, 0], [0.13, 0], [0.145, 0.02], [0.148, 0.3], [0.13, 0.33], [0.095, 0.345], [0.095, 0.36]] },
+      { shape: "cyl", mat: "plastic", color: "#d93a2e", r: 0.105, h: 0.04, pos: P(0, 0.355, 0) },
+      { shape: "cyl", mat: "metal", r: 0.012, h: 0.05, pos: P(0.128, 0.05, 0.0), rot: [0, 0, 90] },
+    ],
+    grips: { L: P(0.2, 0.16, 0), R: P(-0.2, 0.16, 0) },
+    holdAt: P(0, 0.66, 0.3),
+    vessel: { part: 0, inner: [[0, 0.006], [0.139, 0.008], [0.142, 0.3]], level: 0.72, liquid: "#f2a54a" },
+  },
+  gelas: {
+    about: "gelas (drinking glass)",
+    size: P(0.08, 0.12, 0.08),
+    parts: [{ shape: "lathe", mat: "glass", cut: true, wall: 0.004, profile: [[0, 0], [0.032, 0], [0.036, 0.01], [0.042, 0.115]] }],
+    grips: { L: P(-0.085, 0.06, 0), R: P(-0.085, 0.06, 0) },
+    holdAt: P(-0.14, 0.82, 0.24),
+    vessel: { part: 0, inner: [[0, 0.006], [0.034, 0.008], [0.039, 0.11]], level: 0.7, liquid: "#c97a3a" },
+  },
+  ember: {
+    about: "ember plastik (plastic bucket)",
+    size: P(0.32, 0.3, 0.32),
+    parts: [
+      { shape: "lathe", mat: "plastic", color: "#2f7fd1", wall: 0.008, cut: true, profile: [[0, 0], [0.12, 0], [0.155, 0.28], [0.16, 0.3]] },
+      { shape: "torus", mat: "metal", r: 0.15, tube: 0.005, pos: P(0, 0.31, 0), rot: [0, 0, 0] },
+    ],
+    grips: { L: P(0.205, 0.24, 0), R: P(-0.205, 0.24, 0) },
+    holdAt: P(0, 0.55, 0.32),
+    vessel: { part: 0, inner: [[0, 0.008], [0.115, 0.01], [0.148, 0.27]], level: 0.6, liquid: "#69b6e8" },
+  },
+  // ---------------------------------------------------------------- market & home
+  meja: {
+    about: "meja lapak kayu (wooden stall table), top at 0.78 m",
+    size: P(1.6, 0.8, 0.7),
+    parts: [
+      { shape: "box", mat: "wood", size: P(1.6, 0.06, 0.7), pos: P(0, 0.74, 0) },
+      ...[[-0.74, -0.3], [0.74, -0.3], [-0.74, 0.3], [0.74, 0.3]].map(([x, z]) => ({ shape: "box" as const, mat: "woodDark" as const, size: P(0.06, 0.74, 0.06), pos: P(x, 0, z) })),
+      { shape: "box", mat: "woodDark", size: P(1.5, 0.04, 0.6), pos: P(0, 0.22, 0) },
+    ],
+  },
+  peti: {
+    about: "peti kayu (wooden crate)",
+    size: P(0.5, 0.32, 0.36),
+    parts: [
+      { shape: "box", mat: "wood", size: P(0.5, 0.3, 0.36), pos: P(0, 0, 0) },
+      { shape: "box", mat: "woodDark", size: P(0.52, 0.04, 0.38), pos: P(0, 0.28, 0) },
+      { shape: "box", mat: "woodDark", size: P(0.52, 0.04, 0.38), pos: P(0, 0.02, 0) },
+    ],
+    grips: { L: P(0.305, 0.2, 0), R: P(-0.305, 0.2, 0) },
+    holdAt: P(0, 0.6, 0.34),
+  },
+  karung: {
+    about: "karung beras (rice sack)",
+    size: P(0.42, 0.55, 0.32),
+    parts: [
+      { shape: "sphere", mat: "cloth", color: "#e8dcc0", r: 0.22, pos: P(0, 0.24, 0), scale: [1, 1.25, 0.75] },
+      { shape: "cyl", mat: "rope", r: 0.05, r2: 0.07, h: 0.1, pos: P(0, 0.48, 0) },
+    ],
+  },
+  keranjang: {
+    about: "keranjang anyaman (woven basket)",
+    size: P(0.44, 0.24, 0.44),
+    parts: [{ shape: "lathe", mat: "bamboo", wall: 0.01, profile: [[0, 0], [0.16, 0], [0.21, 0.2], [0.22, 0.22]] }],
+    grips: { L: P(0.265, 0.18, 0), R: P(-0.265, 0.18, 0) },
+    holdAt: P(0, 0.62, 0.32),
+  },
+  buah: {
+    about: "tumpukan jeruk (pile of oranges)",
+    size: P(0.5, 0.25, 0.4),
+    parts: [
+      ...[[0, 0, 0], [0.11, 0, 0.05], [-0.11, 0, 0.04], [0.05, 0, -0.1], [-0.07, 0, -0.09], [0.16, 0, -0.07], [-0.16, 0, -0.05], [0.0, 0.085, 0.0], [0.08, 0.08, -0.05], [-0.07, 0.08, -0.03], [0.02, 0.16, -0.02]]
+        .map(([x, y, z]) => ({ shape: "sphere" as const, mat: "fruit" as const, color: "#f08a1c", r: 0.055, pos: P(x, y + 0.055, z) })),
+    ],
+  },
+  semangka: {
+    about: "semangka (watermelon)",
+    size: P(0.34, 0.26, 0.26),
+    parts: [{ shape: "sphere", mat: "fruit", color: "#2f8a3c", r: 0.15, pos: P(0, 0.13, 0), scale: [1.12, 0.85, 0.85] }],
+  },
+  pisang: {
+    about: "tandan pisang (banana bunch)",
+    size: P(0.3, 0.2, 0.2),
+    parts: [-0.08, -0.03, 0.02, 0.07].map((x, i) => ({ shape: "cyl" as const, mat: "fruit" as const, color: "#f1cf3a", r: 0.022, r2: 0.016, h: 0.2, pos: P(x, 0.02, 0), rot: [0, 0, -70 + i * 6] as V3 })),
+  },
+  es: {
+    about: "balok es (block of ice)",
+    size: P(0.4, 0.22, 0.25),
+    parts: [{ shape: "box", mat: "ice", size: P(0.4, 0.22, 0.25) }],
+  },
+  lampu: {
+    about: "lampu petromaks (pressure lantern) — glows at night",
+    size: P(0.18, 0.42, 0.18),
+    parts: [
+      { shape: "cyl", mat: "metal", r: 0.07, r2: 0.05, h: 0.12 },
+      { shape: "sphere", mat: "glow", color: "#ffd98a", r: 0.06, pos: P(0, 0.19, 0) },
+      { shape: "cone", mat: "metal", r: 0.09, h: 0.08, pos: P(0, 0.27, 0) },
+      { shape: "torus", mat: "metal", r: 0.05, tube: 0.006, pos: P(0, 0.38, 0), rot: [90, 0, 0] },
+    ],
+    grips: { L: P(0.0, 0.42, 0), R: P(0.0, 0.42, 0) },
+    holdAt: P(-0.12, 0.6, 0.3),
+  },
+  koin: {
+    about: "tumpukan koin emas (stack of gold coins)",
+    size: P(0.12, 0.08, 0.12),
+    parts: [0, 1, 2, 3, 4, 5].map((i) => ({ shape: "cyl" as const, mat: "gold" as const, r: 0.04, h: 0.011, pos: P(0.004 * Math.sin(i * 2), i * 0.012, 0.004 * Math.cos(i * 3)) })),
+  },
+  kursi: {
+    about: "bangku kayu (wooden stool), seat at 0.45 m",
+    size: P(0.4, 0.46, 0.3),
+    parts: [
+      { shape: "box", mat: "wood", size: P(0.4, 0.04, 0.3), pos: P(0, 0.42, 0) },
+      ...[[-0.17, -0.12], [0.17, -0.12], [-0.17, 0.12], [0.17, 0.12]].map(([x, z]) => ({ shape: "box" as const, mat: "woodDark" as const, size: P(0.04, 0.42, 0.04), pos: P(x, 0, z) })),
+    ],
+  },
+  payung: {
+    about: "payung besar lapak (big market umbrella)",
+    size: P(2.2, 2.4, 2.2),
+    parts: [
+      { shape: "cyl", mat: "metal", r: 0.025, h: 2.3 },
+      { shape: "cone", mat: "cloth", color: "#e04a35", r: 1.1, h: 0.42, pos: P(0, 1.95, 0), seg: 8 },
+    ],
+  },
+  tiang: {
+    about: "tiang kayu (wooden house post), 1.9 m",
+    size: P(0.24, 1.9, 0.24),
+    parts: [{ shape: "cyl", mat: "woodDark", r: 0.12, h: 1.9 }],
+    grips: { L: P(0.19, 1.05, 0), R: P(0.19, 0.65, 0) },
+    holdAt: P(-0.3, 0.0, 0.18),
+  },
+  kipas: {
+    about: "kipas anyaman (woven hand fan)",
+    size: P(0.24, 0.3, 0.02),
+    parts: [
+      { shape: "cyl", mat: "bamboo", r: 0.11, h: 0.008, pos: P(0, 0.19, 0), rot: [90, 0, 0] },
+      { shape: "cyl", mat: "wood", r: 0.008, h: 0.14, pos: P(0, 0, 0) },
+    ],
+    grips: { L: P(0, 0.02, 0), R: P(0, 0.02, 0) },
+    holdAt: P(-0.2, 1.05, 0.22),
+  },
+};
+
+// ---------------------------------------------------------------- code-built specials (Nias village kit)
+Object.assign(PROPS, {
+  "rangka-batu": { about: "house frame (5 × 8 m) whose posts stand on river stones", size: P(5, 2.1, 8), parts: [], special: "rangka-batu" },
+  "rangka-silang": { about: "house frame on river stones with crossed diagonal posts (earthquake-proof)", size: P(5, 2.1, 8), parts: [], special: "rangka-silang" },
+  "rangka-tanam": { about: "house frame (5 × 8 m) whose posts are planted in the ground", size: P(5, 2.1, 8), parts: [], special: "rangka-tanam" },
+  "batu-kali": { about: "flat river stone (footing)", size: P(0.66, 0.16, 0.56), parts: [], special: "batu-kali" },
+} satisfies Record<string, PropDef>);
+
+/** Merge story-defined props (stories/<id>/props.json) over the library. */
+export const propLib = (extra?: Record<string, PropDef>) => ({ ...PROPS, ...(extra ?? {}) });
+
+==== 12153 project/src/cerdik/props/Prop.tsx
+// Prop renderer: builds a PropDef (props/lib.ts) out of simple meshes. Options: cut a vessel open (a quarter removed
+// toward its own +z, wall thickness and the liquid inside shown in section), a glowing outline (highlight), and a
+// handful of code-built specials (house frames, river stones) that are too structural for the part list.
+
+import React, { useMemo } from "react";
+import {
+  AdditiveBlending, BackSide, BoxGeometry, BufferGeometry, Color, ConeGeometry, CylinderGeometry, DoubleSide, Euler, LatheGeometry, Material,
+  Matrix4, MeshBasicMaterial, MeshStandardMaterial, Quaternion, Shape, ShapeGeometry, SphereGeometry, TorusGeometry, Vector2, Vector3,
+} from "three";
+import { mat as texMat } from "../../kits/bedah/mats.ts";
+import { clay, plaster, weave, wood } from "../../kits/bedah/tex.ts";
+import { FX_LAYER } from "../../kits/cerdik/Stage.tsx";
+import { HouseFrame, RiverStone } from "../../kits/cerdik/nias.tsx";
+import type { MatName, Part, PropDef } from "./lib.ts";
+
+type V3 = [number, number, number];
+const D2R = Math.PI / 180;
+const CUT_HALF = 50 * D2R; // removed sector ±50° around the opening direction
+
+// ------------------------------------------------------------------ materials
+const cache = new Map<string, Material>();
+export const propMat = (m: MatName, color?: string): Material => {
+  const k = m + "|" + (color ?? "");
+  const hit = cache.get(k);
+  if (hit) return hit;
+  let out: Material;
+  const c = (d: string) => new Color(color ?? d);
+  switch (m) {
+    case "clay": out = texMat("pClay" + color, clay({ seed: 3 }), { repeat: [3, 3], color: color ?? "#d9825a", roughness: 0.92, bump: 0.6 }); break;
+    case "clayDark": out = new MeshStandardMaterial({ color: c("#8f4a30"), roughness: 0.9 }); break;
+    case "glass": out = new MeshStandardMaterial({ color: c("#d9f2ff"), roughness: 0.06, metalness: 0.0, transparent: true, opacity: 0.3, depthWrite: false, side: DoubleSide }); break;
+    case "water": out = new MeshStandardMaterial({ color: c("#5fb4e6"), roughness: 0.1, transparent: true, opacity: 0.78 }); break;
+    case "liquid": out = new MeshStandardMaterial({ color: c("#7fd2ff"), roughness: 0.12, transparent: true, opacity: 0.85, emissive: c("#5cc0ff"), emissiveIntensity: 0.4, side: DoubleSide }); break;
+    case "ice": out = new MeshStandardMaterial({ color: c("#cfeeff"), roughness: 0.12, transparent: true, opacity: 0.82, emissive: new Color("#9fd8ff"), emissiveIntensity: 0.15 }); break;
+    case "wood": out = texMat("pWood" + color, wood({ base: color ?? "#a4703f", dark: "#6a4423", rings: 7, seed: 13 }), { repeat: [1, 1.5], roughness: 0.8 }); break;
+    case "woodDark": out = texMat("pWoodD" + color, wood({ base: color ?? "#6a4428", dark: "#3d2616", rings: 6, seed: 17 }), { repeat: [1, 1.5], roughness: 0.82 }); break;
+    case "bamboo": out = texMat("pBamboo" + color, weave({ strips: 26, a: color ?? "#d6bb7e", b: "#b89a5c" }), { repeat: [2, 2], roughness: 0.85 }); break;
+    case "metal": out = new MeshStandardMaterial({ color: c("#9aa0a6"), roughness: 0.38, metalness: 0.75 }); break;
+    case "gold": out = new MeshStandardMaterial({ color: c("#e4b33e"), roughness: 0.28, metalness: 0.85 }); break;
+    case "cloth": out = new MeshStandardMaterial({ color: c("#d9c7a0"), roughness: 0.95 }); break;
+    case "plastic": out = new MeshStandardMaterial({ color: c("#2f7fd1"), roughness: 0.45 }); break;
+    case "stone": out = texMat("pStone" + color, plaster({ rough: 1.6, seed: 31 }), { repeat: [2, 2], color: color ?? "#9b9890", roughness: 0.9, bump: 1.2 }); break;
+    case "leaf": out = new MeshStandardMaterial({ color: c("#3f8a35"), roughness: 0.8, side: DoubleSide }); break;
+    case "fruit": out = new MeshStandardMaterial({ color: c("#f08a1c"), roughness: 0.5 }); break;
+    case "paper": out = new MeshStandardMaterial({ color: c("#f4efe2"), roughness: 0.9, side: DoubleSide }); break;
+    case "rope": out = new MeshStandardMaterial({ color: c("#b8975c"), roughness: 0.95 }); break;
+    case "glow": out = new MeshBasicMaterial({ color: c("#ffd98a").multiplyScalar(5), toneMapped: false }); break;
+    default: out = new MeshStandardMaterial({ color: c("#cccccc"), roughness: 0.7 });
+  }
+  cache.set(k, out);
+  return out;
+};
+
+const dbl = new Map<Material, Material>();
+const doubleSided = (m: Material) => { let d = dbl.get(m); if (!d) { d = m.clone(); d.side = DoubleSide; dbl.set(m, d); } return d; };
+
+// ------------------------------------------------------------------ geometry
+/** Lathe; when cut, the sector ±CUT_HALF around local angle `dir` (0 = +z) is left open. */
+const lathe = (profile: [number, number][], cut: boolean, dir = 0) =>
+  new LatheGeometry(profile.map(([r, y]) => new Vector2(Math.max(1e-4, r), y)), 48, cut ? dir + CUT_HALF : 0, cut ? Math.PI * 2 - 2 * CUT_HALF : Math.PI * 2);
+
+/** Flat section face between an outer and an inner profile, placed on the cut plane at angle phi. */
+const sectionFace = (outer: [number, number][], inner: [number, number][], phi: number) => {
+  const sh = new Shape();
+  const pts = [...outer, ...inner.slice().reverse()];
+  pts.forEach(([r, y], i) => (i ? sh.lineTo(r, y) : sh.moveTo(r, y)));
+  const g = new ShapeGeometry(sh);
+  // shape is in (x = r, y); rotate so +x points along the lathe direction phi (x = sin φ, z = cos φ)
+  g.rotateY(phi - Math.PI / 2);
+  return g;
+};
+const clipProfile = (p: [number, number][], ymax: number): [number, number][] => {
+  const out: [number, number][] = [];
+  for (let i = 0; i < p.length; i++) {
+    const [r, y] = p[i];
+    if (y <= ymax) out.push([r, y]);
+    else {
+      const [r0, y0] = p[i - 1] ?? [r, y];
+      const k = (ymax - y0) / Math.max(1e-6, y - y0);
+      out.push([r0 + (r - r0) * k, ymax]);
+      break;
+    }
+  }
+  out.push([0, out[out.length - 1][1]]);
+  return out;
+};
+
+const partGeo = (p: Part, cut: boolean, dir = 0): BufferGeometry => {
+  switch (p.shape) {
+    case "box": { const g = new BoxGeometry(p.size[0], p.size[1], p.size[2]); g.translate(0, p.size[1] / 2, 0); return g; }
+    case "cyl": { const g = new CylinderGeometry(p.r2 ?? p.r, p.r, p.h, p.seg ?? 28, 1); g.translate(0, p.h / 2, 0); return g; }
+    case "cone": { const g = new ConeGeometry(p.r, p.h, p.seg ?? 28, 1); g.translate(0, p.h / 2, 0); return g; }
+    case "sphere": return new SphereGeometry(p.r, 28, 18);
+    case "torus": return new TorusGeometry(p.r, p.tube, 10, 36);
+    case "lathe": return lathe(p.profile, cut && !!p.cut, dir);
+  }
+};
+
+
+const partMatrix = (p: Part) => {
+  const pos = (p as { pos?: V3 }).pos ?? [0, 0, 0];
+  const rot = (p as { rot?: V3 }).rot ?? [0, 0, 0];
+  const sc = p.shape === "sphere" ? p.scale ?? [1, 1, 1] : [1, 1, 1];
+  return new Matrix4().compose(new Vector3(...pos), new Quaternion().setFromEuler(new Euler(rot[0] * D2R, rot[1] * D2R, rot[2] * D2R)), new Vector3(sc[0], sc[1], sc[2]));
+};
+
+type Built = { g: BufferGeometry; m: Matrix4; mat: Material; center: Vector3 }[];
+const builtCache = new Map<string, Built>();
+const buildProp = (key: string, def: PropDef, cut: boolean, fill?: { color: string; level: number }, dir = 0): Built => {
+  const k = key + (cut ? `|cut${dir.toFixed(2)}` : "") + (fill ? `|${fill.color}|${fill.level}` : "");
+  const hit = builtCache.get(k);
+  if (hit) return hit;
+  const out: Built = [];
+  def.parts.forEach((p, i) => {
+    // cut open: small parts sitting in the opening (a spout, a handle) are left out so the section reads
+    if (cut && p.shape !== "lathe") {
+      const q = (p as { pos?: V3 }).pos ?? [0, 0, 0];
+      if (Math.hypot(q[0], q[2]) > 0.02 && Math.abs(Math.atan2(Math.sin(Math.atan2(q[0], q[2]) - dir), Math.cos(Math.atan2(q[0], q[2]) - dir))) < CUT_HALF + 0.5) return;
+    }
+    const g = partGeo(p, cut, dir);
+    g.computeBoundingBox();
+    const center = g.boundingBox!.getCenter(new Vector3());
+    const m = partMatrix(p);
+    // a vessel shown cut open: its inside must render too
+    out.push({ g, m, mat: cut && p.shape === "lathe" && p.cut ? doubleSided(propMat(p.mat, p.color)) : propMat(p.mat, p.color), center });
+    // cut vessel: wall section faces + liquid
+    if (cut && p.shape === "lathe" && p.cut && def.vessel?.part === i) {
+      const inner = def.vessel.inner;
+      for (const phi of [dir + CUT_HALF, dir - CUT_HALF]) {
+        const f = sectionFace(p.profile, inner, phi);
+        out.push({ g: f, m, mat: propMat(p.mat === "glass" ? "ice" : "clayDark", p.mat === "glass" ? "#bfe6f7" : undefined), center: new Vector3() });
+      }
+    }
+  });
+  // liquid inside a vessel (always drawn; through glass it shows, in clay only when cut)
+  const v = def.vessel;
+  if (v && (fill || v.level) && (cut || def.parts[v.part].mat === "glass")) {
+    const level = fill?.level ?? v.level ?? 0.7;
+    const ymax = Math.max(...v.inner.map((q) => q[1])) * level;
+    const prof = clipProfile(v.inner.map(([r, y]) => [Math.max(0, r - 0.002), y]), ymax);
+    const p = def.parts[v.part];
+    const m = partMatrix(p);
+    const water = cut ? propMat("liquid", fill?.color) : propMat("water", fill?.color ?? v.liquid);
+    out.push({ g: lathe(prof, cut, dir), m, mat: water, center: new Vector3() });
+    if (cut) for (const phi of [dir + CUT_HALF, dir - CUT_HALF]) out.push({ g: sectionFace(prof.slice(0, -1), [[0, prof[prof.length - 1][1]], [0, prof[0][1]]], phi), m, mat: water, center: new Vector3() });
+  }
+  builtCache.set(k, out);
+  return out;
+};
+
+// ------------------------------------------------------------------ specials
+const SPECIAL: Record<string, React.FC<{ def: PropDef }>> = {
+  "rangka-batu": () => <HouseFrame fresh diagonals={false} />,
+  "rangka-silang": () => <HouseFrame fresh diagonals />,
+  "rangka-tanam": () => <HouseFrame footing="planted" diagonals={false} />,
+  "batu-kali": () => <RiverStone pos={[0, 0.02, 0]} r={0.33} seed={3} />,
+};
+
+// ------------------------------------------------------------------ the prop
+const glowMats = new Map<string, MeshBasicMaterial>();
+const glowMat = (color: string) => {
+  let m = glowMats.get(color);
+  if (!m) glowMats.set(color, (m = new MeshBasicMaterial({ color, side: BackSide, transparent: true, blending: AdditiveBlending, depthWrite: false, toneMapped: false })));
+  return m;
+};
+
+export const Prop: React.FC<{
+  kind: string;
+  def: PropDef;
+  pos?: V3;
+  yaw?: number;
+  scale?: number;
+  cut?: boolean;
+  /** world yaw the cut opening faces */
+  cutYaw?: number;
+  /** 0…1 highlight glow */
+  glow?: number;
+  glowColor?: string;
+  t?: number;
+  fill?: { color: string; level: number };
+}> = ({ kind, def, pos = [0, 0, 0], yaw = 0, scale = 1, cut = false, cutYaw, glow = 0, glowColor = "#ffc94a", t = 0, fill }) => {
+  // the opening in prop space: the lathe angle phi has x = sin φ, z = cos φ
+  const dir = cut && cutYaw !== undefined ? Math.round(((cutYaw - yaw) % (Math.PI * 2)) * 20) / 20 : 0;
+  const parts = useMemo(() => (def.special ? [] : buildProp(kind, def, cut, fill, dir)), [kind, def, cut, fill?.color, fill?.level, dir]); // eslint-disable-line react-hooks/exhaustive-deps
+  const S = def.special ? SPECIAL[def.special] : null;
+  const gm = glow > 0 ? glowMat(glowColor) : null;
+  if (gm) {
+    gm.opacity = Math.min(1, glow);
+    gm.color.set(glowColor).multiplyScalar(6 * (1 + 0.12 * Math.sin(t * 7.5)));
+  }
+  return (
+    <group position={pos} rotation={[0, yaw, 0]} scale={scale}>
+      {S ? <S def={def} /> : null}
+      {parts.map((p, i) => (
+        <mesh key={i} geometry={p.g} material={p.mat} matrix={p.m} matrixAutoUpdate={false} castShadow={!(p.mat as MeshStandardMaterial).transparent} receiveShadow />
+      ))}
+      {gm
+        ? parts.filter((p) => !(p.mat as MeshStandardMaterial).transparent).map((p, i) => {
+            // the hull grows about the part's own centre
+            const c = p.center.clone().applyMatrix4(p.m);
+            const gm4 = new Matrix4().makeTranslation(c.x, c.y, c.z).multiply(new Matrix4().makeScale(1.08, 1.08, 1.08)).multiply(new Matrix4().makeTranslation(-c.x, -c.y, -c.z)).multiply(p.m);
+            return <mesh key={"g" + i} geometry={p.g} material={gm} matrix={gm4} matrixAutoUpdate={false} renderOrder={5} onUpdate={(o) => o.layers.set(FX_LAYER)} />;
+          })
+        : null}
+    </group>
+  );
+};
+
+==== 7191 project/src/cerdik/types.ts
+// CERDIK director — data types. A Story is what an author writes (stories/<id>/story.json); a Plan is the compiled
+// film. Both are plain JSON: the same Plan drives the picture (Film.tsx), the sound (scripts/lib/sound.mjs) and QA.
+// Pure TypeScript (no React / three): node runs the compiler directly.
+
+export type V3 = [number, number, number];
+export type Box = { min: V3; max: V3 };
+
+// ------------------------------------------------------------------ worlds
+/** A named place in a world where people stand or props sit. `face` = yaw the person there faces (rad; 0 = +z). */
+export type Spot = {
+  pos: V3;
+  face: number;
+  about?: string;
+  /** height of a work surface in front of the spot (a stall table), for props "on" it */
+  surface?: { y: number; ahead: number };
+};
+export type CamKeySpec = { pos: V3; target: V3; fov: number };
+export type WorldMeta = {
+  id: string;
+  about: string;
+  spots: Record<string, Spot>;
+  /** solid volumes: cameras stay out of them and need a clear line of sight past them */
+  colliders: Box[];
+  /** cameras stay inside (x, z) and above y = 0.15 */
+  bounds: Box;
+  /** authored establishing moves (shot "aerial" / "establish") */
+  views: Record<string, { a: CamKeySpec; b: CamKeySpec }>;
+  /** default time of day */
+  time?: TimeOfDay;
+  /** spots where background extras may idle */
+  crowd?: string[];
+  /** indoors: weather "rain" only greys the light and adds the sound (no falling rain) */
+  indoor?: boolean;
+  /** ground height at (x, z) for feet (streets are raised) */
+  floor?: { y: number; box?: Box }[];
+};
+
+export type TimeOfDay = "day" | "gold" | "hot" | "night" | "dawn";
+export type Weather = "clear" | "rain";
+
+// ------------------------------------------------------------------ story (authored)
+export type ShotKind = "wide" | "medium" | "close" | "low" | "ots" | "insert" | "top" | "ground" | "aerial" | "establish" | "cutaway" | "reaction";
+export type Move = "push" | "pull" | "still" | "orbit" | "rise" | "track";
+
+/** Where a person / prop is: a spot name, optionally offset in the spot's own frame (side = to its right, ahead = forward). */
+export type Place = string | { at: string; side?: number; ahead?: number; up?: number };
+
+export type CastEntry = {
+  /** a preset from the cast library (`make.mjs --library`); filled in by make.mjs when `tokoh` is used */
+  preset: string;
+  /** a saved character: tokoh/tokoh-<slug>.json (make.mjs expands it to preset + look before compiling) */
+  tokoh?: string;
+  /** look overrides: costume colours, hat, hair, build */
+  look?: Record<string, unknown>;
+  /** shown in captions/sound? (not used yet) */
+  name?: string;
+};
+
+export type ActorBeat = {
+  at?: Place;
+  /** walk from where the person is to `at` during the beat */
+  walk?: boolean;
+  /** face: "front" (the spot's facing), another person's id, a prop id, or degrees */
+  face?: string | number;
+  do?: string;
+  /** action target (point at / look at): a person, a prop or a spot */
+  to?: string;
+  expr?: string;
+  /** word (or seconds into the beat) where the expression / action changes: { "at": "word", "expr": "laugh" } */
+  then?: { at: string | number; do?: string; expr?: string; flush?: number }[];
+  /** 0…1 face colour (red when laughing, purple when angry: flushColor) */
+  flush?: number;
+  flushColor?: string;
+  /** carry a prop in the hands (prop id) */
+  hold?: string;
+  /** this person speaks the quoted words of the line (mouth moves) */
+  says?: boolean;
+  /** leave the scene */
+  gone?: boolean;
+};
+
+export type PropBeat = {
+  kind?: string;
+  at?: Place;
+  /** stand on the spot's surface (stall table) */
+  on?: "surface" | "ground";
+  /** rotation (deg) */
+  yaw?: number;
+  scale?: number;
+  gone?: boolean;
+  /** liquid inside a container: { color, level } */
+  fill?: { color?: string; level?: number };
+};
+
+export type FxKind = "glow" | "sweat" | "vapor" | "steam" | "sparkle" | "dust" | "heat" | "chill" | "cut";
+export type FxBeat = { kind: FxKind; on: string; at?: string | number; until?: string | number; color?: string; amount?: number };
+
+export type BeatSpec = {
+  /** the word the cut lands on (first beat of a line: the line start) or seconds after the line start */
+  at?: string | number;
+  shot?: ShotKind;
+  /** who / what the camera is about (person or prop id); several for a group */
+  on?: string | string[];
+  /** ots: whose shoulder (foreground) */
+  over?: string;
+  move?: Move;
+  cast?: Record<string, ActorBeat>;
+  props?: Record<string, PropBeat>;
+  fx?: FxBeat[];
+  time?: TimeOfDay;
+  /** "rain" (grey sky, falling rain, rain sound) until a later line says "clear" */
+  weather?: Weather;
+  /** prefer the camera on this side of the subject: "left" / "right" (screen) */
+  side?: "left" | "right";
+  /** cross-dissolve into this beat (time jumps) */
+  dissolve?: boolean;
+};
+
+export type LineSpec = BeatSpec & {
+  text: string;
+  beats?: BeatSpec[];
+};
+
+export type Story = {
+  id: string;
+  title: string;
+  world: string;
+  format?: "portrait" | "landscape";
+  time?: TimeOfDay;
+  weather?: Weather;
+  cast: Record<string, CastEntry>;
+  props?: Record<string, PropBeat & { kind: string }>;
+  /** background people: n of them at a spot, from a word (or seconds) until a word / "end" */
+  extras?: { at: string; n?: number; mode?: "idle" | "queue" | "laugh" | "cheer" | "watch" | "hot"; from?: string | number; until?: string | number }[];
+  lines: LineSpec[];
+};
+
+// ------------------------------------------------------------------ timing
+export type Word = { w: string; t: number };
+export type Timed = { text: string; t0: number; t1: number; words: Word[] };
+
+// ------------------------------------------------------------------ plan (compiled)
+export type ActKey = { t: number; do: string; expr: string; flush: number; to?: V3 };
+export type PActor = {
+  id: string;
+  look: Record<string, unknown>;
+  /** position at shot start / end (walk if they differ) and facing */
+  p0: V3;
+  p1: V3;
+  face0: number;
+  face1: number;
+  walk?: [number, number];
+  keys: ActKey[];
+  flushColor?: string;
+  hold?: string;
+  /** word timings this person speaks (mouth) */
+  talk: { w: string; t0: number; t1: number }[];
+  seed: number;
+  extra?: boolean;
+};
+export type PProp = { id: string; kind: string; pos: V3; yaw: number; scale: number; held?: { by: string }; fill?: { color: string; level: number } };
+export type PFx = { kind: FxKind; on: string; t0: number; t1: number; color?: string; amount: number };
+export type PCam = { pos: V3; target: V3; fov: number };
+export type PShot = {
+  i: number;
+  t0: number;
+  t1: number;
+  kind: ShotKind;
+  line: number;
+  a: PCam;
+  b: PCam;
+  blur: number;
+  shadowAt: V3;
+  shadowBox: number;
+  time: TimeOfDay;
+  weather: Weather;
+  dissolve: boolean;
+  actors: PActor[];
+  props: PProp[];
+  fx: PFx[];
+  /** prop shown in cutaway (lathe section) and the world yaw its opening faces (toward the camera) */
+  cut?: string;
+  cutYaw?: number;
+  vis: number;
+};
+export type Plan = {
+  id: string;
+  title: string;
+  world: string;
+  duration: number;
+  aspect: number;
+  shots: PShot[];
+  words: { w: string; t0: number; t1: number }[];
+  lines: Timed[];
+  audio?: string;
+  warnings: string[];
+};
+
+==== 3271 project/src/cerdik/worlds/desa.meta.ts
+// World "desa" — a Nias-inspired hill village: two rows of stilt houses facing a stone-paved street (x ≈ 0, running
+// along z), the chief's big house at the top end (z ≈ −58), a stone jumping tower, megaliths, palms. Two empty
+// building plots (lahan-a, lahan-b) at the entrance end. Pure data for the director.
+import type { Box, Spot, WorldMeta } from "../types.ts";
+
+const R = Math.PI;
+export const ROW_X = 9.0;
+export const PLOT = { a: [9.0, 0, 5.0] as [number, number, number], b: [-9.0, 0, 5.0] as [number, number, number] };
+export const HOUSE_Z = Array.from({ length: 8 }, (_, i) => -4 - i * 6);
+
+const spots: Record<string, Spot> = {
+  "jalan": { pos: [0, 0.12, 3.0], face: 0, about: "middle of the street at the entrance, facing out of the village" },
+  "jalan-dalam": { pos: [0, 0.12, -14], face: R, about: "middle of the street inside the village, facing the chief's house" },
+  "jalan-tengah": { pos: [0.6, 0.12, -1.0], face: 0, about: "middle of the street, a gathering place" },
+  "rumah-kades": { pos: [0, 0.12, -46.5], face: 0, about: "in front of the chief's big house, facing down the street" },
+  "batu-lompat": { pos: [0.4, 0.12, -35.2], face: R / 2, about: "beside the stone jumping tower" },
+  "lahan-a": { pos: [4.7, 0.012, 6.4], face: -R / 2, about: "plot A (right side of the entrance), in front of it, facing the street" },
+  "lahan-a-tepi": { pos: [2.9, 0.12, 4.4], face: R / 2, about: "street edge facing plot A" },
+  "lahan-a-samping": { pos: [6.3, 0.012, 1.4], face: R, about: "beside plot A, at its street-side corner" },
+  "lahan-b": { pos: [-4.7, 0.012, 4.3], face: R / 2, about: "plot B (left side), in front of it, facing the street" },
+  "lahan-b-tepi": { pos: [-2.9, 0.12, 4.0], face: -R / 2, about: "street edge facing plot B" },
+};
+// in front of each house, on the street, facing the house
+HOUSE_Z.forEach((z, i) => {
+  spots[`rumah-${i + 1}-kanan`] = { pos: [3.0, 0.12, z], face: R / 2, about: `street in front of house ${i + 1} on the right, facing it` };
+  spots[`rumah-${i + 1}-kiri`] = { pos: [-3.0, 0.12, z], face: -R / 2, about: `street in front of house ${i + 1} on the left, facing it` };
+});
+
+const colliders: Box[] = [];
+for (const z of HOUSE_Z) for (const sd of [1, -1]) colliders.push({ min: [sd > 0 ? 4.4 : -13.4, 0, z - 2.7], max: [sd > 0 ? 13.4 : -4.4, 8, z + 2.7] });
+colliders.push({ min: [-6, 0, -66], max: [6, 14, -51] }); // chief's house
+colliders.push({ min: [1.4, 0, -36.8], max: [3.2, 2.3, -35.6] }); // jump stone
+// street kerbs are low: no collider
+
+export const DESA: WorldMeta = {
+  id: "desa",
+  about: "Nias-style village: stilt houses with crossed posts and steep thatched roofs on a stone street; chief's house, stone tower, palms, green hills",
+  spots,
+  colliders,
+  bounds: { min: [-40, 0, -75], max: [40, 30, 40] },
+  views: {
+    establish: { a: { pos: [0, 9.5, 24], target: [0, 2.0, -6], fov: 44 }, b: { pos: [0.6, 13.5, 6], target: [0, 1.5, -46], fov: 44 } },
+    aerial: { a: { pos: [-14, 22, 18], target: [0, 0, -18], fov: 44 }, b: { pos: [14, 24, 12], target: [0, 0, -22], fov: 44 } },
+  },
+  time: "day",
+  crowd: ["rumah-2-kanan", "rumah-3-kiri", "rumah-4-kanan", "rumah-5-kiri", "jalan-dalam"],
+  floor: [{ y: 0.12, box: { min: [-3.3, 0, -52], max: [3.3, 1, 16] } }],
+};
+
+==== 4308 project/src/cerdik/worlds/Desa.tsx
+// World "desa" picture: a Nias-inspired hill village (layout for the director in desa.meta.ts) — two rows of stilt houses
+// facing a stone-paved street, the chief's big house at the top end, a stone jumping tower and megaliths, palms,
+// bananas and green hills. The two building plots by the village entrance (x = ±PLOT_X, z = PLOT_Z) are drawn by
+// the shots (they change during the story); the world only prepares their packed-earth yards.
+
+import React from "react";
+import { Ground } from "../../kits/bedah/Ground.tsx";
+import { Hills } from "../../kits/cerdik/backdrop.tsx";
+import { Banana, Palm, TreeLine, Trees, type TreeSpec } from "../../kits/bedah/props.tsx";
+import { JumpStone, LogPile, Megalith, NiasHouse, StonePile, Street } from "../../kits/cerdik/nias.tsx";
+import type { V3 } from "../../kits/bedah/cam.ts";
+
+export const ROW_X = 9.0;
+export const PLOT_X = 9.0;
+export const PLOT_Z = 5.0;
+/** The young builder's plot (house faces the street, −x). */
+export const PLOT_P = { pos: [PLOT_X, 0, PLOT_Z] as V3, rotY: -Math.PI / 2 };
+/** The rival's plot across the street. */
+export const PLOT_R = { pos: [-PLOT_X, 0, PLOT_Z] as V3, rotY: Math.PI / 2 };
+export const CHIEF_Z = -58;
+
+const ROWS: { z: number; side: 1 | -1; roofH: number; seed: number }[] = [];
+for (let i = 0; i < 8; i++) {
+  ROWS.push({ z: -4 - i * 6, side: 1, roofH: 4.2 + ((i * 37) % 5) * 0.16, seed: i * 2 + 1 });
+  ROWS.push({ z: -4 - i * 6, side: -1, roofH: 4.3 + ((i * 53) % 5) * 0.15, seed: i * 2 + 2 });
+}
+
+const TREES: TreeSpec[] = [
+  { pos: [-19, 0, -6], h: 9, r: 3.6, seed: 2 }, { pos: [20, 0, -12], h: 10, r: 4, seed: 3 }, { pos: [-21, 0, -28], h: 10.5, r: 4.2, seed: 4 },
+  { pos: [22, 0, -34], h: 9.5, r: 3.8, seed: 5 }, { pos: [-14, 0, -64], h: 11, r: 4.4, seed: 6 }, { pos: [15, 0, -66], h: 10, r: 4.2, seed: 7 },
+  { pos: [-24, 0, 10], h: 9, r: 3.6, seed: 8 }, { pos: [25, 0, 14], h: 9.5, r: 3.9, seed: 9 }, { pos: [-30, 0, -46], h: 12, r: 4.8, seed: 10 },
+  { pos: [31, 0, -50], h: 12, r: 4.8, seed: 11 }, { pos: [-6, 0, 26], h: 8, r: 3.4, seed: 12 }, { pos: [8, 0, 30], h: 9, r: 3.6, seed: 13 },
+];
+
+export const Village: React.FC<{ cutZ?: number }> = ({ cutZ = 140 }) => (
+  <group>
+    <Ground cutZ={cutZ} yards={[
+      { x0: PLOT_X - 4.6, x1: PLOT_X + 4.8, z0: PLOT_Z - 3.4, z1: PLOT_Z + 3.4, seed: 2 },
+      { x0: -PLOT_X - 4.8, x1: -PLOT_X + 4.6, z0: PLOT_Z - 3.4, z1: PLOT_Z + 3.4, seed: 5 },
+      { x0: -6, x1: 6, z0: CHIEF_Z - 2, z1: CHIEF_Z + 18, seed: 8 },
+    ]} />
+    <Street z0={16} z1={CHIEF_Z + 6} />
+    {ROWS.map((r, i) => (
+      <NiasHouse key={i} pos={[r.side * ROW_X, 0, r.z]} rotY={-r.side * Math.PI / 2} roofH={r.roofH} seed={r.seed} />
+    ))}
+    {/* the chief's house closes the street */}
+    <NiasHouse pos={[0, 0, CHIEF_Z]} rotY={0} w={6.5} d={10} floor={2.6} roofH={6.4} scale={1.35} seed={41} />
+    <JumpStone pos={[2.3, 0.12, -38]} yaw={0} />
+    <Megalith pos={[-3.0, 0.1, CHIEF_Z + 12]} h={2.0} seed={1} yaw={0.2} />
+    <Megalith pos={[-3.7, 0.1, CHIEF_Z + 10.6]} h={1.5} seed={2} yaw={-0.3} />
+    <Megalith pos={[3.3, 0.1, CHIEF_Z + 11.4]} h={1.8} seed={3} yaw={0.4} />
+    {/* building material by the plots */}
+    <LogPile pos={[PLOT_X - 0.6, 0, PLOT_Z + 5.0]} yaw={Math.PI / 2 + 0.08} n={6} />
+    <StonePile pos={[PLOT_X + 3.0, 0, PLOT_Z + 4.6]} seed={4} />
+    <LogPile pos={[-PLOT_X + 0.8, 0, PLOT_Z - 4.7]} yaw={Math.PI / 2 - 0.1} n={5} fresh={false} />
+    <Trees trees={TREES} />
+    {([
+      [15, -2, 11, 1.0, 0.5], [-15.5, -8, 12, -1.1, 2], [16, -24, 12.5, 0.9, 1], [-16, -30, 11, -0.8, 3], [15.5, -42, 12, 1.2, 4],
+      [-15, -48, 12.5, -1.0, 5], [5, -70, 13, 0.6, 6], [-6, -72, 12, -0.7, 7], [17, 9, 10, 1.1, 8], [-17, 12, 10.5, -1.0, 9],
+    ] as [number, number, number, number, number][]).map(([x, z, h, lean, seed], i) => <Palm key={i} pos={[x, 0, z]} h={h} lean={lean} yaw={seed * 1.3} seed={seed} />)}
+    {([[14.2, 1.5, 1.2], [13.6, 8.5, 1.0], [-14, 2, 1.15], [-13.6, 9.5, 1.05], [12.5, -16, 1.1], [-12.8, -21, 1.2]] as [number, number, number][]).map(([x, z, s], i) => (
+      <Banana key={i} pos={[x, 0, z]} s={s} yaw={i * 1.7} seed={i + 1} />
+    ))}
+    <TreeLine r0={80} r1={150} count={160} seed={3} />
+    <TreeLine r0={80} r1={150} count={160} seed={7} arc={[-0.05 * Math.PI, 1.05 * Math.PI]} />
+    <Hills />
+  </group>
+);
+
+==== 3504 project/src/cerdik/worlds/istana.meta.ts
+// World "istana" — an old Javanese-style palace: a great open pendopo (stone platform, carved pillars, tiered
+// joglo roof) with a throne on a dais at the back, a red carpet, a gamelan set, banners; a paved courtyard with
+// banyan trees in front and a split gate (gapura) at its far end. The pendopo floor is at y = 0.5, the dais at
+// 0.95. Origin = pendopo centre; the throne faces +z (toward the courtyard and the gate). Pure data.
+import type { Box, Spot, WorldMeta } from "../types.ts";
+
+const R = Math.PI;
+export const PLAT = { half: 8, y: 0.5 };
+export const DAIS = { x: 1.8, z0: -6.6, z1: -4.2, y: 0.95 };
+export const PILLARS: [number, number][] = [];
+for (const x of [-6.5, -2.2, 2.2, 6.5]) for (const z of [-6.5, -2.2, 2.2, 6.5]) PILLARS.push([x, z]);
+
+const spots: Record<string, Spot> = {
+  "singgasana": { pos: [0, DAIS.y, -5.62], face: 0, about: "on the throne (use do: sit)" },
+  "samping-singgasana": { pos: [1.3, DAIS.y, -5.2], face: -0.4, about: "standing beside the throne" },
+  "depan-singgasana": { pos: [0, PLAT.y, -2.6], face: R, about: "standing before the throne (an audience), facing it" },
+  "depan-singgasana-2": { pos: [-1.1, PLAT.y, -2.2], face: R * 0.95, about: "second audience place before the throne" },
+  "tengah": { pos: [0, PLAT.y, 0.6], face: R, about: "middle of the pendopo, facing the throne" },
+  "tepi-pendopo": { pos: [0, PLAT.y, 6.4], face: 0, about: "front edge of the pendopo, facing the courtyard" },
+  "gamelan": { pos: [-4.4, PLAT.y, 0.6], face: R / 2, about: "at the gamelan set (left side)" },
+  "pengawal": { pos: [3.2, PLAT.y, -4.6], face: -R / 2, about: "guard post at the right of the throne" },
+  "pengawal-2": { pos: [-3.2, PLAT.y, -4.6], face: R / 2, about: "guard post at the left of the throne" },
+  "halaman": { pos: [0, 0.02, 11.5], face: R, about: "in the courtyard, facing the pendopo" },
+  "halaman-kiri": { pos: [-4, 0.02, 13], face: R * 0.9, about: "courtyard, left side, facing the pendopo" },
+  "gerbang": { pos: [0, 0.02, 21.5], face: R, about: "just inside the split gate, facing the pendopo" },
+};
+
+const colliders: Box[] = [
+  ...PILLARS.map(([x, z]) => ({ min: [x - 0.3, 0, z - 0.3] as [number, number, number], max: [x + 0.3, 5.6, z + 0.3] as [number, number, number] })),
+  { min: [-9.5, 5.4, -9.5], max: [9.5, 13, 9.5] }, // roof
+  { min: [-0.75, DAIS.y, -6.5], max: [0.75, DAIS.y + 1.6, -5.85] }, // throne back
+  { min: [-6.2, PLAT.y, -1.0], max: [-4.9, PLAT.y + 0.8, 2.4] }, // gamelan
+  { min: [-9.5, 0, -9.5], max: [9.5, PLAT.y - 0.05, 9.5] }, // platform body
+  { min: [-7, 0, 22.5], max: [-1.6, 7.5, 24], }, { min: [1.6, 0, 22.5], max: [7, 7.5, 24] }, // gate halves
+];
+
+export const ISTANA: WorldMeta = {
+  id: "istana",
+  about: "old Javanese palace: open pendopo with carved pillars and joglo roof, throne on a dais, red carpet, gamelan, courtyard with banyan trees, split gate",
+  spots,
+  colliders,
+  bounds: { min: [-30, 0, -20], max: [30, 30, 40] },
+  views: {
+    establish: { a: { pos: [0.5, 4.2, 26], target: [0, 3.0, 0], fov: 46 }, b: { pos: [0.4, 3.4, 18], target: [0, 2.6, -2], fov: 46 } },
+    aerial: { a: { pos: [-5, 21, 27], target: [0, 1.5, 0], fov: 44 }, b: { pos: [5, 22, 25], target: [0, 1.5, -1], fov: 44 } },
+  },
+  time: "day",
+  crowd: ["halaman", "halaman-kiri", "tepi-pendopo", "tengah"],
+  floor: [{ y: DAIS.y, box: { min: [-DAIS.x, 0, DAIS.z0], max: [DAIS.x, 2, DAIS.z1] } }, { y: PLAT.y, box: { min: [-PLAT.half, 0, -PLAT.half], max: [PLAT.half, 2, PLAT.half] } }, { y: 0.02 }],
+};
+
+==== 9741 project/src/cerdik/worlds/Istana.tsx
+// World "istana" picture (layout for the director in istana.meta.ts): pendopo, throne, gamelan, courtyard, gate.
+import React, { useMemo } from "react";
+import { CylinderGeometry, DoubleSide, SphereGeometry } from "three";
+import { boxUV, Rod } from "../../kits/bedah/geo.tsx";
+import { flat, mat } from "../../kits/bedah/mats.ts";
+import { brick, grass, plaster, rubble, tileSheet, wood } from "../../kits/bedah/tex.ts";
+import { Trees } from "../../kits/bedah/props.tsx";
+import { Backdrop, tileFloor } from "../../kits/cerdik/backdrop.tsx";
+import { DAIS, PILLARS, PLAT } from "./istana.meta.ts";
+
+const R = Math.PI;
+const SPH = new SphereGeometry(1, 18, 12);
+
+/** Square frustum (a hipped roof tier): half-sides at the bottom / top, height. */
+const tier = (b: number, t: number, h: number) => {
+  const g = new CylinderGeometry(t * Math.SQRT2, b * Math.SQRT2, h, 4, 1, true);
+  g.rotateY(R / 4);
+  return g;
+};
+
+const Gamelan: React.FC<{ pos: [number, number, number] }> = ({ pos }) => {
+  const mF = mat("gamFrame", wood({ base: "#8a2a22", dark: "#5a1a14", rings: 5, seed: 31 }), { repeat: [1, 1], roughness: 0.6 });
+  const mB = flat("#c99a3a", 0.3, { metalness: 0.85 });
+  const gong = useMemo(() => new CylinderGeometry(0.42, 0.42, 0.08, 36), []);
+  return (
+    <group position={pos}>
+      {[0, 1].map((row) => (
+        <group key={row} position={[0, 0, row * 1.1 - 0.4]}>
+          <mesh geometry={boxUV(0.9, 0.08, 1.0)} material={mF} position={[0, 0.42, 0]} castShadow receiveShadow />
+          {[[-0.4, -0.45], [0.4, -0.45], [-0.4, 0.45], [0.4, 0.45]].map(([x, z], i) => <mesh key={i} geometry={boxUV(0.06, 0.42, 0.06)} material={mF} position={[x, 0, z]} castShadow />)}
+          {Array.from({ length: 10 }, (_, i) => <mesh key={i} geometry={SPH} material={mB} position={[(i % 2) * 0.36 - 0.18, 0.55, -0.4 + Math.floor(i / 2) * 0.2]} scale={[0.09, 0.06, 0.09]} castShadow />)}
+        </group>
+      ))}
+      <group position={[0, 0, 2.0]}>
+        {[-0.6, 0.6].map((x) => <mesh key={x} geometry={boxUV(0.1, 1.6, 0.1)} material={mF} position={[x, 0, 0]} castShadow />)}
+        <mesh geometry={boxUV(1.4, 0.12, 0.12)} material={mF} position={[0, 1.6, 0]} castShadow />
+        <mesh geometry={gong} material={mB} position={[0, 1.0, 0]} rotation={[R / 2, 0, 0]} castShadow />
+        <mesh geometry={SPH} material={mB} position={[0, 1.0, 0.06]} scale={0.09} />
+      </group>
+    </group>
+  );
+};
+
+const Banner: React.FC<{ pos: [number, number, number]; color: string; t: number }> = ({ pos, color, t }) => (
+  <group position={pos}>
+    <Rod a={[0, 0, 0]} b={[0.1, 6.2, 0]} r={0.05} material={flat("#e8d7a4", 0.6)} />
+    <mesh position={[0.32, 4.6, 0]} rotation={[0, 0.25 * Math.sin(t * 1.1 + pos[0]), 0.04]} material={flat(color, 0.8, { double: true })} castShadow><planeGeometry args={[0.55, 3.0]} /></mesh>
+  </group>
+);
+
+/** Candi bentar: a gateway split in two stepped brick halves. */
+const SplitGate: React.FC<{ z: number }> = ({ z }) => {
+  const mB = mat("gateBrick", brick({ base: "#b4553a", dark: "#8a3a26", light: "#cf7a58", mortar: "#d9b89a" }), { repeat: [1 / 1.2, 1 / 0.6], roughness: 0.9 });
+  const steps = [[5.2, 1.6], [4.4, 1.5], [3.6, 1.5], [2.6, 1.4], [1.6, 1.2]];
+  return (
+    <group position={[0, 0, z]}>
+      {[-1, 1].map((sd) => (
+        <group key={sd} position={[sd * 4.2, 0, 0]}>
+          {steps.reduce<{ y: number; el: React.ReactNode[] }>((acc, [w, h], i) => {
+            acc.el.push(<mesh key={i} geometry={boxUV(w, h, 1.4)} material={mB} position={[sd * (5.2 - w) * -0.25, acc.y + h / 2, 0]} castShadow receiveShadow />);
+            acc.y += h;
+            return acc;
+          }, { y: 0, el: [] }).el}
+        </group>
+      ))}
+      {/* courtyard walls */}
+      {[-1, 1].map((sd) => <mesh key={"w" + sd} geometry={boxUV(14, 1.8, 0.5)} material={mB} position={[sd * 13.6, 0.9, 0]} castShadow receiveShadow />)}
+    </group>
+  );
+};
+
+export const Istana: React.FC<{ t: number; night?: boolean }> = ({ t, night }) => {
+  const mStone = mat("istStone", plaster({ rough: 1.4, seed: 91 }), { repeat: [1 / 2, 1 / 2], color: "#b9b2a4", roughness: 0.9, bump: 1.2 });
+  const mFloor = tileFloor("#d8cfbc", "#a99d86", 0.8, 0.4);
+  const mPillar = mat("istPillar", wood({ base: "#7a2a20", dark: "#4a1810", rings: 4, seed: 41 }), { repeat: [1, 1.5], roughness: 0.5 });
+  const mGold = flat("#d9a42f", 0.3, { metalness: 0.8 });
+  const mRoof = mat("istRoof", tileSheet({ cols: 10, rows: 10, seed: 12 }), { repeat: [1 / 2.2, 1 / 2.2], color: "#7a4a3a", roughness: 0.85, bump: 1.4, double: true });
+  const mCeil = mat("istCeil", wood({ base: "#5a3424", dark: "#3a2016", rings: 12, seed: 42 }), { repeat: [2, 2], roughness: 0.8, double: true });
+  const mPave = mat("istPave", rubble({ cells: 5, seed: 93 }), { repeat: [1 / 2.4, 1 / 2.4], color: "#d8d0c2", roughness: 0.92, bump: 1.3 });
+  const G = useMemo(() => ({ lower: tier(9.5, 5.2, 1.9), upper: tier(5.2, 1.4, 3.4), lowerIn: tier(9.35, 5.1, 1.8), upperIn: tier(5.1, 1.3, 3.3) }), []);
+  const lamp = night ? flat("#fff2c2", 0.3, { emissive: "#ffc46a", emissiveIntensity: 7 }) : flat("#f3e1b0", 0.4, { emissive: "#ffe2a0", emissiveIntensity: 0.4 });
+  return (
+    <group>
+      <mesh rotation={[-R / 2, 0, 0]} material={mat("istGrass", grass(), { repeat: [1 / 4, 1 / 4], roughness: 0.95 })} receiveShadow><planeGeometry args={[600, 600]} /></mesh>
+      <mesh geometry={boxUV(12, 0.03, 16)} material={mPave} position={[0, 0, 16]} receiveShadow />
+      {/* platform + steps */}
+      <mesh geometry={boxUV(2 * PLAT.half, PLAT.y, 2 * PLAT.half)} material={mStone} position={[0, 0, 0]} castShadow receiveShadow />
+      <mesh geometry={boxUV(2 * PLAT.half - 0.2, 0.02, 2 * PLAT.half - 0.2)} material={mFloor} position={[0, PLAT.y, 0]} receiveShadow />
+      {[0, 1].map((i) => <mesh key={i} geometry={boxUV(4.2, PLAT.y / 2 * (i + 1) - 0.01, 0.4)} material={mStone} position={[0, 0, PLAT.half + 0.6 - i * 0.4]} castShadow receiveShadow />)}
+      {/* carpet + dais + throne */}
+      <mesh geometry={boxUV(1.6, 0.02, 10.6)} material={flat("#a3262e", 0.95)} position={[0, PLAT.y + 0.01, 1.0]} receiveShadow />
+      <mesh geometry={boxUV(2 * DAIS.x, DAIS.y - PLAT.y, DAIS.z1 - DAIS.z0)} material={mStone} position={[0, PLAT.y, (DAIS.z0 + DAIS.z1) / 2]} castShadow receiveShadow />
+      <mesh geometry={boxUV(1.6, (DAIS.y - PLAT.y) / 2, 0.35)} material={mStone} position={[0, PLAT.y, DAIS.z1 + 0.17]} castShadow receiveShadow />
+      <group position={[0, DAIS.y, -5.7]}>
+        <mesh geometry={boxUV(0.9, 0.45, 0.62)} material={flat("#a3262e", 0.7)} position={[0, 0, 0]} castShadow receiveShadow />
+        <mesh geometry={boxUV(1.0, 1.55, 0.14)} material={mGold} position={[0, 0, -0.35]} castShadow />
+        <mesh geometry={boxUV(0.8, 1.2, 0.04)} material={flat("#a3262e", 0.7)} position={[0, 0.35, -0.27]} />
+        {[-1, 1].map((sd) => <mesh key={sd} geometry={boxUV(0.1, 0.72, 0.62)} material={mGold} position={[sd * 0.48, 0, 0]} castShadow />)}
+        {/* royal parasol */}
+        <Rod a={[0.7, 0, -0.5]} b={[0.7, 2.6, -0.5]} r={0.03} material={mGold} />
+        <mesh geometry={new CylinderGeometry(0.0, 0.8, 0.35, 16, 1, true)} material={flat("#f0c43c", 0.4, { double: true })} position={[0.7, 2.5, -0.5]} castShadow />
+      </group>
+      {/* pillars */}
+      {PILLARS.map(([x, z], i) => {
+        const inner = Math.abs(x) < 3 && Math.abs(z) < 3;
+        const h = inner ? 7.1 : 5.4;
+        return (
+          <group key={i} position={[x, PLAT.y, z]}>
+            <mesh geometry={new CylinderGeometry(0.22, 0.26, h, 16)} material={mPillar} position={[0, h / 2, 0]} castShadow receiveShadow />
+            {[0.3, h - 0.4].map((y) => <mesh key={y} geometry={new CylinderGeometry(0.3, 0.3, 0.16, 16)} material={mGold} position={[0, y, 0]} castShadow />)}
+            <mesh geometry={boxUV(0.56, 0.3, 0.56)} material={mStone} position={[0, -0.02, 0]} castShadow />
+            {inner ? null : <mesh geometry={SPH} material={lamp} position={[0, 2.4, Math.sign(z) * 0.3]} scale={[0.09, 0.12, 0.09]} />}
+          </group>
+        );
+      })}
+      {/* ring beams + joglo roof (two tiers) */}
+      {[-6.5, 6.5].map((v) => <group key={v}><mesh geometry={boxUV(13.6, 0.3, 0.3)} material={mPillar} position={[0, PLAT.y + 5.35, v]} castShadow /><mesh geometry={boxUV(0.3, 0.3, 13.6)} material={mPillar} position={[v, PLAT.y + 5.35, 0]} castShadow /></group>)}
+      {[-2.2, 2.2].map((v) => <group key={"i" + v}><mesh geometry={boxUV(4.7, 0.28, 0.28)} material={mGold} position={[0, PLAT.y + 7.05, v]} /><mesh geometry={boxUV(0.28, 0.28, 4.7)} material={mGold} position={[v, PLAT.y + 7.05, 0]} /></group>)}
+      <mesh geometry={G.lower} material={mRoof} position={[0, PLAT.y + 5.5 + 0.95, 0]} castShadow receiveShadow />
+      <mesh geometry={G.lowerIn} material={mCeil} position={[0, PLAT.y + 5.45 + 0.9, 0]} />
+      <mesh geometry={G.upper} material={mRoof} position={[0, PLAT.y + 7.35 + 1.7, 0]} castShadow receiveShadow />
+      <mesh geometry={G.upperIn} material={mCeil} position={[0, PLAT.y + 7.3 + 1.65, 0]} />
+      <mesh geometry={boxUV(2.8, 0.24, 0.24)} material={mGold} position={[0, PLAT.y + 10.8, 0]} />
+      <Gamelan pos={[-5.5, PLAT.y, 0.0]} />
+      {[[-7.6, 7.6, "#e8b832"], [7.6, 7.6, "#c8322f"], [-7.6, -7.6, "#2f6fb8"], [7.6, -7.6, "#2f9c6a"]].map(([x, z, c], i) => <Banner key={i} pos={[x as number, PLAT.y, z as number]} color={c as string} t={t} />)}
+      <SplitGate z={23.2} />
+      <Trees trees={[{ pos: [-10, 0, 14], h: 10, r: 5.2, seed: 7 }, { pos: [10.5, 0, 15], h: 11, r: 5.6, seed: 8 }, { pos: [-15, 0, -4], h: 12, r: 5.8, seed: 9 }, { pos: [15, 0, -6], h: 12, r: 5.6, seed: 10 }, { pos: [0, 0, -18], h: 13, r: 6.2, seed: 11 }]} />
+      <Backdrop />
+      {void DoubleSide}
+    </group>
+  );
+};
+
+==== 3264 project/src/cerdik/worlds/pantai.meta.ts
+// World "pantai" — a fishing village on a beach: the sea to the north (z < −5), wet and dry sand, a wooden pier
+// running out to sea at x ≈ 5, outrigger boats on the sand and on the water, stilt huts with thatched roofs
+// behind the beach (z ≈ 9), drying racks and nets, palms. Pure data for the director.
+import type { Box, Spot, WorldMeta } from "../types.ts";
+
+const R = Math.PI;
+export const PIER_X = 5.0;
+export const BOATS: { pos: [number, number, number]; yaw: number; water: boolean; color: string }[] = [
+  { pos: [-2.6, 0.02, -1.6], yaw: 0.35, water: false, color: "#d9473a" },
+  { pos: [-6.2, 0.02, 0.4], yaw: -0.2, water: false, color: "#2f7fd1" },
+  { pos: [1.2, -0.05, -9.5], yaw: 1.2, water: true, color: "#f2c230" },
+  { pos: [9.5, -0.05, -14], yaw: 0.4, water: true, color: "#2f9c6a" },
+];
+export const HUTS_X = [-12, -6, 0, 6, 12];
+
+const spots: Record<string, Spot> = {
+  "pantai": { pos: [0.5, 0.02, 1.2], face: R, about: "middle of the beach, facing the sea" },
+  "pantai-darat": { pos: [0.5, 0.02, 2.4], face: 0, about: "middle of the beach, facing the village" },
+  "tepi-air": { pos: [-0.5, 0.0, -4.2], face: R, about: "at the water's edge, facing the sea" },
+  "perahu": { pos: [-1.55, 0.02, -0.9], face: R * 0.85, about: "beside the red boat on the sand" },
+  "perahu-2": { pos: [-5.0, 0.02, 1.4], face: -R * 0.6, about: "beside the blue boat on the sand" },
+  "dermaga": { pos: [PIER_X, 0.62, -14], face: R, about: "at the end of the pier, facing the sea" },
+  "dermaga-tengah": { pos: [PIER_X, 0.62, -7], face: R, about: "half way along the pier" },
+  "dermaga-pangkal": { pos: [PIER_X, 0.4, -2.5], face: R, about: "where the pier starts" },
+  "jemuran": { pos: [-8.4, 0.02, 4.2], face: R / 2, about: "beside the fish drying racks" },
+  "jaring": { pos: [8.6, 0.02, 3.6], face: -R / 2, about: "beside the nets hung to dry" },
+};
+HUTS_X.forEach((x, i) => { spots[`rumah-${i + 1}`] = { pos: [x, 0.02, 5.6], face: R, about: `in front of hut ${i + 1}, facing the sea` }; });
+
+const colliders: Box[] = [];
+HUTS_X.forEach((x) => colliders.push({ min: [x - 2.3, 0, 7.0], max: [x + 2.3, 6.5, 11.6] }));
+BOATS.forEach((b) => { const r = 2.3; colliders.push({ min: [b.pos[0] - r, -1, b.pos[2] - r * 0.6], max: [b.pos[0] + r, 0.75, b.pos[2] + r * 0.6] }); });
+colliders.push({ min: [PIER_X - 0.9, -2, -15], max: [PIER_X + 0.9, 0.58, -2] }); // pier deck (you stand on it)
+colliders.push({ min: [-9.6, 0, 4.8], max: [-7.2, 1.6, 5.6] }); // drying rack
+colliders.push({ min: [7.6, 0, 4.4], max: [10.4, 2.2, 4.8] }); // net
+
+export const PANTAI: WorldMeta = {
+  id: "pantai",
+  about: "fishing beach: sea, sand, outrigger boats, a wooden pier, stilt huts, drying racks and nets, palms",
+  spots,
+  colliders,
+  bounds: { min: [-40, 0, -40], max: [40, 30, 30] },
+  views: {
+    establish: { a: { pos: [-3.5, 4.8, 5.0], target: [2.5, 0.6, -10], fov: 48 }, b: { pos: [-3.0, 4.2, 3.2], target: [2.5, 0.5, -11], fov: 48 } },
+    aerial: { a: { pos: [-16, 18, 10], target: [0, 0, -4], fov: 44 }, b: { pos: [14, 20, 6], target: [2, 0, -8], fov: 44 } },
+  },
+  time: "day",
+  crowd: ["pantai", "rumah-2", "rumah-4", "tepi-air", "jemuran"],
+  floor: [{ y: 0.6, box: { min: [PIER_X - 0.8, 0, -15], max: [PIER_X + 0.8, 1, -3.2] } }, { y: 0.02 }],
+};
+
+==== 9707 project/src/cerdik/worlds/Pantai.tsx
+// World "pantai" picture (layout for the director in pantai.meta.ts).
+import React, { useMemo } from "react";
+import { CanvasTexture, DoubleSide, MeshStandardMaterial, RepeatWrapping, SphereGeometry, SRGBColorSpace } from "three";
+import { boxUV, Rod } from "../../kits/bedah/geo.tsx";
+import { flat, mat } from "../../kits/bedah/mats.ts";
+import { dirt, plaster, thatch, wood } from "../../kits/bedah/tex.ts";
+import { Banana, Palm, TreeLine } from "../../kits/bedah/props.tsx";
+import { Hills } from "../../kits/cerdik/backdrop.tsx";
+import { PROPS } from "../props/lib.ts";
+import { Prop } from "../props/Prop.tsx";
+import { BOATS, HUTS_X, PIER_X } from "./pantai.meta.ts";
+
+type V3 = [number, number, number];
+const R = Math.PI;
+
+const netTex = (() => {
+  let t: CanvasTexture | null = null;
+  return () => {
+    if (t) return t;
+    const cv = document.createElement("canvas");
+    cv.width = cv.height = 128;
+    const g = cv.getContext("2d")!;
+    g.clearRect(0, 0, 128, 128);
+    g.strokeStyle = "#3a5a4a";
+    g.lineWidth = 2;
+    for (let i = 0; i <= 128; i += 16) { g.beginPath(); g.moveTo(i, 0); g.lineTo(i, 128); g.stroke(); g.beginPath(); g.moveTo(0, i); g.lineTo(128, i); g.stroke(); }
+    t = new CanvasTexture(cv);
+    t.wrapS = t.wrapT = RepeatWrapping;
+    t.repeat.set(6, 3);
+    t.colorSpace = SRGBColorSpace;
+    return t;
+  };
+})();
+
+/** Outrigger boat (jukung style): painted hull, two bamboo floats, a mast. */
+export const Boat: React.FC<{ pos: V3; yaw: number; color: string; t: number; water: boolean; lamp?: boolean }> = ({ pos, yaw, color, t, water, lamp }) => {
+  const hull = useMemo(() => new SphereGeometry(1, 28, 14, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), []);
+  const bob = water ? Math.sin(t * 1.3 + pos[0]) * 0.03 : 0, roll = water ? Math.sin(t * 1.1 + pos[2]) * 0.03 : 0;
+  const mW = mat("boatWood", wood({ base: "#c8a070", dark: "#8a6440", rings: 4, seed: 9 }), { repeat: [1, 2], roughness: 0.8 });
+  return (
+    <group position={[pos[0], pos[1] + bob, pos[2]]} rotation={[0, yaw, roll]}>
+      <mesh geometry={hull} material={flat(color, 0.6)} position={[0, 0.42, 0]} scale={[0.42, 0.42, 2.3]} castShadow receiveShadow />
+      <mesh geometry={boxUV(0.8, 0.05, 4.2)} material={mW} position={[0, 0.4, 0]} castShadow receiveShadow />
+      <mesh geometry={boxUV(0.86, 0.06, 0.06)} material={flat("#f4f1e8", 0.6)} position={[0, 0.43, 1.9]} />
+      {[-1, 1].map((sd) => <Rod key={sd} a={[sd * 1.55, 0.18, -1.6]} b={[sd * 1.55, 0.18, 1.6]} r={0.07} material={flat("#d8c08a", 0.8)} />)}
+      {[-0.9, 0.9].map((z) => <Rod key={z} a={[-1.6, 0.36, z]} b={[1.6, 0.36, z]} r={0.035} material={flat("#c8ad6a", 0.8)} />)}
+      <Rod a={[0, 0.4, 0.4]} b={[0, 2.6, 0.4]} r={0.04} material={mW} />
+      {lamp ? <Prop kind="lampu" def={PROPS.lampu} pos={[0, 2.62, 0.4]} /> : null}
+    </group>
+  );
+};
+
+const StiltHut: React.FC<{ x: number; seed: number }> = ({ x, seed }) => {
+  const mW = mat("hutWall", wood({ base: "#8a6440", dark: "#5a3f28", rings: 10, seed: 11 }), { repeat: [1.2, 0.8], roughness: 0.85 });
+  const mT = mat("hutThatch", thatch({ blades: 700, seed: 5 }), { repeat: [1 / 1.1, 1 / 0.9], color: "#a28a62", roughness: 0.95, bump: 2 });
+  const w = 4.2, d = 4.0, fl = 1.3, h = 2.0, rise = 1.6;
+  const slope = Math.hypot(d / 2 + 0.5, rise), ang = Math.atan2(rise, d / 2 + 0.5);
+  const tone = ["#e8d5b0", "#d9c29a", "#f0dfbe"][seed % 3];
+  return (
+    <group position={[x, 0, 9.3]}>
+      {[[-1.8, -1.7], [1.8, -1.7], [-1.8, 1.7], [1.8, 1.7], [0, -1.7], [0, 1.7]].map(([px, pz], i) => <Rod key={i} a={[px, 0, pz]} b={[px, fl, pz]} r={0.09} material={mW} />)}
+      <mesh geometry={boxUV(w + 0.4, 0.14, d + 0.4)} material={mW} position={[0, fl, 0]} castShadow receiveShadow />
+      <mesh geometry={boxUV(w, h, d)} material={mat("hutWallT" + tone, plaster({ rough: 0.6, seed: 7 }), { repeat: [1 / 3, 1 / 3], color: tone, roughness: 0.9 })} position={[0, fl + 0.07 + h / 2, 0]} castShadow receiveShadow />
+      <mesh position={[0, fl + 1.0, -d / 2 - 0.01]} material={flat("#3a2a20", 0.8)}><planeGeometry args={[0.85, 1.7]} /></mesh>
+      {[-1.3, 1.3].map((wx) => <mesh key={wx} position={[wx, fl + 1.3, -d / 2 - 0.01]} rotation={[0, R, 0]} material={flat("#2e3a44", 0.4)}><planeGeometry args={[0.7, 0.6]} /></mesh>)}
+      {[-1, 1].map((sd) => <mesh key={sd} geometry={boxUV(w + 1.0, 0.25, slope)} material={mT} position={[0, fl + h + rise / 2, sd * (d / 4 + 0.25)]} rotation={[sd * ang, 0, 0]} castShadow receiveShadow />)}
+      {/* ladder */}
+      {[0.35, 0.7, 1.05].map((y, i) => <mesh key={i} geometry={boxUV(0.7, 0.05, 0.22)} material={mW} position={[0.9, y, -d / 2 - 0.55 + i * 0.18]} castShadow />)}
+    </group>
+  );
+};
+
+const Sea: React.FC<{ t: number }> = ({ t }) => {
+  const m = useMemo(() => {
+    const n = plaster({ rough: 1.2, seed: 61 });
+    const nm = n.normalMap.clone();
+    nm.wrapS = nm.wrapT = RepeatWrapping;
+    nm.repeat.set(60, 60);
+    nm.needsUpdate = true;
+    return new MeshStandardMaterial({ color: "#2b8fc9", roughness: 0.22, metalness: 0.05, normalMap: nm });
+  }, []);
+  (m.normalMap!).offset.set((t * 0.004) % 1, (t * 0.006) % 1);
+  const shallow = useMemo(() => new MeshStandardMaterial({ color: "#5fd0d8", roughness: 0.2, transparent: true, opacity: 0.55, depthWrite: false }), []);
+  const foam = useMemo(() => new MeshStandardMaterial({ color: "#ffffff", roughness: 0.6, transparent: true, opacity: 0.7, depthWrite: false, side: DoubleSide }), []);
+  const wob = Math.sin(t * 0.9) * 0.18;
+  return (
+    <group>
+      <mesh rotation={[-R / 2, 0, 0]} position={[0, -0.06, -305]} material={m} receiveShadow><planeGeometry args={[800, 600]} /></mesh>
+      <mesh rotation={[-R / 2, 0, 0]} position={[0, -0.04, -9]} material={shallow}><planeGeometry args={[800, 8]} /></mesh>
+      <mesh rotation={[-R / 2, 0, 0]} position={[0, -0.02, -4.9 + wob]} material={foam}><planeGeometry args={[800, 0.35]} /></mesh>
+    </group>
+  );
+};
+
+export const Pantai: React.FC<{ t: number; night?: boolean }> = ({ t, night }) => {
+  const mSand = mat("sand", dirt({ seed: 71, base: "#f0d9a8", dark: "#d9bd86" }), { repeat: [1 / 4, 1 / 4], roughness: 0.98, bump: 0.5 });
+  const mWet = mat("sandWet", dirt({ seed: 72, base: "#c9ab78", dark: "#a88a5c" }), { repeat: [1 / 4, 1 / 4], roughness: 0.6, bump: 0.4 });
+  const mPier = mat("pier", wood({ base: "#9c7448", dark: "#6a4a2a", rings: 9, seed: 21 }), { repeat: [1, 1.5], roughness: 0.85 });
+  return (
+    <group>
+      {/* dry sand from the wet strip's edge on (no overlap: two planes 1 mm apart z-fight — dry sand flickered through at night) */}
+      <mesh rotation={[-R / 2, 0, 0]} position={[0, 0, 151.8]} material={mSand} receiveShadow><planeGeometry args={[800, 306.4]} /></mesh>
+      <mesh rotation={[-R / 2, 0, 0]} position={[0, 0.001, -3.2]} material={mWet} receiveShadow><planeGeometry args={[800, 3.6]} /></mesh>
+      <Sea t={t} />
+      {/* pier */}
+      <mesh geometry={boxUV(1.6, 0.08, 12.6)} material={mPier} position={[PIER_X, 0.52, -8.7]} castShadow receiveShadow />
+      {Array.from({ length: 9 }, (_, i) => [-1, 1].map((sd) => <Rod key={`${i}${sd}`} a={[PIER_X + sd * 0.72, -1.5, -2.8 - i * 1.5]} b={[PIER_X + sd * 0.72, 0.9, -2.8 - i * 1.5]} r={0.07} material={mPier} />))}
+      <mesh geometry={boxUV(1.4, 0.06, 1.2)} material={mPier} position={[PIER_X, 0.3, -2.1]} rotation={[0.25, 0, 0]} castShadow receiveShadow />
+      {BOATS.map((b, i) => <Boat key={i} pos={b.pos} yaw={b.yaw} color={b.color} t={t} water={b.water} lamp={night || i > 1} />)}
+      {HUTS_X.map((x, i) => <StiltHut key={x} x={x} seed={i} />)}
+      {/* drying racks with fish, nets */}
+      <group position={[-8.4, 0, 5.2]}>
+        {[-1.1, 1.1].map((x) => <Rod key={x} a={[x, 0, 0]} b={[x, 1.1, 0]} r={0.04} material={mPier} />)}
+        <mesh geometry={boxUV(2.4, 0.04, 0.7)} material={mat("rack", wood({ base: "#c8ad6a", dark: "#927840", seed: 4 }), { repeat: [2, 1], roughness: 0.9 })} position={[0, 1.08, 0]} castShadow />
+        {Array.from({ length: 12 }, (_, i) => <mesh key={i} geometry={new SphereGeometry(1, 12, 8)} material={flat(i % 3 ? "#b9c4cc" : "#d6dee4", 0.35)} position={[-1.0 + (i % 6) * 0.4, 1.14, (i < 6 ? -0.15 : 0.18)]} scale={[0.06, 0.025, 0.15]} castShadow />)}
+      </group>
+      <group position={[9, 0, 4.6]}>
+        {[-1.3, 1.3].map((x) => <Rod key={x} a={[x, 0, 0]} b={[x, 2.1, 0]} r={0.04} material={mPier} />)}
+        <mesh position={[0, 1.25, 0]} material={new MeshStandardMaterial({ map: netTex(), transparent: true, alphaTest: 0.3, side: DoubleSide, color: "#ffffff" })}><planeGeometry args={[2.6, 1.6]} /></mesh>
+      </group>
+      {/* crates and baskets of the catch */}
+      <Prop kind="keranjang" def={PROPS.keranjang} pos={[-1.2, 0.02, 0.4]} />
+      <Prop kind="peti" def={PROPS.peti} pos={[-0.4, 0.02, -0.2]} yaw={0.4} />
+      <Prop kind="ember" def={PROPS.ember} pos={[3.6, 0.02, -1.2]} />
+      {([[-15, 3, 11, 1.0], [-9.5, 2.0, 12, -1.1], [-3.5, 3.2, 10.5, 0.9], [3.2, 3.0, 11.5, -0.8], [10.5, 2.4, 12, 1.1], [15.5, 3.4, 10, -0.9], [-19, 5, 12, 0.8], [19, 6, 12, -1.0]] as [number, number, number, number][]).map(([x, z, h, l], i) => <Palm key={i} pos={[x, 0, z]} h={h} lean={l} yaw={i * 1.7} seed={i + 1} />)}
+      {([[-14.2, 12.5], [-3, 13], [8, 12.4], [14.6, 12.8]] as [number, number][]).map(([x, z], i) => <Banana key={i} pos={[x, 0, z]} s={1.15} yaw={i * 2} seed={i + 3} />)}
+      <TreeLine r0={40} r1={110} count={140} seed={5} arc={[0.06 * Math.PI, 0.94 * Math.PI]} />
+      <Hills hills={[[[-150, -6, 220], [130, 60, 90], false], [[140, -8, 240], [150, 70, 100], false], [[0, -10, 330], [220, 110, 120], true], [[-60, -3, -190], [70, 14, 30], false], [[110, -3, -230], [60, 12, 26], false]]} />
+    </group>
+  );
+};
+
+==== 3324 project/src/cerdik/worlds/pasar.meta.ts
+// World "pasar" — a traditional Indonesian market street: two rows of stalls with striped tarp awnings facing a
+// concrete lane (x ≈ 0, along z), shophouses behind them, bunting overhead, a gate at the entrance (z ≈ +12), a
+// mosque dome and hills far away. Stall "a" (right) and "b" (left) face each other at z = 0. Pure data.
+import type { Box, Spot, WorldMeta } from "../types.ts";
+
+const R = Math.PI;
+export const STALL_Z = [-15.6, -13, -10.4, -7.8, -5.2, -2.6, 0, 2.6, 5.2, 7.8];
+export const STALL_X = 2.75; // table centre
+export const SELLER_X = 3.45;
+const NAMES_R = ["k", "i", "g", "e", "c", "a2", "a", "e2", "g2", "i2"]; // right side (x > 0), by STALL_Z
+const NAMES_L = ["l", "j", "h", "f", "d", "b2", "b", "f2", "h2", "j2"];
+
+const spots: Record<string, Spot> = {
+  "jalan": { pos: [0, 0.02, 1.6], face: 0, about: "the lane between stall a and b, facing the entrance" },
+  "jalan-dalam": { pos: [0, 0.02, -8], face: R, about: "the lane deeper in the market, facing in" },
+  "gerbang": { pos: [0, 0.02, 11.2], face: R, about: "at the market gate, looking in" },
+};
+STALL_Z.forEach((z, i) => {
+  for (const [side, names] of [[1, NAMES_R], [-1, NAMES_L]] as const) {
+    const n = names[i];
+    spots[`lapak-${n}`] = { pos: [side * SELLER_X, 0.02, z], face: -side * R / 2, about: `behind stall ${n}'s table (seller)`, surface: { y: 0.8, ahead: SELLER_X - STALL_X } };
+    spots[`lapak-${n}-depan`] = { pos: [side * 1.75, 0.02, z], face: side * R / 2, about: `in front of stall ${n} (customer)` };
+  }
+});
+
+const colliders: Box[] = [];
+STALL_Z.forEach((z) => {
+  for (const sd of [1, -1]) {
+    const x0 = sd * 2.38, x1 = sd * 3.12;
+    colliders.push({ min: [Math.min(x0, x1), 0, z - 1.0], max: [Math.max(x0, x1), 0.77, z + 1.0] }); // table (props on it stand above)
+    colliders.push({ min: [sd > 0 ? 2.0 : -4.15, 2.12, z - 1.3], max: [sd > 0 ? 4.15 : -2.0, 2.7, z + 1.3] }); // awning
+    colliders.push({ min: [sd > 0 ? 4.05 : -4.6, 0, z - 1.3], max: [sd > 0 ? 4.6 : -4.05, 2.1, z + 1.3] }); // back shelf
+  }
+});
+for (const sd of [1, -1]) colliders.push({ min: [sd > 0 ? 5.9 : -14, 0, -40], max: [sd > 0 ? 14 : -5.9, 8.5, 30] }); // shophouses
+// the sellers minding the other stalls (scene dressing; they step aside when a story uses their stall)
+STALL_Z.forEach((z, i) => { if (Math.abs(z) < 0.1) return; for (const sd of [1, -1]) { const dz = (sd > 0 ? i : i + 20) % 2 ? 0.35 : -0.3; colliders.push({ min: [sd * 3.45 - 0.25, 0, z + dz - 0.25], max: [sd * 3.45 + 0.25, 1.5, z + dz + 0.25] }); } });
+colliders.push({ min: [-4.6, 3.3, 11.6], max: [4.6, 4.3, 12.4] }); // gate beam
+
+export const PASAR: WorldMeta = {
+  id: "pasar",
+  about: "traditional market street: stalls with striped tarp awnings, fruit, baskets, shophouses, bunting, a gate, a mosque far away",
+  spots,
+  colliders,
+  bounds: { min: [-5.6, 0, -40], max: [5.6, 30, 30] },
+  views: {
+    establish: { a: { pos: [0.4, 4.6, 9.8], target: [0, 1.2, -6], fov: 46 }, b: { pos: [0.2, 3.9, 6.8], target: [0, 1.0, -10], fov: 46 } },
+    aerial: { a: { pos: [-4.5, 15, 18], target: [0, 0, -2], fov: 44 }, b: { pos: [4.5, 16, 12], target: [0, 0, -6], fov: 44 } },
+  },
+  time: "day",
+  crowd: ["lapak-c-depan", "lapak-d-depan", "lapak-e-depan", "lapak-f-depan", "jalan-dalam", "lapak-g-depan", "lapak-h-depan"],
+  floor: [{ y: 0.02 }],
+};
+
+==== 2923 project/src/cerdik/worlds/ruang.meta.ts
+// World "ruang" — the inside of an Indonesian family home: a 7 × 6 m living room with a window onto the garden,
+// a door, a sofa and coffee table, a dining table with chairs, a cupboard, shelf, clock, plants. Origin = room
+// centre, the window wall at z = −3, the door wall at x = −3.5. Pure data for the director.
+import type { Box, Spot, WorldMeta } from "../types.ts";
+
+const R = Math.PI;
+export const ROOM = { w: 7, d: 6, h: 3 };
+
+const spots: Record<string, Spot> = {
+  "tengah": { pos: [0, 0.02, 0.6], face: R, about: "middle of the room, facing the window wall" },
+  "tengah-balik": { pos: [0, 0.02, -0.4], face: 0, about: "middle of the room, facing away from the window" },
+  "sofa": { pos: [-1.65, 0.02, -2.24], face: 0, about: "sitting place on the sofa (use do: sit)" },
+  "sofa-2": { pos: [-0.75, 0.02, -2.24], face: 0, about: "second seat on the sofa (use do: sit)" },
+  "depan-sofa": { pos: [-1.2, 0.02, 0.4], face: R, about: "standing in front of the coffee table, facing the sofa" },
+  "meja-makan": { pos: [2.0, 0.02, 0.35], face: R, about: "standing at the dining table (props on it: on surface)", surface: { y: 0.76, ahead: 0.7 } },
+  "kursi-makan": { pos: [1.4, 0.02, -1.34], face: 0, about: "sitting on a dining chair facing the room (use do: sit)" },
+  "kursi-makan-2": { pos: [2.6, 0.02, -1.34], face: 0, about: "second dining chair (use do: sit)" },
+  "jendela": { pos: [0.4, 0.02, -2.35], face: R, about: "at the window, looking out" },
+  "pintu": { pos: [-2.8, 0.02, 1.3], face: R / 2, about: "just inside the door, facing into the room" },
+  "lemari": { pos: [2.45, 0.02, 2.0], face: R / 2, about: "at the cupboard (by the right wall)" },
+};
+
+const colliders: Box[] = [
+  // walls (cameras stay inside)
+  { min: [-4, 0, -3.3], max: [4, 3.2, -3.0] }, { min: [-4, 0, 3.0], max: [4, 3.2, 3.3] },
+  { min: [-3.8, 0, -3.3], max: [-3.5, 3.2, 3.3] }, { min: [3.5, 0, -3.3], max: [3.8, 3.2, 3.3] },
+  { min: [-4, 3.0, -3.3], max: [4, 3.4, 3.3] }, // ceiling
+  { min: [-2.4, 0, -2.95], max: [0.0, 0.85, -2.1] }, // sofa
+  { min: [-1.8, 0, -0.95], max: [-0.6, 0.45, -0.25] }, // coffee table
+  { min: [1.25, 0, -1.0], max: [2.75, 0.8, -0.2] }, // dining table
+  { min: [2.95, 0, 1.1], max: [3.5, 2.1, 2.9] }, // cupboard
+];
+
+export const RUANG: WorldMeta = {
+  id: "ruang",
+  about: "inside a family home: living room with a garden window, sofa, coffee table, dining table, cupboard, clock, plants",
+  spots,
+  colliders,
+  bounds: { min: [-3.3, 0, -2.8], max: [3.3, 2.8, 2.8] },
+  views: {
+    establish: { a: { pos: [-2.9, 2.35, 2.55], target: [0.4, 0.8, -1.2], fov: 50 }, b: { pos: [-2.6, 2.2, 2.2], target: [0.6, 0.8, -1.4], fov: 50 } },
+    aerial: { a: { pos: [2.9, 2.6, 2.6], target: [-0.6, 0.6, -1.0], fov: 52 }, b: { pos: [2.6, 2.5, 2.4], target: [-0.8, 0.6, -1.2], fov: 52 } },
+  },
+  time: "day",
+  indoor: true,
+  crowd: ["tengah", "depan-sofa", "pintu"],
+  floor: [{ y: 0.02 }],
+};
+
+==== 9052 project/src/cerdik/worlds/Ruang.tsx
+// World "ruang" picture (layout for the director in ruang.meta.ts). The ceiling casts no shadow, so the sun still
+// lights the room through it (a bright, toon interior) while the walls and the window frame shadows.
+import React from "react";
+import { CylinderGeometry, SphereGeometry, TorusGeometry } from "three";
+import { boxUV } from "../../kits/bedah/geo.tsx";
+import { flat, mat } from "../../kits/bedah/mats.ts";
+import { grass, plaster, weave, wood } from "../../kits/bedah/tex.ts";
+import { Banana, Palm, Trees } from "../../kits/bedah/props.tsx";
+import { Hills, tileFloor } from "../../kits/cerdik/backdrop.tsx";
+import { PROPS } from "../props/lib.ts";
+import { Prop } from "../props/Prop.tsx";
+
+const R = Math.PI;
+const SPH = new SphereGeometry(1, 20, 14);
+
+const Chair: React.FC<{ pos: [number, number, number]; yaw: number; m: ReturnType<typeof mat> }> = ({ pos, yaw, m }) => (
+  <group position={pos} rotation={[0, yaw, 0]}>
+    <mesh geometry={boxUV(0.44, 0.05, 0.42)} material={m} position={[0, 0.42, 0]} castShadow receiveShadow />
+    {[[-0.19, -0.18], [0.19, -0.18], [-0.19, 0.18], [0.19, 0.18]].map(([x, z], i) => <mesh key={i} geometry={boxUV(0.04, 0.42, 0.04)} material={m} position={[x, 0, z]} castShadow />)}
+    <mesh geometry={boxUV(0.44, 0.5, 0.04)} material={m} position={[0, 0.45, -0.2]} castShadow />
+  </group>
+);
+
+export const Ruang: React.FC<{ t: number; night?: boolean }> = ({ t, night }) => {
+  const mWall = mat("roomWall", plaster({ rough: 0.5, seed: 81 }), { repeat: [1 / 3, 1 / 3], color: "#f2e6cf", roughness: 0.95 });
+  const mWall2 = mat("roomWall2", plaster({ rough: 0.5, seed: 82 }), { repeat: [1 / 3, 1 / 3], color: "#cfe3d6", roughness: 0.95 });
+  const mFloor = tileFloor("#efe7d8", "#c9bda8", 0.6, 0.45);
+  const mWood = mat("roomWood", wood({ base: "#9c6a3c", dark: "#6a4423", rings: 8, seed: 12 }), { repeat: [1, 1], roughness: 0.7 });
+  const mDark = mat("roomWoodD", wood({ base: "#6a4428", dark: "#3d2616", rings: 6, seed: 13 }), { repeat: [1, 1], roughness: 0.7 });
+  const mSofa = flat("#c2523e", 0.92), mCush = flat("#e6a84a", 0.92), mRug = mat("roomRug", weave({ strips: 30, a: "#b8464a", b: "#e8c58a" }), { repeat: [1, 1], roughness: 0.98 });
+  const W = 3.5, D = 3.0, H = 3.0;
+  return (
+    <group>
+      {/* outside: garden ground, trees and sky seen through the window */}
+      <mesh rotation={[-R / 2, 0, 0]} position={[0, -0.01, 0]} material={mat("garden", grass(), { repeat: [1 / 4, 1 / 4], roughness: 0.95 })} receiveShadow><planeGeometry args={[400, 400]} /></mesh>
+      <Trees trees={[{ pos: [-4, 0, -9], h: 6, r: 2.6, seed: 4 }, { pos: [5, 0, -11], h: 7, r: 3, seed: 5 }, { pos: [-9, 0, -14], h: 8, r: 3.4, seed: 6 }]} />
+      <Palm pos={[1.5, 0, -10]} h={9} lean={0.8} yaw={1} seed={2} />
+      <Banana pos={[-1.8, 0, -6.5]} s={1.1} yaw={0.5} seed={2} />
+      <Hills />
+      {/* floor, ceiling (casts no shadow) */}
+      <mesh geometry={boxUV(2 * W, 0.04, 2 * D)} material={mFloor} position={[0, -0.02, 0]} receiveShadow />
+      <mesh geometry={boxUV(2 * W, 0.08, 2 * D)} material={flat("#fbf7ee", 0.9)} position={[0, H, 0]} receiveShadow />
+      {/* window wall (z = −D) with an opening x ∈ [−0.6, 1.4], y ∈ [0.9, 2.3] */}
+      <mesh geometry={boxUV(W - 0.6 + W, 0.9, 0.2)} material={mWall2} position={[0, 0.45, -D - 0.1]} castShadow receiveShadow />
+      <mesh geometry={boxUV(2 * W, H - 2.3, 0.2)} material={mWall2} position={[0, 2.3 + (H - 2.3) / 2, -D - 0.1]} castShadow receiveShadow />
+      <mesh geometry={boxUV(W - 0.6, 1.4, 0.2)} material={mWall2} position={[-(W + 0.6) / 2, 1.6, -D - 0.1]} castShadow receiveShadow />
+      <mesh geometry={boxUV(W - 1.4, 1.4, 0.2)} material={mWall2} position={[(W + 1.4) / 2, 1.6, -D - 0.1]} castShadow receiveShadow />
+      {[[-0.6, 1.6], [1.4, 1.6], [0.4, 0.9], [0.4, 2.3]].map(([x, y], i) => <mesh key={i} geometry={i < 2 ? boxUV(0.08, 1.48, 0.24) : boxUV(2.08, 0.08, 0.24)} material={flat("#f8f5ee", 0.6)} position={[x, i < 2 ? y : y - 0.04, -D - 0.1]} castShadow />)}
+      <mesh geometry={boxUV(0.05, 1.4, 0.06)} material={flat("#f8f5ee", 0.6)} position={[0.4, 1.6, -D - 0.1]} />
+      {/* other walls */}
+      {/* the other walls let the sun in (a bright toon room) */}
+      <mesh geometry={boxUV(2 * W, H, 0.2)} material={mWall} position={[0, H / 2, D + 0.1]} receiveShadow />
+      <mesh geometry={boxUV(0.2, H, 2 * D)} material={mWall} position={[W + 0.1, H / 2, 0]} receiveShadow />
+      <mesh geometry={boxUV(0.2, H, 2 * D)} material={mWall} position={[-W - 0.1, H / 2, 0]} receiveShadow />
+      {/* door on the left wall */}
+      <mesh position={[-W + 0.01, 1.05, 1.3]} rotation={[0, R / 2, 0]} material={mDark}><planeGeometry args={[0.95, 2.1]} /></mesh>
+      <mesh position={[-W + 0.02, 1.0, 1.65]} material={flat("#d9b04a", 0.3)} geometry={SPH} scale={0.03} />
+      {/* skirting */}
+      {[[0, -D + 0.02, 2 * W, 0.04], [0, D - 0.02, 2 * W, 0.04]].map(([x, z, w], i) => <mesh key={i} geometry={boxUV(w, 0.1, 0.04)} material={mDark} position={[x, 0.05, z]} />)}
+      {/* sofa + cushions, coffee table, rug */}
+      <group position={[-1.2, 0, -2.5]}>
+        <mesh geometry={boxUV(2.3, 0.42, 0.85)} material={mSofa} position={[0, 0, 0]} castShadow receiveShadow />
+        <mesh geometry={boxUV(2.3, 0.85, 0.22)} material={mSofa} position={[0, 0, -0.32]} castShadow receiveShadow />
+        {[-1.08, 1.08].map((x) => <mesh key={x} geometry={boxUV(0.16, 0.62, 0.85)} material={mSofa} position={[x, 0, 0]} castShadow receiveShadow />)}
+        {[-0.45, 0.45].map((x) => <mesh key={x} geometry={SPH} material={mCush} position={[x, 0.62, -0.12]} scale={[0.22, 0.18, 0.07]} castShadow />)}
+      </group>
+      <mesh geometry={boxUV(2.6, 0.01, 1.8)} material={mRug} position={[-1.2, 0.0, -0.6]} receiveShadow />
+      <group position={[-1.2, 0, -0.6]}>
+        <mesh geometry={boxUV(1.1, 0.05, 0.6)} material={mWood} position={[0, 0.4, 0]} castShadow receiveShadow />
+        {[[-0.5, -0.25], [0.5, -0.25], [-0.5, 0.25], [0.5, 0.25]].map(([x, z], i) => <mesh key={i} geometry={boxUV(0.05, 0.4, 0.05)} material={mWood} position={[x, 0, z]} castShadow />)}
+        <Prop kind="gelas" def={PROPS.gelas} pos={[0.2, 0.45, 0.05]} />
+        <Prop kind="keranjang" def={PROPS.keranjang} pos={[-0.25, 0.45, 0]} scale={0.6} />
+      </group>
+      {/* dining table + chairs */}
+      <group position={[2.0, 0, -0.6]}>
+        <mesh geometry={boxUV(1.5, 0.05, 0.8)} material={mWood} position={[0, 0.74, 0]} castShadow receiveShadow />
+        {[[-0.7, -0.35], [0.7, -0.35], [-0.7, 0.35], [0.7, 0.35]].map(([x, z], i) => <mesh key={i} geometry={boxUV(0.05, 0.74, 0.05)} material={mWood} position={[x, 0, z]} castShadow />)}
+      </group>
+      <Chair pos={[1.4, 0, -1.4]} yaw={0} m={mDark} />
+      <Chair pos={[2.6, 0, -1.4]} yaw={0} m={mDark} />
+      {/* cupboard with a vase, shelf with books, clock, pictures, plant, lamp */}
+      <group position={[3.22, 0, 2.0]}>
+        <mesh geometry={boxUV(0.55, 2.0, 1.7)} material={mDark} castShadow receiveShadow />
+        {[-0.42, 0.42].map((z) => <mesh key={z} position={[-0.28, 1.0, z]} rotation={[0, -R / 2, 0]} material={mWood}><planeGeometry args={[0.78, 1.8]} /></mesh>)}
+      </group>
+      <mesh geometry={boxUV(0.25, 0.04, 1.6)} material={mWood} position={[3.37, 1.6, -1.2]} castShadow />
+      {[0, 1, 2, 3, 4, 5].map((i) => <mesh key={i} geometry={boxUV(0.18, 0.24 + (i % 3) * 0.03, 0.06)} material={flat(["#c2523e", "#2f6fd1", "#f2c230", "#2f9c6a", "#7b4fb8", "#e8833a"][i], 0.7)} position={[3.36, 1.62, -1.85 + i * 0.12]} castShadow />)}
+      <group position={[-1.0, 2.25, -D + 0.02]}>
+        <mesh geometry={new CylinderGeometry(0.22, 0.22, 0.04, 32)} rotation={[R / 2, 0, 0]} material={flat("#f8f5ee", 0.5)} />
+        <mesh geometry={new TorusGeometry(0.22, 0.02, 8, 32)} material={mDark} />
+        <mesh geometry={boxUV(0.02, 0.14, 0.01)} material={flat("#222", 0.5)} position={[0, 0.0, 0.03]} rotation={[0, 0, (t * 0.2) % (2 * R)]} />
+      </group>
+      {[[-2.4, 1.9, "#7fb0d8"], [2.2, 2.0, "#e8b06a"]].map(([x, y, c], i) => (
+        <group key={i} position={[x as number, y as number, D - 0.02]} rotation={[0, R, 0]}>
+          <mesh material={mDark}><planeGeometry args={[0.8, 0.6]} /></mesh>
+          <mesh position={[0, 0, 0.005]} material={flat(c as string, 0.8)}><planeGeometry args={[0.68, 0.48]} /></mesh>
+        </group>
+      ))}
+      <group position={[-3.1, 0, -2.6]}>
+        <mesh geometry={new CylinderGeometry(0.18, 0.14, 0.32, 20)} material={flat("#c96a3a", 0.8)} position={[0, 0.16, 0]} castShadow />
+        {Array.from({ length: 7 }, (_, i) => <mesh key={i} geometry={SPH} material={flat("#3f8a35", 0.8)} position={[Math.cos(i * 0.9) * 0.12, 0.55 + (i % 3) * 0.12, Math.sin(i * 0.9) * 0.12]} scale={[0.14, 0.2, 0.14]} castShadow />)}
+      </group>
+      <mesh geometry={SPH} material={night ? flat("#fff2c2", 0.3, { emissive: "#ffd27a", emissiveIntensity: 7 }) : flat("#fff6e0", 0.4, { emissive: "#fff0c8", emissiveIntensity: 0.3 })} position={[0, 2.82, 0]} scale={[0.22, 0.1, 0.22]} />
+    </group>
+  );
+};
+
+==== 3394 project/src/kits/cerdik/backdrop.tsx
+// Shared far scenery for CERDIK worlds: green hills, blue mountains, a ring of tree masses on the horizon.
+import React, { useMemo } from "react";
+import { BufferAttribute, IcosahedronGeometry, MeshStandardMaterial } from "three";
+import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import { TreeLine } from "../bedah/props.tsx";
+
+type V3 = [number, number, number];
+
+export const Hills: React.FC<{ hills?: [V3, V3, boolean][]; green?: string; blue?: string }> = ({ hills, green = "#4f8a3c", blue = "#5d7f8e" }) => {
+  const geo = useMemo(() => {
+    const ico = new IcosahedronGeometry(1, 4);
+    ico.deleteAttribute("normal");
+    ico.deleteAttribute("uv");
+    const g = mergeVertices(ico, 1e-4);
+    const p = g.getAttribute("position") as BufferAttribute;
+    for (let i = 0; i < p.count; i++) {
+      const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+      const n = 1 + 0.08 * Math.sin(x * 4.1 + z * 2.3) + 0.05 * Math.sin(z * 7.7 - x * 3.1);
+      p.setXYZ(i, x * n, Math.max(y, -0.2) * n, z * n);
+    }
+    g.computeVertexNormals();
+    return g;
+  }, []);
+  const mH = useMemo(() => new MeshStandardMaterial({ color: green, roughness: 1 }), [green]);
+  const mM = useMemo(() => new MeshStandardMaterial({ color: blue, roughness: 1 }), [blue]);
+  const H: [V3, V3, boolean][] = hills ?? [
+    [[-150, -6, -260], [130, 60, 90], false], [[120, -8, -300], [160, 75, 110], false], [[-20, -10, -380], [220, 120, 120], true],
+    [[230, -8, -180], [120, 55, 90], false], [[-260, -8, -160], [130, 60, 90], false], [[-320, -10, 120], [160, 70, 110], false],
+    [[300, -10, 160], [170, 80, 120], false], [[40, -12, 360], [240, 100, 120], true], [[-140, -6, 260], [130, 55, 90], false],
+  ];
+  return <group>{H.map(([p, s, far], i) => <mesh key={i} geometry={geo} material={far ? mM : mH} position={p} scale={s} />)}</group>;
+};
+
+/** Hills + two tree rings (front and back half) at a radius around the origin. */
+export const Backdrop: React.FC<{ r0?: number; r1?: number; trees?: number }> = ({ r0 = 80, r1 = 150, trees = 160 }) => (
+  <group>
+    <TreeLine r0={r0} r1={r1} count={trees} seed={3} />
+    <TreeLine r0={r0} r1={r1} count={trees} seed={7} arc={[-0.05 * Math.PI, 1.05 * Math.PI]} />
+    <Hills />
+  </group>
+);
+
+import { CanvasTexture, MeshStandardMaterial as MSM, RepeatWrapping, SRGBColorSpace } from "three";
+const tileCache = new Map<string, MSM>();
+/** Floor tiles: square tiles with grout lines (ceramic, stone), `size` metres per tile on metre-UV geometry. */
+export const tileFloor = (base: string, grout: string, size = 0.5, roughness = 0.5) => {
+  const key = base + grout + size + roughness;
+  const hit = tileCache.get(key);
+  if (hit) return hit;
+  const cv = document.createElement("canvas");
+  cv.width = cv.height = 256;
+  const g = cv.getContext("2d")!;
+  g.fillStyle = grout;
+  g.fillRect(0, 0, 256, 256);
+  for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) {
+    const v = ((i * 7 + j * 3) % 5) / 40;
+    g.fillStyle = base;
+    g.globalAlpha = 1;
+    g.fillRect(i * 64 + 2, j * 64 + 2, 60, 60);
+    g.fillStyle = `rgba(0,0,0,${v})`;
+    g.fillRect(i * 64 + 2, j * 64 + 2, 60, 60);
+  }
+  const t = new CanvasTexture(cv);
+  t.wrapS = t.wrapT = RepeatWrapping;
+  t.repeat.set(1 / (size * 4), 1 / (size * 4));
+  t.colorSpace = SRGBColorSpace;
+  const m = new MSM({ map: t, roughness });
+  tileCache.set(key, m);
+  return m;
+};
+
+==== 3527 project/src/kits/cerdik/fx.tsx
+// CERDIK effects: the glowing highlight the genre puts on "the thing that matters" (a rail gap, a stone under a post),
+// dust puffs on impacts, steam puffs on angry heads. Glows live on the FX layer (no AO / DOF) and are bright enough
+// to cross the Stage's high bloom threshold, so only they bloom.
+import React, { useMemo } from "react";
+import { AdditiveBlending, BackSide, CylinderGeometry, MeshBasicMaterial, SphereGeometry, TorusGeometry, type BufferGeometry } from "three";
+import { FX_LAYER } from "./Stage.tsx";
+import type { V3 } from "../bedah/cam.ts";
+
+const c01 = (x: number) => (x < 0 ? 0 : x > 1 ? 1 : x);
+
+/** Outline glow around any geometry (inverted hull, additive). `k` 0..1 = how lit; pulses gently once lit. */
+export const GlowHull: React.FC<{ geometry: BufferGeometry; pos: V3; rot?: V3; scale: V3; grow?: number; k: number; t: number; color?: string }> = ({ geometry, pos, rot = [0, 0, 0], scale, grow = 1.09, k, t, color = "#ffc94a" }) => {
+  const m = useMemo(() => new MeshBasicMaterial({ color, side: BackSide, transparent: true, blending: AdditiveBlending, depthWrite: false, toneMapped: false }), [color]);
+  if (k <= 0) return null;
+  const pulse = 1 + 0.12 * Math.sin(t * 7.5);
+  m.opacity = c01(k);
+  m.color.set(color).multiplyScalar(6 * pulse);
+  return (
+    <mesh geometry={geometry} material={m} position={pos} rotation={rot} scale={[scale[0] * grow, scale[1] * grow, scale[2] * grow]} renderOrder={5} onUpdate={(o) => o.layers.set(FX_LAYER)} />
+  );
+};
+
+/** Glowing ring lying on a surface (around a post foot). */
+export const GlowRing: React.FC<{ pos: V3; r: number; k: number; t: number; color?: string }> = ({ pos, r, k, t, color = "#ffd76a" }) => {
+  const g = useMemo(() => new TorusGeometry(1, 0.06, 10, 48), []);
+  const m = useMemo(() => new MeshBasicMaterial({ color, transparent: true, blending: AdditiveBlending, depthWrite: false, toneMapped: false }), [color]);
+  if (k <= 0) return null;
+  m.opacity = c01(k);
+  m.color.set(color).multiplyScalar(7 * (1 + 0.1 * Math.sin(t * 7.5)));
+  const s = r * (0.8 + 0.2 * c01(k * 1.5));
+  return <mesh geometry={g} material={m} position={pos} rotation={[-Math.PI / 2, 0, 0]} scale={[s, s, s]} renderOrder={6} onUpdate={(o) => o.layers.set(FX_LAYER)} />;
+};
+
+/** Short-lived dust puff (a few soft spheres growing and fading) starting at time t0. */
+export const Dust: React.FC<{ pos: V3; t: number; t0: number; size?: number; color?: string }> = ({ pos, t, t0, size = 0.25, color = "#e3cba6" }) => {
+  const g = useMemo(() => new SphereGeometry(1, 16, 10), []);
+  const mats = useMemo(() => Array.from({ length: 6 }, () => new MeshBasicMaterial({ color, transparent: true, depthWrite: false })), [color]);
+  const a = t - t0;
+  if (a < 0 || a > 0.9) return null;
+  const k = a / 0.9;
+  return (
+    <group position={pos}>
+      {mats.map((m, i) => {
+        const ang = i * 1.047 + 0.3;
+        const d = size * (0.4 + 1.6 * Math.sqrt(k));
+        m.opacity = 0.32 * (1 - k) * (1 - k) * Math.min(1, a / 0.1);
+        const r = size * (0.28 + 0.5 * k);
+        return <mesh key={i} geometry={g} material={m} position={[Math.cos(ang) * d, size * 0.3 + k * size * 0.5 + (i % 2) * 0.05, Math.sin(ang) * d]} scale={[r, r * 0.75, r]} onUpdate={(o) => o.layers.set(FX_LAYER)} />;
+      })}
+    </group>
+  );
+};
+
+/** Glowing cylinder segment (e.g. the foot of a post) — hull of a cylinder. */
+export const postHullGeo = (() => {
+  let g: CylinderGeometry | null = null;
+  return () => (g ??= new CylinderGeometry(1, 1, 1, 24, 1));
+})();
+
+==== 4186 project/src/kits/cerdik/looks.ts
+// CERDIK light looks for the BEDAH Stage (sun, sky, AO, grade). The genre look is "storybook game world": warm,
+// saturated, soft shadows, bright puffy sky — richer than the BEDAH archviz day.
+import type { Look } from "./Stage.tsx";
+
+export const CERDIK_DAY: Look = {
+  sun: { dir: [-0.55, 0.72, 0.5], color: "#ffe9c8", intensity: 3.3 },
+  hemi: { sky: "#dfe9ff", ground: "#c4a27a", intensity: 1.7 },
+  fog: { color: "#b9d3f2", density: 0.0055 },
+  sky: { zenith: "#1f5fd6", horizon: "#9cc8f4", cover: 0.4, cloud: "#ffffff", shade: "#b7c4de", drift: 1 },
+  exposure: 1.0,
+  bloom: 0.16,
+  ao: 0.9,
+  grade: { contrast: 0.2, sat: 1.18, vignette: 0.12, grain: 0.004, tint: "#fffaf2" },
+};
+
+/** Golden late afternoon (mockery / pride beats). */
+export const CERDIK_GOLD: Look = {
+  sun: { dir: [-0.72, 0.38, 0.45], color: "#ffc98a", intensity: 3.4 },
+  hemi: { sky: "#f3dcc4", ground: "#b98d62", intensity: 1.45 },
+  fog: { color: "#f1c9a0", density: 0.006 },
+  sky: { zenith: "#3c6fc7", horizon: "#f6c592", cover: 0.36, cloud: "#fff4e4", shade: "#d3a98f", drift: 1 },
+  exposure: 1.0,
+  bloom: 0.2,
+  ao: 0.9,
+  grade: { contrast: 0.22, sat: 1.2, vignette: 0.14, grain: 0.004, tint: "#fff3e4" },
+};
+
+/** Scorching dry-season noon (kemarau): white-hot sun, pale washed sky, warm haze. */
+export const CERDIK_HOT: Look = {
+  sun: { dir: [-0.3, 0.92, 0.25], color: "#fff1cf", intensity: 3.9 },
+  hemi: { sky: "#fff2d8", ground: "#d6a86e", intensity: 1.75 },
+  fog: { color: "#f3dcb4", density: 0.0085 },
+  sky: { zenith: "#6f9ad8", horizon: "#f4e3c2", cover: 0.12, cloud: "#fffaf0", shade: "#e6d3b6", drift: 0.4 },
+  exposure: 1.04,
+  bloom: 0.2,
+  ao: 0.85,
+  grade: { contrast: 0.2, sat: 1.12, vignette: 0.16, grain: 0.004, tint: "#fff1dc" },
+};
+
+/** Night: moonlight, lamps and windows glow. */
+export const CERDIK_NIGHT: Look = {
+  sun: { dir: [0.45, 0.62, -0.4], color: "#a9c2ff", intensity: 1.1 },
+  hemi: { sky: "#4a68a8", ground: "#2e2a36", intensity: 1.35 },
+  fog: { color: "#1c2a4a", density: 0.012 },
+  sky: { zenith: "#08122e", horizon: "#2a3f72", cover: 0.25, cloud: "#4a5f8f", shade: "#1a2440", drift: 0.6 },
+  exposure: 1.55,
+  bloom: 0.3,
+  ao: 0.8,
+  grade: { contrast: 0.22, sat: 1.08, vignette: 0.2, grain: 0.006, tint: "#e3ebff" },
+};
+
+/** Early morning: low warm sun, cool shadows, light mist. */
+export const CERDIK_DAWN: Look = {
+  sun: { dir: [0.8, 0.3, 0.4], color: "#ffd3a0", intensity: 2.6 },
+  hemi: { sky: "#cfdcf5", ground: "#9a8a7a", intensity: 1.5 },
+  fog: { color: "#e6d6cf", density: 0.009 },
+  sky: { zenith: "#4f7fd0", horizon: "#f6cfb0", cover: 0.3, cloud: "#fff0e4", shade: "#c9a9a0", drift: 0.6 },
+  exposure: 1.0,
+  bloom: 0.2,
+  ao: 0.9,
+  grade: { contrast: 0.2, sat: 1.12, vignette: 0.14, grain: 0.004, tint: "#fff4ea" },
+};
+
+export const LOOKS = { day: CERDIK_DAY, gold: CERDIK_GOLD, hot: CERDIK_HOT, night: CERDIK_NIGHT, dawn: CERDIK_DAWN } as const;
+
+/** Rain by day: no sun, grey ceiling, soft cool light — still saturated enough for the CERDIK palette. */
+export const CERDIK_RAIN: Look = {
+  sun: { dir: [-0.45, 0.8, 0.4], color: "#dfe6f0", intensity: 1.0 },
+  hemi: { sky: "#d3dbe6", ground: "#8a8378", intensity: 2.6 },
+  fog: { color: "#9eabb9", density: 0.013 },
+  sky: { zenith: "#5f6e82", horizon: "#a2aebd", cover: 0.98, cloud: "#b6bfcb", shade: "#646e7c", drift: 2.4 },
+  exposure: 1.02,
+  bloom: 0.08,
+  ao: 0.95,
+  grade: { contrast: 0.2, sat: 1.0, vignette: 0.18, grain: 0.005, tint: "#f0f4fa" },
+};
+
+/** Rain at night: dark blue-grey, lamps and glows carry the frame. */
+export const CERDIK_RAIN_NIGHT: Look = {
+  sun: { dir: [0.4, 0.7, -0.4], color: "#9fb2d6", intensity: 0.7 },
+  hemi: { sky: "#50668f", ground: "#2a2932", intensity: 1.5 },
+  fog: { color: "#1f2b42", density: 0.018 },
+  sky: { zenith: "#0d1526", horizon: "#2b3a55", cover: 0.95, cloud: "#3a4864", shade: "#151d2e", drift: 2 },
+  exposure: 1.55,
+  bloom: 0.3,
+  ao: 0.8,
+  grade: { contrast: 0.22, sat: 1.0, vignette: 0.22, grain: 0.006, tint: "#e2eaf8" },
+};
+
+/** The rain look for a time of day (weather "rain"). */
+export const RAINY = { day: CERDIK_RAIN, gold: CERDIK_RAIN, hot: CERDIK_RAIN, dawn: CERDIK_RAIN, night: CERDIK_RAIN_NIGHT } as const;
+
+==== 9533 project/src/kits/cerdik/rig.ts
+// CERDIK rig — pure maths for the round-head stick figures (no React/three, so poses can be checked in node).
+// Proportions follow the reference genre: a big round head (≈ ¼ of the height), a short costume torso and long
+// thin black stick limbs. The body is posed from a few targets — pelvis, torso lean, hand and ankle targets — and
+// elbows / knees come from two-bone IK, so hands land on props and feet stay on the ground.
+// Local frame: the figure faces +z, up is +y, its LEFT side is +x.
+
+export type V3 = [number, number, number];
+
+export type Pose = {
+  pelvis: V3;
+  /** torso lean forward (+) / back (−), side lean to the left (+), shoulder twist to the left (+) — radians */
+  pitch: number;
+  roll?: number;
+  twist?: number;
+  /** head relative to the torso: nod down (+), turn left (+), tilt left (+) */
+  nod?: number;
+  turn?: number;
+  tilt?: number;
+  handL: V3;
+  handR: V3;
+  footL: V3;
+  footR: V3;
+  /** foot yaw outward */
+  splay?: number;
+  /** elbow pole: 0 = down/back, 1 = out to the side; knee pole sideways */
+  elbowOut?: number;
+  kneeOut?: number;
+};
+
+export type Build = {
+  /** overall scale (1 = 1.47 m) */
+  s?: number;
+  /** torso half-width / half-depth multipliers (a round belly = 1.3, 1.35) */
+  wide?: number;
+  deep?: number;
+  /** head radius multiplier */
+  head?: number;
+};
+
+export const DIM = {
+  hipW: 0.06, thigh: 0.335, shin: 0.315, ankle: 0.032,
+  torsoUp: 0.37, shoulderUp: 0.3, shoulderW: 0.135, upper: 0.215, fore: 0.205,
+  neck: 0.035, headR: 0.19,
+  torsoW: 0.145, torsoD: 0.105, torsoBelow: 0.07,
+  limbR: 0.0085, handR: 0.03,
+};
+
+const add = (a: V3, b: V3): V3 => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+const sub = (a: V3, b: V3): V3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const mul = (a: V3, s: number): V3 => [a[0] * s, a[1] * s, a[2] * s];
+const dot = (a: V3, b: V3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const cross = (a: V3, b: V3): V3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const len = (a: V3) => Math.hypot(a[0], a[1], a[2]);
+const norm = (a: V3): V3 => {
+  const l = len(a) || 1;
+  return [a[0] / l, a[1] / l, a[2] / l];
+};
+
+/** Two-bone IK: joint between root and target (lengths a, b), bent toward `pole`. Returns [mid, end]. */
+export const ik2 = (root: V3, target: V3, a: number, b: number, pole: V3): [V3, V3] => {
+  let d = sub(target, root);
+  let L = len(d);
+  const max = (a + b) * 0.999, min = Math.abs(a - b) + 1e-3;
+  if (L < 1e-6) { d = [0, -1, 0]; L = 1e-6; }
+  const dir = mul(d, 1 / L);
+  const Lc = Math.min(max, Math.max(min, L));
+  const x = (a * a - b * b + Lc * Lc) / (2 * Lc);
+  const h = Math.sqrt(Math.max(0, a * a - x * x));
+  let bend = sub(pole, mul(dir, dot(pole, dir)));
+  if (len(bend) < 1e-5) bend = cross(dir, [1, 0, 0]);
+  bend = norm(bend);
+  const mid = add(add(root, mul(dir, x)), mul(bend, h));
+  return [mid, add(root, mul(dir, Lc))];
+};
+
+export type Joints = {
+  pelvis: V3; chest: V3; neck: V3; head: V3; up: V3; right: V3; fwd: V3; headUp: V3; headFwd: V3; headRight: V3;
+  hipL: V3; hipR: V3; kneeL: V3; kneeR: V3; ankleL: V3; ankleR: V3;
+  shL: V3; shR: V3; elbowL: V3; elbowR: V3; wristL: V3; wristR: V3;
+  /** torso centre + half extents (for the body mesh and contact checks) */
+  torso: V3; torsoHalf: V3; headR: number;
+};
+
+const rotX = (v: V3, a: number): V3 => [v[0], v[1] * Math.cos(a) - v[2] * Math.sin(a), v[1] * Math.sin(a) + v[2] * Math.cos(a)];
+const rotY = (v: V3, a: number): V3 => [v[0] * Math.cos(a) + v[2] * Math.sin(a), v[1], -v[0] * Math.sin(a) + v[2] * Math.cos(a)];
+const rotZ = (v: V3, a: number): V3 => [v[0] * Math.cos(a) - v[1] * Math.sin(a), v[0] * Math.sin(a) + v[1] * Math.cos(a), v[2]];
+
+/** Solve a pose into joint positions (figure-local metres, already scaled by the build). */
+export const solve = (p: Pose, b: Build = {}): Joints => {
+  const s = b.s ?? 1, W = b.wide ?? 1, Dp = b.deep ?? 1, HR = (b.head ?? 1) * DIM.headR * s;
+  const D = DIM;
+  // poses are authored for a unit body (s = 1): scale every target with the build
+  if (s !== 1) {
+    const S = (v: V3): V3 => [v[0] * s, v[1] * s, v[2] * s];
+    p = { ...p, pelvis: S(p.pelvis), handL: S(p.handL), handR: S(p.handR), footL: S(p.footL), footR: S(p.footR) };
+  }
+  const tw = p.twist ?? 0, rl = p.roll ?? 0;
+  const tf = (v: V3) => rotZ(rotX(rotY(v, tw), p.pitch), -rl);
+  const up = tf([0, 1, 0]), right = tf([1, 0, 0]), fwd = tf([0, 0, 1]);
+  const pelvis = p.pelvis;
+  const chest = add(pelvis, mul(up, D.shoulderUp * s));
+  const neck = add(pelvis, mul(up, D.torsoUp * s));
+  const hf = (v: V3) => tf(rotX(rotZ(rotY(v, p.turn ?? 0), -(p.tilt ?? 0)), p.nod ?? 0));
+  const headUp = hf([0, 1, 0]), headFwd = hf([0, 0, 1]), headRight = hf([1, 0, 0]);
+  const head = add(neck, mul(headUp, D.neck * s + HR * 0.93));
+  const hipL = add(pelvis, mul(right, D.hipW * s * Math.max(1, W * 0.9)));
+  const hipR = add(pelvis, mul(right, -D.hipW * s * Math.max(1, W * 0.9)));
+  const ko = p.kneeOut ?? 0.12;
+  const [kneeL, ankleL] = ik2(hipL, p.footL, D.thigh * s, D.shin * s, [ko, 0.2, 1]);
+  const [kneeR, ankleR] = ik2(hipR, p.footR, D.thigh * s, D.shin * s, [-ko, 0.2, 1]);
+  const shL = add(chest, mul(right, D.shoulderW * s * W)), shR = add(chest, mul(right, -D.shoulderW * s * W));
+  const eo = p.elbowOut ?? 0.35;
+  const poleL = add(add(mul(right, eo * 1.6), mul(up, -1)), mul(fwd, -0.55));
+  const poleR = add(add(mul(right, -eo * 1.6), mul(up, -1)), mul(fwd, -0.55));
+  const [elbowL, wristL] = ik2(shL, p.handL, D.upper * s, D.fore * s, poleL);
+  const [elbowR, wristR] = ik2(shR, p.handR, D.upper * s, D.fore * s, poleR);
+  const torsoHalf: V3 = [D.torsoW * s * W, ((D.torsoUp + D.torsoBelow) * s) / 2, D.torsoD * s * Dp];
+  const torso = add(pelvis, mul(up, (D.torsoUp - D.torsoBelow) * s / 2));
+  return { pelvis, chest, neck, head, up, right, fwd, headUp, headFwd, headRight, hipL, hipR, kneeL, kneeR, ankleL, ankleR, shL, shR, elbowL, elbowR, wristL, wristR, torso, torsoHalf, headR: HR };
+};
+
+const mixN = (a: number | undefined, b: number | undefined, t: number, d = 0) => (a ?? d) + ((b ?? d) - (a ?? d)) * t;
+const mixV = (a: V3, b: V3, t: number): V3 => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+/** Blend two poses (targets blend, IK re-solves, so limbs never stretch or pop). */
+export const mixPose = (a: Pose, b: Pose, t: number): Pose => {
+  if (t <= 0) return a;
+  if (t >= 1) return b;
+  return {
+    pelvis: mixV(a.pelvis, b.pelvis, t), pitch: mixN(a.pitch, b.pitch, t), roll: mixN(a.roll, b.roll, t), twist: mixN(a.twist, b.twist, t),
+    nod: mixN(a.nod, b.nod, t), turn: mixN(a.turn, b.turn, t), tilt: mixN(a.tilt, b.tilt, t),
+    handL: mixV(a.handL, b.handL, t), handR: mixV(a.handR, b.handR, t), footL: mixV(a.footL, b.footL, t), footR: mixV(a.footR, b.footR, t),
+    splay: mixN(a.splay, b.splay, t, 0.2), elbowOut: mixN(a.elbowOut, b.elbowOut, t, 0.35), kneeOut: mixN(a.kneeOut, b.kneeOut, t, 0.12),
+  };
+};
+
+/** Offset a pose by a vector (whole body moves). */
+export const shift = (p: Pose, d: V3): Pose => ({ ...p, pelvis: add(p.pelvis, d), handL: add(p.handL, d), handR: add(p.handR, d), footL: add(p.footL, d), footR: add(p.footR, d) });
+
+// ------------------------------------------------------------------ pose library (s = 1 build)
+const A = DIM.ankle;
+const PY = 0.655;
+export const POSES = {
+  stand: (): Pose => ({ pelvis: [0, PY, 0], pitch: 0.02, handL: [0.2, 0.5, 0.03], handR: [-0.2, 0.5, 0.03], footL: [0.075, A, 0.01], footR: [-0.075, A, -0.01], elbowOut: 0.2 }),
+  /** hands on hips, chin up */
+  akimbo: (): Pose => ({ pelvis: [0, PY, 0], pitch: -0.05, nod: -0.1, handL: [0.175, 0.69, 0.035], handR: [-0.175, 0.69, 0.035], footL: [0.11, A, 0.02], footR: [-0.11, A, -0.02], elbowOut: 1.5, splay: 0.35 }),
+  /** arms folded in front of the chest */
+  crossed: (): Pose => ({ pelvis: [0, PY, 0], pitch: -0.03, nod: -0.05, handL: [-0.06, 0.875, 0.178], handR: [0.07, 0.84, 0.19], footL: [0.09, A, 0.02], footR: [-0.09, A, -0.02], elbowOut: 0.85, splay: 0.3 }),
+  /** hands clasped behind the back, leaning in to look */
+  peer: (): Pose => ({ pelvis: [0, PY - 0.01, -0.02], pitch: 0.34, nod: -0.25, handL: [0.035, 0.66, -0.16], handR: [-0.035, 0.68, -0.165], footL: [0.08, A, 0.03], footR: [-0.08, A, -0.03], elbowOut: 0.9 }),
+  /** belly laugh: lean back, hands on the belly */
+  laugh: (): Pose => ({ pelvis: [0, PY - 0.01, 0.01], pitch: -0.22, nod: -0.32, handL: [0.12, 0.7, 0.155], handR: [-0.12, 0.69, 0.15], footL: [0.1, A, 0.03], footR: [-0.1, A, -0.02], elbowOut: 0.9, splay: 0.35 }),
+  /** one arm out, palm presenting (left hand) */
+  present: (): Pose => ({ pelvis: [0, PY, 0], pitch: 0.02, nod: -0.05, handL: [0.42, 0.9, 0.28], handR: [-0.2, 0.5, 0.03], footL: [0.09, A, 0.03], footR: [-0.08, A, -0.02], elbowOut: 0.6 }),
+  /** point with the right arm at a target (local) */
+  point: (target: V3): Pose => {
+    const sh: V3 = [-DIM.shoulderW, PY + DIM.shoulderUp, 0];
+    const d = norm(sub(target, sh));
+    const hand = add(sh, mul(d, (DIM.upper + DIM.fore) * 0.97));
+    return { pelvis: [0, PY, 0], pitch: 0.0, handL: [0.2, 0.5, 0.03], handR: hand, footL: [0.09, A, 0.03], footR: [-0.09, A, -0.03], elbowOut: 0.3 };
+  },
+  /** squat with hands near the ground in front (adjusting a stone) */
+  squat: (hl: V3 = [0.11, 0.08, 0.34], hr: V3 = [-0.11, 0.08, 0.34]): Pose => ({ pelvis: [0, 0.3, -0.1], pitch: 0.7, nod: 0.15, handL: hl, handR: hr, footL: [0.13, A, 0.06], footR: [-0.13, A, 0.06], splay: 0.5, kneeOut: 0.8, elbowOut: 0.5 }),
+} as const;
+
+==== 2971 project/src/Root.tsx
+import React from "react";
+import { Composition } from "remotion";
+import { CerdikFilm, cerdikMetadata, cerdikMetadata30, cerdikStillsMetadata, type FilmProps } from "./cerdik/Film.tsx";
+import type { Plan } from "./cerdik/types.ts";
+import { CastSheet, CerdikCard, cardMetadata, type CardProps } from "./scenes/lookdev/CastSheet.tsx";
+import { WorldLook } from "./scenes/lookdev/WorldLook.tsx";
+
+const EMPTY: FilmProps = { plan: { id: "-", title: "-", world: "pasar", duration: 1, aspect: 9 / 16, shots: [], words: [], lines: [], warnings: [] } as Plan };
+
+// VOYNANN Motion — CERDIK. Films are rendered by scripts/make.mjs with the compiled plan as props (out/<id>/props.json):
+// CerdikPreview (540 × 960, stills + QA), CerdikPreviewSS (rendered at 2× and downscaled for the preview MP4), CerdikFinal
+// (1080 × 1920 @ 60). The …Wide compositions are the same film in 16:9 (make.mjs --wide). CastSheet and WorldLook are
+// look-development views of the cast library and of a world (node scripts/stills.mjs … WorldLook 1 <{"world":"pantai"}>).
+export const RemotionRoot: React.FC = () => (
+  <>
+    <Composition id="CerdikPreview" component={CerdikFilm} defaultProps={EMPTY} calculateMetadata={cerdikMetadata30} durationInFrames={30} fps={30} width={540} height={960} />
+    <Composition id="CerdikPreviewSS" component={CerdikFilm} defaultProps={EMPTY} calculateMetadata={cerdikMetadata30} durationInFrames={30} fps={30} width={1080} height={1920} />
+    <Composition id="CerdikFinal" component={CerdikFilm} defaultProps={EMPTY} calculateMetadata={cerdikMetadata} durationInFrames={60} fps={60} width={1080} height={1920} />
+    <Composition id="CerdikPreviewWide" component={CerdikFilm} defaultProps={EMPTY} calculateMetadata={cerdikMetadata30} durationInFrames={30} fps={30} width={960} height={540} />
+    <Composition id="CerdikPreviewSSWide" component={CerdikFilm} defaultProps={EMPTY} calculateMetadata={cerdikMetadata30} durationInFrames={30} fps={30} width={1920} height={1080} />
+    <Composition id="CerdikFinalWide" component={CerdikFilm} defaultProps={EMPTY} calculateMetadata={cerdikMetadata} durationInFrames={60} fps={60} width={1920} height={1080} />
+    <Composition id="CerdikStills" component={CerdikFilm} defaultProps={EMPTY} calculateMetadata={cerdikStillsMetadata} durationInFrames={1} fps={30} width={540} height={960} />
+    <Composition id="CerdikStillsWide" component={CerdikFilm} defaultProps={EMPTY} calculateMetadata={cerdikStillsMetadata} durationInFrames={1} fps={30} width={960} height={540} />
+    <Composition id="CastSheet" component={CastSheet} durationInFrames={4} fps={30} width={960} height={540} />
+    <Composition id="CerdikCard" component={CerdikCard} defaultProps={{ strips: [], h: 400 } as CardProps} calculateMetadata={cardMetadata} durationInFrames={1} fps={30} width={1080} height={400} />
+    <Composition id="WorldLook" component={WorldLook} durationInFrames={80} fps={30} width={540} height={960} />
+  </>
+);
+
+==== 7321 project/src/scenes/lookdev/CastSheet.tsx
+// CERDIK cast sheet: every cast preset, five per frame (landscape), on a grass yard.
+import React, { useEffect, useState } from "react";
+import { AbsoluteFill, continueRender, delayRender, useCurrentFrame, useVideoConfig } from "remotion";
+import { ShotCanvas } from "../../kits/cerdik/ShotCanvas.tsx";
+import { mat } from "../../kits/bedah/mats.ts";
+import { grass } from "../../kits/bedah/tex.ts";
+import { F_CAPTION, fontsReady } from "../../kits/bedah/fonts.ts";
+import { CERDIK_DAY } from "../../kits/cerdik/looks.ts";
+import { Toon } from "../../kits/cerdik/Toon.tsx";
+import { POSES } from "../../kits/cerdik/rig.ts";
+import type { Expr } from "../../kits/cerdik/face.ts";
+import type { Look } from "../../kits/cerdik/look.ts";
+import { CAST, resolveLook } from "../../cerdik/cast.ts";
+
+const KEYS = Object.keys(CAST);
+const EXPR: Expr[] = ["happy", "smug", "surprised", "laugh", "proud"];
+
+export const CastSheet: React.FC = () => {
+  const f = useCurrentFrame();
+  const [h] = useState(() => delayRender("fonts"));
+  useEffect(() => { fontsReady().then(() => continueRender(h)); }, [h]);
+  const mG = mat("lookGrass", grass(), { repeat: [1 / 3, 1 / 3], roughness: 0.95 });
+  const keys = KEYS.slice(f * 5, f * 5 + 5);
+  return (
+    <AbsoluteFill style={{ background: "#000" }}>
+      <ShotCanvas shot={{ pos: [0, 1.25, 4.6], target: [0, 0.95, 0], fov: 30, shadowAt: [0, 0, 0], shadowBox: 6 }} look={CERDIK_DAY} frame={f} t={f}>
+        <mesh rotation={[-Math.PI / 2, 0, 0]} material={mG} receiveShadow><planeGeometry args={[60, 60]} /></mesh>
+        {keys.map((k, i) => (
+          <Toon key={k} look={resolveLook(k)} pose={i % 2 ? POSES.present() : POSES.stand()} face={{ expr: EXPR[i % EXPR.length], open: 0.4 }} pos={[(i - 2) * 1.05, 0, 0]} rotY={-(i - 2) * 0.12} />
+        ))}
+      </ShotCanvas>
+      <div style={{ position: "absolute", left: 0, right: 0, bottom: 10, display: "flex", justifyContent: "space-around", fontFamily: "sans-serif", fontSize: 20, color: "#fff", textShadow: "0 1px 3px #000" }}>
+        {keys.map((k) => <span key={k}>{k}</span>)}
+      </div>
+    </AbsoluteFill>
+  );
+};
+
+// ------------------------------------------------------------------ CerdikCard: the buyer's character cards
+// One frame = one strip (1080 × h). make.mjs --menu / --cast renders the strips and stacks them into JPG cards:
+//   header   big title + how-to lines
+//   people   full bodies ("body") or heads ("head") in a row, each with a code + name under it
+//   swatches colour chips + text lines
+export type CardItem = { look: Look; code?: string; name: string; rotY?: number; expr?: Expr };
+export type CardStrip =
+  | { kind: "header"; title: string; lines: string[] }
+  | { kind: "people"; title?: string; frame: "body" | "head"; items: CardItem[] }
+  | { kind: "swatches"; title: string; colors: { code: string; name: string; hex: string }[]; lines: string[] };
+export type CardProps = { strips: CardStrip[]; h: number };
+
+const INKC = "#16181d", PAPER = "#f6f1e6", ACC = "#e8833a";
+const band = (title: string) => (
+  <div style={{ position: "absolute", left: 0, right: 0, top: 0, height: 64, background: INKC, color: PAPER, display: "flex", alignItems: "center", paddingLeft: 32, fontFamily: F_CAPTION, fontWeight: 800, fontSize: 30, letterSpacing: 1 }}>{title}</div>
+);
+
+const PeopleStrip: React.FC<{ s: Extract<CardStrip, { kind: "people" }>; f: number }> = ({ s, f }) => {
+  const { width: W, height: H } = useVideoConfig();
+  const mG = mat("lookGrass", grass(), { repeat: [1 / 3, 1 / 3], roughness: 0.95 });
+  const n = s.items.length, head = s.frame === "head";
+  const tb = s.title ? 64 : 0, lb = 84;
+  const smax = Math.max(...s.items.map((i) => i.look.build?.s ?? 1));
+  const d = head ? 0.66 : 1.05;
+  // content box in world units (x centred on 0)
+  const y0 = head ? 1.0 * smax : 0, y1 = head ? 1.62 * smax : 1.62 * smax;
+  const A = W / H, f01 = (H - tb - lb) / H, V = 22;
+  const vis = Math.max((y1 - y0) / f01, (n * d) / (A * 0.97));
+  const dist = vis / (2 * Math.tan(((V / 2) * Math.PI) / 180));
+  const offPx = tb + (H - tb - lb) / 2 - H / 2;
+  const camY = (y0 + y1) / 2 + (offPx / H) * vis;
+  const xs = s.items.map((_, i) => (i - (n - 1) / 2) * d);
+  return (
+    <AbsoluteFill style={{ background: "#000" }}>
+      <ShotCanvas shot={{ pos: [0, camY, dist], target: [0, camY, 0], fov: V, shadowAt: [0, 0, 0], shadowBox: Math.max(6, n * d) }} look={CERDIK_DAY} frame={f} t={f}>
+        <mesh rotation={[-Math.PI / 2, 0, 0]} material={mG} receiveShadow><planeGeometry args={[80, 80]} /></mesh>
+        {s.items.map((it, i) => (
+          <Toon key={i} look={it.look} pose={POSES.stand()} face={{ expr: it.expr ?? "happy", open: 0.25 }} pos={[xs[i], 0, 0]} rotY={it.rotY ?? (head ? 0.42 : 0.18)} faceRes={head ? 1024 : 512} />
+        ))}
+      </ShotCanvas>
+      {s.title ? band(s.title) : null}
+      <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: lb, background: PAPER }} />
+      {s.items.map((it, i) => (
+        <div key={i} style={{ position: "absolute", bottom: 8, left: W / 2 + (xs[i] / (vis * A)) * W - 90, width: 180, textAlign: "center", fontFamily: F_CAPTION, fontWeight: 800, color: INKC, lineHeight: 1.05 }}>
+          {it.code ? <div style={{ fontSize: 30, color: ACC }}>{it.code}</div> : null}
+          <div style={{ fontSize: it.code ? 21 : 28 }}>{it.name}</div>
+        </div>
+      ))}
+    </AbsoluteFill>
+  );
+};
+
+export const CerdikCard: React.FC<CardProps> = ({ strips }) => {
+  const f = useCurrentFrame();
+  const [h] = useState(() => delayRender("fonts"));
+  useEffect(() => { fontsReady().then(() => continueRender(h)); }, [h]);
+  const s = strips[f];
+  if (!s) return <AbsoluteFill style={{ background: PAPER }} />;
+  if (s.kind === "people") return <PeopleStrip s={s} f={f} />;
+  if (s.kind === "header") return (
+    <AbsoluteFill style={{ background: PAPER, padding: "44px 40px", fontFamily: F_CAPTION, fontWeight: 800, color: INKC }}>
+      <div style={{ fontSize: 66, letterSpacing: 1 }}>{s.title}</div>
+      <div style={{ width: 120, height: 10, background: ACC, margin: "18px 0 22px" }} />
+      {s.lines.map((l, i) => <div key={i} style={{ fontSize: 30, lineHeight: 1.3, marginBottom: 8, color: i === s.lines.length - 1 ? ACC : INKC }}>{l}</div>)}
+    </AbsoluteFill>
+  );
+  return (
+    <AbsoluteFill style={{ background: PAPER, fontFamily: F_CAPTION, fontWeight: 800, color: INKC }}>
+      {band(s.title)}
+      <div style={{ position: "absolute", top: 84, left: 32, right: 32, display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gap: 10 }}>
+        {s.colors.map((c) => (
+          <div key={c.code} style={{ textAlign: "center" }}>
+            <div style={{ height: 58, background: c.hex, border: `3px solid ${INKC}`, borderRadius: 10 }} />
+            <div style={{ fontSize: 22, color: ACC, marginTop: 4 }}>{c.code}</div>
+            <div style={{ fontSize: 17 }}>{c.name}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{ position: "absolute", left: 32, right: 32, bottom: 22 }}>
+        {s.lines.map((l, i) => <div key={i} style={{ fontSize: 22, lineHeight: 1.32, marginTop: 6 }}>{l}</div>)}
+      </div>
+    </AbsoluteFill>
+  );
+};
+export const cardMetadata = ({ props }: { props: CardProps }) => ({ durationInFrames: Math.max(1, props.strips.length), height: props.h || 400 });
+
+==== 8320 project/stories/kendi/story.json
+{
+  "id": "kendi",
+  "title": "Kendi yang Diketawain",
+  "world": "pasar",
+  "time": "day",
+  "cast": {
+    "bu": {
+      "preset": "ibu",
+      "look": {
+        "costume": {
+          "base": "#2f9c93",
+          "trim": "#f0d9a8",
+          "belt": "#1f6f68"
+        },
+        "hat": {
+          "kind": "kerudung",
+          "color": "#e8833a"
+        }
+      }
+    },
+    "saingan": {
+      "preset": "saingan"
+    },
+    "pembeli": {
+      "preset": "pemudi"
+    },
+    "anak": {
+      "preset": "anak"
+    }
+  },
+  "props": {
+    "kendi1": {
+      "kind": "kendi",
+      "at": "lapak-a",
+      "on": "surface",
+      "yaw": 90
+    },
+    "kendi2": {
+      "kind": "kendi",
+      "at": {
+        "at": "lapak-a",
+        "side": 0.55
+      },
+      "on": "surface",
+      "scale": 0.85,
+      "yaw": 60
+    },
+    "kendi3": {
+      "kind": "kendi",
+      "at": {
+        "at": "lapak-a",
+        "side": -0.55
+      },
+      "on": "surface",
+      "scale": 0.9,
+      "yaw": 120
+    },
+    "toples1": {
+      "kind": "toples",
+      "at": "lapak-b",
+      "on": "surface",
+      "fill": {
+        "color": "#f2a54a",
+        "level": 0.72
+      }
+    },
+    "toples2": {
+      "kind": "toples",
+      "at": {
+        "at": "lapak-b",
+        "side": -0.55
+      },
+      "on": "surface",
+      "scale": 0.9,
+      "fill": {
+        "color": "#f2a54a",
+        "level": 0.6
+      }
+    },
+    "gelas1": {
+      "kind": "gelas",
+      "at": {
+        "at": "lapak-b",
+        "side": 0.55
+      },
+      "on": "surface"
+    }
+  },
+  "extras": [
+    {
+      "at": "lapak-b-depan",
+      "n": 4,
+      "mode": "queue",
+      "from": "pembeli",
+      "until": "kemarau"
+    },
+    {
+      "at": "jalan",
+      "n": 4,
+      "mode": "laugh",
+      "from": "kendinya",
+      "until": "kemarau"
+    },
+    {
+      "at": "jalan-dalam",
+      "n": 3,
+      "mode": "hot",
+      "from": "siangnya"
+    },
+    {
+      "at": "lapak-a-depan",
+      "n": 6,
+      "mode": "queue",
+      "from": "antreannya"
+    }
+  ],
+  "lines": [
+    {
+      "text": "Dia jualan es teh, tapi airnya nggak disimpan di toples kaca.",
+      "cast": {
+        "bu": {
+          "at": "lapak-a",
+          "do": "stand",
+          "expr": "neutral"
+        },
+        "saingan": {
+          "at": "lapak-b",
+          "do": "crossed",
+          "expr": "sly"
+        }
+      },
+      "beats": [
+        {
+          "shot": "establish"
+        },
+        {
+          "at": "tapi",
+          "shot": "medium",
+          "on": "bu",
+          "cast": {
+            "bu": {
+              "do": "present",
+              "expr": "happy"
+            }
+          }
+        },
+        {
+          "at": "toples",
+          "shot": "insert",
+          "on": "toples1",
+          "fx": [
+            {
+              "kind": "sparkle",
+              "on": "toples1"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "text": "Dia simpan di kendi tanah liat yang permukaannya selalu basah.",
+      "beats": [
+        {
+          "shot": "close",
+          "on": "bu",
+          "cast": {
+            "bu": {
+              "do": "present",
+              "expr": "proud"
+            }
+          }
+        },
+        {
+          "at": "permukaannya",
+          "shot": "insert",
+          "on": "kendi1",
+          "fx": [
+            {
+              "kind": "sweat",
+              "on": "kendi1",
+              "until": "end",
+              "amount": 0.7
+            },
+            {
+              "kind": "glow",
+              "on": "kendi1",
+              "at": "basah",
+              "color": "#7fd0ff"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "text": "Pedagang sebelah pakai toples kaca, bening dan mengkilap.",
+      "beats": [
+        {
+          "shot": "medium",
+          "on": "saingan",
+          "cast": {
+            "saingan": {
+              "do": "present",
+              "expr": "smug"
+            }
+          }
+        },
+        {
+          "at": "bening",
+          "shot": "insert",
+          "on": "toples1",
+          "fx": [
+            {
+              "kind": "sparkle",
+              "on": "toples1"
+            },
+            {
+              "kind": "glow",
+              "on": "toples1",
+              "at": "mengkilap"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "text": "Pembeli suka, kelihatan bersih.",
+      "cast": {
+        "pembeli": {
+          "at": "lapak-b-depan",
+          "do": "nod",
+          "expr": "happy"
+        }
+      },
+      "shot": "wide",
+      "on": [
+        "pembeli",
+        "saingan"
+      ]
+    },
+    {
+      "text": "Kendinya malah diketawain. \"Kendimu bocor tuh, keringetan!\"",
+      "beats": [
+        {
+          "shot": "medium",
+          "on": "saingan",
+          "cast": {
+            "saingan": {
+              "do": "mock",
+              "to": "kendi1",
+              "expr": "laugh",
+              "flush": 0.5,
+              "says": true
+            }
+          }
+        },
+        {
+          "at": "kendimu",
+          "shot": "close",
+          "on": "saingan"
+        }
+      ]
+    },
+    {
+      "text": "Tapi dia nggak mau ganti satu kendi pun.",
+      "cast": {
+        "bu": {
+          "do": "crossed",
+          "expr": "neutral",
+          "then": [
+            {
+              "at": "kendi",
+              "expr": "smug"
+            }
+          ]
+        }
+      },
+      "shot": "close",
+      "on": "bu"
+    },
+    {
+      "text": "Lalu datang kemarau paling panjang. Siangnya panas kayak di atas kompor.",
+      "time": "hot",
+      "cast": {
+        "saingan": {
+          "do": "hot",
+          "expr": "worried",
+          "flush": 0.35
+        },
+        "pembeli": {
+          "gone": true
+        }
+      },
+      "beats": [
+        {
+          "shot": "establish",
+          "dissolve": true,
+          "fx": [
+            {
+              "kind": "heat",
+              "on": "saingan",
+              "until": "end"
+            }
+          ]
+        },
+        {
+          "at": "siangnya",
+          "shot": "medium",
+          "on": "saingan"
+        }
+      ]
+    },
+    {
+      "text": "Air di toples kaca ikut panas, hangatnya kayak teh yang baru diseduh.",
+      "cast": {
+        "anak": {
+          "at": "lapak-b-depan",
+          "hold": "gelas1",
+          "do": "drink",
+          "expr": "neutral",
+          "then": [
+            {
+              "at": "hangatnya",
+              "expr": "worried"
+            }
+          ]
+        }
+      },
+      "beats": [
+        {
+          "shot": "insert",
+          "on": "toples1",
+          "fx": [
+            {
+              "kind": "steam",
+              "on": "toples1",
+              "until": "end"
+            }
+          ]
+        },
+        {
+          "at": "hangatnya",
+          "shot": "close",
+          "on": "anak"
+        }
+      ]
+    },
+    {
+      "text": "Sementara kendinya terus berkeringat, dan tiap tetes yang menguap membawa panasnya pergi.",
+      "beats": [
+        {
+          "shot": "insert",
+          "on": "kendi1",
+          "fx": [
+            {
+              "kind": "sweat",
+              "on": "kendi1",
+              "amount": 1.0
+            }
+          ]
+        },
+        {
+          "at": "menguap",
+          "shot": "cutaway",
+          "on": "kendi1",
+          "fx": [
+            {
+              "kind": "cut",
+              "on": "kendi1",
+              "until": "end"
+            },
+            {
+              "kind": "vapor",
+              "on": "kendi1"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "text": "Air di dalamnya tetap dingin.",
+      "shot": "cutaway",
+      "on": "kendi1",
+      "fx": [
+        {
+          "kind": "chill",
+          "on": "kendi1",
+          "at": "dingin"
+        }
+      ]
+    },
+    {
+      "text": "Siang itu, antreannya cuma di satu lapak.",
+      "cast": {
+        "bu": {
+          "do": "present",
+          "expr": "proud"
+        },
+        "saingan": {
+          "do": "sad",
+          "expr": "worried",
+          "flush": 0
+        }
+      },
+      "beats": [
+        {
+          "shot": "wide",
+          "on": "bu"
+        },
+        {
+          "at": "satu",
+          "shot": "close",
+          "on": "bu",
+          "cast": {
+            "bu": {
+              "expr": "smug"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

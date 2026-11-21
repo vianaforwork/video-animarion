@@ -1,0 +1,3016 @@
+VOYNANN Motion - packed source files of this folder. Do not edit by hand.
+The skill upload in the Claude app accepts at most 200 files, so the source files are packed here.
+`node <skill folder>/new-project.mjs <project folder> --kit=<style>` unpacks them into the project.
+Format: per file one line with four '=' signs, the byte length and the path, then exactly that many bytes.
+
+==== 16988 project/scripts/sound.mjs
+#!/usr/bin/env node
+// CHRONICLE sound department — an ORIGINAL score + SFX synthesised from scratch (no samples), shaped by the plan.
+//   node scripts/sound.mjs out/<id>/plan.json public/stories/<id>/mix.wav [vo file]
+//
+// Music: string-like pads (additive, slow swells), low drone, a gamelan-flavoured metallophone (inharmonic bars,
+// pelog-like scale), frame drums / low hits, gong. One "cue" per scene picked from its kind / set / mood, with
+// cross-fades, punctuation on cuts, dates, names and counters. The bed ducks under the voice.
+// SFX: per-set ambiences (wind, sea, fire crackle + roar, forest birds, room tone, volcanic rumble) and events
+// (sound-ring booms, route ticks, counter ticks, whooshes on cuts).
+// Mix: VO + music + SFX → loudness-normalised (−14 LUFS, −1.5 dBTP) 48 kHz stereo WAV.
+
+import fs from "node:fs";
+import path from "node:path";
+import os from "node:os";
+import { execFileSync } from "node:child_process";
+
+const [planFile, outFile, voFile] = process.argv.slice(2);
+if (!planFile || !outFile) { console.error("usage: node scripts/sound.mjs <plan.json> <out.wav> [vo]"); process.exit(2); }
+const plan = JSON.parse(fs.readFileSync(planFile, "utf8"));
+const SR = 48000;
+const DUR = plan.duration + 0.5;
+const N = Math.ceil(DUR * SR);
+
+// ---------------------------------------------------------------- buffers & helpers
+const music = [new Float32Array(N), new Float32Array(N)];
+const sfx = [new Float32Array(N), new Float32Array(N)];
+let seed = 12345;
+const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+const hz = (m) => 440 * 2 ** ((m - 69) / 12);
+const TAB = 8192;
+const SIN = new Float32Array(TAB + 1);
+for (let i = 0; i <= TAB; i++) SIN[i] = Math.sin((i / TAB) * Math.PI * 2);
+const sinp = (ph) => { const x = (ph - Math.floor(ph)) * TAB; const i = x | 0; return SIN[i] + (SIN[i + 1] - SIN[i]) * (x - i); };
+const clamp = (x, a, b) => (x < a ? a : x > b ? b : x);
+const smooth = (x) => { const k = clamp(x, 0, 1); return k * k * (3 - 2 * k); };
+
+// biquad (RBJ) for noise shaping
+const biquad = (type, f, q = 0.707) => {
+  const w = (2 * Math.PI * f) / SR, c = Math.cos(w), s = Math.sin(w), al = s / (2 * q);
+  let b0, b1, b2, a0, a1, a2;
+  if (type === "lp") { b0 = (1 - c) / 2; b1 = 1 - c; b2 = (1 - c) / 2; a0 = 1 + al; a1 = -2 * c; a2 = 1 - al; }
+  else if (type === "hp") { b0 = (1 + c) / 2; b1 = -(1 + c); b2 = (1 + c) / 2; a0 = 1 + al; a1 = -2 * c; a2 = 1 - al; }
+  else { b0 = al; b1 = 0; b2 = -al; a0 = 1 + al; a1 = -2 * c; a2 = 1 - al; } // band-pass
+  let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+  return (x) => { const y = (b0 * x + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2) / a0; x2 = x1; x1 = x; y2 = y1; y1 = y; return y; };
+};
+const add = (buf, i, l, r) => { if (i >= 0 && i < N) { buf[0][i] += l; buf[1][i] += r; } };
+
+// ---------------------------------------------------------------- instruments
+/** Pad: additive "strings" chord over [t0, t1] with swells; detuned voices per side. */
+const pad = (t0, t1, notes, gain, bright = 0.5, fadeIn = 1.2, fadeOut = 1.4) => {
+  const i0 = Math.max(0, Math.floor(t0 * SR)), i1 = Math.min(N, Math.floor((t1 + fadeOut) * SR));
+  const partials = 9;
+  for (const m of notes) {
+    for (const det of [-0.08, 0.07]) {
+      const f = hz(m + det * 0.1) * (1 + det * 0.004);
+      let ph = rnd();
+      const side = det < 0 ? 0 : 1;
+      for (let i = i0; i < i1; i++) {
+        const t = i / SR;
+        const env = smooth((t - t0) / fadeIn) * (t > t1 ? 1 - smooth((t - t1) / fadeOut) : 1) * (0.85 + 0.15 * Math.sin(t * 0.7 + m));
+        const vib = 1 + 0.0025 * Math.sin(t * 5.1 + m);
+        ph += (f * vib) / SR;
+        let v = 0;
+        for (let k = 1; k <= partials; k++) v += sinp(ph * k) * (1 / k) * Math.exp(-(k - 1) * (1.15 - bright));
+        const s = v * env * gain * 0.06;
+        if (side === 0) music[0][i] += s * 0.9, music[1][i] += s * 0.45;
+        else music[1][i] += s * 0.9, music[0][i] += s * 0.45;
+      }
+    }
+  }
+};
+/** Low drone with slow breathing. */
+const drone = (t0, t1, m, gain) => {
+  const i0 = Math.max(0, Math.floor(t0 * SR)), i1 = Math.min(N, Math.floor((t1 + 1.5) * SR));
+  const f = hz(m);
+  let p1 = 0, p2 = 0;
+  for (let i = i0; i < i1; i++) {
+    const t = i / SR;
+    const env = smooth((t - t0) / 1.5) * (t > t1 ? 1 - smooth((t - t1) / 1.5) : 1) * (0.75 + 0.25 * Math.sin(t * 0.45));
+    p1 += f / SR; p2 += (f * 2.003) / SR;
+    const s = (sinp(p1) * 0.8 + sinp(p2) * 0.25 + sinp(p1 * 0.5) * 0.35) * env * gain * 0.12;
+    music[0][i] += s; music[1][i] += s;
+  }
+};
+/** Metallophone bar (saron / bonang-like): inharmonic partials, fast attack, ringing decay. */
+const bar = (t, m, gain, pan = 0, decay = 1.6) => {
+  const i0 = Math.floor(t * SR), len = Math.floor(decay * 3 * SR);
+  const f = hz(m);
+  const P = [[1, 1], [2.76, 0.42], [5.4, 0.2], [8.93, 0.09], [1.006, 0.5]];
+  const ph = P.map(() => rnd());
+  for (let j = 0; j < len; j++) {
+    const tt = j / SR;
+    let v = 0;
+    for (let k = 0; k < P.length; k++) v += sinp(ph[k] + f * P[k][0] * tt) * P[k][1] * Math.exp(-tt * (k === 0 || k === 4 ? 1 / decay : 3 / decay * (k + 1)));
+    const a = Math.min(1, tt / 0.003);
+    const s = v * a * gain * 0.09;
+    add(music, i0 + j, s * (1 - pan) * 0.8, s * (1 + pan) * 0.8);
+  }
+};
+/** Gong: very low inharmonic hum with slow beating. */
+const gong = (t, gain, m = 38) => {
+  const i0 = Math.floor(t * SR), len = Math.floor(7 * SR);
+  const f = hz(m);
+  const P = [[1, 1], [1.5, 0.35], [2.0, 0.3], [2.98, 0.12], [1.012, 0.6]];
+  for (let j = 0; j < len; j++) {
+    const tt = j / SR;
+    let v = 0;
+    for (const [r, a] of P) v += sinp(f * r * tt) * a;
+    const env = Math.min(1, tt / 0.02) * Math.exp(-tt / 2.2);
+    const s = v * env * gain * 0.13;
+    add(music, i0 + j, s, s);
+  }
+};
+/** Frame drum / low tom hit: pitch drop + filtered noise skin. */
+const drum = (t, gain, low = 52, pan = 0) => {
+  const i0 = Math.floor(t * SR), len = Math.floor(0.9 * SR);
+  const bp = biquad("bp", 180, 1.2);
+  let ph = 0;
+  for (let j = 0; j < len; j++) {
+    const tt = j / SR;
+    const f = low + 70 * Math.exp(-tt * 28);
+    ph += f / SR;
+    const body = sinp(ph) * Math.exp(-tt * 6.5);
+    const skin = bp(rnd() * 2 - 1) * Math.exp(-tt * 30) * 0.6;
+    const s = (body + skin) * gain * 0.32;
+    add(music, i0 + j, s * (1 - pan * 0.5), s * (1 + pan * 0.5));
+  }
+};
+/** Big low impact (cuts, booms). */
+const impact = (t, gain, buf = music) => {
+  const i0 = Math.floor(t * SR), len = Math.floor(3 * SR);
+  const lp = biquad("lp", 220, 0.8);
+  let ph = 0;
+  for (let j = 0; j < len; j++) {
+    const tt = j / SR;
+    ph += (38 + 60 * Math.exp(-tt * 9)) / SR;
+    const s = (sinp(ph) * Math.exp(-tt * 2.2) + lp(rnd() * 2 - 1) * Math.exp(-tt * 3.5) * 0.8) * gain * 0.42;
+    add(buf, i0 + j, s, s);
+  }
+};
+/** Noise whoosh / riser into time t. */
+const whoosh = (t, gain, len = 0.9, buf = sfx) => {
+  const i1 = Math.floor(t * SR), i0 = i1 - Math.floor(len * SR);
+  const bpL = biquad("bp", 900, 0.9), bpR = biquad("bp", 1100, 0.9);
+  for (let i = i0; i < i1 + Math.floor(0.25 * SR); i++) {
+    const k = (i - i0) / (i1 - i0);
+    const env = k < 1 ? Math.pow(k, 2.2) : Math.exp(-(i - i1) / SR * 14);
+    add(buf, i, bpL(rnd() * 2 - 1) * env * gain * 0.5, bpR(rnd() * 2 - 1) * env * gain * 0.5);
+  }
+};
+
+// ---------------------------------------------------------------- ambiences
+const amb = (t0, t1, kind, gain = 1) => {
+  const i0 = Math.max(0, Math.floor((t0 - 0.3) * SR)), i1 = Math.min(N, Math.floor((t1 + 0.4) * SR));
+  const env = (i) => { const t = i / SR; return smooth((t - t0 + 0.3) / 0.6) * (1 - smooth((t - t1) / 0.4)); };
+  const L1 = biquad("lp", 400), R1 = biquad("lp", 400), L2 = biquad("bp", 1800, 0.6), R2 = biquad("bp", 2100, 0.6);
+  const H = biquad("hp", 3000), lowL = biquad("lp", 90), lowR = biquad("lp", 90);
+  for (let i = i0; i < i1; i++) {
+    const t = i / SR, e = env(i) * gain;
+    const nl = rnd() * 2 - 1, nr = rnd() * 2 - 1;
+    let l = 0, r = 0;
+    if (kind === "wind" || kind === "sea" || kind === "forest" || kind === "makam") {
+      const g = 0.5 + 0.5 * Math.sin(t * 0.37) * Math.sin(t * 0.21 + 1);
+      l += L1(nl) * 0.5 * (0.4 + g); r += R1(nr) * 0.5 * (0.4 + g * 0.8);
+    }
+    if (kind === "sea") {
+      const wave = Math.pow(0.5 + 0.5 * Math.sin(t * 0.9), 3);
+      l += L2(nl) * 0.22 * wave; r += R2(nr) * 0.22 * (0.5 + 0.5 * Math.sin(t * 0.9 + 0.8)) ** 3;
+    }
+    if (kind === "fire") {
+      l += L1(nl) * 0.6 * (0.7 + 0.3 * Math.sin(t * 3.1)); r += R1(nr) * 0.6 * (0.7 + 0.3 * Math.sin(t * 2.7));
+      if (rnd() < 0.0009) { const c = (rnd() * 2 - 1) * 0.9; l += c; r += c * 0.6; }
+      l += H(nl) * 0.05;
+    }
+    if (kind === "rumble" || kind === "fire") { const rr = lowL(nl) * 2.2, rl = lowR(nr) * 2.2; l += rr; r += rl; }
+    if (kind === "room") { l += L1(nl) * 0.12; r += R1(nr) * 0.12; }
+    add(sfx, i, l * e * 0.5, r * e * 0.5);
+  }
+  if (kind === "forest" || kind === "makam") {
+    // birds: short frequency-swept chirps
+    for (let t = t0 + 0.5; t < t1; t += 0.7 + rnd() * 1.8) {
+      const f0 = 2600 + rnd() * 1800, i = Math.floor(t * SR), len = Math.floor((0.06 + rnd() * 0.08) * SR), pan = rnd() * 2 - 1;
+      const n = 1 + Math.floor(rnd() * 3);
+      for (let c = 0; c < n; c++) {
+        let ph = 0;
+        for (let j = 0; j < len; j++) {
+          const k = j / len; ph += (f0 * (1 + 0.35 * Math.sin(k * Math.PI)) + c * 120) / SR;
+          const s = sinp(ph) * Math.sin(k * Math.PI) * 0.03 * Math.min(gain, 1.6);
+          add(sfx, i + j + c * Math.floor(0.11 * SR), s * (1 - pan) * 0.7, s * (1 + pan) * 0.7);
+        }
+      }
+    }
+  }
+};
+
+// ---------------------------------------------------------------- the score
+const ROOT = 50; // D3
+const PELOG = [0, 1, 3, 7, 8]; // D Eb F A Bb — a pelog-like five-note colour
+const scale = (deg, oct = 0) => ROOT + 12 + PELOG[((deg % 5) + 5) % 5] + 12 * (Math.floor(deg / 5) + oct);
+const PROG = {
+  reflective: [[50, 57, 62, 65, 69], [46, 53, 58, 62, 65], [43, 50, 55, 58, 62], [45, 52, 57, 61, 64]],
+  tense: [[50, 51, 57, 62], [49, 50, 56, 62], [50, 51, 57, 63], [46, 50, 57, 62]],
+  curious: [[50, 57, 62, 64, 69], [48, 55, 60, 64, 67], [46, 53, 58, 62, 65], [45, 52, 57, 60, 64]],
+  determined: [[50, 57, 62, 65], [48, 55, 60, 63], [46, 53, 58, 62], [48, 55, 60, 64]],
+  somber: [[50, 57, 60, 65], [46, 53, 58, 61], [43, 50, 55, 58], [45, 52, 57, 60]],
+};
+const cueOf = (sc) => {
+  if (sc.kind === "end") return { prog: "reflective", pad: 0.9, drone: 0.6, drums: 0, metal: 0.35, bright: 0.45 };
+  if (sc.kind === "map") return sc.map?.route ? { prog: "determined", pad: 0.7, drone: 0.7, drums: 0.5, bpm: 92, metal: 0.6, bright: 0.5 }
+    : sc.map?.rings || sc.map?.erupt ? { prog: "tense", pad: 0.8, drone: 1.0, drums: 0.35, bpm: 70, metal: 0.25, bright: 0.4 }
+    : { prog: "curious", pad: 0.75, drone: 0.6, drums: 0, metal: 0.55, bright: 0.55 };
+  const p = sc.place;
+  if (p.fire || p.volcano || p.mood === "api") return { prog: "tense", pad: 0.9, drone: 1.1, drums: 0.9, bpm: 104, metal: 0.3, bright: 0.55 };
+  if (p.set === "kamar" || p.set === "makam") return { prog: p.set === "kamar" ? "somber" : "reflective", pad: 0.85, drone: 0.5, drums: 0, metal: 0.4, bright: 0.35 };
+  if (p.set === "balai") return { prog: "tense", pad: 0.7, drone: 0.8, drums: 0.25, bpm: 64, metal: 0.25, bright: 0.35 };
+  if (p.set === "hutan" || p.set === "medan") return { prog: "determined", pad: 0.85, drone: 0.8, drums: 0.6, bpm: 84, metal: 0.4, bright: 0.45 };
+  return { prog: "curious", pad: 0.8, drone: 0.6, drums: 0.2, bpm: 80, metal: 0.45, bright: 0.5 };
+};
+const ambOf = (sc) => {
+  if (sc.kind !== "place") return sc.kind === "map" && (sc.map?.rings || sc.map?.erupt) ? ["rumble", 0.9] : ["wind", 0.8];
+  const p = sc.place;
+  if (p.fire) return ["fire", 1.0];
+  if (p.volcano) return ["rumble", 1.0];
+  if (p.set === "balai" || p.set === "kamar") return ["room", 2.2];
+  if (p.set === "pelabuhan" || p.set === "dek" || p.set === "pantai") return ["sea", 2.4];
+  if (p.set === "hutan") return ["forest", 2.4];
+  if (p.set === "makam") return ["makam", 2.2];
+  return ["wind", 2.2];
+};
+
+plan.scenes.forEach((sc, si) => {
+  const a = sc.a, b = sc.b, d = b - a;
+  const cue = cueOf(sc);
+  const prog = PROG[cue.prog];
+  const barLen = Math.max(2.4, Math.min(4.2, d / 2));
+  // pads: one chord per bar, overlapping tails
+  for (let k = 0, t = a; t < b; k++, t += barLen) pad(Math.max(0, t - 0.3), Math.min(b, t + barLen), prog[(k + si) % prog.length], cue.pad, cue.bright, k === 0 ? 0.9 : 1.6, 1.6);
+  if (cue.drone) drone(Math.max(0, a - 0.2), b, prog[si % prog.length][0] - 12, cue.drone);
+  // drums: a low pulse (frame drum on beats 1 and 3½, soft taps between)
+  if (cue.drums) {
+    const beat = 60 / cue.bpm;
+    let k = 0;
+    for (let t = a + 0.05; t < b - 0.1; t += beat / 2, k++) {
+      const pos = k % 8;
+      if (pos === 0) drum(t, cue.drums, 48);
+      else if (pos === 5) drum(t, cue.drums * 0.7, 54, 0.3);
+      else if (pos === 3 || pos === 7) drum(t, cue.drums * 0.25, 70, -0.4);
+    }
+  }
+  // metallophone: a sparse pelog motif, denser when the cue is lively
+  if (cue.metal) {
+    const step = cue.drums ? 60 / (cue.bpm || 80) : 0.75;
+    const motif = [0, 2, 3, 1, 4, 3, 2, 0, 1, 3];
+    let k = 0;
+    for (let t = a + 0.4; t < b - 0.3; t += step, k++) {
+      if (rnd() > cue.metal + 0.15) continue;
+      const deg = motif[(k + si * 3) % motif.length];
+      bar(t, scale(deg, deg > 3 ? 0 : 0), cue.metal * (k % 4 === 0 ? 1 : 0.6), (rnd() - 0.5) * 0.8, cue.drums ? 1.0 : 1.9);
+    }
+  }
+  // ambience + transitions
+  const [kind, g] = ambOf(sc);
+  amb(a, b, kind, g);
+  if (si > 0) whoosh(a, 0.5, 0.7);
+  // map events
+  if (sc.kind === "map") {
+    if (sc.map.rings) [0.6, 1.05, 1.5].forEach((t0, i) => impact(a + t0, 0.9 - i * 0.2, sfx));
+    if (sc.map.erupt) impact(a + 0.2, 0.8, sfx);
+    if (sc.map.route) {
+      const n = Math.max(1, sc.map.points.length - 1);
+      for (let i = 1; i <= n; i++) bar(a + 0.15 * d + (0.7 * d * i) / n, scale(4, 1), 0.5, 0.2, 0.8);
+    }
+  }
+});
+
+// punctuation on overlays
+for (const sc of plan.scenes) for (const o of sc.overlays) {
+  if (o.kind === "date") { drum(o.a + 0.05, 0.8, 44); gong(o.a + 0.05, 0.5); }
+  if (o.kind === "name") bar(o.a + 0.1, scale(0, 1), 0.6, 0, 1.4);
+  if (o.kind === "count") {
+    for (let t = o.roll[0]; t < o.roll[1]; t += 0.07) bar(t, scale(4, 2), 0.12 * (1 - (t - o.roll[0]) / (o.roll[1] - o.roll[0])), (rnd() - 0.5), 0.15);
+    impact(o.roll[1], 0.6);
+  }
+  if (o.kind === "end") gong(o.a, 0.9, 38);
+}
+gong(0.05, 0.6, 38);
+
+// ---------------------------------------------------------------- voice + ducking + mix
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "chron-snd-"));
+let vo = [new Float32Array(N), new Float32Array(N)];
+if (voFile) {
+  const raw = path.join(tmp, "vo.f32");
+  execFileSync("ffmpeg", ["-y", "-v", "error", "-i", voFile, "-f", "f32le", "-ac", "2", "-ar", String(SR), raw]);
+  const b = fs.readFileSync(raw);
+  const f = new Float32Array(b.buffer, b.byteOffset, Math.floor(b.length / 4));
+  for (let i = 0; i < Math.min(N, f.length / 2); i++) { vo[0][i] = f[i * 2]; vo[1][i] = f[i * 2 + 1]; }
+}
+// voice envelope → duck the music 9 dB under speech (fast attack, slow release)
+const envV = new Float32Array(N);
+{
+  let e = 0;
+  const att = Math.exp(-1 / (0.03 * SR)), rel = Math.exp(-1 / (0.45 * SR));
+  for (let i = 0; i < N; i++) { const x = Math.abs(vo[0][i]) + Math.abs(vo[1][i]); e = x > e ? att * e + (1 - att) * x : rel * e + (1 - rel) * x; envV[i] = e; }
+  let mx = 0; for (let i = 0; i < N; i++) mx = Math.max(mx, envV[i]);
+  for (let i = 0; i < N; i++) envV[i] = clamp(envV[i] / (mx * 0.25 + 1e-9), 0, 1);
+}
+const MUSIC = 0.55, SFX = 0.55;
+const out = Buffer.alloc(N * 2 * 4);
+for (let i = 0; i < N; i++) {
+  const duck = 1 - 0.65 * envV[i];
+  const t = i / SR;
+  const tail = t > DUR - 0.6 ? 1 - smooth((t - (DUR - 0.6)) / 0.6) : 1;
+  for (let c = 0; c < 2; c++) {
+    const v = (vo[c][i] + music[c][i] * MUSIC * duck + sfx[c][i] * SFX * (0.6 + 0.4 * duck)) * tail;
+    out.writeFloatLE(v, (i * 2 + c) * 4);
+  }
+}
+const rawOut = path.join(tmp, "mix.f32");
+fs.writeFileSync(rawOut, out);
+fs.mkdirSync(path.dirname(outFile), { recursive: true });
+execFileSync("ffmpeg", ["-y", "-v", "error", "-f", "f32le", "-ar", String(SR), "-ac", "2", "-i", rawOut, "-af", "loudnorm=I=-14:TP=-1.5:LRA=11", "-ar", String(SR), "-c:a", "pcm_s16le", outFile]);
+// stems for checking
+const stem = (bufs, name, g) => {
+  const o = Buffer.alloc(N * 2 * 4);
+  for (let i = 0; i < N; i++) for (let c = 0; c < 2; c++) o.writeFloatLE(bufs[c][i] * g, (i * 2 + c) * 4);
+  const f = path.join(tmp, name + ".f32");
+  fs.writeFileSync(f, o);
+  execFileSync("ffmpeg", ["-y", "-v", "error", "-f", "f32le", "-ar", String(SR), "-ac", "2", "-i", f, "-c:a", "pcm_s16le", path.join(path.dirname(planFile), name + ".wav")]);
+};
+stem(music, "music_stem", MUSIC);
+stem(sfx, "sfx_stem", SFX);
+fs.rmSync(tmp, { recursive: true, force: true });
+console.log("mix →", outFile);
+
+==== 8601 project/src/core/studio/Studio.tsx
+// VOYNANN bright studio (light stage from PRECISION, used by PRECISION and TIMEFORGE): a
+// procedural HDR environment for controlled softbox reflections, a bright seamless cyclorama
+// with an optional tint pool behind the subject, an optional pearl plinth with a hairline ring,
+// a soft key light that casts contact shadows, and a blob shadow under a floating object.
+// Calibrated for hand-held objects about 5–20 world units across; pass `shadow` bounds and a
+// `plinth` for other scales (large outdoor scenes should use an outdoor sky setup instead).
+
+import React, { useLayoutEffect, useMemo } from "react";
+import { useThree } from "@react-three/fiber";
+import {
+  BackSide, CanvasTexture, Color, CylinderGeometry, type DirectionalLight, Euler, Mesh, MeshBasicMaterial, PlaneGeometry,
+  PMREMGenerator, Scene, ShaderMaterial, SphereGeometry, type Texture, TorusGeometry,
+} from "three";
+import { plainMaterial } from "../materials/sweep.ts";
+
+export type StudioLook = {
+  envRotation: number;
+  envIntensity: number;
+  keyAz: number;
+  keyEl: number;
+  keyIntensity: number;
+  /** Backdrop tint: rgb and amount (0 = neutral pearl). */
+  tint: [number, number, number];
+  tintAmount: number;
+  /** Time-ring inlay glow 0..1. */
+  ring: number;
+};
+
+export type Plinth = { top: number; r: number; h: number; ring?: boolean };
+/** Default plinth (top surface y, radius, height) — the TIMEFORGE calibration. */
+export const PLINTH: Plinth = { top: -9.6, r: 5.8, h: 0.9, ring: true };
+export type ShadowBounds = { left: number; right: number; top: number; bottom: number; near: number; far: number };
+const SHADOW: ShadowBounds = { left: -12, right: 12, top: 14, bottom: -12, near: 10, far: 70 };
+
+/** A neutral look: no tint, standard key. Spread and override per film. */
+export const NEUTRAL_LOOK: StudioLook = { envRotation: 0.35, envIntensity: 1, keyAz: (18 * Math.PI) / 180, keyEl: (66 * Math.PI) / 180, keyIntensity: 1.5, tint: [1, 1, 1], tintAmount: 0, ring: 0 };
+
+const stage = () => {
+  const scene = new Scene();
+  scene.add(
+    new Mesh(
+      new SphereGeometry(30, 64, 32),
+      new ShaderMaterial({
+        side: BackSide,
+        vertexShader: /* glsl */ `varying vec3 vDir; void main(){ vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+        fragmentShader: /* glsl */ `
+          varying vec3 vDir;
+          void main(){
+            float y = vDir.y;
+            vec3 c = mix(vec3(0.2, 0.195, 0.19), vec3(0.52, 0.51, 0.5), smoothstep(-0.45, 0.02, y));
+            c = mix(c, vec3(0.78, 0.78, 0.77), smoothstep(0.05, 0.75, y));
+            gl_FragColor = vec4(c, 1.0);
+          }`,
+      }),
+    ),
+  );
+  const panel = (w: number, h: number, k: number, pos: [number, number, number], tint = "#ffffff") => {
+    const m = new Mesh(new PlaneGeometry(w, h), new MeshBasicMaterial({ color: new Color(tint).multiplyScalar(k), side: 2 }));
+    m.position.set(...pos);
+    m.lookAt(0, 0, 0);
+    scene.add(m);
+  };
+  panel(14, 14, 2.0, [0, 22, 0]); // overhead softbox
+  panel(1.5, 26, 7.0, [-20, 3, -7], "#fff6ec"); // warm rim strip
+  panel(1.2, 26, 6.0, [20, 3, -9], "#eefcff"); // cool rim strip
+  panel(11, 9, 3.4, [-12, 11, 16], "#fffaf4"); // key box
+  panel(12, 6, 1.8, [11, 5, 19]); // fill
+  panel(30, 1.3, 5.0, [0, 15, 11]); // long strip: the line that sweeps across glass
+  // graphite flags give glossy white parts a defined edge
+  panel(9, 22, 0.04, [21, -1, 9]);
+  panel(9, 22, 0.04, [-21, -1, 4]);
+  panel(30, 4, 0.07, [0, -5, 24]);
+  return scene;
+};
+
+const backdrop = () =>
+  new ShaderMaterial({
+    side: BackSide,
+    depthWrite: false,
+    uniforms: {
+      uTop: { value: new Color("#f3f1ec") },
+      uMid: { value: new Color("#e7e4de") },
+      uLow: { value: new Color("#d6d2cb") },
+      uTint: { value: new Color("#ffffff") },
+      uTintAmt: { value: 0 },
+    },
+    vertexShader: /* glsl */ `
+      varying vec3 vWorld; varying vec4 vClip;
+      void main(){ vec4 w = modelMatrix * vec4(position,1.0); vWorld = w.xyz; vClip = projectionMatrix * viewMatrix * w; gl_Position = vClip; }`,
+    fragmentShader: /* glsl */ `
+      uniform vec3 uTop; uniform vec3 uMid; uniform vec3 uLow; uniform vec3 uTint; uniform float uTintAmt;
+      varying vec3 vWorld; varying vec4 vClip;
+      void main(){
+        vec2 s = vClip.xy / vClip.w;
+        vec3 dir = normalize(vWorld - cameraPosition);
+        float t = clamp(0.5 + 0.5 * (0.7 * s.y + 0.3 * dir.y * 1.6), 0.0, 1.0);
+        vec3 c = mix(uLow, uMid, smoothstep(0.0, 0.55, t));
+        c = mix(c, uTop, smoothstep(0.5, 1.0, t));
+        float r = length(s * vec2(1.0, 0.6) - vec2(0.0, 0.1));
+        // the tint lives in the soft pool of light behind the subject
+        c = mix(c, c * uTint, uTintAmt * (1.0 - smoothstep(0.0, 1.25, r)));
+        c *= 1.0 + 0.1 * (1.0 - smoothstep(0.0, 1.1, r)) - 0.06 * smoothstep(0.7, 1.5, r);
+        gl_FragColor = vec4(c, 1.0);
+      }`,
+  });
+
+const blobTexture = () => {
+  const cv = document.createElement("canvas");
+  cv.width = cv.height = 256;
+  const c = cv.getContext("2d")!;
+  const g = c.createRadialGradient(128, 128, 0, 128, 128, 128);
+  g.addColorStop(0, "rgba(40,36,32,1)");
+  g.addColorStop(0.45, "rgba(40,36,32,0.45)");
+  g.addColorStop(1, "rgba(40,36,32,0)");
+  c.fillStyle = g;
+  c.fillRect(0, 0, 256, 256);
+  return new CanvasTexture(cv);
+};
+
+export type Blob = { x: number; z: number; sx: number; sz: number; rot: number; opacity: number };
+
+export const Studio: React.FC<{ look: StudioLook; blob?: Blob; plinth?: Plinth | false; shadow?: ShadowBounds }> = ({ look, blob, plinth = PLINTH, shadow = SHADOW }) => {
+  const P = plinth || PLINTH;
+  const { gl, scene } = useThree();
+  const env = useMemo<Texture>(() => {
+    const pm = new PMREMGenerator(gl);
+    const t = pm.fromScene(stage(), 0.035).texture;
+    pm.dispose();
+    return t;
+  }, [gl]);
+  const parts = useMemo(() => {
+    const bg = new Mesh(new SphereGeometry(400, 64, 32), backdrop());
+    const plinthMat = plainMaterial();
+    plinthMat.color.set("#ecebe6");
+    plinthMat.roughness = 0.5;
+    plinthMat.clearcoat = 0.4;
+    plinthMat.clearcoatRoughness = 0.3;
+    const ringMat = new MeshBasicMaterial({ color: new Color("#bfeff2") });
+    const blobMat = new MeshBasicMaterial({ map: blobTexture(), transparent: true, depthWrite: false, opacity: 0.3 });
+    return {
+      bg,
+      plinth: new CylinderGeometry(P.r, P.r * 1.01, P.h, 128, 1),
+      plinthMat,
+      ring: new TorusGeometry(P.r - 0.45, 0.03, 8, 192),
+      ringMat,
+      blobGeo: new PlaneGeometry(1, 1),
+      blobMat,
+    };
+  }, [P.r, P.h]);
+
+  useLayoutEffect(() => {
+    scene.environment = env;
+    scene.background = null;
+    scene.environmentRotation = new Euler(0, look.envRotation, 0, "YXZ");
+    scene.environmentIntensity = look.envIntensity;
+    const u = (parts.bg.material as ShaderMaterial).uniforms;
+    u.uTint.value.setRGB(...look.tint);
+    u.uTintAmt.value = look.tintAmount;
+    const k = 0.75 + 1.6 * look.ring;
+    parts.ringMat.color.setRGB(0.75 * k, 0.94 * k, 0.95 * k);
+    parts.blobMat.opacity = blob?.opacity ?? 0;
+  });
+
+  const key = useMemo(() => {
+    const d = 34;
+    return [d * Math.cos(look.keyEl) * Math.sin(look.keyAz), d * Math.sin(look.keyEl), d * Math.cos(look.keyEl) * Math.cos(look.keyAz)] as [number, number, number];
+  }, [look.keyAz, look.keyEl]);
+
+  return (
+    <>
+      <primitive object={parts.bg} />
+      {plinth ? <mesh geometry={parts.plinth} material={parts.plinthMat} position={[0, P.top - P.h / 2, 0]} receiveShadow /> : null}
+      {plinth && P.ring ? <mesh geometry={parts.ring} material={parts.ringMat} position={[0, P.top + 0.002, 0]} rotation={[Math.PI / 2, 0, 0]} /> : null}
+      {blob ? (
+        <mesh
+          geometry={parts.blobGeo}
+          material={parts.blobMat}
+          position={[blob.x, P.top + 0.01, blob.z]}
+          rotation={[-Math.PI / 2, 0, blob.rot]}
+          scale={[blob.sx, blob.sz, 1]}
+        />
+      ) : null}
+      <directionalLight
+        position={key}
+        intensity={look.keyIntensity}
+        color="#fff6ea"
+        castShadow
+        shadow-mapSize={[1024, 1024]}
+        shadow-intensity={0.6}
+        shadow-bias={-0.0002}
+        shadow-normalBias={0.02}
+        shadow-radius={9}
+        onUpdate={(l: DirectionalLight) => {
+          const c = l.shadow.camera;
+          c.left = shadow.left;
+          c.right = shadow.right;
+          c.top = shadow.top;
+          c.bottom = shadow.bottom;
+          c.near = shadow.near;
+          c.far = shadow.far;
+          c.updateProjectionMatrix();
+        }}
+      />
+    </>
+  );
+};
+
+==== 9112 project/src/director/gazetteer.ts
+// Place names a script may mention → lon/lat (historical + modern names, Indonesian spelling first).
+// Pure data; matching is case-insensitive on whole words, longest name first. Add places freely.
+
+export type Place = { name: string; lon: number; lat: number; kind?: "city" | "volcano" | "sea" | "island" | "river" | "region"; km?: number };
+
+const P = (name: string, lon: number, lat: number, kind: Place["kind"] = "city", km?: number): Place => ({ name, lon, lat, kind, km });
+
+export const PLACES: Place[] = [
+  // Jawa
+  P("Batavia", 106.83, -6.13), P("Jakarta", 106.83, -6.17), P("Sunda Kelapa", 106.81, -6.12), P("Banten", 106.15, -6.03), P("Serang", 106.15, -6.12),
+  P("Bogor", 106.8, -6.6), P("Buitenzorg", 106.8, -6.6), P("Bandung", 107.61, -6.91), P("Sumedang", 107.92, -6.86), P("Cirebon", 108.55, -6.71), P("Tegal", 109.14, -6.87),
+  P("Pekalongan", 109.67, -6.89), P("Semarang", 110.42, -6.97), P("Demak", 110.64, -6.89), P("Kudus", 110.84, -6.81), P("Jepara", 110.67, -6.59),
+  P("Rembang", 111.34, -6.71), P("Tuban", 112.05, -6.9), P("Gresik", 112.65, -7.16), P("Surabaya", 112.75, -7.25), P("Sidoarjo", 112.72, -7.45),
+  P("Pasuruan", 112.9, -7.64), P("Probolinggo", 113.22, -7.75), P("Malang", 112.63, -7.98), P("Ngantang", 112.37, -7.84), P("Kediri", 112.01, -7.82),
+  P("Madiun", 111.52, -7.63), P("Ponorogo", 111.46, -7.87), P("Surakarta", 110.82, -7.57), P("Solo", 110.82, -7.57), P("Kartasura", 110.74, -7.56),
+  P("Yogyakarta", 110.37, -7.8), P("Jogja", 110.37, -7.8), P("Tegalrejo", 110.35, -7.78), P("Kotagede", 110.4, -7.83), P("Plered", 110.42, -7.87),
+  P("Selarong", 110.3, -7.93), P("Magelang", 110.22, -7.47), P("Mataram", 110.4, -7.83), P("Banyumas", 109.3, -7.51), P("Kebumen", 109.65, -7.67),
+  P("Banyuwangi", 114.37, -8.21), P("Blambangan", 114.37, -8.21), P("Jember", 113.7, -8.17), P("Lumajang", 113.22, -8.13),
+  P("Madura", 113.3, -7.05, "island"), P("Sumenep", 113.86, -7.01), P("Bangkalan", 112.73, -7.04), P("Pamekasan", 113.48, -7.16),
+  P("Trowulan", 112.38, -7.56), P("Majapahit", 112.38, -7.56), P("Sungai Brantas", 112.78, -7.3, "river"), P("Bengawan Solo", 112.5, -6.95, "river"),
+  P("Jawa", 110.0, -7.4, "island"), P("Java", 110.0, -7.4, "island"),
+  // Bali & Nusa Tenggara
+  P("Bali", 115.15, -8.4, "island"), P("Klungkung", 115.4, -8.54), P("Gelgel", 115.41, -8.56), P("Buleleng", 115.09, -8.11), P("Singaraja", 115.09, -8.11),
+  P("Denpasar", 115.22, -8.65), P("Badung", 115.17, -8.62), P("Karangasem", 115.61, -8.45), P("Lombok", 116.3, -8.6, "island"),
+  P("Ampenan", 116.07, -8.57), P("Cakranegara", 116.14, -8.59), P("Sumbawa", 117.4, -8.65, "island"), P("Sumbawa Besar", 117.42, -8.49),
+  P("Bima", 118.72, -8.46), P("Dompu", 118.46, -8.54), P("Sanggar", 118.27, -8.32), P("Pekat", 117.9, -8.18), P("Flores", 121.0, -8.65, "island"),
+  P("Ende", 121.66, -8.84), P("Larantuka", 122.98, -8.34), P("Kupang", 123.6, -10.17), P("Timor", 124.5, -9.6, "island"), P("Dili", 125.57, -8.56),
+  P("Sumba", 120.0, -9.7, "island"), P("Solor", 123.1, -8.45, "island"),
+  // Sulawesi
+  P("Makassar", 119.42, -5.14), P("Ujung Pandang", 119.42, -5.14), P("Benteng Rotterdam", 119.405, -5.134), P("Gowa", 119.45, -5.21), P("Somba Opu", 119.41, -5.19),
+  P("Tallo", 119.43, -5.1), P("Maros", 119.57, -5.0), P("Bone", 120.33, -4.54), P("Watampone", 120.33, -4.54), P("Wajo", 120.0, -4.0),
+  P("Soppeng", 119.89, -4.35), P("Luwu", 120.2, -3.0), P("Palopo", 120.19, -2.99), P("Mandar", 119.0, -3.5), P("Bulukumba", 120.2, -5.55),
+  P("Buton", 122.6, -5.47, "island"), P("Bau-Bau", 122.61, -5.47), P("Kendari", 122.51, -3.97), P("Manado", 124.84, 1.49), P("Minahasa", 124.9, 1.3),
+  P("Gorontalo", 123.06, 0.54), P("Palu", 119.87, -0.9), P("Sulawesi", 120.3, -2.0, "island"),
+  // Maluku & Papua
+  P("Ambon", 128.18, -3.7), P("Saparua", 128.65, -3.57), P("Banda", 129.9, -4.53), P("Banda Neira", 129.9, -4.53), P("Ternate", 127.38, 0.79),
+  P("Tidore", 127.4, 0.68), P("Halmahera", 128.0, 0.9, "island"), P("Seram", 129.5, -3.1, "island"), P("Maluku", 128.5, -3.2, "region"),
+  P("Jayapura", 140.7, -2.53), P("Hollandia", 140.7, -2.53), P("Fakfak", 132.3, -2.92), P("Merauke", 140.4, -8.5), P("Papua", 138.0, -4.5, "island"),
+  // Kalimantan
+  P("Banjarmasin", 114.59, -3.32), P("Martapura", 114.85, -3.41), P("Pontianak", 109.33, -0.03), P("Sambas", 109.3, 1.36), P("Kutai", 116.99, -0.43),
+  P("Tenggarong", 116.99, -0.41), P("Samarinda", 117.15, -0.5), P("Balikpapan", 116.83, -1.27), P("Kalimantan", 114.0, -0.5, "island"), P("Borneo", 114.0, -0.5, "island"),
+  // Sumatra
+  P("Aceh", 95.32, 5.55), P("Banda Aceh", 95.32, 5.55), P("Kutaraja", 95.32, 5.55), P("Pidie", 96.0, 5.1), P("Medan", 98.67, 3.59), P("Deli", 98.67, 3.6),
+  P("Padang", 100.35, -0.95), P("Bukittinggi", 100.37, -0.3), P("Pagaruyung", 100.62, -0.47), P("Minangkabau", 100.4, -0.6, "region"),
+  P("Palembang", 104.75, -2.98), P("Sriwijaya", 104.75, -2.98), P("Jambi", 103.61, -1.61), P("Bengkulu", 102.26, -3.79), P("Bencoolen", 102.26, -3.79),
+  P("Lampung", 105.26, -5.43), P("Siak", 102.05, 0.8), P("Pekanbaru", 101.45, 0.51), P("Riau", 104.45, 0.92, "region"), P("Bangka", 106.1, -2.2, "island"),
+  P("Belitung", 107.9, -2.85, "island"), P("Nias", 97.7, 1.1, "island"), P("Sumatra", 101.5, -0.5, "island"), P("Sumatera", 101.5, -0.5, "island"),
+  // Semenanjung & sekitarnya
+  P("Malaka", 102.25, 2.19), P("Melaka", 102.25, 2.19), P("Johor", 103.75, 1.48), P("Singapura", 103.82, 1.29), P("Temasek", 103.82, 1.29),
+  P("Nanjing", 118.8, 32.06), P("Fujian", 119.6, 26.05), P("Guangzhou", 113.26, 23.13), P("Kanton", 113.26, 23.13), P("Hainan", 109.8, 19.2, "island"),
+  P("Samudra Hindia", 92.5, 5.5, "sea"), P("Laut Cina Selatan", 113.0, 12.0, "sea"), P("Semenanjung Malaya", 102.0, 4.5, "region"),
+  P("Penang", 100.33, 5.41), P("Kedah", 100.37, 6.12), P("Manila", 120.98, 14.6), P("Sulu", 121.0, 6.05), P("Brunei", 114.94, 4.89), P("Darwin", 130.84, -12.46),
+  // seas & straits (labels)
+  P("Selat Sunda", 105.8, -6.0, "sea"), P("Selat Malaka", 100.5, 3.0, "sea"), P("Laut Jawa", 111.0, -5.2, "sea"), P("Selat Makassar", 118.0, -2.0, "sea"),
+  P("Selat Bali", 114.45, -8.3, "sea"), P("Laut Banda", 127.0, -6.0, "sea"), P("Laut Flores", 120.5, -7.5, "sea"),
+  // volcanoes (km = summit height)
+  P("Tambora", 117.99, -8.25, "volcano", 2.85), P("Gunung Tambora", 117.99, -8.25, "volcano", 2.85), P("Krakatau", 105.42, -6.1, "volcano", 0.8),
+  P("Merapi", 110.44, -7.54, "volcano", 2.9), P("Bromo", 112.95, -7.94, "volcano", 2.3), P("Semeru", 112.92, -8.11, "volcano", 3.67),
+  P("Kelud", 112.31, -7.93, "volcano", 1.7), P("Rinjani", 116.46, -8.41, "volcano", 3.7), P("Agung", 115.51, -8.34, "volcano", 3.1),
+  P("Galunggung", 108.06, -7.25, "volcano", 2.17), P("Papandayan", 107.73, -7.32, "volcano", 2.66), P("Toba", 98.9, 2.6, "volcano", 1.9),
+  P("Sinabung", 98.39, 3.17, "volcano", 2.46), P("Tangkuban Parahu", 107.6, -6.77, "volcano", 2.08),
+];
+
+/** Volcanoes drawn on every relief map (lon, lat, summit km, base radius in map px). */
+export const VOLCANOES: { lon: number; lat: number; km: number; r: number }[] = [
+  { lon: 104.5, lat: -5.0, km: 2.1, r: 7 }, { lon: 105.42, lat: -6.1, km: 0.8, r: 3 }, { lon: 106.98, lat: -6.79, km: 2.95, r: 6 }, { lon: 107.64, lat: -7.15, km: 2.4, r: 6 },
+  { lon: 108.4, lat: -6.89, km: 3.08, r: 6 }, { lon: 109.21, lat: -7.24, km: 3.4, r: 7 }, { lon: 109.9, lat: -7.2, km: 2.5, r: 5 }, { lon: 110.44, lat: -7.54, km: 2.9, r: 6 },
+  { lon: 111.19, lat: -7.63, km: 3.2, r: 6 }, { lon: 112.59, lat: -7.76, km: 3.3, r: 6 }, { lon: 112.92, lat: -8.11, km: 3.67, r: 7 }, { lon: 113.6, lat: -7.98, km: 2.6, r: 6 },
+  { lon: 114.04, lat: -8.12, km: 3.3, r: 7 }, { lon: 115.51, lat: -8.34, km: 3.1, r: 5 }, { lon: 116.46, lat: -8.41, km: 3.7, r: 6 }, { lon: 117.99, lat: -8.25, km: 2.85, r: 9 },
+  { lon: 119.06, lat: -8.2, km: 1.9, r: 3 }, { lon: 120.1, lat: -8.6, km: 2.3, r: 6 }, { lon: 101.26, lat: -1.7, km: 3.8, r: 7 }, { lon: 100.47, lat: -0.38, km: 2.9, r: 6 },
+  { lon: 98.39, lat: 3.17, km: 2.4, r: 5 }, { lon: 102.62, lat: -4.02, km: 3.1, r: 6 }, { lon: 120.0, lat: -2.5, km: 3.4, r: 8 }, { lon: 124.79, lat: 1.36, km: 1.9, r: 4 },
+  { lon: 127.33, lat: 0.8, km: 1.7, r: 3 }, { lon: 137.2, lat: -4.1, km: 4.8, r: 10 },
+];
+
+const norm = (s: string) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+const SORTED = [...PLACES].sort((a, b) => b.name.length - a.name.length);
+
+/** All places named in a text, in order of appearance (no duplicates). */
+export const findPlaces = (text: string): Place[] => {
+  const t = " " + norm(text).replace(/[^a-z0-9\- ]/g, " ") + " ";
+  const hits: { at: number; p: Place }[] = [];
+  const taken: [number, number][] = [];
+  for (const p of SORTED) {
+    const n = " " + norm(p.name) + " ";
+    let i = t.indexOf(n);
+    while (i >= 0) {
+      const a = i, b = i + n.length;
+      if (!taken.some(([x, y]) => a < y && b > x)) {
+        hits.push({ at: a, p });
+        taken.push([a, b]);
+      }
+      i = t.indexOf(n, i + 1);
+    }
+  }
+  hits.sort((a, b) => a.at - b.at);
+  const out: Place[] = [];
+  for (const h of hits) if (!out.some((o) => o.name === h.p.name)) out.push(h.p);
+  return out;
+};
+
+==== 17877 project/src/director/plan.ts
+// Planner: RawStory (+ optional voice-over line timings) → Plan (absolute times, resolved sets, moods, cast, map
+// points, camera beats, overlays, captions). Pure TS — runs in node (make.mjs) and in the browser.
+
+import { findPlaces, type Place } from "./gazetteer.ts";
+import { parseNaskah, type RawScene, type RawStory } from "./parse.ts";
+import type { Action, Beat, CostumeSpec, Group, MapPoint, MoodId, Overlay, Plan, PlanScene, Region, SetId, Shot, Word } from "./types.ts";
+
+const INK = { hero: "#ffb547", ally: "#5fe0d2", foe: "#ff4b3a", grief: "#b98cff", neutral: "#f3e3c6" };
+
+
+// ------------------------------------------------------------------ cast
+const NUM: Record<string, number> = { satu: 1, seorang: 1, dua: 2, tiga: 3, empat: 4, lima: 5, enam: 6, tujuh: 7, delapan: 8, sembilan: 9, sepuluh: 10, beberapa: 4, banyak: 14, puluhan: 16, ratusan: 24, ribuan: 30 };
+
+const ACTIONS: [RegExp, Action][] = [
+  [/tolak pinggang|kacak pinggang|berkacak/, "akimbo"],
+  [/berlari|lari|kabur|mengungsi|melarikan/, "run"],
+  [/berjalan|jalan|melangkah|menyusul|datang|pergi/, "walk"],
+  [/menunjuk/, "point"],
+  [/meneropong/, "telescope"],
+  [/berdoa|doa|menadah/, "pray"],
+  [/sujud|bersujud|menyembah|menghadap/, "bow"],
+  [/berlutut|bersimpuh|jongkok/, "kneel"],
+  [/menulis|mencatat/, "write"],
+  [/duduk|bersila/, "sit"],
+  [/berjaga|jaga|siaga|mengawal/, "guard"],
+  [/berbaris|baris/, "march"],
+  [/mengangkat|menyerang|bertempur|berperang|mengacungkan|melawan/, "raise"],
+  [/berunding|berbicara|bicara|berdebat|bercakap/, "talk"],
+  [/menatap|melihat|memandang|mengamati/, "look"],
+  [/membawa|memikul|menjunjung/, "carry"],
+  [/berdiri/, "stand"],
+];
+
+type RoleRule = [RegExp, (era: number) => CostumeSpec, Action?];
+const ROLES: RoleRule[] = [
+  [/perwira|opsir|jenderal|jendral|gubernur|residen|kapten|laksamana|komandan|admiral|kolonel|mayor|de kock|daendels|raffles|speelman|coen/, (e) => ({ hat: e < 1790 ? "tricorne" : "bicorne", wear: "coat" }), "stand"],
+  [/serdadu|tentara|kompeni|marsose|infanteri|pasukan belanda|prajurit belanda|garnisun|voc/, (e) => ({ hat: e < 1790 ? "tricorne" : "shako", wear: "coat", itemR: "musket" }), "guard"],
+  [/ulama|kyai|kiai|syekh|imam|wali/, () => ({ hat: "turban", wear: "robe" })],
+  [/peziarah|haji|santri/, () => ({ hat: "peci", wear: "sarong" })],
+  [/pangeran|raja|sultan|sunan|susuhunan|karaeng|arung|bangsawan|adipati|bupati|patih|tumenggung|panglima|datu/, () => ({ hat: "destar", wear: "sarong", keris: true })],
+  [/laskar|pengikut|pejuang|prajurit|pasukan|gerilyawan|pendekar|pengawal/, () => ({ hat: "destar", wear: "sarong", itemR: "spear" })],
+  [/perempuan|wanita|ibu|istri|putri|ratu|permaisuri|gadis|nyai/, () => ({ body: "f", hat: "bun", wear: "kain" })],
+  [/anak|bocah/, () => ({ hat: "none", scale: 0.62, headScale: 1.25 })],
+  [/pelaut|awak|kelasi|nakhoda|pendayung/, () => ({ hat: "none", wear: "pants" })],
+  [/penulis|juru tulis|sekretaris|pedagang belanda|saudagar belanda/, () => ({ hat: "none", wear: "coat" })],
+  [/warga|rakyat|penduduk|petani|nelayan|orang|pedagang|kuli|budak|pekerja/, () => ({ hat: "caping", wear: "sarong" })],
+];
+
+const ATTRS: [RegExp, (c: CostumeSpec) => void][] = [
+  [/sorban|serban|turban/, (c) => { c.hat = "turban"; }],
+  [/peci|kopiah|songkok/, (c) => { c.hat = "peci"; }],
+  [/destar|ikat kepala|passapu|udeng/, (c) => { c.hat = "destar"; }],
+  [/blangkon/, (c) => { c.hat = "blangkon"; }],
+  [/caping/, (c) => { c.hat = "caping"; }],
+  [/shako/, (c) => { c.hat = "shako"; }],
+  [/bicorne|topi perwira/, (c) => { c.hat = "bicorne"; }],
+  [/tricorne|topi laken|topi segitiga/, (c) => { c.hat = "tricorne"; }],
+  [/sanggul|konde/, (c) => { c.hat = "bun"; }],
+  [/rambut/, (c) => { c.hat = "hair"; }],
+  [/tanpa topi|gundul/, (c) => { c.hat = "none"; }],
+  [/jubah/, (c) => { c.wear = "robe"; }],
+  [/sarung/, (c) => { c.wear = "sarong"; }],
+  [/kain|jarik|kebaya/, (c) => { c.wear = "kain"; }],
+  [/jas|seragam/, (c) => { c.wear = "coat"; }],
+  [/celana/, (c) => { c.wear = "pants"; }],
+  [/senapan|bedil|musket|senjata api/, (c) => { c.itemR = "musket"; }],
+  [/tombak/, (c) => { c.itemR = "spear"; }],
+  [/obor/, (c) => { c.itemR = "torch"; }],
+  [/teropong/, (c) => { c.itemR = "telescope"; }],
+  [/bendera|panji/, (c) => { c.itemL = "flag"; }],
+  [/dayung/, (c) => { c.itemR = "paddle"; }],
+  [/keris/, (c) => { c.keris = true; }],
+  [/buntelan|bawaan|karung|bekal/, (c) => { c.load = "back"; }],
+  [/di kepala|menjunjung/, (c) => { c.load = "head"; }],
+];
+
+const COLORS: [RegExp, string][] = [
+  [/emas|kuning|utama|gold/, INK.hero], [/cyan|biru|sekutu|kawan/, INK.ally], [/merah|musuh|lawan/, INK.foe],
+  [/ungu|korban|duka/, INK.grief], [/gading|putih|netral/, INK.neutral],
+];
+
+const splitTop = (s: string) => {
+  const out: string[] = [];
+  let depth = 0, cur = "";
+  for (const ch of s) {
+    if (ch === "(") depth++;
+    if (ch === ")") depth--;
+    if ((ch === "," || ch === ";") && depth === 0) { out.push(cur); cur = ""; } else cur += ch;
+  }
+  if (cur.trim()) out.push(cur);
+  return out.map((x) => x.trim()).filter(Boolean);
+};
+
+export const parseCast = (tokoh: string, era: number): Group[] => {
+  const groups: Group[] = [];
+  for (const part0 of splitTop(tokoh)) {
+    let part = part0;
+    let color: string | null = null;
+    const eq = /=\s*([^=]+)$/.exec(part);
+    if (eq) {
+      const c = COLORS.find(([re]) => re.test(eq[1].toLowerCase()));
+      color = c ? c[1] : null;
+      part = part.slice(0, eq.index).trim();
+    }
+    const attrs = [...part.matchAll(/\(([^)]*)\)/g)].map((m) => m[1]).join(", ");
+    part = part.replace(/\([^)]*\)/g, " ").replace(/\s+/g, " ").trim();
+    const m = /^(\d+|[a-z]+)\s+(.*)$/i.exec(part);
+    let count = 1, rest = part;
+    if (m) {
+      const n = /^\d+$/.test(m[1]) ? parseInt(m[1], 10) : NUM[m[1].toLowerCase()];
+      if (n) { count = n; rest = m[2]; }
+    }
+    const low = (rest + " " + attrs).toLowerCase();
+    let action: Action | null = null;
+    let actionWord = "";
+    for (const [re, a] of ACTIONS) {
+      const mm = re.exec(rest.toLowerCase());
+      if (mm) { action = a; actionWord = mm[0]; break; }
+    }
+    const role = ROLES.find(([re]) => re.test(low));
+    const costume: CostumeSpec = role ? role[1](era) : { hat: "destar", wear: "sarong" };
+    for (const [re, f] of ATTRS) if (re.test(attrs.toLowerCase())) f(costume);
+    if (!action) action = role?.[2] ?? "stand";
+    let name = rest;
+    if (actionWord) name = name.replace(new RegExp(actionWord, "i"), "").trim();
+    groups.push({ count: Math.max(1, Math.min(40, count)), name, costume, action, color, lead: false });
+  }
+  const lead = groups.find((g) => g.count === 1 && g.color) ?? groups.find((g) => g.count === 1) ?? groups[0];
+  if (lead) lead.lead = true;
+  return groups;
+};
+
+// ------------------------------------------------------------------ set + mood
+const SET_RULES: [RegExp, SetId][] = [
+  [/makam|kuburan|nisan|pusara|astana/, "makam"],
+  [/pendopo|balairung|istana|keraton|kraton|aula|singgasana|karesidenan|balai|ruang sidang|loji/, "balai"],
+  [/kamar|ruang|bilik|penjara|sel |pengasingan/, "kamar"],
+  [/geladak|di atas kapal|dek kapal|haluan/, "dek"],
+  [/pelabuhan|dermaga|bandar|syahbandar/, "pelabuhan"],
+  [/benteng|kubu|bastion/, "benteng"],
+  [/hutan|rimba|perbukitan|bukit|gua|goa|lembah|sungai/, "hutan"],
+  [/desa|kampung|rumah|dusun|permukiman|pemukiman/, "desa"],
+  [/pantai|pesisir|tepi laut/, "pantai"],
+  [/medan|perang|kemah|perkemahan|lapangan|alun|sawah|padang/, "medan"],
+];
+const MOOD_RULES: [RegExp, MoodId][] = [
+  [/terbakar|kebakaran|api|membara|meletus|letusan/, "api"],
+  [/malam|tengah malam|gelap|lilin/, "malam"],
+  [/senja|sore|petang|matahari terbenam/, "senja"],
+  [/fajar|subuh|pagi/, "pagi"],
+  [/siang|terik/, "siang"],
+];
+
+const resolvePlace = (sc: RawScene, text: string) => {
+  const spec = sc.spec.toLowerCase();
+  const set: SetId = SET_RULES.find(([re]) => re.test(spec))?.[1] ?? SET_RULES.find(([re]) => re.test(text.toLowerCase()))?.[1] ?? "medan";
+  let mood: MoodId = MOOD_RULES.find(([re]) => re.test(spec))?.[1] ?? "senja";
+  const interior = set === "balai" || set === "kamar";
+  if (interior) mood = mood === "malam" || mood === "api" ? "dalam-malam" : "dalam-siang";
+  return {
+    set, mood,
+    fire: /terbakar|kebakaran|api|membara/.test(spec),
+    rain: /hujan|badai/.test(spec),
+    fog: /kabut|berkabut/.test(spec),
+    candle: /lilin|pelita|lampu minyak/.test(spec) || (interior && mood === "dalam-malam"),
+    volcano: /meletus|letusan|gunung api/.test(spec),
+  };
+};
+
+// ------------------------------------------------------------------ overlays
+const parseNumber = (s: string) => parseFloat(s.replace(/\./g, "").replace(",", "."));
+const parseCount = (t: string) => {
+  const [main, label] = t.split(/,(.+)/).map((x) => x?.trim());
+  const m = /([\d.,]+)\s*(?:→|->|ke)\s*([\d.,]+)\s*(.*)/.exec(main) ?? /([\d.,]+)\s*(.*)/.exec(main);
+  if (!m) return null;
+  if (m.length === 4) return { from: parseNumber(m[1]), to: parseNumber(m[2]), unit: m[3]?.trim() ?? "", label };
+  return { from: 0, to: parseNumber(m[1]), unit: (m as RegExpExecArray)[2]?.trim() ?? "", label };
+};
+const splitDash = (t: string) => {
+  const m = /\s+[—–-]\s+/.exec(t);
+  return m ? [t.slice(0, m.index).trim(), t.slice(m.index + m[0].length).trim()] : [t.trim(), ""];
+};
+
+// ------------------------------------------------------------------ timing
+export type LineTime = { a: number; b: number; words?: { w: string; t: number }[] };
+const WPS = 2.55;
+const paceLines = (story: RawStory): LineTime[][] => {
+  let t = 0.5;
+  return story.scenes.map((sc, si) => {
+    if (si > 0) t += 0.35;
+    const isMap = sc.kind === "PETA" || sc.kind === "RUTE";
+    const start = t;
+    const out = sc.lines.map((l) => {
+      const n = l.words.length;
+      const d = Math.max(1.05, n / WPS + 0.12);
+      const a = t, b = t + d;
+      t = b + (/[.?!]$/.test(l.text) ? 0.42 : 0.18);
+      return { a, b };
+    });
+    if (sc.kind === "PENUTUP") t += 0.2;
+    // map scenes need time to travel
+    const min = sc.kind === "RUTE" ? 4.4 : isMap ? 3.0 : 0;
+    if (t - start < min) t = start + min;
+    return out;
+  });
+};
+
+// ------------------------------------------------------------------ main
+export const planStory = (src: string, opts: { id: string; times?: LineTime[][]; audio?: string } = { id: "story" }): Plan => {
+  const story = parseNaskah(src);
+  const warnings: string[] = [];
+  const times = opts.times ?? paceLines(story);
+  const allText = story.scenes.map((s) => s.lines.map((l) => l.text).join(" ") + " " + s.tags.map((t) => t.text).join(" ")).join(" ");
+  const yearM = /\b(1[0-9]{3}|20[0-9]{2})\b/.exec(allText);
+  const year = yearM ? parseInt(yearM[1], 10) : null;
+  const era = year ?? 1800;
+
+  // scene boundaries: from just before the first line to just before the next scene's first line
+  const firstA = (i: number) => times[i]?.[0]?.a;
+  const scenes: PlanScene[] = [];
+  const words: Word[] = [];
+  const sources: string[] = [];
+  let prevB = 0;
+  story.scenes.forEach((sc, i) => {
+    const lt = times[i];
+    const lineStart = lt[0]?.a ?? prevB + 0.2;
+    const a = i === 0 ? 0 : prevB;
+    let nextA = Infinity;
+    for (let j = i + 1; j < story.scenes.length; j++) { const f = firstA(j); if (f !== undefined) { nextA = f; break; } }
+    const lastB = lt.length ? lt[lt.length - 1].b : lineStart + 1;
+    let b = Number.isFinite(nextA) ? Math.max(lastB + 0.15, nextA - 0.3) : lastB + 0.8;
+    if (sc.kind === "PENUTUP") b = Math.max(b, a + 4.2);
+    const minDur = sc.kind === "RUTE" ? 4.4 : sc.kind === "PETA" ? 3.0 : 1.6;
+    if (b - a < minDur && !opts.times) b = a + minDur;
+    prevB = b;
+
+    // captions
+    sc.lines.forEach((l, li) => {
+      const T = lt[li];
+      if (T.words && T.words.length === l.words.length) l.words.forEach((w, k) => words.push({ w: w.w, t: T.words![k].t, key: w.key }));
+      else {
+        const tot = l.words.reduce((s, w) => s + 0.6 + w.w.length * 0.08, 0);
+        let acc = 0;
+        l.words.forEach((w) => { words.push({ w: w.w, t: T.a + ((T.b - T.a) * acc) / tot, key: w.key }); acc += 0.6 + w.w.length * 0.08; });
+      }
+    });
+
+    // overlays
+    const overlays: Overlay[] = [];
+    const lineA = (k: number) => (lt[Math.min(k, lt.length - 1)]?.a ?? a + 0.3);
+    for (const tg of sc.tags) {
+      const at = tg.line === 0 ? a + 0.25 : lineA(tg.line) - 0.1;
+      if (tg.kind === "TANGGAL") {
+        const [top, big] = tg.text.includes("/") ? tg.text.split("/").map((x) => x.trim()) : ["", tg.text.trim()];
+        overlays.push({ kind: "date", a: at, b: Math.min(at + 3.4, b - 0.1), top: top.toUpperCase(), big: big.toUpperCase() });
+      } else if (tg.kind === "NAMA") {
+        const [name, role] = splitDash(tg.text);
+        overlays.push({ kind: "name", a: at + 0.15, b: Math.min(at + 3.8, b - 0.1), name, role: role || undefined });
+      } else if (tg.kind === "ANGKA") {
+        const c = parseCount(tg.text);
+        if (c) overlays.push({ kind: "count", a: at, b: b - 0.1, from: c.from, to: c.to, roll: [at + 0.3, at + 1.7], unit: c.unit, label: c.label });
+        else warnings.push(`ANGKA tidak terbaca: "${tg.text}"`);
+      } else if (tg.kind === "SUMBER") {
+        const [text, src] = splitDash(tg.text);
+        if (sc.kind === "PENUTUP") sources.push(...tg.text.split(/;\s*/).map((x) => x.trim()).filter(Boolean));
+        else {
+          overlays.push({ kind: "cite", a: at + 0.2, b: b - 0.15, text: src ? text : "", src: src || text });
+          if (src) sources.push(src);
+        }
+      }
+    }
+
+    const text = sc.lines.map((l) => l.text).join(" ");
+    if (sc.kind === "PENUTUP") {
+      // the closing card lists the sources written under [PENUTUP]; without them, every cited source in the film
+      const own = sc.tags.filter((tg) => tg.kind === "SUMBER").flatMap((tg) => tg.text.split(/;\s*/).map((x) => x.trim()).filter(Boolean));
+      scenes.push({ a, b, kind: "end", overlays: [...overlays.filter((o) => o.kind !== "cite"), { kind: "end", a: a + 0.2, b, title: sc.spec, sources: own.length ? own : [...new Set(sources)] }] });
+      return;
+    }
+    let kind = sc.kind;
+    if (kind === "AUTO") {
+      // untagged paragraph: a place named in it → map, otherwise a location from its words
+      const pl = findPlaces(text).filter((p) => p.kind !== "sea");
+      kind = pl.length && !SET_RULES.some(([re]) => re.test(text.toLowerCase())) ? "PETA" : "TEMPAT";
+      if (kind === "TEMPAT") sc.spec = text;
+    }
+    if (kind === "PETA" || kind === "RUTE") {
+      let places: Place[] = findPlaces(sc.spec);
+      if (!places.length) places = findPlaces(text);
+      if (!places.length) warnings.push(`Peta tanpa nama tempat yang dikenal: "${sc.spec}"`);
+      const route = kind === "RUTE" || /→|->/.test(sc.spec);
+      const points: MapPoint[] = places.map((p) => ({ name: p.name, lon: p.lon, lat: p.lat, volcano: p.kind === "volcano" }));
+      scenes.push({
+        a, b, kind: "map", overlays,
+        map: { points, route, rings: /cincin|gelombang|dentum/.test(sc.spec.toLowerCase()), erupt: /meletus|letusan/.test(sc.spec.toLowerCase()), mode: route ? "route" : points.length > 1 ? "fit" : "close" },
+      });
+      return;
+    }
+    const pl = resolvePlace(sc, text);
+    const groups = sc.tokoh ? parseCast(sc.tokoh, era) : [];
+    if (!groups.length) warnings.push(`Adegan tanpa TOKOH (dipakai figuran otomatis): "${sc.spec.slice(0, 40)}"`);
+    // camera beats: one per line, merged when lines are short
+    const solo = groups.length > 0 && groups.every((g) => g.count === 1);
+    const cycle: Shot[] = solo ? ["wide", "medium", "close", "low", "medium"] : ["wide", "medium", "group", "close", "wide"];
+    const beats: Beat[] = [];
+    lt.forEach((T, k) => {
+      const ba = k === 0 ? a : T.a - 0.15;
+      if (beats.length && ba - beats[beats.length - 1].a < 1.7) return;
+      if (beats.length) beats[beats.length - 1].b = ba;
+      beats.push({ a: ba, b, shot: cycle[beats.length % cycle.length] });
+    });
+    if (!beats.length) beats.push({ a, b, shot: "wide" });
+    // a counter needs the top of the frame clear: keep that beat wide
+    for (const o of overlays) if (o.kind === "count") { const bt = beats.find((x) => o.a >= x.a && o.a < x.b); if (bt) bt.shot = "wide"; }
+    scenes.push({ a, b, kind: "place", overlays, place: { ...pl, groups, beats, seed: i + 1 } });
+  });
+
+  // relief regions: each map scene gets its own (fine coastlines even when a film's places are far apart), and one
+  // region spans every map point for the end card
+  const regionFor = (pts: MapPoint[], key: string, minW: number, minH: number, padW: number, padH: number): Region => {
+    let lon0 = Math.min(...pts.map((p) => p.lon)), lon1 = Math.max(...pts.map((p) => p.lon));
+    let lat0 = Math.min(...pts.map((p) => p.lat)), lat1 = Math.max(...pts.map((p) => p.lat));
+    const cx = (lon0 + lon1) / 2, cy = (lat0 + lat1) / 2;
+    const w = Math.max(minW, lon1 - lon0 + padW), h = Math.max(minH, lat1 - lat0 + padH);
+    lon0 = Math.max(86.5, cx - w / 2); lon1 = Math.min(159.5, cx + w / 2);
+    lat0 = Math.max(-47, cy - h / 2); lat1 = Math.min(47, cy + h / 2);
+    const area = (lon1 - lon0) * 43.24 * (lat1 - lat0) * 44;
+    const cell = Math.max(0.6, Math.sqrt(area / 1.3e6));
+    return { lon0, lon1, lat0, lat1, cell: Math.round(cell * 100) / 100, key: `${opts.id}-${key}-${lon0.toFixed(1)}-${lat1.toFixed(1)}` };
+  };
+  scenes.forEach((s, i) => { if (s.map && s.map.points.length) s.map.region = regionFor(s.map.points, `m${i}`, 18, 12, 12, 9); });
+  const pts = scenes.flatMap((s) => s.map?.points ?? []);
+  const region: Region | null = pts.length ? regionFor(pts, "all", 24, 16, 16, 12) : null;
+  const duration = Math.ceil((scenes[scenes.length - 1]?.b ?? 5) * 10) / 10;
+  return { id: opts.id, title: story.title, series: story.series, duration, year, region, scenes, words, audio: opts.audio, warnings };
+};
+
+==== 8817 project/src/film/MapScene.tsx
+import React, { useMemo } from "react";
+import { useVideoConfig } from "remotion";
+import { ShotCanvas } from "../kits/chronicle/ShotCanvas.tsx";
+import { MAPROOM } from "../kits/chronicle/looks.ts";
+import type { Look } from "../kits/chronicle/Stage.tsx";
+import { ReliefMap, Ring } from "../kits/chronicle/Relief.tsx";
+import { buildRelief, type Relief } from "../kits/chronicle/relief.ts";
+import { AshColumn } from "../kits/chronicle/fx.tsx";
+import { camAt, handheld, lin, project, sm, type V3 } from "../kits/chronicle/cam.ts";
+import { Frame, MapPin, RouteLine, AMBER } from "../kits/chronicle/Overlay.tsx";
+import { VOLCANOES } from "../director/gazetteer.ts";
+import type { PlanScene, Region } from "../director/types.ts";
+import { qaNoOverlay } from "../core/qa/scene-qa.tsx";
+
+const TILT = 1.12; // camera elevation for fitted (north-up) views
+
+export const useRegionRelief = (region: Region): Relief =>
+  useMemo(() => buildRelief({ key: region.key, lon0: region.lon0, lon1: region.lon1, lat0: region.lat0, lat1: region.lat1, cell: region.cell, vex: 5, volcanoes: VOLCANOES }), [region]);
+
+const mapLook = (at: V3, D: number): Look => ({
+  ...MAPROOM,
+  far: Math.max(4000, D * 3),
+  near: Math.max(0.5, D * 0.01),
+  key: { ...MAPROOM.key, shadow: { box: Math.min(420, Math.max(50, D * 0.45)), at, far: 2400, bias: -0.0006 } },
+  fog: { ...MAPROOM.fog, density: Math.min(0.0014, 0.32 / D) },
+});
+
+/** Camera distance that fits world points (x, z) in the 9:16 frame from a north-up oblique view. */
+const fitD = (pts: [number, number][], aspect: number, fov: number) => {
+  const xs = pts.map((p) => p[0]), zs = pts.map((p) => p[1]);
+  const w = (Math.max(...xs) - Math.min(...xs)) * 1.55 + 80;
+  const h = (Math.max(...zs) - Math.min(...zs)) * 1.5 + 80;
+  const vf = Math.tan((fov * Math.PI) / 360), hf = vf * aspect;
+  return Math.max(w / (2 * hf), (h * Math.sin(TILT)) / (2 * vf), 110);
+};
+
+export const MapScene: React.FC<{ scene: PlanScene; region: Region; s: number; frame: number }> = ({ scene, region, s, frame }) => {
+  const { width, height } = useVideoConfig();
+  const aspect = width / height;
+  const relief = useRegionRelief(region);
+  const M = scene.map!;
+  const dur = scene.b - scene.a;
+  const pts = M.points.map((p) => {
+    const [x, z] = relief.toWorld(p.lon, p.lat);
+    return { ...p, x, z, y: relief.heightAt(p.lon, p.lat) + 0.6 };
+  });
+  if (!pts.length) pts.push({ name: "", lon: 0, lat: 0, x: 0, z: 0, y: 0 });
+  const xy: [number, number][] = pts.map((p) => [p.x, p.z]);
+  const cx = (Math.min(...xy.map((p) => p[0])) + Math.max(...xy.map((p) => p[0]))) / 2;
+  const cz = (Math.min(...xy.map((p) => p[1])) + Math.max(...xy.map((p) => p[1]))) / 2;
+  const fov = 32;
+  let keys;
+  let D: number;
+  if (M.mode === "close" && !M.rings) {
+    const p = pts[0];
+    D = 120;
+    keys = [
+      { t: 0, pos: [p.x - 10, 70, p.z + 120] as V3, target: [p.x, 2, p.z + 6] as V3, fov },
+      { t: dur, pos: [p.x - 6, 46, p.z + 84] as V3, target: [p.x, 2, p.z + 4] as V3, fov },
+    ];
+  } else {
+    D = fitD(xy, aspect, fov);
+    const at = (d: number, dz = 0): V3 => [cx, d * Math.sin(TILT), cz + 18 + dz + d * Math.cos(TILT)];
+    if (M.rings) {
+      const p = pts[0];
+      keys = [
+        { t: 0, pos: [p.x - 8, 30, p.z + 64] as V3, target: [p.x, 4, p.z] as V3, fov: 30 },
+        { t: Math.min(1.4, dur * 0.25), pos: [p.x - 7, 28, p.z + 56] as V3, target: [p.x, 4, p.z] as V3, fov: 30 },
+        { t: Math.min(dur * 0.7, 3.8), pos: at(D * 1.04), target: [cx, 0, cz + 18] as V3, fov },
+        { t: dur, pos: at(D), target: [cx, 0, cz + 16] as V3, fov },
+      ];
+    } else {
+      keys = [
+        { t: 0, pos: at(D * 1.12), target: [cx, 0, cz + 18] as V3, fov },
+        { t: dur, pos: at(D * 0.98), target: [cx, 0, cz + 16] as V3, fov },
+      ];
+    }
+  }
+  // route: one polyline through the points, lifted in arcs, drawn over the scene
+  const segs: V3[][] = [];
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i], b = pts[i + 1];
+    const L = Math.hypot(b.x - a.x, b.z - a.z);
+    segs.push(Array.from({ length: 20 }, (_, k) => {
+      const u = k / 19;
+      return [a.x + (b.x - a.x) * u, 2 + Math.sin(Math.PI * u) * L * 0.08, a.z + (b.z - a.z) * u] as V3;
+    }));
+  }
+  const flat = segs.flatMap((sg, i) => (i ? sg.slice(1) : sg));
+  const segLen = segs.map((sg) => sg.reduce((acc, p, i) => (i ? acc + Math.hypot(p[0] - sg[i - 1][0], p[2] - sg[i - 1][2]) : 0), 0));
+  const tot = segLen.reduce((a, b) => a + b, 0) || 1;
+  const p0 = 0.15 * dur, p1 = 0.85 * dur;
+  const prog = M.route ? sm(lin(s, p0, p1)) : M.mode === "fit" && pts.length > 1 ? sm(lin(s, p0, p1)) : 0;
+  const reachT = (i: number) => {
+    if (i === 0) return 0.25;
+    const f = segLen.slice(0, i).reduce((a, b) => a + b, 0) / tot;
+    // inverse of smoothstep, near enough: sample
+    for (let k = 0; k <= 60; k++) { const t = p0 + ((p1 - p0) * k) / 60; if (sm(lin(t, p0, p1)) >= f) return t; }
+    return p1;
+  };
+
+  // a route camera travels with the head of the line (north stays up), easing out to show the whole trip at the end
+  let shotRaw = camAt(keys, s);
+  if (M.route && flat.length > 1) {
+    const cum = [0];
+    for (let q = 1; q < flat.length; q++) cum.push(cum[q - 1] + Math.hypot(flat[q][0] - flat[q - 1][0], flat[q][2] - flat[q - 1][2]));
+    const headAt = (u: number): [number, number] => {
+      const want = cum[cum.length - 1] * Math.min(1, Math.max(0, u));
+      let q = 1;
+      while (q < cum.length - 1 && cum[q] < want) q++;
+      const f = (want - cum[q - 1]) / Math.max(1e-6, cum[q] - cum[q - 1]);
+      return [flat[q - 1][0] + (flat[q][0] - flat[q - 1][0]) * f, flat[q - 1][2] + (flat[q][2] - flat[q - 1][2]) * f];
+    };
+    const Dr = Math.min(Math.max(D * 0.5, 380), 1100);
+    const u = sm(lin(s, p0 - 0.4, p1 + 0.2));
+    const [hx, hz] = headAt(u);
+    const pull = sm(lin(s, p1 - 0.3, dur));
+    const tx = hx + (cx - hx) * (0.12 + 0.88 * pull), tz = hz + (cz - hz) * (0.12 + 0.88 * pull) + 18;
+    const Dn = Dr + (D - Dr) * pull;
+    shotRaw = { pos: [tx, Dn * Math.sin(TILT), tz + Dn * Math.cos(TILT)], target: [tx, 0, tz], fov };
+  }
+  const shot = handheld(shotRaw, s, { drift: 0.0015, seed: 4 });
+  const camD = Math.hypot(shot.pos[0] - shot.target[0], shot.pos[1] - shot.target[1], shot.pos[2] - shot.target[2]);
+  const look = mapLook([shot.target[0], 0, shot.target[2]], camD);
+
+  // rings
+  const rings = M.rings ? [0.6, 1.05, 1.5].map((t0) => {
+    const far = pts.length > 1 ? Math.max(...pts.slice(1).map((p) => Math.hypot(p.x - pts[0].x, p.z - pts[0].z))) : 300;
+    const speed = far / Math.max(2.0, dur * 0.6);
+    const r = (s - t0) * speed;
+    return { r, o: r > 0 ? Math.max(0, 1 - r / (far * 1.25)) * sm(lin(s, t0, t0 + 0.35)) : 0 };
+  }) : [];
+  const volc = pts.find((p) => p.volcano);
+  const vy = volc ? (VOLCANOES.find((v) => Math.abs(v.lon - volc.lon) < 0.2 && Math.abs(v.lat - volc.lat) < 0.2)?.km ?? 2.5) * relief.yPerKm : 0;
+
+  return (
+    <>
+      <ShotCanvas shot={shot} look={look} frame={frame}>
+        <ReliefMap relief={relief} />
+        {rings.map((g, i) => <Ring key={i} at={[pts[0].x, pts[0].z]} r={g.r} opacity={g.o * 0.75} width={0.5 + g.r * 0.008} y={Math.max(0.1, camD * 0.0012)} />)}
+        {volc && (M.erupt || M.rings) && (
+          <AshColumn t={s} base={[volc.x, vy, volc.z]} height={34} width={9} count={70} life={4} amount={sm(lin(s, 0.2, 1.2))} wind={[-0.25, 0.05]} dark="#3d3a3a" lit="#8a5b45" hot="#ff9d55" density={0.95} />
+        )}
+      </ShotCanvas>
+      {/* pins, labels and the route are 2D: the QA pass scans the 3D alone */}
+      {qaNoOverlay() ? null : <MapOverlay s={s} pts={pts} shot={shot} aspect={aspect} flat={flat} prog={prog} route={M.route || (M.mode === "fit" && pts.length > 1)} reachT={reachT} width={width} />}
+    </>
+  );
+};
+
+const MapOverlay: React.FC<{ s: number; pts: { name: string; x: number; y: number; z: number }[]; shot: ReturnType<typeof handheld>; aspect: number; flat: V3[]; prog: number; route: boolean; reachT: (i: number) => number; width: number }> = ({
+  s, pts, shot, aspect, flat, prog, route, reachT, width,
+}) => {
+  const line = flat.map((p) => project(shot, aspect, p, 0.5, 5000));
+  return (
+    <Frame width={width} height={Math.round(width / aspect)}>
+      {route && <RouteLine pts={line} progress={prog} color={AMBER} dash width={5} opacity={0.95} />}
+      {pts.map((p, i) => {
+        if (!p.name) return null;
+        const q = project(shot, aspect, [p.x, p.y + 1, p.z], 0.5, 5000);
+        if (!q.vis || q.x < -0.1 || q.x > 1.1) return null;
+        const a = route ? reachT(i) : 0.3 + i * 0.45;
+        return <MapPin key={i} s={s} a={a} x={q.x} y={q.y} name={p.name} color={i === pts.length - 1 && route ? "#ff4b3a" : AMBER} side={q.x > 0.6 ? "l" : "r"} pulse={i === pts.length - 1 ? 1 : 0} />;
+      })}
+    </Frame>
+  );
+};
+
+==== 8764 project/src/film/stage.ts
+// Stager: turns planned groups into actors with a pose / position / facing for every moment, using the set's anchors.
+// Also the camera grammar: one shot per beat (wide, group, medium, close, low), framed on the lead or the pack.
+
+import { POSES, gait, idle, type Pose } from "../kits/chronicle/Figure.tsx";
+import type { Anchors, V3 } from "./sets.tsx";
+import type { Group, Shot } from "../director/types.ts";
+import type { CamKey } from "../kits/chronicle/cam.ts";
+
+export type ActorState = { pos: V3; rotY: number; pose: Pose };
+export type Actor = { id: number; group: number; lead: boolean; color: string | null; gain?: number; costume: Group["costume"]; seated: boolean; moving: boolean; at: (t: number) => ActorState };
+
+const hsh = (n: number) => {
+  const x = Math.sin(n * 91.3458 + 47.123) * 43758.5453;
+  return x - Math.floor(x);
+};
+const face = (from: V3, to: V3) => Math.atan2(to[0] - from[0], to[2] - from[2]);
+const armed = (g: Group) => g.costume.itemR === "musket" || g.costume.itemR === "spear" || g.costume.itemL === "musket";
+
+const staticPose = (g: Group, t: number, seed: number, seatKind?: "chair" | "floor"): Pose => {
+  switch (g.action) {
+    case "akimbo": return idle(POSES.akimbo(), t, seed);
+    case "point": return idle(POSES.point("R", 0.1), t, seed, 0.6);
+    case "telescope": return idle(POSES.telescope(), t, seed, 0.4);
+    case "pray": return idle(POSES.pray(), t, seed, 0.5);
+    case "kneel": return idle(POSES.kneel(0), t, seed, 0.5);
+    case "bow": return idle(POSES.kneel(0.85), t, seed, 0.3);
+    case "sit": return idle(seatKind === "chair" ? POSES.sitChair() : POSES.sitCross(), t, seed, 0.6);
+    case "write": return idle(POSES.write(t + seed), t, seed, 0.3);
+    case "guard": case "march": return idle(armed(g) ? POSES.shoulderArms() : POSES.stand(), t, seed, 0.5);
+    case "raise": return idle(POSES.raiseFist(), t, seed, 0.8);
+    case "talk": return idle(POSES.talk(t + seed), t, seed);
+    case "look": return idle({ ...POSES.stand(), head: [0.3, 0] }, t, seed);
+    case "carry": return idle(POSES.carryHead(), t, seed);
+    default: return idle(POSES.stand(), t, seed);
+  }
+};
+
+export const stageCast = (groups: Group[], A: Anchors, dur: number, seed: number, dark: boolean): Actor[] => {
+  const actors: Actor[] = [];
+  let id = 1;
+  const leadG = groups.find((g) => g.lead);
+  const leadMoving = leadG && (leadG.action === "run" || leadG.action === "walk");
+  const second = groups.find((g) => !g.lead && g.count === 1);
+  const seatFor = (g: Group) => (g.action === "sit" || g.action === "write") && A.seat ? A.seat : undefined;
+  const leadPos: V3 = leadG && seatFor(leadG) ? A.seat!.pos : A.lead;
+  const pathDir = [A.path[1][0] - A.path[0][0], A.path[1][2] - A.path[0][2]];
+  const pathLen = Math.hypot(pathDir[0], pathDir[1]);
+  const ux = pathDir[0] / pathLen, uz = pathDir[1] / pathLen;
+  const pathYaw = Math.atan2(ux, uz);
+  let guardSlot = 0;
+  let moverSlot = 0;
+  const totalMovers = groups.filter((g) => g.action === "run" || g.action === "walk").reduce((s, g) => s + g.count, 0);
+
+  groups.forEach((g, gi) => {
+    const dim = !g.color && dark ? { color: "#b4a58c", gain: 0.55 } : null;
+    const color = g.color ?? dim?.color ?? null;
+    const gain = g.color ? 1.5 : dim?.gain;
+    for (let k = 0; k < g.count; k++) {
+      const sd = seed * 31 + gi * 7 + k;
+      const mover = g.action === "run" || g.action === "walk";
+      if (mover) {
+        // stream along the path so the pack fills the shot for the whole scene; the lead runs mid-pack
+        const slot = g.lead ? Math.floor(totalMovers / 2) : moverSlot++ + (leadMoving && moverSlot > totalMovers / 2 ? 1 : 0);
+        const run = g.action === "run" ? 0.75 + 0.25 * hsh(sd) : 0.05;
+        const speed = Math.min(g.action === "run" ? 3.0 + hsh(sd + 1) * 0.6 : 1.3 + hsh(sd + 1) * 0.3, (pathLen * 0.75) / Math.max(1, dur));
+        // everyone crosses the middle of the path during the scene; stagger by slot
+        const mid = pathLen * 0.5;
+        const t0 = dur * 0.5 - mid / speed + (slot - totalMovers / 2) * (1.1 / speed) + (hsh(sd + 2) - 0.5) * 0.25;
+        const off = g.lead ? 0 : ((slot % 3) - 1) * 0.9 + (hsh(sd + 3) - 0.5) * 0.4;
+        const sc = g.costume.scale ?? 1;
+        actors.push({
+          id: id++, group: gi, lead: g.lead, color, gain, costume: g.costume, seated: false, moving: true,
+          at: (t) => {
+            const d = (t - t0) * speed;
+            const x = A.path[0][0] + ux * d - uz * off, z = A.path[0][2] + uz * d + ux * off;
+            const stride = (g.action === "run" ? 1.1 : 0.72) * sc;
+            let pose = gait((d / stride) * Math.PI, run);
+            if (g.costume.load === "head") pose = { ...pose, armL: { fwd: 0.35, out: 1.25, elbow: 2.1, twist: -0.4 } };
+            return { pos: [x, 0, z], rotY: pathYaw, pose };
+          },
+        });
+        continue;
+      }
+      let pos: V3;
+      let seated = false;
+      const seat = seatFor(g);
+      if (g.lead) { pos = leadPos; seated = !!seat; }
+      else if (g === second) pos = A.second;
+      else if (g.action === "pray" || g.action === "kneel" || g.action === "bow") {
+        // a loose arc in front of the target
+        const n = g.count, a = (k - (n - 1) / 2) * 0.5;
+        const r = 2.2 + (k % 2) * 0.9;
+        pos = [A.target[0] + Math.sin(a) * r, 0, A.target[2] + Math.cos(a) * r];
+      } else if (g.count > 6 || g.action === "march") {
+        const [x0, x1, z0, z1] = A.rows;
+        const cols = Math.max(1, Math.min(g.count, Math.round((x1 - x0) / 1.0)));
+        const row = Math.floor(k / cols), col = k % cols;
+        const rowsN = Math.ceil(g.count / cols);
+        pos = [x0 + ((col + 0.5) / cols) * (x1 - x0) + (row % 2) * 0.4 + (hsh(sd) - 0.5) * 0.25, 0, z1 - (row / Math.max(1, rowsN - 1 || 1)) * (z1 - z0) * (rowsN > 1 ? 1 : 0) - (hsh(sd + 1) - 0.5) * 0.3];
+      } else {
+        const gp = A.guards[guardSlot++ % A.guards.length];
+        const extra = Math.floor((guardSlot - 1) / A.guards.length);
+        pos = [gp[0] + extra * 0.7, 0, gp[2] - extra * 0.6];
+      }
+      // who looks where
+      let rotY: number;
+      if (seat && g.lead) rotY = seat.rotY;
+      else if (g.lead) rotY = second ? face(pos, A.second) : g.action === "point" || g.action === "akimbo" ? face(pos, A.target) + 0.5 : face(pos, A.target);
+      else if (g === second) rotY = face(pos, leadPos);
+      else if (g.count > 6 || g.action === "march") rotY = leadG ? face(pos, leadPos) : Math.PI;
+      else rotY = leadG ? face(pos, leadPos) : face(pos, A.target);
+      const p = pos;
+      const ry = rotY;
+      actors.push({
+        id: id++, group: gi, lead: g.lead, color, gain, costume: g.costume, seated: seated || g.action === "sit" || g.action === "kneel" || g.action === "pray" || g.action === "bow", moving: false,
+        at: (t) => ({ pos: p, rotY: ry, pose: staticPose(g, t, sd, seat?.kind) }),
+      });
+    }
+  });
+  return actors;
+};
+
+// ------------------------------------------------------------------ camera grammar
+const add = (a: V3, b: V3): V3 => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+
+export const shotKeys = (shot0: Shot, a: number, b: number, focusAt0: (t: number) => V3, groupAt: (t: number) => V3, A: Anchors, seated: boolean, side: number, moving = false): CamKey[] => {
+  const lowY = seated ? -0.5 : 0;
+  // a running lead leaves any tight frame: stay wide on the pack
+  const shot: Shot = moving && shot0 !== "wide" ? "group" : shot0;
+  const focusAt = moving ? groupAt : focusAt0;
+  const mk = (t: number, push: number): CamKey => {
+    const F = focusAt(t);
+    const C = groupAt(t);
+    let pos: V3, target: V3, fov: number;
+    const sx = side;
+    switch (shot) {
+      // lateral offsets stay small: a 9:16 frame is only ~22° wide
+      case "wide": pos = add(F, [0.9 * sx, 1.7, 10.5 - push * 1.2]); target = add(F, [-0.25 * sx, 1.9, -22]); fov = 46; break;
+      case "group": pos = add(C, [-0.9 * sx, 1.7, 9.0 - push]); target = add(C, [0.2 * sx, 1.3, -14]); fov = 46; break;
+      case "medium": pos = add(F, [0.5 * sx, 1.35 + lowY, 4.6 - push * 0.5]); target = add(F, [-0.12 * sx, 1.15 + lowY, -10]); fov = 40; break;
+      case "close": pos = add(F, [0.3 * sx, 1.45 + lowY, 2.5 - push * 0.3]); target = add(F, [-0.05 * sx, 1.4 + lowY * 1.2, -8]); fov = 38; break;
+      default: pos = add(F, [0.45 * sx, 0.35, 3.0 - push * 0.3]); target = add(F, [-0.1 * sx, 2.5 + lowY, -8]); fov = 44; break;
+    }
+    if (A.camMaxZ !== undefined && pos[2] > A.camMaxZ) {
+      // inside a room: stay inside, widen instead
+      const over = pos[2] - A.camMaxZ;
+      pos = [pos[0] * 0.8, pos[1], A.camMaxZ];
+      fov = Math.min(58, fov + over * 2.2);
+    }
+    pos[1] = Math.max(pos[1], 0.3);
+    return { t, pos, target, fov };
+  };
+  return [mk(a, 0), mk(b, 1)];
+};
+
+==== 9942 project/src/generated/plan.json
+{"id":"diponegoro","title":"Ditangkap Saat Lebaran","series":"Perang Jawa","duration":52.3,"year":1825,"region":{"lon0":98.83000000000001,"lon1":132.84,"lat0":-13.799999999999999,"lat1":7.49,"cell":1.03,"key":"diponegoro-all-98.8-7.5"},"scenes":[{"a":0,"b":7.1201960784313725,"kind":"place","overlays":[],"place":{"set":"makam","mood":"senja","fire":false,"rain":false,"fog":false,"candle":false,"volcano":false,"groups":[{"count":1,"name":"peziarah","costume":{"hat":"peci","wear":"sarong"},"action":"pray","color":null,"lead":true}],"beats":[{"a":0,"b":4.027254901960784,"shot":"wide"},{"a":4.027254901960784,"b":7.1201960784313725,"shot":"medium"}],"seed":1}},{"a":7.1201960784313725,"b":10.470196078431371,"kind":"map","overlays":[{"kind":"date","a":7.3701960784313725,"b":10.370196078431372,"top":"YOGYAKARTA","big":"JULI 1825"}],"map":{"points":[{"name":"Yogyakarta","lon":110.37,"lat":-7.8,"volcano":false}],"route":false,"rings":false,"erupt":false,"mode":"close","region":{"lon0":101.37,"lon1":119.37,"lat0":-13.8,"lat1":-1.7999999999999998,"cell":0.6,"key":"diponegoro-m1-101.4--1.8"}}},{"a":10.470196078431371,"b":15.429607843137255,"kind":"place","overlays":[{"kind":"name","a":10.870196078431372,"b":14.520196078431372,"name":"Pangeran Diponegoro","role":"putra sulung Sultan Hamengkubuwono III"}],"place":{"set":"desa","mood":"api","fire":true,"rain":false,"fog":false,"candle":false,"volcano":false,"groups":[{"count":1,"name":"Diponegoro","costume":{"hat":"turban","wear":"robe"},"action":"run","color":"#ffb547","lead":true},{"count":4,"name":"pengikut","costume":{"hat":"destar","wear":"sarong","itemR":"spear"},"action":"run","color":null,"lead":false},{"count":3,"name":"serdadu","costume":{"hat":"shako","wear":"coat","itemR":"musket"},"action":"guard","color":"#ff4b3a","lead":false}],"beats":[{"a":10.470196078431371,"b":13.120980392156863,"shot":"wide"},{"a":13.120980392156863,"b":15.429607843137255,"shot":"medium"}],"seed":3}},{"a":15.429607843137255,"b":21.957647058823536,"kind":"place","overlays":[{"kind":"count","a":15.679607843137255,"b":21.857647058823535,"from":0,"to":200000,"roll":[15.979607843137256,17.379607843137254],"unit":"jiwa","label":"korban Perang Jawa"}],"place":{"set":"hutan","mood":"pagi","fire":false,"rain":false,"fog":true,"candle":false,"volcano":false,"groups":[{"count":1,"name":"Diponegoro","costume":{"hat":"turban","wear":"robe"},"action":"point","color":"#ffb547","lead":true},{"count":12,"name":"laskar","costume":{"hat":"destar","wear":"sarong","itemR":"spear"},"action":"march","color":null,"lead":false}],"beats":[{"a":15.429607843137255,"b":19.256862745098044,"shot":"wide"},{"a":19.256862745098044,"b":21.957647058823536,"shot":"medium"}],"seed":4}},{"a":21.957647058823536,"b":32.064313725490216,"kind":"place","overlays":[{"kind":"date","a":22.207647058823536,"b":25.607647058823535,"top":"MAGELANG","big":"28 MARET 1830"},{"kind":"name","a":22.357647058823535,"b":26.007647058823537,"name":"Jenderal De Kock","role":"panglima Belanda"}],"place":{"set":"balai","mood":"dalam-siang","fire":false,"rain":false,"fog":false,"candle":false,"volcano":false,"groups":[{"count":1,"name":"Diponegoro","costume":{"hat":"turban","wear":"robe"},"action":"sit","color":"#ffb547","lead":true},{"count":1,"name":"De Kock","costume":{"hat":"bicorne","wear":"coat"},"action":"stand","color":"#ff4b3a","lead":false},{"count":4,"name":"serdadu","costume":{"hat":"shako","wear":"coat","itemR":"musket"},"action":"guard","color":null,"lead":false}],"beats":[{"a":21.957647058823536,"b":25.392745098039228,"shot":"wide"},{"a":25.392745098039228,"b":28.285686274509818,"shot":"medium"},{"a":28.285686274509818,"b":32.064313725490216,"shot":"group"}],"seed":5}},{"a":32.064313725490216,"b":36.814313725490216,"kind":"map","overlays":[],"map":{"points":[{"name":"Magelang","lon":110.22,"lat":-7.47,"volcano":false},{"name":"Batavia","lon":106.83,"lat":-6.13,"volcano":false},{"name":"Manado","lon":124.84,"lat":1.49,"volcano":false},{"name":"Makassar","lon":119.42,"lat":-5.14,"volcano":false}],"route":true,"rings":false,"erupt":false,"mode":"route","region":{"lon0":100.83000000000001,"lon1":130.84,"lat0":-11.97,"lat1":5.99,"cell":0.89,"key":"diponegoro-m5-100.8-6.0"}}},{"a":36.814313725490216,"b":40.44941176470591,"kind":"place","overlays":[{"kind":"cite","a":37.26431372549022,"b":40.29941176470591,"text":"Di pengasingan ia menulis Babad Diponegoro","src":"Peter Carey, The Power of Prophecy, 2007"}],"place":{"set":"kamar","mood":"dalam-malam","fire":false,"rain":false,"fog":false,"candle":true,"volcano":false,"groups":[{"count":1,"name":"Diponegoro","costume":{"hat":"turban","wear":"robe"},"action":"write","color":"#b98cff","lead":true}],"beats":[{"a":36.814313725490216,"b":40.44941176470591,"shot":"wide"}],"seed":7}},{"a":40.44941176470591,"b":48.091764705882376,"kind":"map","overlays":[{"kind":"name","a":40.849411764705906,"b":44.499411764705904,"name":"Benteng Rotterdam","role":"Makassar"}],"map":{"points":[{"name":"Makassar","lon":119.42,"lat":-5.14,"volcano":false}],"route":false,"rings":false,"erupt":false,"mode":"close","region":{"lon0":110.42,"lon1":128.42000000000002,"lat0":-11.14,"lat1":0.8600000000000003,"cell":0.6,"key":"diponegoro-m7-110.4-0.9"}}},{"a":48.091764705882376,"b":52.29176470588238,"kind":"end","overlays":[{"kind":"end","a":48.29176470588238,"b":52.29176470588238,"title":"Perang Jawa — selesai","sources":["Peter Carey (2007), The Power of Prophecy","Ricklefs (2008), A History of Modern Indonesia"]}]}],"words":[{"w":"Di","t":0.5,"key":false},{"w":"Makassar,","t":0.8004264229963831,"key":false},{"w":"ada","t":1.3222196839901013,"key":false},{"w":"makam","t":1.6542699409861037,"key":false},{"w":"seorang","t":2.0495678659813445,"key":false},{"w":"pangeran","t":2.5081134589758243,"key":false},{"w":"dari","t":2.9982828859699233,"key":false},{"w":"Jawa.","t":3.3619569769655446,"key":false},{"w":"Bagaimana","t":4.177254901960785,"key":false},{"w":"Diponegoro","t":4.64093137254902,"key":true},{"w":"bisa","t":5.13270944741533,"key":false},{"w":"dimakamkan","t":5.455877896613191,"key":false},{"w":"sejauh","t":5.9476559714795005,"key":false},{"w":"ini?","t":6.327027629233512,"key":false},{"w":"Juli","t":7.420196078431372,"key":false},{"w":"1825,","t":7.750880072959416,"key":false},{"w":"pasukan","t":8.11031919744642,"key":false},{"w":"Belanda","t":8.527268581851345,"key":false},{"w":"menyerbu","t":8.94421796625627,"key":false},{"w":"Tegalrejo.","t":9.389922480620156,"key":true},{"w":"Rumahnya","t":10.770196078431372,"key":false},{"w":"dibakar,","t":11.209000933706816,"key":false},{"w":"tapi","t":11.647805788982259,"key":false},{"w":"Diponegoro","t":11.973370681605976,"key":true},{"w":"lolos.","t":12.468795518207283,"key":false},{"w":"Perang","t":13.270980392156863,"key":false},{"w":"Jawa","t":13.736214485794319,"key":false},{"w":"pun","t":14.132525010004002,"key":false},{"w":"pecah.","t":14.4943737494998,"key":false},{"w":"Lima","t":15.729607843137256,"key":false},{"w":"tahun","t":16.111836734693878,"key":false},{"w":"ia","t":16.527302921168467,"key":false},{"w":"bergerilya","t":16.843057222889158,"key":false},{"w":"dari","t":17.424709883953582,"key":false},{"w":"hutan","t":17.806938775510204,"key":false},{"w":"ke","t":18.222404961984793,"key":false},{"w":"hutan.","t":18.538159263705484,"key":false},{"w":"Sekitar","t":19.406862745098042,"key":false},{"w":"200.000","t":19.86056759545924,"key":true},{"w":"orang","t":20.314272445820436,"key":false},{"w":"Jawa","t":20.705397316821468,"key":false},{"w":"tewas.","t":21.065232198142418,"key":false},{"w":"Maret","t":22.257647058823537,"key":false},{"w":"1830,","t":22.64482246952836,"key":false},{"w":"ia","t":23.03199788023318,"key":false},{"w":"diundang","t":23.326251192368847,"key":false},{"w":"berunding","t":23.80634870164283,"key":false},{"w":"di","t":24.317420243773192,"key":false},{"w":"Magelang.","t":24.611673555908858,"key":true},{"w":"Saat","t":25.542745098039227,"key":false},{"w":"itu","t":25.902730206006463,"key":false},{"w":"bulan","t":26.231412261106986,"key":false},{"w":"Syawal,","t":26.62270042194094,"key":false},{"w":"suasana","t":27.076594688508326,"key":false},{"w":"Lebaran.","t":27.53048895507571,"key":false},{"w":"Perundingan","t":28.435686274509816,"key":false},{"w":"gagal.","t":29.04271752450982,"key":false},{"w":"Diponegoro","t":29.90568627450982,"key":true},{"w":"ditangkap","t":30.415185936443557,"key":false},{"w":"di","t":30.89557133198108,"key":false},{"w":"tempat.","t":31.172156862745112,"key":false},{"w":"Ia","t":32.36431372549021,"key":false},{"w":"dibuang","t":32.68265795206973,"key":false},{"w":"ke","t":33.16855177158585,"key":false},{"w":"Manado,","t":33.486895998165366,"key":true},{"w":"lalu","t":33.97278981768147,"key":false},{"w":"ke","t":34.35815388143563,"key":false},{"w":"Makassar.","t":34.67649810801515,"key":true},{"w":"Di","t":37.11431372549021,"key":false},{"w":"pengasingan,","t":37.396370009143574,"key":false},{"w":"ia","t":37.97532764401099,"key":false},{"w":"menulis","t":38.25738392766435,"key":false},{"w":"kisah","t":38.687890886924734,"key":false},{"w":"hidupnya","t":39.05901757594231,"key":false},{"w":"sendiri.","t":39.519214670324104,"key":false},{"w":"Diponegoro","t":40.749411764705904,"key":false},{"w":"wafat","t":41.2973813350477,"key":false},{"w":"di","t":41.68878817100613,"key":false},{"w":"Makassar,","t":41.986257366334534,"key":false},{"w":"8","t":42.502914389799656,"key":true},{"w":"Januari","t":42.76907103825139,"key":true},{"w":"1855.","t":43.223102967963165,"key":true},{"w":"Itulah","t":44.034509803921594,"key":false},{"w":"sebabnya","t":44.457326546003046,"key":false},{"w":"ia","t":44.94278280542989,"key":false},{"w":"dimakamkan","t":45.24032051282054,"key":false},{"w":"jauh","t":45.78841628959279,"key":false},{"w":"dari","t":46.14859351432884,"key":false},{"w":"tanah","t":46.508770739064886,"key":false},{"w":"Jawa.","t":46.90026772247363,"key":false}],"warnings":[]}
+==== 20502 project/src/kits/chronicle/Figure.tsx
+// Figure — a posable 3D person rendered as a flat black silhouette (optionally with a coloured contour, see
+// outline.ts). Built from simple solids on a joint hierarchy; because it is pure black, overlaps inside the body
+// never show — only the outer shape reads, so the costume and the pose carry the character:
+//   hats  : peci, destar (pointed head-cloth), caping (wide cone), shako, bicorne, turban, bun (hair), none
+//   wear  : sarong / kain (cloth that follows the legs), robe (ankle-long), coat (short flare), pants
+//   items : musket, spear, telescope, torch (lit flame), keris, flag, bundle (back / head), paddle
+// Units are metres; the root is at the feet, facing +z. Everything is a pure function of the props.
+
+import React, { useLayoutEffect, useMemo } from "react";
+import {
+  BufferAttribute, BufferGeometry, Color, CylinderGeometry, DoubleSide, LatheGeometry, MeshBasicMaterial, SphereGeometry, Vector2, ConeGeometry, BoxGeometry, TorusGeometry,
+} from "three";
+import { noise1 } from "./cam.ts";
+import type { SilTag } from "./outline.ts";
+
+// ------------------------------------------------------------------ shared geometry + material
+const INK = new MeshBasicMaterial({ color: new Color("#040506"), fog: true, side: DoubleSide });
+export const inkMaterial = INK;
+const FLAME = new MeshBasicMaterial({ color: new Color("#ffb04a").multiplyScalar(4), toneMapped: false, fog: false });
+const FLAME_CORE = new MeshBasicMaterial({ color: new Color("#fff1c4").multiplyScalar(6), toneMapped: false, fog: false });
+
+const G = {
+  sphere: new SphereGeometry(1, 20, 14),
+  dome: new SphereGeometry(1, 20, 8, 0, Math.PI * 2, 0, Math.PI / 2),
+  cyl: new CylinderGeometry(1, 1, 1, 14, 1),
+  cone: new ConeGeometry(1, 1, 18, 1),
+  tri: new CylinderGeometry(1, 1, 1, 3, 1),
+  box: new BoxGeometry(1, 1, 1),
+  torus: new TorusGeometry(1, 0.32, 8, 20),
+  limb: (r0: number, r1: number) => new CylinderGeometry(r1, r0, 1, 12, 1),
+};
+const limbCache = new Map<string, CylinderGeometry>();
+const limb = (rTop: number, rBot: number) => {
+  const k = `${rTop.toFixed(3)}|${rBot.toFixed(3)}`;
+  let g = limbCache.get(k);
+  if (!g) { g = G.limb(rBot, rTop); limbCache.set(k, g); }
+  return g;
+};
+const latheCache = new Map<string, LatheGeometry>();
+const torsoGeo = (kind: "m" | "f") => {
+  let g = latheCache.get(kind);
+  if (!g) {
+    const pts = kind === "m"
+      ? [[0.0, -0.02], [0.13, -0.01], [0.15, 0.06], [0.135, 0.18], [0.15, 0.3], [0.18, 0.39], [0.175, 0.45], [0.12, 0.49], [0.05, 0.505], [0.0, 0.505]]
+      : [[0.0, -0.02], [0.15, -0.01], [0.155, 0.06], [0.115, 0.18], [0.135, 0.29], [0.145, 0.37], [0.14, 0.44], [0.1, 0.48], [0.045, 0.495], [0.0, 0.495]];
+    g = new LatheGeometry(pts.map(([r, y]) => new Vector2(r, y)), 20);
+    latheCache.set(kind, g);
+  }
+  return g;
+};
+
+// ------------------------------------------------------------------ types
+export type Arm = { fwd?: number; out?: number; elbow?: number; twist?: number };
+export type Leg = { fwd?: number; out?: number; knee?: number; ankle?: number };
+export type Pose = {
+  hipY?: number; // pelvis height (m) at scale 1; default 0.93
+  lean?: number; // whole-body forward lean at the pelvis (rad)
+  yaw?: number; // pelvis yaw
+  spine?: number; // forward bend of the chest
+  side?: number; // side bend
+  twist?: number; // chest yaw
+  head?: [number, number]; // [look up, look left]
+  armL?: Arm; armR?: Arm; legL?: Leg; legR?: Leg;
+};
+export type Hat = "none" | "peci" | "destar" | "caping" | "shako" | "bicorne" | "tricorne" | "turban" | "bun" | "hair" | "blangkon";
+export type Wear = "pants" | "sarong" | "kain" | "robe" | "coat";
+export type Item = "musket" | "spear" | "telescope" | "torch" | "keris" | "flag" | "paddle" | "none";
+export type Costume = {
+  body?: "m" | "f";
+  hat?: Hat;
+  wear?: Wear;
+  itemR?: Item;
+  itemL?: Item;
+  load?: "back" | "head" | "none";
+  keris?: boolean;
+  scale?: number; // 1 = 1.68 m adult
+  build?: number; // width multiplier
+  headScale?: number;
+};
+
+// ------------------------------------------------------------------ poses
+const A = (fwd = 0, out = 0.08, elbow = 0.12, twist = 0): Arm => ({ fwd, out, elbow, twist });
+
+export const POSES = {
+  stand: (): Pose => ({ armL: A(0.02, 0.09, 0.14), armR: A(0.02, 0.09, 0.14), legL: { fwd: 0.02, out: 0.04, knee: 0.03 }, legR: { fwd: -0.02, out: 0.04, knee: 0.03 } }),
+  /** feet apart, hands on hips — the "hero on deck" stance */
+  akimbo: (): Pose => ({ armL: A(-0.25, 0.62, 1.9, -1.25), armR: A(-0.25, 0.62, 1.9, 1.25), legL: { fwd: 0.05, out: 0.14, knee: 0.04 }, legR: { fwd: -0.08, out: 0.12, knee: 0.06 }, head: [0.12, 0] }),
+  /** soldier at attention, weapon held upright at the right side */
+  shoulderArms: (): Pose => ({ armL: A(0, 0.06, 0.1), armR: A(0.04, 0.12, 0.45, 0.2), legL: { out: 0.03 }, legR: { out: 0.03 } }),
+  point: (side: "L" | "R" = "R", up = 0.15): Pose => {
+    const p: Pose = { ...POSES.stand(), head: [up * 0.6, 0] };
+    const arm = A(1.45 + up, 0.12, 0.06, 0);
+    if (side === "R") p.armR = arm; else p.armL = arm;
+    return p;
+  },
+  telescope: (): Pose => ({ armR: A(1.25, -0.42, 1.75, 0.3), armL: A(1.05, -0.32, 1.25, -0.3), head: [0.06, 0], legL: { fwd: 0.12, out: 0.06, knee: 0.08 }, legR: { fwd: -0.12, out: 0.06 } }),
+  raiseFist: (): Pose => ({ ...POSES.stand(), armR: A(2.6, 0.25, 0.35, 0), head: [0.25, 0] }),
+  /** both arms up to steady a load on the head */
+  carryHead: (): Pose => ({ ...POSES.stand(), armL: A(0.35, 1.25, 2.1, -0.4), armR: A(0.1, 0.12, 0.2) }),
+  /** kneeling, sitting back on the heels */
+  kneel: (bow = 0): Pose => ({
+    hipY: 0.5, lean: 0.05 + bow * 0.9, spine: bow * 0.6,
+    legL: { fwd: 1.45, out: 0.12, knee: 2.75, ankle: -0.4 }, legR: { fwd: 1.45, out: 0.12, knee: 2.75, ankle: -0.4 },
+    armL: A(0.55 + bow * 0.9, 0.1, 0.9 - bow * 0.6), armR: A(0.55 + bow * 0.9, 0.1, 0.9 - bow * 0.6), head: [-0.15 - bow * 0.3, 0],
+  }),
+  lookUp: (): Pose => ({ ...POSES.stand(), head: [0.55, 0], spine: -0.08 }),
+  /** sitting cross-legged on the floor (bersila) */
+  sitCross: (): Pose => ({
+    hipY: 0.17, spine: 0.04,
+    legL: { fwd: 1.42, out: 0.75, knee: 2.55, ankle: 0.2 }, legR: { fwd: 1.42, out: 0.75, knee: 2.55, ankle: 0.2 },
+    armL: A(0.55, 0.2, 0.75, -0.2), armR: A(0.55, 0.2, 0.75, 0.2), head: [-0.05, 0],
+  }),
+  /** sitting on a chair / bench, seat ≈ 0.46 m */
+  sitChair: (): Pose => ({
+    hipY: 0.5, spine: 0.05,
+    legL: { fwd: 1.5, out: 0.08, knee: 1.5, ankle: 0.0 }, legR: { fwd: 1.5, out: 0.08, knee: 1.45, ankle: 0.0 },
+    armL: A(0.55, 0.1, 0.9), armR: A(0.55, 0.1, 0.9), head: [0, 0],
+  }),
+  /** seated at a desk, writing (t drives the pen hand) */
+  write: (t: number): Pose => ({
+    ...POSES.sitChair(), spine: 0.32, head: [-0.42, 0],
+    armR: A(0.95 + 0.05 * Math.sin(t * 5), 0.05 + 0.03 * Math.sin(t * 3.1), 1.15, 0.1),
+    armL: A(0.85, 0.12, 1.35, -0.1),
+  }),
+  /** kneeling with both palms raised in front (berdoa) */
+  pray: (): Pose => ({
+    ...POSES.kneel(0), lean: 0.06, head: [-0.28, 0],
+    armL: A(0.42, 0.14, 1.55, -0.35), armR: A(0.42, 0.14, 1.55, 0.35),
+  }),
+  /** standing, talking with the right hand */
+  talk: (t: number): Pose => ({ ...POSES.stand(), armR: A(0.55 + 0.18 * Math.sin(t * 2.2), 0.15, 1.0 + 0.2 * Math.sin(t * 1.7), 0.2), head: [0.05, 0.08 * Math.sin(t * 0.9)] }),
+};
+
+/** Breathing + weight shift + small head moves layered on any pose so held silhouettes never freeze. */
+export const idle = (p: Pose, t: number, seed = 0, amt = 1): Pose => {
+  const b = Math.sin(t * 1.45 + seed * 2.1);
+  const w = Math.sin(t * 0.37 + seed * 1.3);
+  const h = Math.sin(t * 0.53 + seed * 0.7);
+  const arm = (a: Arm | undefined, k: number): Arm | undefined => (a ? { ...a, fwd: (a.fwd ?? 0) + 0.025 * amt * Math.sin(t * 0.8 + seed + k), out: (a.out ?? 0) + 0.012 * amt * b } : a);
+  return {
+    ...p,
+    spine: (p.spine ?? 0) + 0.018 * amt * b,
+    side: (p.side ?? 0) + 0.02 * amt * w,
+    yaw: (p.yaw ?? 0) + 0.03 * amt * w,
+    head: [(p.head?.[0] ?? 0) + 0.03 * amt * h, (p.head?.[1] ?? 0) + 0.06 * amt * Math.sin(t * 0.29 + seed)],
+    armL: arm(p.armL, 0), armR: arm(p.armR, 2),
+  };
+};
+
+/** Walk / run cycle. `phase` advances by π per step; `run` 0…1 blends walk → run. */
+export const gait = (phase: number, run = 0, base: Pose = {}): Pose => {
+  const amp = 0.42 + 0.32 * run;
+  const leg = (p: number): Leg => {
+    const s = Math.sin(p), c = Math.cos(p);
+    return { fwd: amp * s + 0.05 * run, out: 0.03, knee: 0.08 + (0.75 + 0.85 * run) * Math.pow(Math.max(0, c), 1.4) + 0.1 * run, ankle: -0.2 * Math.max(0, -s) };
+  };
+  const arm = (p: number, side: number): Arm => ({ fwd: -(0.35 + 0.5 * run) * Math.sin(p) + 0.1 * run, out: 0.1, elbow: 0.2 + 1.0 * run, twist: side * 0.1 });
+  return {
+    ...base,
+    hipY: 0.93 - 0.025 - 0.05 * run + (0.025 + 0.03 * run) * Math.abs(Math.cos(phase)),
+    lean: 0.04 + 0.26 * run + (base.lean ?? 0),
+    spine: base.spine ?? 0.02 * run,
+    yaw: 0.08 * Math.sin(phase),
+    twist: -0.12 * Math.sin(phase),
+    legL: leg(phase), legR: leg(phase + Math.PI),
+    armL: base.armL ?? arm(phase + Math.PI, 1), armR: base.armR ?? arm(phase, -1),
+  };
+};
+
+// ------------------------------------------------------------------ kinematics used by the cloth
+const legFK = (hx: number, l: Leg) => {
+  const f = l.fwd ?? 0, k = l.knee ?? 0;
+  const knee = [hx + Math.sin(l.out ?? 0) * 0.42 * Math.sign(hx), -0.02 - 0.42 * Math.cos(f), 0.42 * Math.sin(f)];
+  const a = f - k;
+  const ankle = [knee[0], knee[1] - 0.41 * Math.cos(a), knee[2] + 0.41 * Math.sin(a)];
+  return { knee, ankle };
+};
+
+/** Cloth tube from the waist ring to a bottom ring that follows the knees/shins (sarong, kain, robe, coat flare). */
+const Skirt: React.FC<{ pose: Pose; len: number; top: number; bottom: number; tag: SilTag; front?: number }> = ({ pose, len, top, bottom, tag, front = 1 }) => {
+  const SEG = 22, RINGS = 7;
+  const geo = useMemo(() => {
+    const g = new BufferGeometry();
+    g.setAttribute("position", new BufferAttribute(new Float32Array((SEG + 1) * RINGS * 3), 3));
+    const idx: number[] = [];
+    for (let r = 0; r < RINGS - 1; r++) for (let s = 0; s < SEG; s++) {
+      const a = r * (SEG + 1) + s, b = a + SEG + 1;
+      idx.push(a, b, a + 1, a + 1, b, b + 1);
+    }
+    g.setIndex(idx);
+    return g;
+  }, []);
+  useLayoutEffect(() => () => geo.dispose(), [geo]);
+  const L = legFK(0.09, pose.legL ?? {}), R = legFK(-0.09, pose.legR ?? {});
+  const pos = geo.attributes.position as BufferAttribute;
+  for (let r = 0; r < RINGS; r++) {
+    const t = r / (RINGS - 1);
+    const y = 0.06 - t * len;
+    // where the legs are at this height (interpolate hip → knee → ankle by drop)
+    const at = (fk: ReturnType<typeof legFK>, hx: number) => {
+      const drop = -y + 0.02;
+      if (drop <= 0.42) { const u = drop / 0.42; return [hx + (fk.knee[0] - hx) * u, fk.knee[2] * u]; }
+      const u = Math.min(1, (drop - 0.42) / 0.41);
+      return [fk.knee[0] + (fk.ankle[0] - fk.knee[0]) * u, fk.knee[2] + (fk.ankle[2] - fk.knee[2]) * u];
+    };
+    const l = at(L, 0.09), rr = at(R, -0.09);
+    const cz = (l[1] + rr[1]) / 2, cx = (l[0] + rr[0]) / 2;
+    const spreadZ = Math.abs(l[1] - rr[1]) / 2;
+    const rx = top + (bottom - top) * t;
+    const rz = rx * 0.78 + spreadZ * Math.min(1, t * 1.6) * 0.95;
+    for (let s = 0; s <= SEG; s++) {
+      const a = (s / SEG) * Math.PI * 2;
+      const sx = Math.cos(a), sz = Math.sin(a);
+      const k = sz > 0 ? front : 1;
+      pos.setXYZ(r * (SEG + 1) + s, cx * t + sx * rx, y, cz * Math.min(1, t * 1.3) + sz * rz * k);
+    }
+  }
+  pos.needsUpdate = true;
+  geo.computeBoundingSphere();
+  return <mesh geometry={geo} material={INK} userData={{ sil: tag }} />;
+};
+
+// ------------------------------------------------------------------ parts
+type PartProps = { tag: SilTag };
+const P: React.FC<PartProps & { geo: BufferGeometry; p?: [number, number, number]; s?: [number, number, number]; r?: [number, number, number] }> = ({ tag, geo, p = [0, 0, 0], s = [1, 1, 1], r = [0, 0, 0] }) => (
+  <mesh geometry={geo} material={INK} position={p} scale={s} rotation={r} userData={{ sil: tag }} />
+);
+
+const HatMesh: React.FC<PartProps & { hat: Hat; t: number }> = ({ hat, tag, t }) => {
+  switch (hat) {
+    case "peci": return <P tag={tag} geo={G.cyl} p={[0, 0.085, -0.005]} s={[0.1, 0.085, 0.112]} />;
+    case "destar": return (
+      <>
+        <P tag={tag} geo={G.sphere} p={[0, 0.05, -0.01]} s={[0.112, 0.07, 0.122]} />
+        {/* the stiff pointed end of the head-cloth, tipped back and up */}
+        <P tag={tag} geo={G.cone} p={[0.0, 0.14, -0.07]} s={[0.035, 0.16, 0.06]} r={[-0.75, 0, 0.12]} />
+      </>
+    );
+    case "caping": return <P tag={tag} geo={G.cone} p={[0, 0.1, 0]} s={[0.3, 0.15, 0.3]} />;
+    case "shako": return (
+      <>
+        <P tag={tag} geo={G.cyl} p={[0, 0.13, 0]} s={[0.104, 0.2, 0.11]} />
+        <P tag={tag} geo={G.box} p={[0, 0.04, 0.1]} s={[0.17, 0.012, 0.09]} r={[0.25, 0, 0]} />
+        <P tag={tag} geo={G.cyl} p={[0, 0.27 + 0.004 * Math.sin(t * 9), 0.06]} s={[0.018, 0.12, 0.018]} />
+      </>
+    );
+    case "bicorne": return <P tag={tag} geo={G.dome} p={[0, 0.1, 0]} s={[0.25, 0.14, 0.055]} />;
+    case "tricorne": return (
+      <>
+        <P tag={tag} geo={G.dome} p={[0, 0.07, 0]} s={[0.1, 0.1, 0.11]} />
+        <P tag={tag} geo={G.tri} p={[0, 0.085, 0.0]} s={[0.2, 0.035, 0.2]} r={[0.0, Math.PI, 0]} />
+      </>
+    );
+    case "blangkon": return (
+      <>
+        <P tag={tag} geo={G.sphere} p={[0, 0.035, 0]} s={[0.1, 0.085, 0.116]} />
+        <P tag={tag} geo={G.sphere} p={[0, 0.0, -0.11]} s={[0.05, 0.045, 0.045]} />
+      </>
+    );
+    case "turban": return <P tag={tag} geo={G.sphere} p={[0, 0.06, 0]} s={[0.13, 0.095, 0.135]} />;
+    case "bun": return <P tag={tag} geo={G.sphere} p={[0, 0.0, -0.12]} s={[0.065, 0.06, 0.06]} />;
+    case "hair": return <P tag={tag} geo={G.sphere} p={[0, -0.06, -0.06]} s={[0.1, 0.17, 0.07]} />;
+    default: return null;
+  }
+};
+
+/** Item held in a hand (hand frame: the arm hangs along −y, palm facing in). */
+const ItemMesh: React.FC<PartProps & { item: Item; t: number; side: number }> = ({ item, tag, t, side }) => {
+  switch (item) {
+    case "musket": return (
+      <group position={[0, 0.3, 0.03]}>
+        <P tag={tag} geo={G.cyl} s={[0.014, 1.42, 0.014]} />
+        <P tag={tag} geo={G.box} p={[0, -0.6, 0]} s={[0.035, 0.28, 0.07]} />
+        <P tag={tag} geo={G.cone} p={[0, 0.88, 0]} s={[0.008, 0.36, 0.008]} />
+      </group>
+    );
+    case "spear": return (
+      <group position={[0, 0.45, 0.03]}>
+        <P tag={tag} geo={G.cyl} s={[0.013, 2.1, 0.013]} />
+        <P tag={tag} geo={G.cone} p={[0, 1.17, 0]} s={[0.028, 0.24, 0.012]} />
+      </group>
+    );
+    case "telescope": return <P tag={tag} geo={limb(0.02, 0.03)} p={[0, -0.08, 0.2]} s={[1, 0.46, 1]} r={[Math.PI / 2, 0, 0]} />;
+    case "keris": return <P tag={tag} geo={G.cone} p={[0, -0.2, 0]} s={[0.014, 0.34, 0.03]} r={[Math.PI, 0, 0]} />;
+    case "paddle": return (
+      <group position={[0, -0.05, 0.03]}>
+        <P tag={tag} geo={G.cyl} s={[0.015, 1.5, 0.015]} />
+        <P tag={tag} geo={G.sphere} p={[0, -0.75, 0]} s={[0.07, 0.24, 0.015]} />
+      </group>
+    );
+    case "flag": {
+      const w = Math.sin(t * 4.1) * 0.12;
+      return (
+        <group position={[0, 0.6, 0.03]}>
+          <P tag={tag} geo={G.cyl} s={[0.013, 2.2, 0.013]} />
+          <P tag={tag} geo={G.box} p={[side * 0.28, 0.85, w * 0.5]} s={[0.55, 0.36, 0.01]} r={[0, w, 0]} />
+        </group>
+      );
+    }
+    case "torch": {
+      const f = 1 + 0.18 * noise1(t * 9, 3);
+      return (
+        <group position={[0, 0.12, 0.04]}>
+          <P tag={tag} geo={G.cyl} s={[0.017, 0.5, 0.017]} />
+          <mesh geometry={G.sphere} material={FLAME} position={[0, 0.3 + 0.03 * f, 0]} scale={[0.05, 0.11 * f, 0.05]} userData={{ noMask: true }} />
+          <mesh geometry={G.sphere} material={FLAME_CORE} position={[0, 0.28, 0]} scale={[0.026, 0.05 * f, 0.026]} userData={{ noMask: true }} />
+        </group>
+      );
+    }
+    default: return null;
+  }
+};
+
+const ArmChain: React.FC<PartProps & { arm: Arm; x: number; side: number; item: Item; t: number }> = ({ arm, x, side, item, tag, t }) => (
+  <group position={[x, 0.425, 0]} rotation={[-(arm.fwd ?? 0), arm.twist ?? 0, side * (arm.out ?? 0), "XZY"]}>
+    <P tag={tag} geo={G.sphere} s={[0.055, 0.055, 0.055]} />
+    <P tag={tag} geo={limb(0.048, 0.037)} p={[0, -0.14, 0]} s={[1, 0.28, 1]} />
+    <group position={[0, -0.28, 0]} rotation={[-(arm.elbow ?? 0), 0, 0]}>
+      <P tag={tag} geo={G.sphere} s={[0.038, 0.038, 0.038]} />
+      <P tag={tag} geo={limb(0.036, 0.027)} p={[0, -0.125, 0]} s={[1, 0.25, 1]} />
+      <group position={[0, -0.25, 0]}>
+        <P tag={tag} geo={G.sphere} p={[0, -0.055, 0.005]} s={[0.03, 0.07, 0.042]} />
+        <ItemMesh item={item} tag={tag} t={t} side={side} />
+      </group>
+    </group>
+  </group>
+);
+
+const LegChain: React.FC<PartProps & { leg: Leg; x: number; side: number; boot?: boolean }> = ({ leg, x, side, tag, boot }) => (
+  <group position={[x, -0.02, 0]} rotation={[-(leg.fwd ?? 0), 0, side * (leg.out ?? 0)]}>
+    <P tag={tag} geo={limb(0.078, 0.056)} p={[0, -0.21, 0]} s={[1, 0.42, 1]} />
+    <group position={[0, -0.42, 0]} rotation={[leg.knee ?? 0, 0, 0]}>
+      <P tag={tag} geo={G.sphere} s={[0.055, 0.055, 0.055]} />
+      <P tag={tag} geo={limb(boot ? 0.052 : 0.05, boot ? 0.046 : 0.034)} p={[0, -0.205, 0]} s={[1, 0.41, 1]} />
+      <group position={[0, -0.41, 0]} rotation={[leg.ankle ?? 0, 0, 0]}>
+        <P tag={tag} geo={G.sphere} p={[0, -0.035, 0.045]} s={[0.045, 0.035, 0.12]} />
+      </group>
+    </group>
+  </group>
+);
+
+export type FigureProps = {
+  id: number;
+  /** contour colour (null = plain black) */
+  outline?: string | null;
+  gain?: number;
+  pos: [number, number, number];
+  rotY?: number;
+  pose: Pose;
+  look?: Costume;
+  t?: number;
+};
+
+export const Figure: React.FC<FigureProps> = ({ id, outline = null, gain, pos, rotY = 0, pose, look = {}, t = 0 }) => {
+  const tag: SilTag = { id, color: outline, gain };
+  const sc = look.scale ?? 1;
+  const b = look.build ?? 1;
+  const kind = look.body ?? "m";
+  const wear = look.wear ?? "pants";
+  const sx = kind === "f" ? 0.155 : 0.18;
+  const hipY = pose.hipY ?? 0.93;
+  return (
+    <group position={pos} rotation={[0, rotY, 0]} scale={[sc * b, sc, sc * b]}>
+      <group position={[0, hipY, 0]} rotation={[pose.lean ?? 0, pose.yaw ?? 0, 0]}>
+        {/* pelvis */}
+        <P tag={tag} geo={G.sphere} p={[0, 0.0, 0]} s={[kind === "f" ? 0.16 : 0.145, 0.11, 0.11]} />
+        <LegChain tag={tag} leg={pose.legL ?? {}} x={0.09} side={1} boot={wear === "coat"} />
+        <LegChain tag={tag} leg={pose.legR ?? {}} x={-0.09} side={-1} boot={wear === "coat"} />
+        {wear === "sarong" && <Skirt tag={tag} pose={pose} len={0.44} top={0.165} bottom={0.185} />}
+        {wear === "kain" && <Skirt tag={tag} pose={pose} len={0.86} top={0.165} bottom={0.15} />}
+        {wear === "robe" && <Skirt tag={tag} pose={pose} len={0.88} top={0.17} bottom={0.25} />}
+        {wear === "coat" && <Skirt tag={tag} pose={pose} len={0.3} top={0.16} bottom={0.2} front={0.85} />}
+        <group rotation={[pose.spine ?? 0, pose.twist ?? 0, pose.side ?? 0]}>
+          <P tag={tag} geo={torsoGeo(kind)} s={[1, 1, 0.66]} />
+          {look.load === "back" && <P tag={tag} geo={G.sphere} p={[0, 0.3, -0.2]} s={[0.2, 0.24, 0.14]} />}
+          {look.keris && <P tag={tag} geo={G.cone} p={[-0.06, 0.12, -0.1]} s={[0.022, 0.3, 0.03]} r={[-0.3, 0, 0.5]} />}
+          <ArmChain tag={tag} arm={pose.armL ?? {}} x={sx} side={1} item={look.itemL ?? "none"} t={t} />
+          <ArmChain tag={tag} arm={pose.armR ?? {}} x={-sx} side={-1} item={look.itemR ?? "none"} t={t} />
+          {/* neck + head */}
+          <P tag={tag} geo={limb(0.045, 0.05)} p={[0, 0.53, 0.0]} s={[1, 0.1, 1]} />
+          <group position={[0, 0.585, 0.01]} rotation={[-(pose.head?.[0] ?? 0), pose.head?.[1] ?? 0, 0]} scale={look.headScale ?? 1}>
+            <P tag={tag} geo={G.sphere} p={[0, 0.045, 0]} s={[0.084, 0.112, 0.1]} />
+            {/* nose + chin give the profile its read */}
+            <P tag={tag} geo={G.sphere} p={[0, 0.03, 0.1]} s={[0.018, 0.03, 0.03]} />
+            <P tag={tag} geo={G.sphere} p={[0, -0.035, 0.055]} s={[0.045, 0.036, 0.045]} />
+            <HatMesh tag={tag} hat={look.hat ?? "none"} t={t} />
+            {look.load === "head" && <P tag={tag} geo={G.sphere} p={[0, 0.2, 0]} s={[0.2, 0.09, 0.18]} />}
+          </group>
+        </group>
+      </group>
+    </group>
+  );
+};
+
+==== 13832 project/src/kits/chronicle/fx.tsx
+// CHRONICLE effects — all deterministic functions of time `t` (seconds):
+//   <AshColumn>  billowing eruption / smoke column (instanced camera-facing puffs, lit from below by the vent)
+//   <Embers>     glowing sparks rising / drifting (round soft points)
+//   <Bolt>       volcanic lightning (jagged emissive segments) for short windows
+//   <Birds>      a flock of black birds bursting away (flapping V shapes, silhouette-tagged, no contour)
+//   <Smoke>      low lazy smoke for fires / chimneys (AshColumn preset)
+
+import React, { useLayoutEffect, useMemo } from "react";
+import {
+  AdditiveBlending, BufferAttribute, BufferGeometry, Color, DoubleSide, InstancedBufferAttribute, InstancedBufferGeometry,
+  MeshBasicMaterial, NormalBlending, PlaneGeometry, ShaderMaterial, Vector3, CylinderGeometry,
+} from "three";
+import { noise1 } from "./cam.ts";
+
+const hash = (n: number) => {
+  const x = Math.sin(n * 91.3458 + 47.123) * 43758.5453;
+  return x - Math.floor(x);
+};
+
+// ------------------------------------------------------------------ AshColumn
+const PuffShader = {
+  vertexShader: /* glsl */ `
+    attribute vec3 aPos; attribute float aSize; attribute float aSeed; attribute float aAlpha; attribute float aHeat; attribute float aRot;
+    varying vec2 vUv; varying float vSeed; varying float vAlpha; varying float vHeat;
+    #include <fog_pars_vertex>
+    void main(){
+      vUv = uv; vSeed = aSeed; vAlpha = aAlpha; vHeat = aHeat;
+      vec4 mv = modelViewMatrix * vec4(aPos, 1.0);
+      float c = cos(aRot), s = sin(aRot);
+      vec2 p = mat2(c, -s, s, c) * position.xy;
+      mv.xy += p * aSize;
+      gl_Position = projectionMatrix * mv;
+      vec4 mvPosition = mv;
+      #include <fog_vertex>
+    }`,
+  fragmentShader: /* glsl */ `
+    uniform vec3 uDark; uniform vec3 uLit; uniform vec3 uHot; uniform float uFlash; uniform vec3 uFlashCol; uniform float uDensity;
+    varying vec2 vUv; varying float vSeed; varying float vAlpha; varying float vHeat;
+    #include <fog_pars_fragment>
+    float h(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+    float n(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f);
+      return mix(mix(h(i), h(i+vec2(1,0)), f.x), mix(h(i+vec2(0,1)), h(i+vec2(1,1)), f.x), f.y); }
+    float fbm(vec2 p){ float s = 0.0, a = 0.5; for (int i = 0; i < 4; i++){ s += a * n(p); p = p * 2.03 + 7.1; a *= 0.5; } return s; }
+    void main(){
+      vec2 q = vUv - 0.5;
+      float r = length(q) * 2.0;
+      float f = fbm(vUv * 3.2 + vSeed * 17.0);
+      float m = smoothstep(1.0, 0.35, r + (f - 0.5) * 0.9);
+      if (m < 0.01) discard;
+      // lit from below: the underside of each puff catches the vent glow
+      float under = smoothstep(0.35, -0.45, q.y + (f - 0.5) * 0.4);
+      vec3 col = mix(uDark, uLit, under * vHeat);
+      col = mix(col, uHot, pow(vHeat, 3.0) * under * 0.85);
+      col *= 0.75 + 0.5 * f;
+      col += uFlashCol * uFlash * (0.4 + 0.6 * f);
+      gl_FragColor = vec4(col, m * vAlpha * uDensity);
+      #include <fog_fragment>
+    }`,
+};
+
+export type AshProps = {
+  t: number;
+  base: [number, number, number];
+  height: number;
+  width: number;
+  count?: number;
+  life?: number;
+  wind?: [number, number];
+  dark?: string; lit?: string; hot?: string;
+  flash?: number; flashColor?: string;
+  density?: number;
+  seed?: number;
+  /** 0…1 intensity ramp (eruption start) */
+  amount?: number;
+};
+
+export const AshColumn: React.FC<AshProps> = (p) => {
+  const N = p.count ?? 140;
+  const { geo, mat } = useMemo(() => {
+    const g = new InstancedBufferGeometry();
+    const pl = new PlaneGeometry(1, 1);
+    g.index = pl.index;
+    g.setAttribute("position", pl.getAttribute("position"));
+    g.setAttribute("uv", pl.getAttribute("uv"));
+    g.setAttribute("aPos", new InstancedBufferAttribute(new Float32Array(N * 3), 3));
+    for (const k of ["aSize", "aSeed", "aAlpha", "aHeat", "aRot"]) g.setAttribute(k, new InstancedBufferAttribute(new Float32Array(N), 1));
+    g.instanceCount = N;
+    const m = new ShaderMaterial({
+      ...PuffShader,
+      uniforms: {
+        uDark: { value: new Color() }, uLit: { value: new Color() }, uHot: { value: new Color() }, uFlash: { value: 0 }, uFlashCol: { value: new Color() }, uDensity: { value: 1 },
+        fogColor: { value: new Color() }, fogNear: { value: 1 }, fogFar: { value: 1000 }, fogDensity: { value: 0.001 },
+      },
+      transparent: true, depthWrite: false, fog: true, blending: NormalBlending, side: DoubleSide,
+    });
+    return { geo: g, mat: m };
+  }, [N]);
+  useLayoutEffect(() => () => { geo.dispose(); mat.dispose(); }, [geo, mat]);
+
+  const L = p.life ?? 7;
+  const amt = p.amount ?? 1;
+  const seed = p.seed ?? 1;
+  const aPos = geo.getAttribute("aPos") as InstancedBufferAttribute;
+  const aSize = geo.getAttribute("aSize") as InstancedBufferAttribute;
+  const aSeed = geo.getAttribute("aSeed") as InstancedBufferAttribute;
+  const aAlpha = geo.getAttribute("aAlpha") as InstancedBufferAttribute;
+  const aHeat = geo.getAttribute("aHeat") as InstancedBufferAttribute;
+  const aRot = geo.getAttribute("aRot") as InstancedBufferAttribute;
+  const wind = p.wind ?? [0, 0];
+  for (let i = 0; i < N; i++) {
+    const r0 = hash(i * 3.1 + seed), r1 = hash(i * 7.7 + seed), r2 = hash(i * 1.3 + seed * 2);
+    const age = (((p.t + r0 * L) % L) + L) % L;
+    const k = age / L;
+    const rise = Math.pow(k, 0.75);
+    const spread = p.width * (0.18 + 0.82 * Math.pow(k, 0.9));
+    const ang = r1 * Math.PI * 2 + p.t * 0.15 * (r2 - 0.5);
+    const rad = Math.sqrt(r2) * spread * 0.5;
+    const y = p.base[1] + p.height * rise;
+    const x = p.base[0] + Math.cos(ang) * rad + wind[0] * k * p.height + noise1(p.t * 0.3 + i, seed) * spread * 0.08;
+    const z = p.base[2] + Math.sin(ang) * rad * 0.7 + wind[1] * k * p.height;
+    aPos.setXYZ(i, x, y, z);
+    aSize.setX(i, p.width * (0.32 + 0.75 * k) * (0.8 + 0.4 * r0));
+    aSeed.setX(i, r1 * 10);
+    const fadeIn = Math.min(1, age / 0.8), fadeOut = Math.min(1, (L - age) / 2.0);
+    // born only after the eruption has started (amount ramps the column up)
+    const born = Math.min(1, Math.max(0, (amt * 1.3 - k) * 3));
+    aAlpha.setX(i, fadeIn * fadeOut * born * (0.55 + 0.45 * r2));
+    aHeat.setX(i, Math.max(0, 1 - k * 1.6));
+    aRot.setX(i, r0 * 6.28 + p.t * 0.08 * (r1 - 0.5));
+  }
+  for (const a of [aPos, aSize, aSeed, aAlpha, aHeat, aRot]) a.needsUpdate = true;
+  const u = mat.uniforms;
+  u.uDark.value.set(p.dark ?? "#3b3433");
+  u.uLit.value.set(p.lit ?? "#b4502a");
+  u.uHot.value.set(p.hot ?? "#ffb15a");
+  u.uFlash.value = p.flash ?? 0;
+  u.uFlashCol.value.set(p.flashColor ?? "#b9a0ff");
+  u.uDensity.value = p.density ?? 0.9;
+  return <mesh geometry={geo} material={mat} frustumCulled={false} renderOrder={5} userData={{ noMask: true }} />;
+};
+
+// ------------------------------------------------------------------ Embers
+const EmberShader = {
+  vertexShader: /* glsl */ `
+    attribute float aSize; attribute float aGlow; varying float vGlow; uniform float uScale;
+    void main(){ vGlow = aGlow; vec4 mv = modelViewMatrix * vec4(position, 1.0); gl_PointSize = aSize * uScale / -mv.z; gl_Position = projectionMatrix * mv; }`,
+  fragmentShader: /* glsl */ `
+    uniform vec3 uCol; varying float vGlow;
+    void main(){ vec2 q = gl_PointCoord - 0.5; float r = length(q) * 2.0; float a = smoothstep(1.0, 0.0, r); a *= a;
+      gl_FragColor = vec4(uCol * (0.6 + 1.8 * vGlow) * a, a * vGlow); }`,
+};
+
+export const Embers: React.FC<{ t: number; count?: number; box: [number, number, number, number, number, number]; rise?: number; size?: number; color?: string; seed?: number; scale?: number }> = ({
+  t, count = 260, box, rise = 1.2, size = 0.12, color = "#ff9a3c", seed = 3, scale = 900,
+}) => {
+  const { geo, mat } = useMemo(() => {
+    const g = new BufferGeometry();
+    g.setAttribute("position", new BufferAttribute(new Float32Array(count * 3), 3));
+    g.setAttribute("aSize", new BufferAttribute(new Float32Array(count), 1));
+    g.setAttribute("aGlow", new BufferAttribute(new Float32Array(count), 1));
+    const m = new ShaderMaterial({ ...EmberShader, uniforms: { uCol: { value: new Color() }, uScale: { value: 900 } }, transparent: true, depthWrite: false, blending: AdditiveBlending, toneMapped: false });
+    return { geo: g, mat: m };
+  }, [count]);
+  useLayoutEffect(() => () => { geo.dispose(); mat.dispose(); }, [geo, mat]);
+  const [x0, y0, z0, x1, y1, z1] = box;
+  const P = geo.getAttribute("position") as BufferAttribute;
+  const S = geo.getAttribute("aSize") as BufferAttribute;
+  const Gl = geo.getAttribute("aGlow") as BufferAttribute;
+  const H = y1 - y0;
+  for (let i = 0; i < count; i++) {
+    const r = [hash(i + seed), hash(i * 2.3 + seed), hash(i * 5.1 + seed), hash(i * 9.7 + seed)];
+    const span = H / Math.abs(rise);
+    const k = (((t + r[0] * span) % span) + span) % span / span;
+    const y = rise >= 0 ? y0 + k * H : y1 - k * H;
+    const x = x0 + r[1] * (x1 - x0) + noise1(t * 0.7 + i * 0.37, seed) * 0.8;
+    const z = z0 + r[2] * (z1 - z0) + noise1(t * 0.6 + i * 0.51, seed + 4) * 0.6;
+    P.setXYZ(i, x, y, z);
+    S.setX(i, size * (0.5 + r[3]));
+    const tw = 0.6 + 0.4 * Math.sin(t * (6 + r[3] * 9) + i);
+    Gl.setX(i, tw * Math.min(1, k * 6) * Math.min(1, (1 - k) * 4));
+  }
+  P.needsUpdate = S.needsUpdate = Gl.needsUpdate = true;
+  mat.uniforms.uCol.value.set(color);
+  mat.uniforms.uScale.value = scale;
+  return <points geometry={geo} material={mat} frustumCulled={false} renderOrder={6} />;
+};
+
+// ------------------------------------------------------------------ Bolt
+const boltGeo = new CylinderGeometry(1, 1, 1, 5, 1);
+const boltMat = new MeshBasicMaterial({ color: new Color("#e6dcff").multiplyScalar(5), toneMapped: false, fog: false });
+const boltGlow = new MeshBasicMaterial({ color: new Color("#9a6bff").multiplyScalar(2), toneMapped: false, fog: false, transparent: true, opacity: 0.35, depthWrite: false, blending: AdditiveBlending });
+
+/** A jagged bolt from `a` to `b`, visible while `on` > 0. Shape is fixed by `seed` (re-seed for a new strike). */
+export const Bolt: React.FC<{ a: [number, number, number]; b: [number, number, number]; seed: number; on: number; width: number }> = ({ a, b, seed, on, width }) => {
+  const segs = useMemo(() => {
+    let pts = [new Vector3(...a), new Vector3(...b)];
+    const len = pts[0].distanceTo(pts[1]);
+    let amp = len * 0.18;
+    for (let lvl = 0; lvl < 5; lvl++) {
+      const next: Vector3[] = [pts[0]];
+      for (let i = 0; i < pts.length - 1; i++) {
+        const m = pts[i].clone().add(pts[i + 1]).multiplyScalar(0.5);
+        m.x += (hash(seed * 13 + lvl * 7 + i) - 0.5) * amp;
+        m.y += (hash(seed * 17 + lvl * 3 + i) - 0.5) * amp * 0.4;
+        m.z += (hash(seed * 19 + lvl * 5 + i) - 0.5) * amp * 0.3;
+        next.push(m, pts[i + 1]);
+      }
+      pts = next;
+      amp *= 0.55;
+    }
+    return pts;
+  }, [a, b, seed]);
+  if (on <= 0.01) return null;
+  return (
+    <group userData={{ noMask: true }}>
+      {segs.slice(0, -1).map((p, i) => {
+        const q = segs[i + 1];
+        const mid = p.clone().add(q).multiplyScalar(0.5);
+        const d = q.clone().sub(p);
+        const l = d.length();
+        const up = new Vector3(0, 1, 0);
+        const quat = new Vector3().copy(d).normalize();
+        const axis = up.clone().cross(quat);
+        const ang = Math.acos(Math.min(1, Math.max(-1, up.dot(quat))));
+        const ax = axis.lengthSq() < 1e-8 ? new Vector3(1, 0, 0) : axis.normalize();
+        return (
+          <group key={i} position={mid} quaternion={[ax.x * Math.sin(ang / 2), ax.y * Math.sin(ang / 2), ax.z * Math.sin(ang / 2), Math.cos(ang / 2)]}>
+            <mesh geometry={boltGeo} material={boltMat} scale={[width * on, l, width * on]} userData={{ noMask: true }} />
+            <mesh geometry={boltGeo} material={boltGlow} scale={[width * 5 * on, l, width * 5 * on]} userData={{ noMask: true }} />
+          </group>
+        );
+      })}
+    </group>
+  );
+};
+
+// ------------------------------------------------------------------ Birds
+const wingGeo = (() => {
+  const g = new BufferGeometry();
+  g.setAttribute("position", new BufferAttribute(new Float32Array([0, 0, 0.12, 0, 0, -0.1, 1, 0, -0.02]), 3));
+  g.computeVertexNormals();
+  return g;
+})();
+const birdMat = new MeshBasicMaterial({ color: "#050506", side: DoubleSide, fog: true });
+
+export const Birds: React.FC<{ t: number; start: number; origin: [number, number, number]; dir: [number, number, number]; count?: number; speed?: number; size?: number; seed?: number }> = ({
+  t, start, origin, dir, count = 14, speed = 6, size = 0.28, seed = 5,
+}) => {
+  const a = t - start;
+  if (a < 0) return null;
+  const d = new Vector3(...dir).normalize();
+  const yaw = Math.atan2(d.x, d.z);
+  return (
+    <group>
+      {Array.from({ length: count }, (_, i) => {
+        const r = [hash(i + seed), hash(i * 3.3 + seed), hash(i * 7.1 + seed), hash(i * 1.9 + seed)];
+        const delay = r[0] * 0.5;
+        const k = Math.max(0, a - delay);
+        if (k <= 0) return null;
+        const sp = speed * (0.75 + 0.5 * r[1]);
+        const dist = sp * k * Math.min(1, 0.4 + k);
+        const px = origin[0] + d.x * dist + (r[2] - 0.5) * (1.5 + k * 2.5);
+        const py = origin[1] + d.y * dist + (r[3] - 0.5) * 1.2 + k * 1.4 * r[1] + noise1(k * 1.5 + i, seed) * 0.4;
+        const pz = origin[2] + d.z * dist + (r[1] - 0.5) * (1.5 + k * 2.5);
+        const flap = Math.sin(k * (14 + r[3] * 6) + i) * 0.7;
+        const s = size * (0.8 + 0.4 * r[2]);
+        return (
+          <group key={i} position={[px, py, pz]} rotation={[0, yaw, 0]} scale={s} userData={{ noMask: true }}>
+            <mesh geometry={wingGeo} material={birdMat} rotation={[0, 0, flap]} />
+            <mesh geometry={wingGeo} material={birdMat} rotation={[0, Math.PI, flap]} />
+          </group>
+        );
+      })}
+    </group>
+  );
+};
+
+==== 12104 project/src/kits/chronicle/Overlay.tsx
+// CHRONICLE 2D layer, laid out on a 1080 × 1920 frame (or 1920 × 1080 for 16:9) and scaled to the render size.
+//   <Captions>  word-by-word VO captions; *starred* words are the keywords (bold, warm ivory)
+//   <DateStamp> big condensed date that lands with a small rise + crimson rule under it
+//   <NameTag>   NAME in condensed caps + role in italic serif (characters, kingdoms, places)
+//   <Counter>   a number that rolls from → to (people, metres, years), with a unit and a label
+//   <Cite>      top-of-frame source line ("Sumber: …") for a claim on screen
+//   <MapPin> / <MapLabel> / <RouteLine>  map annotations placed from projected 3D points
+
+import React from "react";
+import { F_CAPTION, F_CITE, F_LABEL, F_STAMP } from "./fonts.ts";
+
+export const IVORY = "#f4ead8";
+export const DIM = "rgba(244,234,216,0.62)";
+export const CRIMSON = "#d8432f";
+export const AMBER = "#ffb547";
+
+const c01 = (x: number) => (x < 0 ? 0 : x > 1 ? 1 : x);
+const lin = (s: number, a: number, b: number) => c01((s - a) / (b - a));
+const out3 = (x: number) => 1 - Math.pow(1 - c01(x), 3);
+/** fade in over [a, a+i], out over [b-o, b] */
+const window_ = (s: number, a: number, b: number, i = 0.3, o = 0.3) => Math.min(lin(s, a, a + i), 1 - lin(s, b - o, b));
+
+/** Layout canvas: 1080 × 1920 for vertical films, 1920 × 1080 for 16:9 (the overlay is laid out on it and scaled). */
+export type Canvas = { W: number; H: number; land: boolean };
+export const canvasFor = (width: number, height: number): Canvas => {
+  const land = width > height;
+  const W = land ? 1920 : 1080;
+  return { W, H: Math.round((W * height) / width), land };
+};
+export const CanvasCtx = React.createContext<Canvas>({ W: 1080, H: 1920, land: false });
+export const useCanvas = () => React.useContext(CanvasCtx);
+
+export const Frame: React.FC<{ width: number; height: number; children: React.ReactNode }> = ({ width, height, children }) => {
+  const c = canvasFor(width, height);
+  return (
+    <CanvasCtx.Provider value={c}>
+      <div style={{ position: "absolute", left: 0, top: 0, width: c.W, height: c.H, transform: `scale(${width / c.W})`, transformOrigin: "0 0", pointerEvents: "none" }}>{children}</div>
+    </CanvasCtx.Provider>
+  );
+};
+
+// ------------------------------------------------------------------ captions
+export type Word = { w: string; t: number; key?: boolean };
+/** Parse "Kata *kunci* lain" with a start/end time into evenly paced words (until real VO timings exist). */
+export const pace = (text: string, t0: number, t1: number): Word[] => {
+  const raw = text.split(/\s+/).filter(Boolean);
+  const weights = raw.map((w) => 0.6 + w.replace(/[*,.]/g, "").length * 0.08 + (/[,.]$/.test(w) ? 0.35 : 0));
+  const tot = weights.reduce((a, b) => a + b, 0);
+  let acc = 0;
+  return raw.map((w, i) => {
+    const t = t0 + ((t1 - t0) * acc) / tot;
+    acc += weights[i];
+    return { w: w.replace(/\*/g, ""), t, key: /^\*.*\*[,.!?]?$/.test(w) };
+  });
+};
+
+/** Chunks of ≤ `max` words, breaking after punctuation; each chunk stays until the next starts. */
+export const Captions: React.FC<{ s: number; words: Word[]; max?: number; y?: number; end?: number }> = ({ s, words, max: maxIn, y: yIn, end }) => {
+  const C = useCanvas();
+  const max = maxIn ?? (C.land ? 6 : 4);
+  const y = yIn ?? (C.land ? C.H - 150 : 1430);
+  const chunks: Word[][] = [];
+  let cur: Word[] = [];
+  for (const w of words) {
+    cur.push(w);
+    if (cur.length >= max || /[,.!?]$/.test(w.w)) { chunks.push(cur); cur = []; }
+  }
+  if (cur.length) chunks.push(cur);
+  let ci = -1;
+  for (let i = 0; i < chunks.length; i++) if (s >= chunks[i][0].t) ci = i;
+  if (ci < 0) return null;
+  const chunk = chunks[ci];
+  const nextT = chunks[ci + 1]?.[0].t ?? (end ?? chunk[chunk.length - 1].t + 1.2);
+  if (s > nextT + 0.05 && !chunks[ci + 1]) return null;
+  return (
+    <div style={{ position: "absolute", left: C.land ? 260 : 70, right: C.land ? 260 : 70, top: y, textAlign: "center", fontFamily: F_CAPTION, fontSize: 52, lineHeight: 1.25, letterSpacing: 0.2, textShadow: "0 2px 14px rgba(0,0,0,0.55), 0 1px 2px rgba(0,0,0,0.7)" }}>
+      {chunk.map((w, i) => {
+        const a = lin(s, w.t - 0.04, w.t + 0.12);
+        return (
+          <span key={i} style={{ opacity: 0.18 + 0.82 * a, color: w.key ? IVORY : "rgba(244,234,216,0.9)", fontWeight: w.key ? 800 : 500, display: "inline-block", transform: `translateY(${(1 - out3(a)) * 6}px)`, marginRight: 14 }}>
+            {w.w}
+          </span>
+        );
+      })}
+    </div>
+  );
+};
+
+// ------------------------------------------------------------------ date stamp
+export const DateStamp: React.FC<{ s: number; a: number; b: number; top: string; big: string; y?: number; size?: number }> = ({ s, a, b, top, big, y: yIn, size: sizeIn }) => {
+  const C = useCanvas();
+  const y = yIn ?? (C.land ? 80 : 250), size = sizeIn ?? (C.land ? 128 : 150);
+  const v = window_(s, a, b, 0.35, 0.35);
+  if (v <= 0) return null;
+  const rule = out3(lin(s, a + 0.15, a + 0.75));
+  return (
+    <div style={{ position: "absolute", left: 0, right: 0, top: y, textAlign: "center", opacity: v }}>
+      <div style={{ fontFamily: F_LABEL, fontWeight: 800, fontSize: 40, letterSpacing: 9, color: IVORY, opacity: 0.85, transform: `translateY(${(1 - out3(lin(s, a, a + 0.5))) * 16}px)` }}>{top}</div>
+      <div style={{ fontFamily: F_STAMP, fontSize: size, lineHeight: 1.0, color: IVORY, letterSpacing: 2, textShadow: "0 6px 30px rgba(0,0,0,0.45)", transform: `translateY(${(1 - out3(lin(s, a + 0.05, a + 0.6))) * 26}px)` }}>{big}</div>
+      <div style={{ margin: "14px auto 0", width: 220 * rule, height: 7, background: CRIMSON }} />
+    </div>
+  );
+};
+
+// ------------------------------------------------------------------ name tag
+export const NameTag: React.FC<{ s: number; a: number; b: number; name: string; role?: string; x?: number; y: number; align?: "center" | "left" }> = ({ s, a, b, name, role, x: xIn, y, align = "center" }) => {
+  const C = useCanvas();
+  const x = xIn ?? C.W / 2;
+  const v = window_(s, a, b, 0.3, 0.3);
+  if (v <= 0) return null;
+  const reveal = out3(lin(s, a, a + 0.55));
+  return (
+    <div style={{ position: "absolute", left: align === "center" ? x - 450 : x, width: 900, top: y, textAlign: align, opacity: v }}>
+      <div style={{ fontFamily: F_LABEL, fontWeight: 800, fontSize: 58, letterSpacing: 4, color: IVORY, textTransform: "uppercase", clipPath: `inset(0 ${(1 - reveal) * 100}% 0 0)`, textShadow: "0 2px 16px rgba(0,0,0,0.6)" }}>{name}</div>
+      {role && <div style={{ fontFamily: F_CITE, fontStyle: "italic", fontSize: 38, color: DIM, marginTop: -2, opacity: lin(s, a + 0.3, a + 0.7), textShadow: "0 2px 12px rgba(0,0,0,0.6)" }}>{role}</div>}
+    </div>
+  );
+};
+
+// ------------------------------------------------------------------ counter
+const fmt = (n: number) => Math.round(n).toLocaleString("id-ID");
+export const Counter: React.FC<{ s: number; a: number; b: number; from: number; to: number; roll: [number, number]; unit?: string; label?: string; y?: number; color?: string }> = ({
+  s, a, b, from, to, roll, unit = "", label, y: yIn, color = IVORY,
+}) => {
+  const C = useCanvas();
+  const y = yIn ?? (C.land ? 80 : 260);
+  const v = window_(s, a, b, 0.3, 0.35);
+  if (v <= 0) return null;
+  const k = out3(lin(s, roll[0], roll[1]));
+  const n = from + (to - from) * k;
+  const done = lin(s, roll[1], roll[1] + 0.25);
+  return (
+    <div style={{ position: "absolute", left: 0, right: 0, top: y, textAlign: "center", opacity: v }}>
+      <div style={{ fontFamily: F_STAMP, fontSize: 168, lineHeight: 1, color, letterSpacing: 2, textShadow: "0 6px 30px rgba(0,0,0,0.5)", transform: `scale(${1 + 0.05 * Math.sin(Math.PI * done)})` }}>
+        {fmt(n)}
+        <span style={{ fontSize: 84, marginLeft: 12 }}>{unit}</span>
+      </div>
+      {label && <div style={{ fontFamily: F_LABEL, fontWeight: 600, fontSize: 40, letterSpacing: 6, color: DIM, marginTop: 6, textTransform: "uppercase" }}>{label}</div>}
+    </div>
+  );
+};
+
+// ------------------------------------------------------------------ citation
+export const Cite: React.FC<{ s: number; a: number; b: number; text: string; src: string; y?: number; quote?: boolean }> = ({ s, a, b, text, src, y: yIn, quote = false }) => {
+  const C = useCanvas();
+  const y = yIn ?? (C.land ? 64 : 170);
+  const v = window_(s, a, b, 0.4, 0.4);
+  if (v <= 0) return null;
+  return (
+    <div style={{ position: "absolute", left: C.land ? 200 : 110, right: C.land ? 200 : 110, top: y, textAlign: "center", opacity: v }}>
+      <div style={{ fontFamily: F_CITE, fontStyle: "italic", fontSize: 44, lineHeight: 1.2, color: IVORY, textShadow: "0 2px 14px rgba(0,0,0,0.6)" }}>{quote ? `“${text}”` : text}</div>
+      <div style={{ fontFamily: F_LABEL, fontWeight: 600, fontSize: 28, letterSpacing: 3, color: DIM, marginTop: 10, textTransform: "uppercase" }}>{src}</div>
+    </div>
+  );
+};
+
+// ------------------------------------------------------------------ map annotations (positions in 0..1 screen space)
+export const MapPin: React.FC<{ s: number; a: number; x: number; y: number; name: string; sub?: string; color?: string; side?: "r" | "l"; pulse?: number }> = ({
+  s, a, x, y, name, sub, color = AMBER, side = "r", pulse = 0,
+}) => {
+  const C = useCanvas();
+  const v = out3(lin(s, a, a + 0.4));
+  if (v <= 0) return null;
+  const X = x * C.W, Y = y * C.H;
+  const pr = ((s - a) * 0.9) % 1;
+  return (
+    <div style={{ position: "absolute", left: X, top: Y, opacity: v }}>
+      <div style={{ position: "absolute", left: -11, top: -11, width: 22, height: 22, borderRadius: 11, background: color, boxShadow: "0 0 0 4px rgba(0,0,0,0.35)" }} />
+      {pulse > 0 && <div style={{ position: "absolute", left: -11 - pr * 40, top: -11 - pr * 40, width: 22 + pr * 80, height: 22 + pr * 80, borderRadius: 200, border: `3px solid ${color}`, opacity: (1 - pr) * pulse }} />}
+      <div style={{ position: "absolute", top: -34, [side === "r" ? "left" : "right"]: 26, whiteSpace: "nowrap", textAlign: side === "r" ? "left" : "right" } as React.CSSProperties}>
+        <div style={{ fontFamily: F_LABEL, fontWeight: 800, fontSize: 44, letterSpacing: 2, color: IVORY, textShadow: "0 2px 10px rgba(0,0,0,0.7)", clipPath: `inset(0 ${(1 - v) * 100}% 0 0)` }}>{name}</div>
+        {sub && <div style={{ fontFamily: F_CITE, fontStyle: "italic", fontSize: 32, color: DIM, marginTop: -4, textShadow: "0 2px 10px rgba(0,0,0,0.7)" }}>{sub}</div>}
+      </div>
+    </div>
+  );
+};
+
+/** Screen-space polyline (0..1 points) drawn progressively with a bright head. */
+export const RouteLine: React.FC<{ pts: { x: number; y: number }[]; progress: number; color?: string; dash?: boolean; width?: number; opacity?: number }> = ({
+  pts, progress, color = AMBER, dash = false, width = 6, opacity = 1,
+}) => {
+  const C = useCanvas();
+  if (pts.length < 2 || progress <= 0) return null;
+  const P = pts.map((p) => [p.x * C.W, p.y * C.H]);
+  const seg: number[] = [];
+  let tot = 0;
+  for (let i = 1; i < P.length; i++) { const l = Math.hypot(P[i][0] - P[i - 1][0], P[i][1] - P[i - 1][1]); seg.push(l); tot += l; }
+  const want = tot * c01(progress);
+  const out: number[][] = [P[0]];
+  let acc = 0;
+  for (let i = 1; i < P.length; i++) {
+    if (acc + seg[i - 1] >= want) {
+      const u = (want - acc) / seg[i - 1];
+      out.push([P[i - 1][0] + (P[i][0] - P[i - 1][0]) * u, P[i - 1][1] + (P[i][1] - P[i - 1][1]) * u]);
+      break;
+    }
+    out.push(P[i]);
+    acc += seg[i - 1];
+  }
+  const d = out.map((p, i) => `${i ? "L" : "M"}${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join(" ");
+  const head = out[out.length - 1];
+  return (
+    <svg width={C.W} height={C.H} style={{ position: "absolute", left: 0, top: 0, opacity }}>
+      <path d={d} fill="none" stroke="rgba(0,0,0,0.35)" strokeWidth={width + 6} strokeLinecap="round" strokeLinejoin="round" />
+      <path d={d} fill="none" stroke={color} strokeWidth={width} strokeLinecap="round" strokeLinejoin="round" strokeDasharray={dash ? `${width * 2.4} ${width * 2.2}` : undefined} />
+      {progress < 1 && <circle cx={head[0]} cy={head[1]} r={width * 1.6} fill={IVORY} />}
+    </svg>
+  );
+};
+
+==== 20752 project/src/kits/chronicle/props.tsx
+// CHRONICLE set pieces — simple, low-detail solids whose job is to read as dark shapes against a lit sky and to
+// catch a rim of the key light. All procedural (no downloaded models), deterministic, metres.
+//   <Water>  dusk/fire sea with fresnel sky + glitter path toward the light
+//   <Rampart> stone parapet with embrasures; <Cannon>; <Lantern>; <Flag>
+//   <Ship>   three-masted sailing ship with furled sails and rigging
+//   <Stilthouse> rumah panggung; <Palm> coconut palm; <Volcano> stratovolcano with glowing lava runs
+
+import React, { useLayoutEffect, useMemo } from "react";
+import {
+  BufferAttribute, BufferGeometry, CanvasTexture, Color, CylinderGeometry, DoubleSide, ExtrudeGeometry, LatheGeometry, MeshStandardMaterial, PlaneGeometry,
+  QuadraticBezierCurve3, RepeatWrapping, SRGBColorSpace, Shape, ShapeGeometry, ShaderMaterial, TubeGeometry, Vector2, Vector3, BoxGeometry, MeshBasicMaterial,
+} from "three";
+import { noise1 } from "./cam.ts";
+import { fbm } from "./relief.ts";
+
+const hash = (n: number) => {
+  const x = Math.sin(n * 91.3458 + 47.123) * 43758.5453;
+  return x - Math.floor(x);
+};
+
+// ------------------------------------------------------------------ materials
+const canvasTex = (w: number, h: number, paint: (g: CanvasRenderingContext2D) => void, repeat: [number, number] = [1, 1]) => {
+  const c = document.createElement("canvas");
+  c.width = w;
+  c.height = h;
+  paint(c.getContext("2d")!);
+  const t = new CanvasTexture(c);
+  t.colorSpace = SRGBColorSpace;
+  t.wrapS = t.wrapT = RepeatWrapping;
+  t.repeat.set(...repeat);
+  t.anisotropy = 8;
+  return t;
+};
+
+let stoneMat: MeshStandardMaterial | null = null;
+export const stone = () => {
+  if (stoneMat) return stoneMat;
+  const map = canvasTex(512, 512, (g) => {
+    g.fillStyle = "#6d6258";
+    g.fillRect(0, 0, 512, 512);
+    const rows = 8;
+    for (let r = 0; r < rows; r++) {
+      const h = 512 / rows;
+      let x = r % 2 ? -40 : 0;
+      let i = 0;
+      while (x < 512) {
+        const w = 70 + hash(r * 31 + i) * 60;
+        const v = 0.78 + hash(r * 17 + i * 3) * 0.32;
+        g.fillStyle = `rgb(${Math.round(110 * v)},${Math.round(99 * v)},${Math.round(88 * v)})`;
+        g.fillRect(x + 3, r * h + 3, w - 6, h - 6);
+        for (let k = 0; k < 40; k++) {
+          g.fillStyle = `rgba(0,0,0,${0.05 + hash(k + r * 7 + i) * 0.08})`;
+          g.fillRect(x + hash(k * 3 + i) * w, r * h + hash(k * 5 + r) * h, 3 + hash(k) * 8, 2 + hash(k * 2) * 5);
+        }
+        x += w;
+        i++;
+      }
+    }
+  }, [1, 1]);
+  stoneMat = new MeshStandardMaterial({ map, roughness: 0.95, color: "#d8cfc4" });
+  return stoneMat;
+};
+const woodMat = new MeshStandardMaterial({ color: "#3a2b22", roughness: 0.9 });
+const darkWood = new MeshStandardMaterial({ color: "#211915", roughness: 0.95 });
+const ironMat = new MeshStandardMaterial({ color: "#1a1a1c", roughness: 0.5, metalness: 0.6 });
+const thatchMat = new MeshStandardMaterial({ color: "#3b2a1d", roughness: 1 });
+const leafMat = new MeshStandardMaterial({ color: "#121410", roughness: 1, side: DoubleSide });
+const sailMat = new MeshStandardMaterial({ color: "#5a5048", roughness: 1, side: DoubleSide });
+
+// ------------------------------------------------------------------ water
+const WaterShader = {
+  vertexShader: /* glsl */ `
+    varying vec3 vW;
+    #include <fog_pars_vertex>
+    void main(){
+      vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz;
+      vec4 mvPosition = viewMatrix * w; gl_Position = projectionMatrix * mvPosition;
+      #include <fog_vertex>
+    }`,
+  fragmentShader: /* glsl */ `
+    uniform vec3 uDeep; uniform vec3 uSky; uniform vec3 uSun; uniform vec3 uSunDir; uniform float uTime; uniform float uGlitter;
+    varying vec3 vW;
+    #include <fog_pars_fragment>
+    float h(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+    float n(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f);
+      return mix(mix(h(i), h(i+vec2(1,0)), f.x), mix(h(i+vec2(0,1)), h(i+vec2(1,1)), f.x), f.y); }
+    float waves(vec2 p){ float s = 0.0, a = 0.5; for (int i = 0; i < 5; i++){ s += a * n(p); p = mat2(1.6, 1.2, -1.2, 1.6) * p + uTime * 0.35; a *= 0.5; } return s; }
+    void main(){
+      vec2 p = vW.xz * vec2(0.22, 0.6);
+      float e = 0.05;
+      float hx = waves(p + vec2(e, 0.0)) - waves(p - vec2(e, 0.0));
+      float hz = waves(p + vec2(0.0, e)) - waves(p - vec2(0.0, e));
+      vec3 nrm = normalize(vec3(-hx * 1.6, 1.0, -hz * 1.6));
+      vec3 v = normalize(cameraPosition - vW);
+      float fr = pow(1.0 - max(dot(v, nrm), 0.0), 4.0);
+      vec3 r = reflect(-v, nrm);
+      vec3 col = mix(uDeep, uSky, clamp(0.15 + fr * 1.2, 0.0, 1.0));
+      float g = pow(max(dot(r, normalize(uSunDir)), 0.0), 220.0) * uGlitter;
+      float g2 = pow(max(dot(r, normalize(uSunDir)), 0.0), 18.0) * 0.18 * uGlitter;
+      col += uSun * (g * 3.0 + g2);
+      gl_FragColor = vec4(col, 1.0);
+      #include <fog_fragment>
+    }`,
+};
+export const Water: React.FC<{ y: number; size?: number; t: number; deep: string; sky: string; sun: string; sunDir: [number, number, number]; glitter?: number }> = ({ y, size = 4000, t, deep, sky, sun, sunDir, glitter = 1 }) => {
+  const mat = useMemo(
+    () =>
+      new ShaderMaterial({
+        ...WaterShader,
+        uniforms: {
+          uDeep: { value: new Color() }, uSky: { value: new Color() }, uSun: { value: new Color() }, uSunDir: { value: new Vector3() }, uTime: { value: 0 }, uGlitter: { value: 1 },
+          fogColor: { value: new Color() }, fogNear: { value: 1 }, fogFar: { value: 1000 }, fogDensity: { value: 0.001 },
+        },
+        fog: true,
+      }),
+    [],
+  );
+  useLayoutEffect(() => () => mat.dispose(), [mat]);
+  mat.uniforms.uDeep.value.set(deep);
+  mat.uniforms.uSky.value.set(sky);
+  mat.uniforms.uSun.value.set(sun);
+  mat.uniforms.uSunDir.value.set(...sunDir);
+  mat.uniforms.uTime.value = t;
+  mat.uniforms.uGlitter.value = glitter;
+  return (
+    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, y, 0]} material={mat}>
+      <planeGeometry args={[size, size, 1, 1]} />
+    </mesh>
+  );
+};
+
+// ------------------------------------------------------------------ fort pieces
+/** Parapet running along x at z = 0 (outer face toward −z), walkway top at y = 0. Embrasures at `gaps` (x). */
+export const Rampart: React.FC<{ x0: number; x1: number; gaps: number[]; h?: number; drop?: number }> = ({ x0, x1, gaps, h = 1.2, drop = 8 }) => {
+  const mat = stone();
+  const parts: React.ReactNode[] = [];
+  const pts = [x0, ...gaps.flatMap((g) => [g - 0.55, g + 0.55]), x1];
+  for (let i = 0; i < pts.length; i += 2) {
+    const a = pts[i], b = pts[i + 1];
+    parts.push(
+      <mesh key={`m${i}`} material={mat} position={[(a + b) / 2, h / 2, 0]} castShadow receiveShadow>
+        <boxGeometry args={[b - a, h, 0.9]} />
+      </mesh>,
+    );
+  }
+  gaps.forEach((g, i) =>
+    parts.push(
+      <mesh key={`s${i}`} material={mat} position={[g, 0.25, 0]} castShadow receiveShadow>
+        <boxGeometry args={[1.1, 0.5, 0.9]} />
+      </mesh>,
+    ),
+  );
+  return (
+    <group>
+      {parts}
+      {/* walkway + outer wall dropping to the water */}
+      <mesh material={mat} position={[(x0 + x1) / 2, -0.15, 6]} receiveShadow>
+        <boxGeometry args={[x1 - x0, 0.3, 12]} />
+      </mesh>
+      <mesh material={mat} position={[(x0 + x1) / 2, -drop / 2, -0.25]} receiveShadow>
+        <boxGeometry args={[x1 - x0, drop, 0.5]} />
+      </mesh>
+    </group>
+  );
+};
+
+export const Cannon: React.FC<{ pos: [number, number, number]; rotY?: number }> = ({ pos, rotY = 0 }) => (
+  <group position={pos} rotation={[0, rotY, 0]}>
+    <mesh material={darkWood} position={[0, 0.32, 0.3]} castShadow>
+      <boxGeometry args={[0.6, 0.35, 1.2]} />
+    </mesh>
+    {[-0.34, 0.34].map((x) => [0.0, 0.75].map((z) => (
+      <mesh key={`${x}${z}`} material={darkWood} position={[x, 0.2, z]} rotation={[0, 0, Math.PI / 2]} castShadow>
+        <cylinderGeometry args={[0.2, 0.2, 0.09, 14]} />
+      </mesh>
+    )))}
+    <mesh material={ironMat} position={[0, 0.62, -0.25]} rotation={[Math.PI / 2 + 0.05, 0, 0]} castShadow>
+      <cylinderGeometry args={[0.11, 0.17, 1.9, 16]} />
+    </mesh>
+    <mesh material={ironMat} position={[0, 0.6, -1.15]} rotation={[Math.PI / 2, 0, 0]}>
+      <cylinderGeometry args={[0.135, 0.135, 0.1, 16]} />
+    </mesh>
+  </group>
+);
+
+const lampCore = new MeshBasicMaterial({ color: new Color("#ffc874").multiplyScalar(4), toneMapped: false });
+export const Lantern: React.FC<{ pos: [number, number, number]; t: number; seed?: number; light?: boolean }> = ({ pos, t, seed = 1, light = true }) => {
+  const f = 1 + 0.12 * noise1(t * 7, seed);
+  return (
+    <group position={pos}>
+      <mesh material={darkWood} position={[0, 1.1, 0]} castShadow>
+        <cylinderGeometry args={[0.05, 0.06, 2.2, 8]} />
+      </mesh>
+      <mesh material={ironMat} position={[0, 2.35, 0]}>
+        <boxGeometry args={[0.28, 0.36, 0.28]} />
+      </mesh>
+      <mesh material={lampCore} position={[0, 2.35, 0]} scale={[0.17 * f, 0.26 * f, 0.17 * f]} userData={{ noMask: true }}>
+        <boxGeometry args={[1, 1, 1]} />
+      </mesh>
+      {light && <pointLight position={[0, 2.35, 0.4]} color="#ffb860" intensity={30 * f} distance={16} decay={1.4} />}
+    </group>
+  );
+};
+
+export const Flag: React.FC<{ pos: [number, number, number]; t: number; h?: number; w?: number; color?: string; bands?: string[] }> = ({ pos, t, h = 9, w = 2.4, color = "#1c1716", bands }) => {
+  const geo = useMemo(() => new PlaneGeometry(w, w * 0.62, 16, 6), [w]);
+  useLayoutEffect(() => () => geo.dispose(), [geo]);
+  const mat = useMemo(() => new MeshStandardMaterial({ color, side: DoubleSide, roughness: 1 }), [color]);
+  const p = geo.attributes.position as BufferAttribute;
+  for (let i = 0; i < p.count; i++) {
+    const u = (i % 17) / 16;
+    const x = -w / 2 + u * w;
+    const yy = (Math.floor(i / 17) / 6 - 0.5) * w * 0.62;
+    const z = Math.sin(u * 5 - t * 6.5) * 0.18 * u + Math.sin(u * 9 - t * 9 + yy) * 0.05 * u;
+    p.setXYZ(i, x + w / 2, yy - z * 0.2, z);
+  }
+  p.needsUpdate = true;
+  geo.computeVertexNormals();
+  void bands;
+  return (
+    <group position={pos}>
+      <mesh material={darkWood} position={[0, h / 2, 0]} castShadow>
+        <cylinderGeometry args={[0.06, 0.09, h, 8]} />
+      </mesh>
+      <mesh geometry={geo} material={mat} position={[0.06, h - w * 0.36, 0]} castShadow />
+    </group>
+  );
+};
+
+// ------------------------------------------------------------------ ship
+const hullGeo = (() => {
+  const s = new Shape();
+  // top view: stern at −x, bow at +x
+  s.moveTo(-14, -3.2);
+  s.lineTo(6, -3.4);
+  s.quadraticCurveTo(13, -2.6, 17, 0);
+  s.quadraticCurveTo(13, 2.6, 6, 3.4);
+  s.lineTo(-14, 3.2);
+  s.quadraticCurveTo(-15.5, 0, -14, -3.2);
+  const g = new ExtrudeGeometry(s, { depth: 4.2, bevelEnabled: false, curveSegments: 10 });
+  g.rotateX(-Math.PI / 2);
+  g.translate(0, -2.0, 0);
+  return g;
+})();
+const shipMat = new MeshStandardMaterial({ color: "#2a211d", roughness: 0.9 });
+const ropeGeo = new CylinderGeometry(1, 1, 1, 4, 1);
+
+const Rope: React.FC<{ a: [number, number, number]; b: [number, number, number]; r?: number }> = ({ a, b, r = 0.035 }) => {
+  const A = new Vector3(...a), B = new Vector3(...b);
+  const mid = A.clone().add(B).multiplyScalar(0.5);
+  const d = B.clone().sub(A);
+  const l = d.length();
+  const up = new Vector3(0, 1, 0);
+  const n = d.clone().normalize();
+  const axis = up.clone().cross(n);
+  const ang = Math.acos(Math.min(1, Math.max(-1, up.dot(n))));
+  const ax = axis.lengthSq() < 1e-9 ? new Vector3(1, 0, 0) : axis.normalize();
+  const sn = Math.sin(ang / 2);
+  return <mesh geometry={ropeGeo} material={shipMat} position={mid} quaternion={[ax.x * sn, ax.y * sn, ax.z * sn, Math.cos(ang / 2)]} scale={[r, l, r]} />;
+};
+
+export const Ship: React.FC<{ pos: [number, number, number]; rotY?: number; t: number; scale?: number; lights?: boolean; seed?: number }> = ({ pos, rotY = 0, t, scale = 1, lights = true, seed = 1 }) => {
+  const roll = Math.sin(t * 0.7 + seed) * 0.025, pitch = Math.sin(t * 0.55 + seed * 2) * 0.012;
+  const masts: [number, number][] = [[-8, 22], [1, 26], [9, 21]];
+  return (
+    <group position={pos} rotation={[pitch, rotY, roll]} scale={scale}>
+      <mesh geometry={hullGeo} material={shipMat} castShadow />
+      {/* stern castle + bowsprit */}
+      <mesh material={shipMat} position={[-11.5, 3.0, 0]}><boxGeometry args={[5, 2.2, 6]} /></mesh>
+      <Rope a={[15, 2.2, 0]} b={[24, 6.5, 0]} r={0.18} />
+      {masts.map(([x, h], i) => (
+        <group key={i}>
+          <mesh material={shipMat} position={[x, 2 + h / 2, 0]}><cylinderGeometry args={[0.16, 0.3, h, 8]} /></mesh>
+          {[0.42, 0.66, 0.86].map((k, j) => {
+            const y = 2 + h * k, w = (1.15 - k) * 13;
+            return (
+              <group key={j}>
+                <mesh material={shipMat} position={[x, y, 0]} rotation={[Math.PI / 2, 0, 0]}><cylinderGeometry args={[0.1, 0.1, w, 6]} /></mesh>
+                <mesh material={sailMat} position={[x + 0.05, y - 0.35, 0]}><boxGeometry args={[0.45, 0.7, w * 0.92]} /></mesh>
+              </group>
+            );
+          })}
+          <Rope a={[x, 2 + h, 0]} b={[x - 6, 2.2, 3.1]} />
+          <Rope a={[x, 2 + h, 0]} b={[x - 6, 2.2, -3.1]} />
+          <Rope a={[x, 2 + h * 0.86, 0]} b={[x + 7, 2.4, 0]} />
+        </group>
+      ))}
+      <Rope a={[-8, 24, 0]} b={[1, 28, 0]} />
+      <Rope a={[1, 28, 0]} b={[24, 6.5, 0]} />
+      {lights && (
+        <mesh material={lampCore} position={[-13.2, 4.6, 0]} scale={0.32} userData={{ noMask: true }}>
+          <sphereGeometry args={[1, 8, 6]} />
+        </mesh>
+      )}
+    </group>
+  );
+};
+
+// ------------------------------------------------------------------ village pieces
+const roofGeo = (() => {
+  const s = new Shape();
+  s.moveTo(-3.6, 0);
+  s.lineTo(0, 2.6);
+  s.lineTo(3.6, 0);
+  s.lineTo(3.2, 0);
+  s.lineTo(0, 2.25);
+  s.lineTo(-3.2, 0);
+  s.closePath();
+  const g = new ExtrudeGeometry(s, { depth: 7.5, bevelEnabled: false });
+  g.translate(0, 0, -3.75);
+  return g;
+})();
+const gableGeo = (() => {
+  const s = new Shape();
+  s.moveTo(-3.0, 0);
+  s.lineTo(0, 2.1);
+  s.lineTo(3.0, 0);
+  s.closePath();
+  return new ShapeGeometry(s);
+})();
+
+export const Stilthouse: React.FC<{ pos: [number, number, number]; rotY?: number; scale?: number }> = ({ pos, rotY = 0, scale = 1 }) => (
+  <group position={pos} rotation={[0, rotY, 0]} scale={scale}>
+    {[-2.4, 0, 2.4].flatMap((x) => [-2.6, 0, 2.6].map((z) => (
+      <mesh key={`${x}${z}`} material={darkWood} position={[x, 1.1, z]} castShadow><cylinderGeometry args={[0.1, 0.12, 2.2, 6]} /></mesh>
+    )))}
+    <mesh material={woodMat} position={[0, 2.3, 0]} castShadow receiveShadow><boxGeometry args={[5.8, 0.25, 6.6]} /></mesh>
+    <mesh material={woodMat} position={[0, 3.4, 0]} castShadow receiveShadow><boxGeometry args={[5.2, 2.0, 6.0]} /></mesh>
+    <mesh geometry={roofGeo} material={thatchMat} position={[0, 4.35, 0]} castShadow />
+    <mesh geometry={gableGeo} material={woodMat} position={[0, 4.4, 3.0]} />
+    <mesh geometry={gableGeo} material={woodMat} position={[0, 4.4, -3.0]} rotation={[0, Math.PI, 0]} />
+    {/* ladder */}
+    <mesh material={darkWood} position={[1.2, 1.15, 3.7]} rotation={[0.45, 0, 0]}><boxGeometry args={[0.7, 0.08, 2.6]} /></mesh>
+  </group>
+);
+
+const frondGeo = (() => {
+  const L = 4.2;
+  const s = new Shape();
+  const N = 22;
+  const w = (x: number) => Math.pow(Math.sin(Math.PI * Math.min(1, x / L)), 0.6) * 0.85;
+  s.moveTo(0, 0.04);
+  for (let i = 0; i < N; i++) {
+    const x = (i / N) * L;
+    s.lineTo(x + 0.25, w(x));
+    s.lineTo(x + 0.12, 0.04);
+  }
+  s.lineTo(L, 0);
+  for (let i = N - 1; i >= 0; i--) {
+    const x = (i / N) * L;
+    s.lineTo(x + 0.12, -0.04);
+    s.lineTo(x + 0.25, -w(x));
+  }
+  s.lineTo(0, -0.04);
+  const g = new ShapeGeometry(s, 2);
+  const p = g.attributes.position as BufferAttribute;
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i), y = p.getY(i);
+    const k = x / L;
+    // lay flat (y → z), arc up then droop, leaflets hang down from the rachis
+    p.setXYZ(i, x, 0.9 * Math.sin(k * 1.3) - 2.2 * k * k - Math.abs(y) * 0.45, y);
+  }
+  g.computeVertexNormals();
+  return g;
+})();
+
+export const Palm: React.FC<{ pos: [number, number, number]; h?: number; lean?: [number, number]; t: number; seed?: number }> = ({ pos, h = 9, lean = [1.6, 0.4], t, seed = 1 }) => {
+  const trunk = useMemo(() => {
+    const c = new QuadraticBezierCurve3(new Vector3(0, 0, 0), new Vector3(lean[0] * 0.2, h * 0.55, lean[1] * 0.2), new Vector3(lean[0], h, lean[1]));
+    return { geo: new TubeGeometry(c, 16, 0.17, 7, false), top: new Vector3(lean[0], h, lean[1]) };
+  }, [h, lean]);
+  useLayoutEffect(() => () => trunk.geo.dispose(), [trunk]);
+  const sway = noise1(t * 0.6, seed) * 0.06;
+  return (
+    <group position={pos}>
+      <mesh geometry={trunk.geo} material={darkWood} castShadow />
+      <group position={trunk.top} rotation={[sway, 0, sway * 0.6]}>
+        {Array.from({ length: 11 }, (_, i) => {
+          const a = (i / 11) * Math.PI * 2 + hash(seed + i) * 0.4;
+          const tilt = -0.15 + hash(seed * 3 + i) * 0.35;
+          const fl = Math.sin(t * 1.3 + i * 1.7 + seed) * 0.05;
+          return <mesh key={i} geometry={frondGeo} material={leafMat} rotation={[0, a, tilt + fl]} scale={0.9 + hash(i + seed * 7) * 0.3} castShadow />;
+        })}
+      </group>
+    </group>
+  );
+};
+
+// ------------------------------------------------------------------ volcano
+export const Volcano: React.FC<{ pos: [number, number, number]; radius: number; height: number; glow?: number; seed?: number }> = ({ pos, radius, height, glow = 1, seed = 2 }) => {
+  const { geo, mat } = useMemo(() => {
+    const pts: Vector2[] = [];
+    const N = 40;
+    for (let i = 0; i <= N; i++) {
+      const u = i / N; // 0 = crater rim, 1 = base
+      const r = radius * (0.07 + 0.93 * u);
+      const y = height * Math.pow(1 - u, 1.6) - height * 0.02;
+      pts.push(new Vector2(r, y));
+    }
+    pts.unshift(new Vector2(radius * 0.02, height * 0.86));
+    const g = new LatheGeometry(pts, 96);
+    const p = g.attributes.position as BufferAttribute;
+    for (let i = 0; i < p.count; i++) {
+      const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+      const a = Math.atan2(z, x);
+      const n = fbm(Math.cos(a) * 3 + seed, y / height * 4, 4) - 0.5;
+      const ridge = Math.pow(Math.abs(Math.sin(a * 11 + n * 3)), 3) * 0.04;
+      const k = 1 + n * 0.12 - ridge;
+      p.setXYZ(i, x * k, y + n * height * 0.04, z * k);
+    }
+    g.computeVertexNormals();
+    const em = canvasTex(512, 512, (c) => {
+      c.fillStyle = "#000";
+      c.fillRect(0, 0, 512, 512);
+      // lathe uv: u around, v along the profile (0 at the rim side → 1 at the base)
+      for (let s = 0; s < 7; s++) {
+        let x = 30 + hash(s * 5 + seed) * 452;
+        const len = 120 + hash(s * 7 + seed) * 220;
+        c.lineCap = "round";
+        for (let y = 0; y < len; y += 4) {
+          const k = y / len;
+          c.strokeStyle = `rgba(255,${Math.round(120 + 90 * (1 - k))},40,${(1 - k) * 0.9})`;
+          c.lineWidth = 7 * (1 - k * 0.6);
+          c.beginPath();
+          c.moveTo(x, y);
+          x += (hash(s * 13 + y) - 0.5) * 6;
+          c.lineTo(x, y + 4);
+          c.stroke();
+        }
+      }
+      c.fillStyle = "rgba(190,60,18,1)";
+      c.fillRect(0, 0, 512, 12);
+    });
+    em.wrapT = RepeatWrapping;
+    em.flipY = false;
+    const m = new MeshStandardMaterial({ color: "#1d1614", roughness: 1, emissive: new Color("#ff5a1a"), emissiveMap: em, emissiveIntensity: 2.5 });
+    return { geo: g, mat: m };
+  }, [radius, height, seed]);
+  useLayoutEffect(() => () => { geo.dispose(); mat.dispose(); }, [geo, mat]);
+  mat.emissiveIntensity = 2.5 * glow;
+  return <mesh geometry={geo} material={mat} position={pos} receiveShadow />;
+};
+
+/** Gently rolling dark ground (village / fields). */
+export const Ground: React.FC<{ size?: number; color?: string; amp?: number; seed?: number }> = ({ size = 600, color = "#2b201b", amp = 1.2, seed = 4 }) => {
+  const geo = useMemo(() => {
+    const g = new PlaneGeometry(size, size, 160, 160);
+    g.rotateX(-Math.PI / 2);
+    const p = g.attributes.position as BufferAttribute;
+    for (let i = 0; i < p.count; i++) {
+      const x = p.getX(i), z = p.getZ(i);
+      const d = Math.hypot(x, z);
+      const k = Math.min(1, Math.max(0, (d - 12) / 40));
+      p.setY(i, (fbm(x * 0.02 + seed, z * 0.02, 4) - 0.5) * amp * 2 * k + (fbm(x * 0.3, z * 0.3, 2) - 0.5) * 0.08);
+    }
+    g.computeVertexNormals();
+    return g;
+  }, [size, amp, seed]);
+  useLayoutEffect(() => () => geo.dispose(), [geo]);
+  return (
+    <mesh geometry={geo} receiveShadow>
+      <meshStandardMaterial color={color} roughness={1} />
+    </mesh>
+  );
+};
+void BoxGeometry;
+void BufferGeometry;
+
+==== 14071 project/src/kits/chronicle/relief.ts
+// Relief map — a real-coastline 3D terrain of a map region, built in the browser from the baked Natural Earth
+// paths (src/data/map-*.json, same format as the PETA kit: Mercator "map px", optional 10 m detail box).
+//
+// Pipeline (once per region, cached): rasterise land → several blurred copies (coastal shelf, inland distance,
+// massif) → height = plateau + ridged noise + listed volcano cones, × vertical exaggeration → one grid mesh with
+// vertex colours (lowland olive-grey → rock → pale peaks); plus a painted sea texture (deep → shelf, thin coast).
+// World units: 1 unit = 1 map px (≈ 2.6 km at the bundled scale); y up; north = −z.
+
+import { BufferAttribute, BufferGeometry, CanvasTexture, Color, SRGBColorSpace, LinearFilter } from "three";
+import MAP from "../../data/map-nusantara.json";
+
+export type GeoMap = {
+  w: number; h: number; bbox: number[];
+  land: string;
+  detail?: { rect: number[]; land: string };
+};
+export const NUSANTARA = MAP as unknown as GeoMap;
+
+const RAD = Math.PI / 180;
+const merc = (lat: number) => Math.log(Math.tan(Math.PI / 4 + (lat * RAD) / 2));
+export const projPx = (lon: number, lat: number, map: GeoMap = NUSANTARA): [number, number] => {
+  const k = map.w / ((map.bbox[1] - map.bbox[0]) * RAD);
+  return [(lon - map.bbox[0]) * RAD * k, (merc(map.bbox[3]) - merc(lat)) * k];
+};
+/** km per map px at a latitude (Mercator stretch). */
+export const kmPerPx = (lat: number, map: GeoMap = NUSANTARA) => ((map.bbox[1] - map.bbox[0]) * 111.32 * Math.cos(lat * RAD)) / map.w;
+
+export type Volcano = { lon: number; lat: number; km: number; r?: number; skip?: boolean };
+export type Region = {
+  key: string;
+  lon0: number; lon1: number; lat0: number; lat1: number;
+  /** grid cell in map px (smaller = finer, heavier) */
+  cell?: number;
+  /** vertical exaggeration */
+  vex?: number;
+  volcanoes?: Volcano[];
+  map?: GeoMap;
+};
+
+export type Relief = {
+  geo: BufferGeometry;
+  sea: CanvasTexture;
+  /** world size of the region (x, z) and the sea plane centre */
+  size: [number, number];
+  toWorld: (lon: number, lat: number) => [number, number];
+  /** terrain height (world y) under a lon/lat, sea = 0 */
+  heightAt: (lon: number, lat: number) => number;
+  /** terrain height (world y, may be < 0 under the sea) at a world x/z */
+  heightAtWorld: (x: number, z: number) => number;
+  /** world y per km of real height */
+  yPerKm: number;
+  color: (km: number, slope: number, n: number) => [number, number, number];
+};
+
+// ---------------------------------------------------------------- noise (gradient noise, rotated octaves)
+const grad = (ix: number, iy: number, x: number, y: number) => {
+  const h = Math.sin(ix * 127.1 + iy * 311.7) * 43758.5453;
+  const a = (h - Math.floor(h)) * Math.PI * 2;
+  return Math.cos(a) * (x - ix) + Math.sin(a) * (y - iy);
+};
+const q = (t: number) => t * t * t * (t * (t * 6 - 15) + 10);
+/** Perlin-style gradient noise, roughly −0.7…0.7 → mapped to 0…1. */
+const gnoise = (x: number, y: number) => {
+  const xi = Math.floor(x), yi = Math.floor(y);
+  const u = q(x - xi), v = q(y - yi);
+  const a = grad(xi, yi, x, y), b = grad(xi + 1, yi, x, y), c = grad(xi, yi + 1, x, y), d = grad(xi + 1, yi + 1, x, y);
+  return 0.5 + 0.75 * (a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v);
+};
+const ROT = [0.8, 0.6];
+export const fbm = (x: number, y: number, oct = 5) => {
+  let s = 0, a = 0.5, f = 1, px = x, py = y;
+  for (let i = 0; i < oct; i++) {
+    s += a * gnoise(px * f, py * f);
+    const nx = px * ROT[0] - py * ROT[1], ny = px * ROT[1] + py * ROT[0];
+    px = nx + 17.3; py = ny - 9.1;
+    f *= 2.02; a *= 0.5;
+  }
+  return s;
+};
+export const ridged = (x: number, y: number, oct = 5) => {
+  let s = 0, a = 0.6, f = 1, px = x, py = y, w = 1;
+  for (let i = 0; i < oct; i++) {
+    let n = 1 - Math.abs(gnoise(px * f, py * f) * 2 - 1);
+    n = n * n * w;
+    s += a * n;
+    w = Math.min(1, n * 1.6);
+    const nx = px * ROT[0] - py * ROT[1], ny = px * ROT[1] + py * ROT[0];
+    px = nx + 5.7; py = ny + 3.3;
+    f *= 2.15; a *= 0.5;
+  }
+  return s;
+};
+
+// ---------------------------------------------------------------- palette
+const LAND_LOW = new Color("#626c5c"), LAND_MID = new Color("#7b7e70"), LAND_HIGH = new Color("#9c978a"), LAND_PEAK = new Color("#cbc4b5");
+const ROCK = new Color("#66645c");
+export const reliefColor = (km: number, slope: number, n: number): [number, number, number] => {
+  const c = new Color();
+  if (km < 0.6) c.copy(LAND_LOW).lerp(LAND_MID, km / 0.6);
+  else if (km < 1.8) c.copy(LAND_MID).lerp(LAND_HIGH, (km - 0.6) / 1.2);
+  else c.copy(LAND_HIGH).lerp(LAND_PEAK, Math.min(1, (km - 1.8) / 1.8));
+  c.lerp(ROCK, Math.min(0.55, Math.max(0, slope - 0.35) * 0.9));
+  c.multiplyScalar(0.88 + 0.24 * n);
+  return [c.r, c.g, c.b];
+};
+
+// ---------------------------------------------------------------- raster helpers
+type Raster = { w: number; h: number; d: Float32Array };
+const readRed = (g: CanvasRenderingContext2D, w: number, h: number): Raster => {
+  const img = g.getImageData(0, 0, w, h).data;
+  const d = new Float32Array(w * h);
+  for (let i = 0; i < w * h; i++) d[i] = img[i * 4] / 255;
+  return { w, h, d };
+};
+const bilinear = (r: Raster, x: number, y: number) => {
+  const fx = Math.max(0, Math.min(r.w - 1.001, x)), fy = Math.max(0, Math.min(r.h - 1.001, y));
+  const xi = Math.floor(fx), yi = Math.floor(fy), u = fx - xi, v = fy - yi;
+  const i = yi * r.w + xi;
+  return r.d[i] * (1 - u) * (1 - v) + r.d[i + 1] * u * (1 - v) + r.d[i + r.w] * (1 - u) * v + r.d[i + r.w + 1] * u * v;
+};
+
+const cache = new Map<string, Relief>();
+
+export const buildRelief = (R: Region): Relief => {
+  const hit = cache.get(R.key);
+  if (hit) return hit;
+  const map = R.map ?? NUSANTARA;
+  const [x0, y0] = projPx(R.lon0, R.lat1, map);
+  const [x1, y1] = projPx(R.lon1, R.lat0, map);
+  const W = x1 - x0, H = y1 - y0;
+  const cx = x0 + W / 2, cy = y0 + H / 2;
+  const S = 4; // raster px per map px
+  const rw = Math.ceil(W * S), rh = Math.ceil(H * S);
+  const cvs = document.createElement("canvas");
+  cvs.width = rw;
+  cvs.height = rh;
+  const g = cvs.getContext("2d", { willReadFrequently: true })!;
+  const drawLand = (ctx: CanvasRenderingContext2D, color: string) => {
+    ctx.save();
+    ctx.setTransform(S, 0, 0, S, -x0 * S, -y0 * S);
+    ctx.fillStyle = color;
+    ctx.fill(new Path2D(map.land));
+    if (map.detail) {
+      const [dx0, dy0, dx1, dy1] = map.detail.rect;
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(dx0, dy0, dx1 - dx0, dy1 - dy0);
+      ctx.clip();
+      ctx.fillStyle = "#000";
+      ctx.fillRect(dx0, dy0, dx1 - dx0, dy1 - dy0);
+      ctx.fillStyle = color;
+      ctx.fill(new Path2D(map.detail.land));
+      ctx.restore();
+    }
+    ctx.restore();
+  };
+  g.fillStyle = "#000";
+  g.fillRect(0, 0, rw, rh);
+  drawLand(g, "#fff");
+  const mask = readRed(g, rw, rh);
+  const blurOf = (px: number) => {
+    const c2 = document.createElement("canvas");
+    c2.width = rw;
+    c2.height = rh;
+    const g2 = c2.getContext("2d", { willReadFrequently: true })!;
+    g2.fillStyle = "#000";
+    g2.fillRect(0, 0, rw, rh);
+    g2.filter = `blur(${px * S}px)`;
+    g2.drawImage(cvs, 0, 0);
+    return readRed(g2, rw, rh);
+  };
+  const b1 = blurOf(1.2), b2 = blurOf(5), b3 = blurOf(14);
+
+  // land sinks into the sea along the region's border, so a cut coastline never shows as a straight edge: the
+  // sinking line wobbles (low-frequency noise), so a cut island ends in a ragged coast, not a ruler line
+  const mn = Math.min(W, H);
+  const edgeE = (px: number, pz: number) => {
+    const wob = (fbm((px / mn) * 7 + 3.1, (pz / mn) * 7 + 7.7, 3) - 0.44) * 0.16 * mn;
+    const t = (Math.min(px, W - px, pz, H - pz) - 0.02 * mn + wob) / (0.1 * mn);
+    return t >= 1 ? 1 : t <= 0 ? 0 : t * t * (3 - 2 * t);
+  };
+
+  // ---- sea texture (deep → shelf glow → thin pale coastline)
+  const sea = document.createElement("canvas");
+  const SW = 2048, SH = Math.round((2048 * H) / W);
+  sea.width = SW;
+  sea.height = SH;
+  const sg = sea.getContext("2d")!;
+  sg.fillStyle = "#183c48";
+  sg.fillRect(0, 0, SW, SH);
+  const k = SW / W;
+  const shelf = (blur: number, col: string, alpha: number) => {
+    sg.save();
+    sg.globalAlpha = alpha;
+    sg.filter = `blur(${blur * k}px)`;
+    sg.setTransform(k, 0, 0, k, -x0 * k, -y0 * k);
+    sg.fillStyle = col;
+    sg.fill(new Path2D(map.land));
+    if (map.detail) sg.fill(new Path2D(map.detail.land));
+    sg.restore();
+  };
+  shelf(10, "#23525f", 0.8);
+  shelf(3, "#2f6570", 0.65);
+  sg.save();
+  sg.setTransform(k, 0, 0, k, -x0 * k, -y0 * k);
+  sg.strokeStyle = "rgba(196, 220, 212, 0.75)";
+  sg.lineWidth = 0.32;
+  sg.stroke(new Path2D(map.land));
+  sg.restore();
+  // the shelf glow and coastline of sunk land fade out with it (else they draw the region's border as a box)
+  {
+    const fw = 256, fh = Math.max(2, Math.round((256 * H) / W));
+    const fc = document.createElement("canvas");
+    fc.width = fw;
+    fc.height = fh;
+    const fg = fc.getContext("2d")!;
+    const im = fg.createImageData(fw, fh);
+    for (let y = 0; y < fh; y++) for (let x = 0; x < fw; x++) {
+      const e = edgeE(((x + 0.5) / fw) * W, ((y + 0.5) / fh) * H);
+      const al = Math.min(1, Math.max(0, (0.92 - e) / 0.5));
+      const o = (y * fw + x) * 4;
+      im.data[o] = 0x18; im.data[o + 1] = 0x3c; im.data[o + 2] = 0x48; im.data[o + 3] = Math.round(al * 255);
+    }
+    fg.putImageData(im, 0, 0);
+    sg.imageSmoothingEnabled = true;
+    sg.drawImage(fc, 0, 0, SW, SH);
+  }
+  // faint graticule every 2°
+  sg.save();
+  sg.strokeStyle = "rgba(170, 205, 205, 0.07)";
+  sg.lineWidth = 1;
+  for (let lon = Math.ceil(R.lon0 / 2) * 2; lon <= R.lon1; lon += 2) { const [px] = projPx(lon, 0, map); sg.beginPath(); sg.moveTo((px - x0) * k, 0); sg.lineTo((px - x0) * k, SH); sg.stroke(); }
+  for (let lat = Math.ceil(R.lat0 / 2) * 2; lat <= R.lat1; lat += 2) { const [, py] = projPx(0, lat, map); sg.beginPath(); sg.moveTo(0, (py - y0) * k); sg.lineTo(SW, (py - y0) * k); sg.stroke(); }
+  sg.restore();
+  const seaTex = new CanvasTexture(sea);
+  seaTex.colorSpace = SRGBColorSpace;
+  seaTex.minFilter = LinearFilter;
+  seaTex.anisotropy = 8;
+
+  // ---- heights
+  const vex = R.vex ?? 5;
+  const yPerKm = (vex / kmPerPx((R.lat0 + R.lat1) / 2, map));
+  const vols = (R.volcanoes ?? []).map((v) => {
+    const [px, py] = projPx(v.lon, v.lat, map);
+    return { x: (px - x0) * S, y: (py - y0) * S, km: v.km, r: (v.r ?? 7) * S * 1.8, skip: v.skip };
+  });
+  const kmAtRaster = (rx: number, ry: number) => {
+    const m = bilinear(mask, rx, ry);
+    const c1 = bilinear(b1, rx, ry), c2 = bilinear(b2, rx, ry), c3 = bilinear(b3, rx, ry);
+    const land = Math.min(1, Math.max(0, (c1 - 0.3) / 0.4));
+    const mx = (rx / S + x0) * 0.06, my = (ry / S + y0) * 0.06;
+    let km = 0.02 + 0.12 * c2 + 0.45 * Math.pow(c3, 1.6);
+    const inland = Math.min(1, Math.max(0, (c2 - 0.5) / 0.4));
+    const hills = Math.min(1, Math.max(0, (fbm(mx * 0.22 + 3.1, my * 0.22 - 1.7, 3) - 0.42) / 0.22));
+    km += (0.08 + 0.9 * Math.pow(c2, 1.2)) * ridged(mx * 0.8, my * 0.8, 6) * inland * inland * hills;
+    km += 0.06 * (fbm(mx * 5, my * 5, 3) - 0.5) * c1;
+    for (const v of vols) {
+      if (v.skip) continue;
+      const dx = rx - v.x, dy = ry - v.y;
+      const u = Math.sqrt(dx * dx + dy * dy) / v.r;
+      if (u > 3) continue;
+      const ang = Math.atan2(dy, dx);
+      const gull = 1 - 0.07 * Math.pow(Math.abs(Math.sin(ang * 9 + fbm(u * 3, ang, 2) * 3)), 3) * Math.min(1, u * 2);
+      const prof = Math.exp(-Math.pow(u * 1.7, 1.5));
+      km = Math.max(km, v.km * prof * gull + km * 0.4);
+    }
+    const seaDepth = -0.9 * (1 - c1) - 0.1;
+    return land > 0 ? km * land + seaDepth * (1 - land) * (m < 0.5 ? 1 : 0) : seaDepth;
+  };
+
+  const cell = R.cell ?? 0.65;
+  const nx = Math.ceil(W / cell) + 1, nz = Math.ceil(H / cell) + 1;
+  const pos = new Float32Array(nx * nz * 3);
+  const col = new Float32Array(nx * nz * 3);
+  const kmGrid = new Float32Array(nx * nz);
+  for (let j = 0; j < nz; j++) {
+    for (let i = 0; i < nx; i++) {
+      const px = Math.min(W, i * cell), pz = Math.min(H, j * cell);
+      const e = edgeE(px, pz);
+      const km = kmAtRaster(px * S, pz * S) * e - 0.6 * (1 - e);
+      const id = j * nx + i;
+      kmGrid[id] = km;
+      pos[id * 3] = px - W / 2;
+      pos[id * 3 + 1] = km * yPerKm;
+      pos[id * 3 + 2] = pz - H / 2;
+    }
+  }
+  for (let j = 0; j < nz; j++) {
+    for (let i = 0; i < nx; i++) {
+      const id = j * nx + i;
+      const kx = kmGrid[j * nx + Math.min(nx - 1, i + 1)] - kmGrid[j * nx + Math.max(0, i - 1)];
+      const kz = kmGrid[Math.min(nz - 1, j + 1) * nx + i] - kmGrid[Math.max(0, j - 1) * nx + i];
+      const slope = (Math.sqrt(kx * kx + kz * kz) * yPerKm) / (2 * cell);
+      const n = fbm(i * 0.21, j * 0.21, 3);
+      const [r, gg, b] = kmGrid[id] <= 0 ? [0.06, 0.15, 0.17] : reliefColor(kmGrid[id], slope, n);
+      col[id * 3] = r; col[id * 3 + 1] = gg; col[id * 3 + 2] = b;
+    }
+  }
+  const idx = new Uint32Array((nx - 1) * (nz - 1) * 6);
+  let p = 0;
+  for (let j = 0; j < nz - 1; j++) for (let i = 0; i < nx - 1; i++) {
+    const a = j * nx + i, b = a + 1, c = a + nx, d = c + 1;
+    idx[p++] = a; idx[p++] = c; idx[p++] = b; idx[p++] = b; idx[p++] = c; idx[p++] = d;
+  }
+  const geo = new BufferGeometry();
+  geo.setAttribute("position", new BufferAttribute(pos, 3));
+  geo.setAttribute("color", new BufferAttribute(col, 3));
+  geo.setIndex(new BufferAttribute(idx, 1));
+  geo.computeVertexNormals();
+  geo.computeBoundingSphere();
+
+  const toWorld = (lon: number, lat: number): [number, number] => {
+    const [px, py] = projPx(lon, lat, map);
+    return [px - cx, py - cy];
+  };
+  const heightAt = (lon: number, lat: number) => {
+    const [px, py] = projPx(lon, lat, map);
+    return Math.max(0, kmAtRaster((px - x0) * S, (py - y0) * S)) * yPerKm;
+  };
+  const heightAtWorld = (x: number, z: number) => kmAtRaster((x + W / 2) * S, (z + H / 2) * S) * yPerKm;
+  const out: Relief = { geo, sea: seaTex, size: [W, H], toWorld, heightAt, heightAtWorld, yPerKm, color: reliefColor };
+  cache.set(R.key, out);
+  return out;
+};
+
+==== 1806 project/src/Root.tsx
+import React from "react";
+import { Composition } from "remotion";
+import { PRESETS } from "./core/film/frame.ts";
+import { Lookdev } from "./scenes/lookdev/Lookdev.tsx";
+import { ChronicleFilm, chronicleMetadata } from "./film/ChronicleFilm.tsx";
+import GENERATED from "./generated/plan.json";
+import type { Plan } from "./director/types.ts";
+
+const { preview, final } = PRESETS;
+
+// Films are rendered by scripts/make.mjs with the plan as props; the default props are the last planned story
+// (src/generated/plan.json) so the Studio opens on it. Lookdev = the silhouette cast with contours (npm run look:cast).
+export const RemotionRoot: React.FC = () => (
+  <>
+    <Composition id="ChroniclePreview" component={ChronicleFilm} defaultProps={{ plan: GENERATED as unknown as Plan }} calculateMetadata={chronicleMetadata} durationInFrames={300} fps={preview.fps} width={preview.width} height={preview.height} />
+    <Composition id="ChronicleFinal" component={ChronicleFilm} defaultProps={{ plan: GENERATED as unknown as Plan }} calculateMetadata={chronicleMetadata} durationInFrames={600} fps={final.fps} width={final.width} height={final.height} />
+    <Composition id="ChroniclePreviewWide" component={ChronicleFilm} defaultProps={{ plan: GENERATED as unknown as Plan }} calculateMetadata={chronicleMetadata} durationInFrames={300} fps={preview.fps} width={preview.height} height={preview.width} />
+    <Composition id="ChronicleFinalWide" component={ChronicleFilm} defaultProps={{ plan: GENERATED as unknown as Plan }} calculateMetadata={chronicleMetadata} durationInFrames={600} fps={final.fps} width={final.height} height={final.width} />
+    <Composition id="Lookdev" component={Lookdev} durationInFrames={4 * preview.fps} fps={preview.fps} width={preview.width} height={preview.height} />
+  </>
+);

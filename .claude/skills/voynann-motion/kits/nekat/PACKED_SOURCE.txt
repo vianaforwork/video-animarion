@@ -1,0 +1,2668 @@
+VOYNANN Motion - packed source files of this folder. Do not edit by hand.
+The skill upload in the Claude app accepts at most 200 files, so the source files are packed here.
+`node <skill folder>/new-project.mjs <project folder> --kit=<style>` unpacks them into the project.
+Format: per file one line with four '=' signs, the byte length and the path, then exactly that many bytes.
+
+==== 41 project/.gitignore
+node_modules
+out
+.gl-mode
+public/stories
+
+==== 59083 project/src/nekat/acts.ts
+// NEKAT choreography runtime (pure TypeScript): plan + film time → everything on screen as data — the hero and the
+// partner (position, pose, face), every creature, dust puffs, the tools (world-space descriptors drawn by Film.tsx)
+// and effects. Node uses it too (the camera solver frames what this returns), so picture and camera always agree.
+//   hook   the hero glares at the named creature on its perch
+//   level  setup → attempt (tool choreography in "tool time") → backfire → the counter flips → arrivals
+//   peak   close on the hero while the crowd keeps growing; one lands on his head
+//   ending nap | adopt | run | cliffhanger | menyerah
+import { rideFit, riderPos, type Ride } from "./ride.ts";
+import { add, clamp, easeIn, easeOut, hash, lin, mix, mix3, norm, smooth, sub, type V3 } from "./math.ts";
+import { AKIMBO, BD, CROSSED, EXPR, blinkAt, defaultPose, faceAt, headTop, poseTrack, toWorld, track, type Expr, type Face, type Pose } from "./rig.ts";
+import { Pile, scatter, type Inst, type Zone } from "./crowd.ts";
+import { SPECIES, shapeOf } from "./species.ts";
+import { SETS } from "./sets/index.ts";
+import { withDressing } from "./dressing.ts";
+import { drawnFor, homes, laneOf, stageCentre, stageOf } from "./population.ts";
+import { TOOLS, type ToolDef } from "./tools.ts";
+import type { Plan, Seg, SetMeta } from "./types.ts";
+
+export type Puff = { p: V3; t0: number; r?: number };
+export type ToolDesc =
+  | { kind: "broom"; top: V3; dir: V3 }
+  | { kind: "hose"; pts: V3[]; nozzle: V3; dir: V3; reel: V3 }
+  | { kind: "water"; from: V3; vel: V3; on: number; n?: number; r?: number; seed?: number }
+  | { kind: "vacuum"; can: V3; yaw: number; handle: V3; dir: V3; swell: number; lid: number }
+  | { kind: "truck"; p: V3; yaw: number; spin: number; aim: number; cyaw: number; ride: Ride }
+  | { kind: "fan"; p: V3; yaw: number; spin: number; on: number }
+  | { kind: "net"; grip: V3; dir: V3; bag: number }
+  | { kind: "bowl"; p: V3 }
+  | { kind: "toa"; p: V3; dir: V3; horn?: boolean }
+  | { kind: "rings"; p: V3; dir: V3; t0: number; t1: number; color: string }
+  | { kind: "umbrella"; grip: V3; dir: V3; open: number }
+  | { kind: "drone"; p: V3; yaw: number; tilt: number }
+  | { kind: "remote"; p: V3; yaw: number }
+  | { kind: "box"; p: V3; yaw: number; tilt: number }
+  | { kind: "bucket"; p: V3; dir: V3; tilt: number }
+  | { kind: "wind"; p: V3; dir: V3; on: number }
+  | { kind: "drips"; p: V3; t0: number }
+  | { kind: "chair"; p: V3; yaw: number; s: number }
+  | { kind: "flag"; grip: V3; wave: number }
+  | { kind: "stick"; p: V3; lean: number; hand: V3 };
+export type Actor = { pos: V3; yaw: number; pose: Pose; face: Face; blink: number; seated?: "hidden" | "chair"; rot?: V3 };
+export type Scene = {
+  hero: Actor | null;
+  partner: Actor | null;
+  crowd: Inst[];
+  puffs: Puff[];
+  tools: ToolDesc[];
+  zzz?: { at: V3; show: number };
+  giant?: { p: V3; yaw: number; scale: number };
+};
+
+// ------------------------------------------------------------------ small helpers
+const memo = new Map<string, unknown>();
+const once = <T,>(key: string, make: () => T): T => {
+  if (!memo.has(key)) memo.set(key, make());
+  return memo.get(key) as T;
+};
+const breathe = (t: number) => 0.012 * Math.sin(t * 2.3);
+/** 0 → 1 pop with a small overshoot (0 before t0). */
+export const popScale = (t: number, t0: number, dur = 0.3) => {
+  if (t < t0) return 0;
+  if (t >= t0 + dur) return 1;
+  const x = (t - t0) / dur - 1, k = 1.6;
+  return Math.max(0, 1 + (k + 1) * x * x * x + k * x * x);
+};
+/** Hop with anticipation squash, stretch in the air, landing squash. */
+export const hop = (p0: V3, p1: V3, t: number, t0: number, dur: number, h: number): { p: V3; squash: number; u: number } => {
+  const t1 = t0 + dur, u = clamp((t - t0) / dur), e = smooth(u);
+  const p: V3 = [mix(p0[0], p1[0], e), mix(p0[1], p1[1], e) + 4 * h * u * (1 - u), mix(p0[2], p1[2], e)];
+  let sq = 0;
+  if (t < t0 - 0.12) sq = 0;
+  else if (t < t0) sq = 0.45 * smooth(lin(t, t0 - 0.12, t0));
+  else if (t < t0 + 0.08) sq = mix(0.45, -0.3, smooth(lin(t, t0, t0 + 0.08)));
+  else if (t < t1) sq = mix(-0.3, 0, smooth(lin(t, t0 + 0.08, t1)));
+  else if (t < t1 + 0.06) sq = 0.45 * smooth(lin(t, t1, t1 + 0.06));
+  else sq = 0.45 * (1 - smooth(lin(t, t1 + 0.06, t1 + 0.26)));
+  return { p, squash: sq, u };
+};
+const yawTo = (from: V3, to: V3) => Math.atan2(to[0] - from[0], to[2] - from[2]);
+const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
+/** Tool time: before the flip the choreography holds its first pose (long lines) or compresses (short ones). */
+export const tauOf = (t: number, F: number, Ft: number) => (F >= Ft ? Math.max(0, t - (F - Ft)) : t < F ? (t * Ft) / F : Ft + (t - F));
+/** Mouth flap while a cast member speaks one of the segment lines. */
+const talk = (seg: Seg, who: string, t: number) => {
+  for (const l of seg.lines) {
+    if (l.by !== who || t < l.t0 || t > l.t1) continue;
+    const env = smooth(lin(t, l.t0, l.t0 + 0.08)) * (1 - smooth(lin(t, l.t1 - 0.12, l.t1)));
+    if (l.words.length && l.spoken) {
+      const w = l.words.find((x) => t >= x.t0 && t < x.t1);
+      if (!w) return 0;
+      const k = clamp((t - w.t0) / Math.max(0.08, w.t1 - w.t0));
+      return env * (0.35 + 0.65 * Math.sin(Math.PI * k));
+    }
+    return env * (0.55 + 0.45 * (0.5 - 0.5 * Math.cos(t * 2 * Math.PI * 4.2)));
+  }
+  return 0;
+};
+const withTalk = (f: Face, m: number): Face => (m > 0 ? { ...f, mouthOpen: Math.max(f.mouthOpen, m * 0.75), mouthW: Math.max(0.8, f.mouthW) } : f);
+
+// ------------------------------------------------------------------ context
+export type Ctx = { plan: Plan; S: SetMeta; sp: string; s: number; partner: boolean };
+export const ctxOf = (plan: Plan): Ctx => ({ plan, S: withDressing(SETS[plan.set], plan.dressing), sp: plan.pest.look.species, s: plan.hero.look.build?.s ?? 1, partner: !!plan.partner });
+/** Drawn creatures for a counter value in this plan. */
+export const vis = (c: Ctx, n: number) => Math.min(drawnFor(n, c.plan.drawn?.end ?? n, c.plan.drawn?.cap ?? 1e9), homes(c.S, c.sp, c.partner).length);
+const segAt = (plan: Plan, t: number) => {
+  let i = 0;
+  for (let k = 0; k < plan.segs.length; k++) if (t >= plan.segs[k].t0 - 1e-6) i = k;
+  return i;
+};
+const idleCrowd = (c: Ctx, n: number, skip?: Set<number>): Inst[] => {
+  const H = homes(c.S, c.sp, c.partner);
+  const out: Inst[] = [];
+  for (let i = 0; i < Math.min(n, H.length); i++) if (!skip?.has(i)) out.push(H[i]);
+  return out;
+};
+
+// ------------------------------------------------------------------ partner (the second human of the duo)
+type Mate = "crossed" | "laugh" | "shock" | "point";
+const MATE: Record<Mate, Partial<Pose> & { handL: V3; handR: V3 }> = {
+  crossed: { ...CROSSED, lean: -0.03 },
+  laugh: { handL: [0.16, 0.68, 0.24], handR: [-0.16, 0.68, 0.24], poleL: [1, -0.5, 0], poleR: [-1, -0.5, 0], lean: 0.08, nod: -0.15 },
+  shock: { handL: [0.12, 1.3, 0.17], handR: [-0.12, 1.3, 0.17], poleL: [1, -0.3, -0.2], poleR: [-1, -0.3, -0.2], lean: -0.08 },
+  point: { handL: [0.3, 0.66, 0.05], handR: [-0.2, 1.05, 0.48], poleL: [1, -0.3, -0.5], poleR: [-0.8, -0.6, 0], lean: 0.02 },
+};
+const MATE_EXPR: Record<Mate, Expr> = { crossed: "smug", laugh: "grin", shock: "shock", point: "smug" };
+const partnerActor = (c: Ctx, seg: Seg, t: number): Actor | null => {
+  const pl = c.plan.partner;
+  if (!pl) return null;
+  const W = c.S.watch;
+  const flip = seg.level?.flip ?? seg.peak?.flip ?? 1e9;
+  // mode at the segment start, and after the flip (blended over 0.3 s: never a one-frame switch)
+  let m0: Mate = "crossed", m1: Mate = "crossed";
+  if (seg.kind === "level") m1 = seg.level!.n % 2 ? "laugh" : "point";
+  else if (seg.kind === "peak") { m0 = "crossed"; m1 = "shock"; }
+  else if (seg.kind === "ending") m0 = m1 = "laugh";
+  const sw = seg.kind === "peak" ? seg.t0 + 0.05 : flip + 0.1;
+  const k = smooth(lin(t, sw, sw + 0.3));
+  const pose = poseTrack([{ t: 0, p: MATE[m0] }, { t: 1, p: MATE[m1], ease: (x) => x }], k);
+  const laughK = (m1 === "laugh" ? k : 0) + (m0 === "laugh" ? 1 - k : 0);
+  const bob = laughK * (0.5 - 0.5 * Math.cos(t * 2 * Math.PI * 2.2));
+  pose.lean = (pose.lean ?? 0) + 0.05 * bob + breathe(t + 1);
+  pose.hip = add(pose.hip ?? [0, 0, 0], [0, -0.01 * bob, 0]);
+  const face = withTalk(faceAt([{ t: -1, e: MATE_EXPR[m0] }, { t: sw, e: MATE_EXPR[m1] }], t, 0.25), talk(seg, pl.id, t));
+  return { pos: W.p, yaw: W.yaw, pose, face, blink: blinkAt(t, 2.2) };
+};
+
+// ------------------------------------------------------------------ HOOK
+const hookScene = (c: Ctx, seg: Seg, t: number): Scene => {
+  const u = t - seg.t0;
+  const P = c.S.hero;
+  const perch = c.S.perch.p;
+  const look = yawTo(P, perch);
+  const turn = clamp(wrap(look) * 0.55, -1.0, 1.0);
+  const pose = poseTrack([
+    { t: 0, p: { ...AKIMBO, lean: -0.04, turn: turn * 0.8, nod: 0.02, twist: turn * 0.25 } },
+    { t: 1.0, p: { ...AKIMBO, lean: 0.06, turn, nod: 0.06, hip: [0, -0.015, 0.02], twist: turn * 0.3 } },
+    { t: 2.3, p: { ...AKIMBO, lean: 0.02, turn: turn * 0.95, nod: 0.04, twist: turn * 0.3 } },
+  ], u);
+  pose.lean = (pose.lean ?? 0) + breathe(t);
+  const face = withTalk({ ...faceAt([{ t: 0, e: "angry" }], u), lookX: clamp(turn * 1.4, -0.9, 0.9) }, talk(seg, c.plan.hero.id, t));
+  const n = vis(c, seg.count);
+  const crowd = idleCrowd(c, n, new Set([0]));
+  crowd.push({ p: perch, yaw: c.S.perch.yaw, pose: 0, seed: 11, eye: 0.42, wag: 1.3 });
+  return { hero: { pos: P, yaw: 0, pose, face, blink: blinkAt(t, 1.2) }, partner: partnerActor(c, seg, t), crowd, puffs: [], tools: [] };
+};
+
+// ------------------------------------------------------------------ LEVEL: targets
+type Target = { i: number; pre: V3; home: Inst; yaw: number };
+const targetsOf = (c: Ctx, seg: Seg, T: ToolDef): Target[] => {
+  const L = seg.level!;
+  return once(`tg|${c.plan.id}|${seg.i}|${c.S.id}|${c.sp}|${L.from}|${L.tool}`, () => {
+    const H = homes(c.S, c.sp, c.partner);
+    const nFrom = vis(c, L.from);
+    const sc = stageCentre(c.S);
+    const k = Math.min(T.targets, nFrom);
+    const idx = Array.from({ length: nFrom }, (_, i) => i).sort((a, b) => Math.hypot(H[a].p[0] - sc[0], H[a].p[2] - sc[2]) - Math.hypot(H[b].p[0] - sc[0], H[b].p[2] - sc[2])).slice(0, k);
+    const P = c.S.hero, z = T.zone;
+    const avoid: Zone[] = [{ kind: "circle", c: [P[0], P[2]], r: 0.55 }];
+    if (T.act === "vacuum") avoid.push({ kind: "circle", c: [P[0] + 0.82 * c.s, P[2] - 0.12 * c.s], r: 0.5 });
+    if (T.act === "kipas") avoid.push({ kind: "circle", c: [P[0] + 0.75, P[2] + 0.3], r: 0.6 });
+    if (T.act === "umpan") avoid.push({ kind: "circle", c: [P[0], P[2] + 1.85], r: 0.75 }, { kind: "rect", x0: P[0] - 0.3, x1: P[0] + 0.3, z0: P[2], z1: P[2] + 1.9 });
+    const others = Array.from({ length: nFrom }, (_, i) => i).filter((i) => !idx.includes(i)).map((i) => H[i]);
+    let pre: Inst[];
+    if (T.act === "kardus") pre = [{ p: [P[0], 0, P[2] + 1.05 * c.s], yaw: Math.PI / 2 + 0.2, pose: 0, seed: 0 }];
+    else pre = scatter({ sp: c.sp, x0: P[0] + z[0], x1: P[0] + z[1], z0: P[2] + z[2], z1: P[2] + z[3], n: k, seed: 900 + seg.i * 7, avoid, existing: others, facing: Math.PI, yawJitter: 0.7, tries: 600 });
+    return idx.slice(0, pre.length).map((hi, j) => {
+      const first = L.n === 1 && hi === 0;
+      return { i: hi, pre: first ? c.S.perch.p : pre[j].p, yaw: first ? c.S.perch.yaw : pre[j].yaw + (hash(hi) - 0.5) * 0.6, home: H[hi] };
+    });
+  });
+};
+
+// ------------------------------------------------------------------ LEVEL: tool choreographies (hero-local, tool time τ)
+type ToolCtx = { tau: number; t: number; F: number; c: Ctx; seg: Seg; T: ToolDef; P: V3; tg: Target[]; stuck: boolean };
+type ToolOut = {
+  pose: Pose;
+  faceKeys: { t: number; e: Expr }[];
+  tools: ToolDesc[];
+  /** impact point (world) and the burst / pop source */
+  point: V3;
+  src?: V3;
+  hero?: Partial<Actor>;
+  /** targets vanish into the tool (vacuum, net, box) between these tool times (per target i offset) */
+  swallow?: (i: number) => [number, number, V3] | null;
+};
+const W = (x: ToolCtx, l: V3): V3 => toWorld(x.P, 0, x.c.s, l);
+/** Small effortful tug when the tool jams ("stuck" backfire): hip + lean wobble after the impact. */
+const tug = (x: ToolCtx, pose: Pose) => {
+  if (!x.stuck || x.tau < x.T.impact) return pose;
+  const k = Math.sin((x.tau - x.T.impact) * 2 * Math.PI * 1.6) * smooth(lin(x.tau, x.T.impact, x.T.impact + 0.15));
+  return { ...pose, lean: (pose.lean ?? 0) - 0.09 * Math.max(0, k), hip: add(pose.hip ?? [0, 0, 0], [0, -0.012 * Math.abs(k), -0.04 * Math.max(0, k)]) };
+};
+
+const ACTS: Record<string, (x: ToolCtx) => ToolOut> = {
+  sapu: (x) => {
+    const τ = x.tau;
+    const k = track([
+      { t: 0.0, v: [-0.3, 0.95, 0.2, 0.0, 1.0, 0.25] },
+      { t: 0.3, v: [-0.33, 1.18, -0.02, -0.1, 0.5, -0.86] },
+      { t: 0.64, v: [-0.2, 0.9, 0.36, 0.08, -0.77, 0.63], ease: smooth },
+      { t: 1.0, v: [-0.2, 0.9, 0.36, 0.08, -0.77, 0.63] },
+      { t: 1.35, v: [-0.26, 1.0, 0.32, 0.1, 0.2, 1.0] },
+      { t: 1.75, v: [-0.3, 0.9, 0.22, 0.05, 0.9, 0.35] },
+    ], x.stuck && τ > 0.64 ? 0.64 : τ);
+    const H: V3 = [k[0], k[1], k[2]], D = norm([k[3], k[4], k[5]]);
+    const top = add(H, [-D[0] * 0.12, -D[1] * 0.12, -D[2] * 0.12]);
+    const pose = poseTrack([
+      { t: 0, p: { handL: [0.3, 0.72, 0.08], handR: H, lean: 0.02, poleL: [1, 0, -0.4], poleR: [-1, -0.2, -0.3] } },
+      { t: 0.3, p: { handL: [0.32, 1.2, 0.18], handR: H, lean: -0.1, twist: -0.25, poleL: [1, -0.4, 0], poleR: [-1, 0.2, -0.3], footL: [0.1, 0, 0.1] } },
+      { t: 0.64, p: { handL: add(H, [0.22, -0.26, 0.2]), handR: H, lean: 0.22, twist: 0.22, hip: [0, -0.03, 0.06], poleL: [1, -0.3, -0.3], poleR: [-1, -0.3, -0.2], footL: [0.1, 0, 0.2] } },
+      { t: 1.3, p: { handL: add(H, [0.22, -0.26, 0.2]), handR: H, lean: 0.16, twist: 0.12, hip: [0, -0.02, 0.05], poleL: [1, -0.3, -0.3], poleR: [-1, -0.3, -0.2], footL: [0.1, 0, 0.2] } },
+      { t: 1.75, p: { handL: [0.33, 0.95, 0.16], handR: H, lean: -0.06, turn: 0.35, footL: [0.1, 0, 0.12], poleL: [1, -0.2, -0.3], poleR: [-1, -0.2, -0.3] } },
+    ], τ);
+    pose.handR = H;
+    const tip = W(x, add(top, [D[0] * 1.3, D[1] * 1.3, D[2] * 1.3]));
+    return {
+      pose: tug(x, pose), faceKeys: [{ t: 0, e: "angry" }, { t: 0.25, e: "yell" }, { t: 1.0, e: "angry" }],
+      tools: [{ kind: "broom", top: W(x, top), dir: D }], point: [tip[0], 0, tip[2]],
+    };
+  },
+  selang: (x) => {
+    const τ = x.tau;
+    const sway = Math.sin(τ * 7) * 0.03 * clamp((τ - 0.25) / 0.2) * (1 - clamp((τ - 1.3) / 0.2));
+    const Hr: V3 = [-0.12 + sway, 1.0, 0.4], Hl: V3 = [0.14, 0.86, 0.2];
+    const nd = norm([sway * 2, 0.18, 1]);
+    const pose = poseTrack([
+      { t: 0, p: { handL: Hl, handR: Hr, lean: 0.06, nod: 0.12, poleL: [1, -0.4, -0.3], poleR: [-1, -0.5, -0.2], footL: [0.1, 0, 0.14] } },
+      { t: 1.35, p: { handL: Hl, handR: Hr, lean: 0.1, nod: 0.12, poleL: [1, -0.4, -0.3], poleR: [-1, -0.5, -0.2], footL: [0.1, 0, 0.14] } },
+      { t: 1.7, p: { handL: [0.16, 0.9, 0.24], handR: [-0.1, 1.04, 0.36], lean: -0.08, nod: -0.05, poleL: [1, -0.4, -0.3], poleR: [-1, -0.5, -0.2], footL: [0.1, 0, 0.14] } },
+    ], τ);
+    const nozzle = W(x, add(pose.handR, [nd[0] * 0.02, nd[1] * 0.02, nd[2] * 0.02]));
+    const tip = W(x, add(pose.handR, [nd[0] * 0.17, nd[1] * 0.17, nd[2] * 0.17]));
+    const vel: V3 = [nd[0] * 3.0, nd[1] * 3.0 + 1.0, nd[2] * 3.0];
+    const on = x.stuck ? smooth(lin(τ, 0.25, 0.35)) * (1 - smooth(lin(τ, 0.42, 0.5))) : smooth(lin(τ, 0.25, 0.4)) * (1 - smooth(lin(τ, 1.3, 1.45)));
+    const reel = W(x, [0.55, 0, -0.45]), hl = W(x, pose.handL);
+    return {
+      pose: tug(x, pose), faceKeys: [{ t: 0, e: "angry" }, { t: 0.3, e: "grin" }],
+      tools: [
+        { kind: "hose", reel, pts: [add(reel, [0, 0.2, 0.05]), W(x, [0.6, 0.03, -0.1]), W(x, [0.5, 0.03, 0.15]), add(hl, [0.06 * x.c.s, -0.45 * x.c.s, -0.05 * x.c.s]), hl, nozzle], nozzle, dir: nd },
+        { kind: "water", from: tip, vel, on },
+      ],
+      point: landing(tip, vel),
+    };
+  },
+  ember: (x) => {
+    const τ = x.tau;
+    const k = track([
+      { t: 0, v: [-0.04, 0.8, 0.44, 0] },
+      { t: 0.35, v: [-0.04, 0.72, 0.42, -0.35] },
+      { t: 0.6, v: [-0.04, 0.98, 0.48, 1.1], ease: smooth },
+      { t: 1.2, v: [-0.04, 0.96, 0.48, 1.15] },
+      { t: 1.7, v: [-0.04, 0.84, 0.44, 0.5] },
+    ], τ);
+    const hb: V3 = [k[0], k[1], k[2]], tilt = k[3];
+    const side = (sx: number): V3 => [hb[0] + sx * 0.215, hb[1], hb[2]];
+    const pose = poseTrack([
+      { t: 0, p: { handL: side(1), handR: side(-1), lean: 0.12, poleL: [1, -0.5, -0.1], poleR: [-1, -0.5, -0.1] } },
+      { t: 0.35, p: { handL: side(1), handR: side(-1), lean: 0.08, hip: [0, -0.03, 0], poleL: [1, -0.5, -0.1], poleR: [-1, -0.5, -0.1] } },
+      { t: 0.6, p: { handL: side(1), handR: side(-1), lean: 0.16, footL: [0.1, 0, 0.16], poleL: [1, -0.5, -0.1], poleR: [-1, -0.5, -0.1] } },
+      { t: 1.7, p: { handL: side(1), handR: side(-1), lean: 0.1, footL: [0.1, 0, 0.16], poleL: [1, -0.5, -0.1], poleR: [-1, -0.5, -0.1] } },
+    ], τ);
+    pose.handL = side(1); pose.handR = side(-1);
+    const mouth = W(x, add(hb, [0, 0.13 * Math.cos(tilt), 0.13 * Math.sin(tilt)]));
+    const vel: V3 = [0, 1.6, 3.1];
+    const on = x.stuck ? 0 : smooth(lin(τ, 0.5, 0.58)) * (1 - smooth(lin(τ, 0.72, 0.85)));
+    return {
+      pose, faceKeys: [{ t: 0, e: "angry" }, { t: 0.4, e: "yell" }, { t: 0.9, e: "grin" }],
+      tools: [{ kind: "bucket", p: W(x, hb), dir: [0, 0, 1], tilt }, { kind: "water", from: mouth, vel, on, n: 70, r: 0.05, seed: 3 }],
+      point: landing(mouth, vel),
+    };
+  },
+  vacuum: (x) => {
+    const τ = x.tau;
+    const wobble = Math.sin(τ * 9) * 0.01 * clamp(τ / 0.3) * (1 - clamp((τ - 1.0) / 0.2));
+    const handle: V3 = [0.02, 0.98 + wobble, 0.15], dir = norm([0, -0.6, 0.8]);
+    const gr = { r: handle, l: add(handle, [dir[0] * 0.22, dir[1] * 0.22, dir[2] * 0.22]) };
+    const pose = poseTrack([
+      { t: 0, p: { handL: gr.l, handR: gr.r, lean: 0.12, poleL: [1, -0.3, -0.2], poleR: [-1, -0.3, -0.3] } },
+      { t: 1.5, p: { handL: gr.l, handR: gr.r, lean: 0.08, poleL: [1, -0.3, -0.2], poleR: [-1, -0.3, -0.3] } },
+      { t: 1.75, p: { handL: gr.l, handR: gr.r, lean: -0.1, turn: 0.5, nod: -0.1, poleL: [1, -0.3, -0.2], poleR: [-1, -0.3, -0.3] } },
+    ], τ);
+    const can = W(x, [0.82, 0, -0.12]);
+    const mouth = W(x, add(handle, [dir[0] * 1.06, dir[1] * 1.06, dir[2] * 1.06]));
+    const swell = x.stuck ? 0 : smooth(lin(τ, 1.0, 1.45)) * (1 + 0.15 * Math.sin((τ - 1.0) * 30) * clamp((τ - 1.0) / 0.45)) * (1 - smooth(lin(τ, 1.5, 1.7)));
+    const lid = x.stuck ? 0 : smooth(lin(τ, 1.46, 1.7));
+    const n = x.tg.length, gap = Math.min(0.2, 0.75 / Math.max(1, n));
+    return {
+      pose: tug(x, pose), faceKeys: [{ t: 0, e: "grin" }, { t: 1.0, e: "worried" }],
+      tools: [{ kind: "vacuum", can, yaw: 0.15, handle: W(x, handle), dir, swell, lid }],
+      point: mouth, src: [can[0], 0.62 * x.c.s, can[2]],
+      swallow: x.stuck ? undefined : (i) => [0.2 + i * gap, 0.2 + i * gap + 0.34, mouth],
+    };
+  },
+  damkar: (x) => {
+    const τ = x.tau, ln = laneOf(x.c.S);
+    const R = rideOf(x.c);
+    const tx = mix(x.c.S.laneFrom, ln.stopX, easeOut(clamp(τ / 1.05)));
+    const tp: V3 = [tx, 0, ln.z];
+    const spin = (tx - x.c.S.laneFrom) / (0.255 * R.k);
+    const sc = stageCentre(x.c.S);
+    const cyaw = clamp(wrap(yawTo(tp, sc) - Math.PI / 2), -0.6, 0.6);
+    // leans stay inside RIDE_LEAN (the wheel fit is checked for that range); the drive-in bump lifts, never sinks
+    const H = wheelPose(R);
+    const pose = poseTrack([
+      { t: 0, p: { ...H, lean: 0.08, hip: [0, 0.012 * Math.abs(Math.sin(τ * 10)) * (1 - clamp(τ / 1.05)), 0] } },
+      { t: 1.0, p: { ...H, lean: 0.07 } },
+      { t: 1.2, p: { ...H, lean: 0.0, nod: -0.05 } },
+      { t: 1.8, p: { ...H, lean: -0.03, nod: -0.1, turn: 0.15 } },
+    ], τ);
+    const m = cannonMuzzle(tp, 0, 0.32, cyaw, R.k);
+    const on = x.stuck ? 0 : smooth(lin(τ, 1.05, 1.2)) * (1 - smooth(lin(τ, 1.85, 2.0)));
+    const vel: V3 = [m.dir[0] * 5.4, m.dir[1] * 5.4, m.dir[2] * 5.4];
+    return {
+      pose, faceKeys: [{ t: 0, e: "yell" }, { t: 1.05, e: "grin" }],
+      tools: [{ kind: "truck", p: tp, yaw: 0, spin, aim: 0.32, cyaw, ride: R }, { kind: "water", from: m.at, vel, on, n: 90, r: 0.045 }],
+      point: landing(m.at, vel), hero: { pos: riderPos(tp, R), yaw: Math.PI / 2, seated: "chair" },
+    };
+  },
+  kipas: (x) => {
+    const τ = x.tau;
+    const fanAt = W(x, [0.75, 0, 0.3]);
+    const pose = poseTrack([
+      { t: 0, p: { ...AKIMBO, lean: 0.0 } },
+      { t: 0.3, p: { handL: [0.52, 1.18, 0.28], handR: [-0.31, 0.7, 0.0], poleL: [1, -0.2, -0.3], poleR: [-1, 0.25, -0.5], lean: 0.04, side: 0.12, turn: 0.4 } },
+      { t: 0.5, p: { handL: [0.52, 1.18, 0.28], handR: [-0.31, 0.7, 0.0], poleL: [1, -0.2, -0.3], poleR: [-1, 0.25, -0.5], lean: 0.04, side: 0.12, turn: 0.35 } },
+      { t: 0.8, p: { ...AKIMBO, lean: -0.04, turn: 0.1 } },
+      { t: 1.6, p: { ...AKIMBO, lean: -0.02, turn: -0.1 } },
+    ], τ);
+    const on = x.stuck ? smooth(lin(τ, 0.4, 0.5)) * (1 - smooth(lin(τ, 0.55, 0.7))) : smooth(lin(τ, 0.4, 0.75));
+    const spinT = Math.max(0, τ - 0.4);
+    const spin = x.stuck ? Math.min(spinT, 0.3) * 4 : spinT * spinT * 3 * (spinT < 0.6 ? 1 : 0) + (spinT >= 0.6 ? 1.08 + (spinT - 0.6) * 6.3 : 0);
+    return {
+      pose: tug(x, pose), faceKeys: [{ t: 0, e: "smug" }, { t: 0.8, e: "grin" }],
+      tools: [{ kind: "fan", p: fanAt, yaw: -0.2, spin, on }, { kind: "wind", p: add(fanAt, [0, 1.05, 0.25]), dir: norm([-0.2, 0, 1]), on: x.stuck ? 0 : on }],
+      point: add(fanAt, [-0.25, 0, 1.4]),
+    };
+  },
+  jaring: (x) => {
+    const τ = x.tau;
+    const k = track([
+      { t: 0, v: [-0.2, 0.9, 0.15, 0.1, 0.9, 0.3] },
+      { t: 0.32, v: [-0.15, 1.15, 0.05, 0.05, 0.85, -0.5] },
+      { t: 0.66, v: [-0.1, 0.85, 0.35, 0.05, -0.55, 0.83], ease: smooth },
+      { t: 0.9, v: [-0.1, 0.85, 0.35, 0.05, -0.55, 0.83] },
+      { t: 1.3, v: [-0.15, 1.05, 0.3, 0.05, 0.6, 0.8], ease: smooth },
+      { t: 1.75, v: [-0.2, 0.95, 0.25, 0.05, 0.85, 0.5] },
+    ], x.stuck && τ > 0.66 ? 0.66 + 0.02 * Math.sin(τ * 10) : τ);
+    const G: V3 = [k[0], k[1], k[2]], D = norm([k[3], k[4], k[5]]);
+    const gl = add(G, [D[0] * 0.3, D[1] * 0.3, D[2] * 0.3]);
+    const pose = poseTrack([
+      { t: 0, p: { handL: gl, handR: G, lean: 0.02, poleL: [1, -0.3, -0.3], poleR: [-1, -0.3, -0.3] } },
+      { t: 0.32, p: { handL: gl, handR: G, lean: -0.08, poleL: [1, -0.3, -0.3], poleR: [-1, -0.3, -0.3] } },
+      { t: 0.66, p: { handL: gl, handR: G, lean: 0.2, hip: [0, -0.03, 0.05], footL: [0.1, 0, 0.18], poleL: [1, -0.3, -0.3], poleR: [-1, -0.3, -0.3] } },
+      { t: 1.3, p: { handL: gl, handR: G, lean: -0.02, footL: [0.1, 0, 0.12], poleL: [1, -0.3, -0.3], poleR: [-1, -0.3, -0.3] } },
+    ], τ);
+    pose.handR = G;
+    pose.handL = add(G, [D[0] * 0.3, D[1] * 0.3, D[2] * 0.3]);
+    const hoop = W(x, add(G, [D[0] * 1.6, D[1] * 1.6, D[2] * 1.6]));
+    const bag = x.stuck ? 0 : smooth(lin(τ, 0.68, 0.95)) * (1 + 0.1 * (0.5 - 0.5 * Math.cos((τ - 1.0) * 18)) * smooth(lin(τ, 1.0, 1.3))) * (1 - smooth(lin(τ, 1.38, 1.56)));
+    return {
+      pose: tug(x, pose), faceKeys: [{ t: 0, e: "angry" }, { t: 0.4, e: "yell" }, { t: 0.95, e: "smug" }],
+      tools: [{ kind: "net", grip: W(x, G), dir: D, bag }], point: [hoop[0], 0, hoop[2]], src: hoop,
+      swallow: x.stuck ? undefined : (i) => [0.66 + i * 0.03, 0.9 + i * 0.03, [hoop[0], Math.max(0.15, hoop[1]), hoop[2]]],
+    };
+  },
+  umpan: (x) => {
+    const τ = x.tau;
+    const pose = poseTrack([
+      { t: 0, p: { handL: [0.215, 0.8, 0.4], handR: [-0.215, 0.8, 0.4], lean: 0.12, poleL: [1, -0.5, 0], poleR: [-1, -0.5, 0] } },
+      { t: 0.35, p: { handL: [0.215, 0.44, 0.52], handR: [-0.215, 0.44, 0.52], lean: 0.55, hip: [0, -0.08, -0.04], nod: -0.2, poleL: [1, -0.3, 0], poleR: [-1, -0.3, 0], footL: [0.1, 0, 0.16] } },
+      { t: 0.55, p: { handL: [0.215, 0.42, 0.58], handR: [-0.215, 0.42, 0.58], lean: 0.5, hip: [0, -0.08, -0.04], nod: -0.2, poleL: [1, -0.3, 0], poleR: [-1, -0.3, 0], footL: [0.1, 0, 0.16] } },
+      { t: 0.9, p: { ...AKIMBO, lean: -0.04, footL: [0.1, 0, 0.1] } },
+      { t: 1.6, p: { ...AKIMBO, lean: -0.02, footL: [0.1, 0, 0.1] } },
+    ], τ);
+    // toy arms cannot reach the ground: the bowl leaves his hands, drops in a short arc and slides out
+    const drop = lin(τ, 0.5, 0.64), slide = easeOut(lin(τ, 0.64, 0.95));
+    const bowlL: V3 = τ < 0.5 ? [0, Math.max(0.0, mix(0.74, 0.36, smooth(lin(τ, 0, 0.35))) - 0.02), mix(0.4, 0.58, smooth(lin(τ, 0, 0.5)))]
+      : τ < 0.64 ? [0, 0.34 * (1 - drop * drop), mix(0.58, 0.86, drop)] : [0, 0, mix(0.86, 1.85, slide)];
+    return {
+      pose, faceKeys: [{ t: 0, e: "smug" }, { t: 0.6, e: "grin" }],
+      tools: [{ kind: "bowl", p: W(x, bowlL) }], point: W(x, [0, 0, 1.85]),
+    };
+  },
+  toa: (x) => toaAct(x, false),
+  terompet: (x) => toaAct(x, true),
+  payung: (x) => {
+    const τ = x.tau;
+    const k = track([
+      { t: 0, v: [-0.15, 0.85, 0.3, 0.0, 0.5, 0.86, 0] },
+      { t: 0.3, v: [-0.12, 0.95, 0.35, 0.0, 0.1, 1.0, 0] },
+      { t: 0.55, v: [-0.12, 0.95, 0.38, 0.0, 0.1, 1.0, 1] },
+      { t: 0.9, v: [-0.1, 0.95, 0.5, 0.0, 0.05, 1.0, 1] },
+      { t: 1.05, v: [-0.1, 0.95, 0.5, 0.0, 0.05, 1.0, 1] },
+      { t: 1.35, v: [-0.06, 1.25, 0.12, 0.0, 1.0, 0.15, 1] },
+    ], τ);
+    const G: V3 = [k[0], k[1], k[2]], D = norm([k[3], k[4], k[5]]);
+    const open = x.stuck ? Math.min(k[6], 0.25 + 0.05 * Math.sin(τ * 12)) : k[6];
+    const pose = poseTrack([
+      { t: 0, p: { handL: add(G, [0.1, 0.12, 0.1]), handR: G, lean: 0.02, poleL: [1, -0.4, -0.2], poleR: [-1, -0.4, -0.2] } },
+      { t: 0.9, p: { handL: add(G, [0.1, 0.05, 0.18]), handR: G, lean: 0.14, hip: [0, -0.02, 0.12], footL: [0.1, 0, 0.25], poleL: [1, -0.4, -0.2], poleR: [-1, -0.4, -0.2] } },
+      { t: 1.35, p: { handL: add([-0.06, 1.25, 0.12], [0.06, 0.18, 0.02]), handR: [-0.06, 1.25, 0.12], lean: -0.05, hip: [0, 0, 0.1], footL: [0.1, 0, 0.2], poleL: [1, -0.6, 0], poleR: [-1, -0.6, 0] } },
+    ], τ);
+    pose.handR = G;
+    return {
+      pose: tug(x, pose), faceKeys: [{ t: 0, e: "angry" }, { t: 0.5, e: "smug" }],
+      tools: [{ kind: "umbrella", grip: W(x, G), dir: D, open }], point: W(x, [0, 0, 1.5]),
+    };
+  },
+  drone: (x) => {
+    const τ = x.tau, sc = targetsCentre(x);
+    const home = W(x, [0.35, 0, 0.6]);
+    let p: V3;
+    if (τ < 0.15) p = home;
+    else if (τ < 0.45) p = add(home, [0, mix(0, 1.1, smooth(lin(τ, 0.15, 0.45))), 0]);
+    else if (τ < 0.95) { const u = smooth(lin(τ, 0.45, 0.95)); p = [mix(home[0], sc[0], u) + 0.25 * Math.sin(u * 9) * u, mix(1.1, 0.95, u), mix(home[2], sc[2], u)]; }
+    else if (τ < x.T.flip) p = [sc[0] + 0.2 * Math.sin(τ * 9), 0.95 + 0.08 * Math.sin(τ * 6), sc[2]];
+    else { const u = smooth(lin(τ, x.T.flip, x.T.flip + 0.5)), h0: V3 = [sc[0] + 0.2 * Math.sin(x.T.flip * 9), 0.95 + 0.08 * Math.sin(x.T.flip * 6), sc[2]]; p = [mix(h0[0], x.P[0] - 0.2, u), mix(h0[1], 1.95, u), mix(h0[2], x.P[2] + 0.35, u)]; }
+    if (x.stuck && τ > 0.7) p = [p[0], Math.max(0.12, p[1] - (τ - 0.7) * 2), p[2]];
+    const pose = poseTrack([{ t: 0, p: { handL: [0.1, 0.85, 0.32], handR: [-0.1, 0.85, 0.32], lean: 0.04, nod: 0.15, poleL: [1, -0.5, 0], poleR: [-1, -0.5, 0] } }], 0);
+    pose.nod = τ > x.T.flip ? mix(0.15, -0.5, smooth(lin(τ, x.T.flip, x.T.flip + 0.4))) : 0.1;
+    return {
+      pose: tug(x, pose), faceKeys: [{ t: 0, e: "grin" }, { t: 0.6, e: "smug" }],
+      tools: [{ kind: "drone", p, yaw: τ * 0.6, tilt: τ > 0.45 && τ < 0.95 ? 0.15 : 0 }, { kind: "remote", p: W(x, [0, 0.86, 0.36]), yaw: 0 }],
+      point: [sc[0], 0, sc[2]],
+    };
+  },
+  kardus: (x) => {
+    const τ = x.tau;
+    // a box propped on a stick over the target; he yanks the string → it drops; then tips the near edge up: they pour out
+    const k = track([
+      { t: 0, v: [0.55] },
+      { t: 0.55, v: [0.55] },
+      { t: 0.76, v: [0], ease: smooth },
+      { t: 1.0, v: [0] },
+      { t: 1.18, v: [0.5] },
+      { t: 1.6, v: [0.92] },
+    ], x.stuck ? Math.min(τ, 1.0) : τ);
+    const tilt = k[0];
+    const bp: V3 = [0, 0, 1.05];
+    const nearZ = bp[2] + 0.45 - 0.9 * Math.cos(tilt), nearY = 0.9 * Math.sin(tilt);
+    const step = smooth(lin(τ, 0.72, 1.0));
+    const grip: V3 = [0, Math.max(0.12, nearY + 0.02), nearZ - 0.08];
+    const pose = poseTrack([
+      { t: 0, p: { handL: [0.31, 0.7, 0.0], handR: [-0.2, 0.82, 0.3], poleL: [1, 0.25, -0.5], poleR: [-1, -0.4, -0.2], lean: 0.04 } },
+      { t: 0.4, p: { handL: [0.31, 0.7, 0.0], handR: [-0.2, 0.86, 0.32], poleL: [1, 0.25, -0.5], poleR: [-1, -0.4, -0.2], lean: 0.06 } },
+      { t: 0.58, p: { handL: [0.31, 0.7, 0.0], handR: [-0.24, 0.8, 0.1], poleL: [1, 0.25, -0.5], poleR: [-1, -0.4, -0.2], lean: -0.06 } },
+      { t: 0.72, p: { handL: [0.31, 0.7, 0.0], handR: [-0.24, 0.8, 0.1], poleL: [1, 0.25, -0.5], poleR: [-1, -0.4, -0.2], lean: -0.03 } },
+      { t: 1.0, p: { handL: [0.24, grip[1], grip[2]], handR: [-0.24, grip[1], grip[2]], poleL: [1, -0.2, -0.3], poleR: [-1, -0.2, -0.3], lean: 0.42, hip: [0, -0.07, 0.3], footL: [0.1, 0, 0.3], footR: [-0.1, 0, 0.26] }, ease: smooth },
+    ], τ);
+    if (τ >= 1.0) { pose.handL = [0.24, grip[1], grip[2]]; pose.handR = [-0.24, grip[1], grip[2]]; pose.lean = 0.42 - 0.12 * smooth(lin(τ, 1.0, 1.6)); }
+    else if (τ > 0.72) { const g0: V3 = [0.24, 0.12, bp[2] - 0.53]; pose.handL = mix3(pose.handL, g0, step); pose.handR = mix3(pose.handR, [-0.24, 0.12, bp[2] - 0.53], step); }
+    void step;
+    const wp = W(x, bp);
+    const tools: ToolDesc[] = [{ kind: "box", p: wp, yaw: 0, tilt }];
+    if (τ < 0.66) {
+      // the prop stick under the near edge and the string to his hand
+      const fall = smooth(lin(τ, 0.5, 0.66));
+      tools.push({ kind: "stick", p: W(x, [0, 0, bp[2] - 0.42]), lean: fall * 1.3, hand: W(x, pose.handR) });
+    }
+    return {
+      pose, faceKeys: [{ t: 0, e: "smug" }, { t: 0.55, e: "grin" }, { t: 1.0, e: "smug" }],
+      tools, point: [wp[0], 0, wp[2]], src: W(x, [0, 0.3, bp[2] - 0.25]),
+      swallow: (i) => (i === 0 ? [0.72, 0.78, add(wp, [0, 0.05, 0])] : null),
+    };
+  },
+};
+/** The hero's fit in the ride-on truck (seat, cab and wheel built around their build). */
+const rideOf = (c: Ctx): Ride => rideFit(c.plan.hero.look);
+/** Seated driving pose: hands on the rim, feet in the foot well. */
+const wheelPose = (R: Ride) => ({ handL: R.handL, handR: R.handR, poleL: R.poleL, poleR: R.poleR, footL: R.footL, footR: R.footR });
+const targetsCentre = (x: ToolCtx): V3 => {
+  if (!x.tg.length) return W(x, [0, 0, 1.8]);
+  const s = x.tg.reduce((a, g) => add(a, g.pre), [0, 0, 0] as V3);
+  return [s[0] / x.tg.length, 0, s[2] / x.tg.length];
+};
+const toaAct = (x: ToolCtx, horn: boolean): ToolOut => {
+  const τ = x.tau;
+  const mouthL: V3 = [-0.06, 1.2, 0.3];
+  const pose = poseTrack([
+    { t: 0, p: { ...AKIMBO, lean: 0.0 } },
+    { t: 0.3, p: { handL: horn ? add(mouthL, [0.1, -0.05, 0.08]) : [0.31, 0.7, 0.0], handR: mouthL, poleL: horn ? [1, -0.5, -0.2] : [1, 0.25, -0.5], poleR: [-1, -0.4, -0.3], lean: 0.02 } },
+    { t: 0.45, p: { handL: horn ? add(mouthL, [0.1, -0.05, 0.08]) : [0.31, 0.7, 0.0], handR: mouthL, poleL: horn ? [1, -0.5, -0.2] : [1, 0.25, -0.5], poleR: [-1, -0.4, -0.3], lean: 0.12, hip: [0, -0.01, 0.04], footL: [0.1, 0, 0.16] } },
+    { t: 1.2, p: { handL: horn ? add(mouthL, [0.1, -0.05, 0.08]) : [0.31, 0.7, 0.0], handR: mouthL, poleL: horn ? [1, -0.5, -0.2] : [1, 0.25, -0.5], poleR: [-1, -0.4, -0.3], lean: 0.14, hip: [0, -0.01, 0.04], footL: [0.1, 0, 0.16] } },
+    { t: 1.45, p: { ...AKIMBO, lean: -0.06, footL: [0.1, 0, 0.12] } },
+  ], τ);
+  const lower = smooth(lin(τ, 1.25, 1.45));
+  const hp = W(x, mix3(mouthL, [-0.31, 0.7, 0.0], lower));
+  const dir = norm([0, 0.05 - lower * 0.6, 1 - lower * 0.5]);
+  const tools: ToolDesc[] = [{ kind: "toa", p: hp, dir, horn }];
+  if (!x.stuck) tools.push({ kind: "rings", p: add(hp, [0, 0, 0.3 * x.c.s]), dir: [0, 0, 1], t0: 0.45, t1: 1.2, color: horn ? "#ffd86b" : "#fff8ec" });
+  return { pose: tug(x, pose), faceKeys: [{ t: 0, e: "angry" }, { t: 0.4, e: "yell" }], tools, point: W(x, [0, 0, 1.8]) };
+};
+
+// ------------------------------------------------------------------ prop geometry helpers (shared with the picture)
+export const TRUCK = { cannon: [0.72, 1.02, 0] as V3 };
+export const cannonMuzzle = (p: V3, yaw: number, aim: number, cyaw = 0, k = 1): { at: V3; dir: V3 } => {
+  const r = 0.31;
+  const lx = k * (TRUCK.cannon[0] + Math.cos(aim) * Math.cos(cyaw) * r), ly = k * (TRUCK.cannon[1] + Math.sin(aim) * r), lz = -k * Math.cos(aim) * Math.sin(cyaw) * r;
+  const c = Math.cos(yaw), s = Math.sin(yaw);
+  const at: V3 = [p[0] + lx * c + lz * s, p[1] + ly, p[2] - lx * s + lz * c];
+  const dl: V3 = [Math.cos(aim) * Math.cos(cyaw), Math.sin(aim), -Math.cos(aim) * Math.sin(cyaw)];
+  return { at, dir: [dl[0] * c + dl[2] * s, dl[1], -dl[0] * s + dl[2] * c] };
+};
+export const landing = (from: V3, vel: V3, floor = 0): V3 => {
+  const a = -4.9, b = vel[1], cc = from[1] - floor;
+  const T = (-b - Math.sqrt(Math.max(0, b * b - 4 * a * cc))) / (2 * a);
+  return [from[0] + vel[0] * T, floor, from[2] + vel[2] * T];
+};
+
+// ------------------------------------------------------------------ LEVEL scene
+const ARRIVE_DUR = 0.9;
+const levelScene = (c: Ctx, seg: Seg, t: number): Scene => {
+  const L = seg.level!, T = TOOLS[L.tool];
+  const u = t - seg.t0, F = L.flip - seg.t0;
+  const tau = tauOf(u, F, T.flip);
+  const P = c.S.hero;
+  const tg = targetsOf(c, seg, T);
+  const stuck = L.backfire === "stuck";
+  const x: ToolCtx = { tau, t: u, F, c, seg, T, P, tg, stuck };
+  const out = ACTS[T.act](x);
+  // map tool-time events to film time
+  const real = (τ: number) => seg.t0 + (F >= T.flip ? τ + (F - T.flip) : τ < T.flip ? (τ * F) / T.flip : F + (τ - T.flip));
+  const flipT = L.flip;
+  const H = homes(c.S, c.sp, c.partner);
+  const nFrom = vis(c, L.from), nTo = vis(c, L.to);
+  const crowd: Inst[] = [];
+  const puffs: Puff[] = [];
+  const tset = new Set(tg.map((g) => g.i));
+  for (let i = 0; i < nFrom; i++) if (!tset.has(i)) crowd.push(H[i]);
+  const src = out.src ?? out.point;
+  // targets react
+  const dodge = L.backfire === "dodge";
+  tg.forEach((g, j) => {
+    const home = g.home;
+    const hit = real(T.impact) + (T.effect === "spray" ? 0.12 + j * 0.08 : j * 0.06);
+    const sw = out.swallow?.(j);
+    let inst: Inst = { ...home, p: g.pre, yaw: g.yaw, s: home.s, eye: 0.5 };
+    if (stuck) {
+      // the tool jams: they just watch, then go home with the arrivals
+      const h = hop(g.pre, home.p, t, flipT + 0.1 + j * 0.05, 0.4, 0.3);
+      inst = { ...home, p: h.p, yaw: mix(g.yaw, home.yaw, smooth(h.u)), squash: h.squash, eye: t < flipT ? 0.42 : 1.05 };
+    } else if (sw) {
+      const a = real(sw[0]), b = real(sw[1]);
+      if (t < a) inst = { ...inst, eye: 0.5 };
+      else if (t < b) {
+        const e = easeIn(lin(t, a, b));
+        inst = { ...home, p: mix3(g.pre, sw[2], e), yaw: g.yaw + e * 2.5, s: (home.s ?? 1) * (1 - e), squash: -0.4 * Math.sin(e * Math.PI), eye: 1.1 };
+      } else {
+        // re-emitted with the burst
+        const t0 = flipT + 0.02 * j;
+        if (t < t0) return;
+        const h = hop(src, home.p, t, t0, 0.62, 2.0);
+        inst = { ...home, p: h.p, s: (home.s ?? 1) * smooth(lin(t, t0, t0 + 0.4)), squash: h.squash, yaw: home.yaw + (1 - smooth(h.u)) * 3, eye: h.u < 1 ? 1.1 : home.eye };
+        if (h.u >= 1 && t < t0 + 0.62 + 0.35) puffs.push({ p: home.p, t0: t0 + 0.62, r: 0.2 });
+      }
+    } else if (T.effect === "lure") {
+      const bowl = out.point;
+      const a = (j / Math.max(1, tg.length)) * Math.PI * 2 + 0.4;
+      const ring: V3 = [bowl[0] + Math.sin(a) * 0.46, 0, bowl[2] + Math.cos(a) * 0.46];
+      const t0 = real(T.impact) + j * 0.1;
+      const h = hop(g.pre, ring, t, t0, 0.45, 0.25);
+      inst = { ...home, p: h.p, yaw: t > t0 ? yawTo(ring, bowl) : g.yaw, squash: h.squash, eye: t > t0 + 0.45 ? 0.42 : 1 };
+    } else if (T.effect === "scare" || T.effect === "fly") {
+      const t0 = real(T.impact) + j * (T.effect === "fly" ? 0.08 : 0.05);
+      const up = hop(g.pre, g.pre, t, t0, T.effect === "fly" ? 0.42 : 0.36, T.effect === "fly" ? 0.55 : 0.4);
+      const go = hop(g.pre, home.p, t, flipT + 0.08 + j * 0.05, 0.42, 0.35);
+      inst = t < flipT + 0.08 + j * 0.05 ? { ...home, p: up.p, yaw: g.yaw, squash: up.squash, eye: t > t0 ? 1.15 : 0.6 } : { ...home, p: go.p, yaw: mix(g.yaw, home.yaw, smooth(go.u)), squash: go.squash, eye: 1.05 };
+    } else if (T.effect === "blow") {
+      const t0 = real(T.impact) + j * 0.06;
+      const pushed: V3 = add(g.pre, [-0.15, 0, 0.75]);
+      const e = smooth(lin(t, t0, t0 + 0.5));
+      const go = hop(pushed, home.p, t, flipT + 0.1 + j * 0.05, 0.45, 0.4);
+      inst = t < flipT + 0.1 + j * 0.05 ? { ...home, p: mix3(g.pre, pushed, e), yaw: g.yaw, roll: Math.sin(e * Math.PI * 2) * 0.35 * (1 - e * 0.5), eye: t > t0 ? 0.3 : 0.6 } : { ...home, p: go.p, yaw: mix(g.yaw, home.yaw, smooth(go.u)), squash: go.squash, eye: 1 };
+    } else if (T.effect === "cover") {
+      const t0 = real(T.impact) + j * 0.06;
+      const back: V3 = add(g.pre, [0, 0, 0.45]);
+      const h1 = hop(g.pre, back, t, t0, 0.32, 0.25);
+      const h2 = hop(back, home.p, t, flipT + 0.15 + j * 0.05, 0.42, 0.35);
+      inst = t < flipT + 0.15 + j * 0.05 ? { ...home, p: h1.p, yaw: g.yaw, squash: h1.squash, eye: t > t0 ? 1.1 : 0.5 } : { ...home, p: h2.p, yaw: mix(g.yaw, home.yaw, smooth(h2.u)), squash: h2.squash, eye: 1 };
+    } else {
+      // hit / spray: hop away to their home (dodge = a beat earlier)
+      const t0 = dodge ? Math.max(seg.t0 + 0.05, real(Math.max(0.05, T.impact - 0.36)) + j * 0.05) : hit;
+      const h = hop(g.pre, home.p, t, t0, 0.42, 0.42);
+      inst = { ...home, p: h.p, yaw: mix(g.yaw, home.yaw, smooth(h.u)), squash: h.squash, eye: h.u > 0 && h.u < 1 ? 1.1 : t > t0 ? home.eye : 0.45 };
+      if (dodge && j < 3) {
+        // the copy left behind
+        const ct = t0 + 0.12;
+        if (t > ct && j + nFrom < nTo) puffs.push({ p: g.pre, t0: ct, r: 0.22 });
+      }
+    }
+    crowd.push(inst);
+  });
+  // impact puff
+  if (!stuck && (T.effect === "hit" || T.effect === "catch" || T.effect === "trap")) puffs.push({ p: out.point, t0: real(T.impact), r: 0.3 });
+  // arrivals
+  const style = L.arrive;
+  const arr = H.slice(nFrom, nTo);
+  const sp = SPECIES[c.sp];
+  const d0 = arr.map((a) => Math.hypot(a.p[0] - src[0], a.p[2] - src[2]));
+  const dmax = Math.max(1, ...d0);
+  const order = once(`ord|${c.plan.id}|${seg.i}|${style}`, () => {
+    if (style !== "burst") return arr.map((_, i) => i);
+    const ang = arr.map((a, i) => ({ i, a: Math.atan2(a.p[2] - src[2], a.p[0] - src[0]) })).sort((p, q) => p.a - q.a).map((v) => v.i);
+    const per = 4, vol = Math.ceil(ang.length / per);
+    const o = new Array(ang.length);
+    ang.forEach((_, k) => { o[k] = ang[(k % per) * vol + Math.floor(k / per)]; });
+    return o.filter((v) => v !== undefined) as number[];
+  });
+  const rank = new Map<number, number>();
+  order.forEach((ai, k) => rank.set(ai, k));
+  arr.forEach((a, i) => {
+    const stacked = a.p[1] > 0.05 && a.p[1] < 0.6 && style !== "rain";
+    const k = rank.get(i) ?? i;
+    let t0: number;
+    if (style === "burst") t0 = flipT + Math.floor(k / 4) * Math.min(0.12, 0.9 / Math.max(1, arr.length / 4)) + (k % 4) * 0.02;
+    else if (style === "rain") t0 = flipT + hash(a.seed * 1.7) * Math.min(ARRIVE_DUR, 0.25 + arr.length * 0.02);
+    else t0 = flipT - 0.08 + Math.min(ARRIVE_DUR, (d0[i] / dmax) * Math.min(ARRIVE_DUR, 0.2 + arr.length * 0.03)) + hash(a.seed) * 0.08 + (stacked ? 0.25 : 0);
+    if (t < t0) return;
+    if (style === "burst") {
+      const dur = 0.66 + hash(i) * 0.06;
+      const h = hop(src, a.p, t, t0, dur, 2.4 + hash(i * 3) * 0.4);
+      crowd.push({ ...a, p: h.p, yaw: a.yaw + (1 - smooth(h.u)) * 3, s: (a.s ?? 1) * smooth(lin(t, t0, t0 + dur * 0.55)), squash: h.squash, eye: h.u < 1 ? 1.1 : a.eye });
+      if (t > t0 + dur && t < t0 + dur + 0.35) puffs.push({ p: a.p, t0: t0 + dur, r: 0.22 });
+    } else if (style === "rain") {
+      const dur = 0.55, fall = clamp((t - t0) / dur), h = 5.0 * (1 - fall * fall);
+      const landed = fall >= 1;
+      const sq = landed ? 0.45 * (1 - smooth(lin(t, t0 + dur, t0 + dur + 0.22))) : -0.25 * fall;
+      crowd.push({ ...a, p: [a.p[0], a.p[1] + h, a.p[2]], squash: sq, eye: landed ? a.eye : 1.15, roll: landed ? 0 : 0.3 * Math.sin(i) * (1 - fall), pitch: landed ? a.pitch : 0, s: (a.s ?? 1) * smooth(lin(t, t0, t0 + 0.14)) });
+      if (landed && t < t0 + dur + 0.35 && hash(a.seed * 1.3) < 0.5) puffs.push({ p: a.p, t0: t0 + dur, r: 0.2 });
+    } else if (style === "march") {
+      const out2 = norm([a.p[0] - P[0], 0, a.p[2] - P[2] + 0.001]);
+      const from: V3 = [a.p[0] + out2[0] * 3.2, a.p[1], a.p[2] + out2[2] * 3.2];
+      const h = hop(from, a.p, t, t0, 0.65, 0.6);
+      crowd.push({ ...a, p: h.p, yaw: h.u < 1 ? yawTo(from, a.p) : a.yaw, squash: h.squash, eye: h.u < 1 ? 1.05 : a.eye, s: (a.s ?? 1) * smooth(lin(t, t0, t0 + 0.16)) });
+    } else if (style === "climb" && a.p[1] > 0.3) {
+      const from: V3 = [a.p[0], 0, a.p[2] + 0.5];
+      const h = hop(from, a.p, t, t0, 0.42, 0.45);
+      crowd.push({ ...a, p: h.p, squash: h.squash, eye: h.u < 1 ? 1.05 : a.eye, s: (a.s ?? 1) * smooth(lin(t, t0, t0 + 0.12)) });
+    } else {
+      crowd.push({ ...a, s: popScale(t, t0) * (a.s ?? 1) });
+      if (hash(a.seed * 1.3) < (arr.length > 60 ? 0.35 : 0.8)) puffs.push({ p: a.p, t0, r: arr.length > 60 ? 0.17 : 0.24 });
+    }
+  });
+  // chase: the crowd turns on the hero
+  if (L.backfire === "chase" && t > flipT + 0.3) {
+    const k = smooth(lin(t, flipT + 0.3, flipT + 0.7));
+    for (let i = 0; i < crowd.length; i++) {
+      const cI = crowd[i];
+      if (Math.hypot(cI.p[0] - P[0], cI.p[2] - P[2]) > 4.5 || cI.p[1] > 0.6) continue;
+      const bob = 0.03 * (1 - Math.cos((t - flipT) * 9 + cI.seed)) * k;
+      crowd[i] = { ...cI, yaw: cI.yaw + wrap(yawTo(cI.p, P) - cI.yaw) * k, p: [cI.p[0], cI.p[1] + bob, cI.p[2]], eye: 1.1 };
+    }
+  }
+  // hero
+  const heroBase = out.hero ?? {};
+  let pose = out.pose;
+  pose.lean = (pose.lean ?? 0) + breathe(t);
+  let faceKeys = out.faceKeys.map((k) => ({ t: real(k.t), e: k.e }));
+  if (stuck) faceKeys = [...faceKeys.filter((k) => k.t < real(T.impact)), { t: real(T.impact) + 0.1, e: "angry" as Expr }, { t: real(T.impact) + 0.5, e: "worried" as Expr }];
+  const react: Expr = L.backfire === "splash" ? "defeated" : L.backfire === "chase" ? "worried" : "shock";
+  faceKeys.push({ t: flipT - 0.1, e: L.backfire === "splash" ? "shock" : react }, ...(L.backfire === "splash" ? [{ t: flipT + 0.55, e: "defeated" as Expr }] : []));
+  faceKeys.sort((a, b) => a.t - b.t);
+  if (L.backfire === "chase" && !T.vehicle) {
+    const k = smooth(lin(t, flipT + 0.25, flipT + 0.75));
+    pose = { ...pose, hip: add(pose.hip ?? [0, 0, 0], [0, 0, -0.45 * k]), footL: add(pose.footL ?? [0.1, 0, 0.02], [0, 0, -0.42 * k]), footR: add(pose.footR ?? [-0.1, 0, 0.02], [0, 0, -0.48 * k]), lean: (pose.lean ?? 0) - 0.12 * k };
+    if (k > 0) { pose.handL = mix3(pose.handL, [0.24, 1.32, 0.18], k); pose.handR = mix3(pose.handR, [-0.24, 1.32, 0.18], k); pose.poleL = [1, -0.4, -0.2]; pose.poleR = [-1, -0.4, -0.2]; }
+  }
+  if (L.backfire === "splash") {
+    const k = smooth(lin(t, flipT, flipT + 0.25));
+    pose = { ...pose, lean: (pose.lean ?? 0) - 0.1 * k };
+  }
+  let face = faceAt(faceKeys, t);
+  face = withTalk(face, talk(seg, c.plan.hero.id, t));
+  const tools = out.tools.slice();
+  const heroPos = heroBase.pos ?? P;
+  if (L.backfire === "splash" && t > flipT) {
+    const head = toWorld(heroPos, heroBase.yaw ?? 0, c.s, headTop(pose, c.plan.hero.look));
+    if (T.effect === "spray" || T.act === "kipas") tools.push({ kind: "drips", p: head, t0: flipT + 0.15 });
+    puffs.push({ p: add(head, [0, -0.35, 0]), t0: flipT, r: 0.45 });
+    if (T.effect === "spray") tools.push({ kind: "water", from: add(head, [0.2, 1.4, 0.9]), vel: [-0.3, -1.0, -1.4], on: smooth(lin(t, flipT - 0.05, flipT + 0.05)) * (1 - smooth(lin(t, flipT + 0.25, flipT + 0.4))), n: 40, r: 0.05, seed: 9 });
+  }
+  if (L.backfire === "chase" && t > flipT + 0.25 && !["lure", "suck", "catch", "trap"].includes(T.effect)) {
+    for (const g of tg.slice(0, 3)) {
+      const i = crowd.findIndex((q) => q.seed === g.home.seed);
+      if (i < 0) continue;
+      const near: V3 = add(P, [(hash(g.i) - 0.5) * 0.9, 0, 0.75 + hash(g.i * 3) * 0.3]);
+      const h = hop(g.home.p, near, t, flipT + 0.35 + g.i * 0.01, 0.45, 0.35);
+      crowd[i] = { ...crowd[i], p: h.p, squash: h.squash, yaw: yawTo(near, P), eye: 1.1 };
+    }
+  }
+  void sp;
+  return {
+    hero: { pos: heroPos, yaw: heroBase.yaw ?? 0, pose, face, blink: blinkAt(t, 0.4 + seg.i), seated: heroBase.seated },
+    partner: partnerActor(c, seg, t), crowd, puffs, tools,
+  };
+};
+
+// ------------------------------------------------------------------ PEAK: close on the hero, the crowd keeps growing
+const peakScene = (c: Ctx, seg: Seg, t: number): Scene => {
+  const pk = seg.peak!;
+  const u = t - seg.t0;
+  const veh = pk.vehicle;
+  const ln = laneOf(c.S);
+  const tp: V3 = [ln.stopX, 0, ln.z];
+  const R = veh ? rideOf(c) : null;
+  const pos = R ? riderPos(tp, R) : c.S.hero;
+  const yaw = veh ? Math.PI / 2 : 0;
+  const base = R ? wheelPose(R) : { handL: [0.3, 0.6, 0.06] as V3, handR: [-0.3, 0.6, 0.06] as V3, poleL: [0.7, -0.4, -0.5] as V3, poleR: [-0.7, -0.4, -0.5] as V3 };
+  // in the truck the leans stay inside RIDE_LEAN (the wheel fit holds for that range)
+  const lk = R ? 0.45 : 1;
+  const pose = poseTrack([
+    { t: 0, p: { ...base, lean: -0.07 * lk, nod: -0.1, turn: 0.15 } },
+    { t: 0.8, p: { ...base, lean: -0.06 * lk, nod: -0.06 } },
+    { t: 1.05, p: { ...base, lean: -0.04 * lk } },
+    { t: 1.75, p: { ...base, lean: R ? 0.08 : 0.1, nod: 0.12 } },
+  ], u);
+  const face0 = faceAt([{ t: 0, e: "shock" }, { t: 1.08, e: "worried" }, { t: 1.55, e: "defeated" }], u);
+  const face = withTalk({ ...face0, lookY: u > 1.0 && u < 1.55 ? 0.7 : face0.lookY }, talk(seg, c.plan.hero.id, t));
+  const H = homes(c.S, c.sp, c.partner);
+  const nFrom = vis(c, pk.from), nTo = vis(c, pk.to);
+  const crowd: Inst[] = H.slice(0, nFrom);
+  const puffs: Puff[] = [];
+  const arr = H.slice(nFrom, nTo);
+  arr.forEach((a, i) => {
+    const t0 = pk.flip - 0.05 + (i / Math.max(1, arr.length)) * 0.9 + (a.p[1] > 0.05 ? 0.15 : 0);
+    if (t < t0) return;
+    crowd.push({ ...a, s: popScale(t, t0) * (a.s ?? 1) });
+    if (i % 3 === 0) puffs.push({ p: a.p, t0, r: 0.18 });
+  });
+  const tools: ToolDesc[] = R ? [{ kind: "truck", p: tp, yaw: 0, spin: 0, aim: 0.32, cyaw: 0.3, ride: R }] : [];
+  return { hero: { pos, yaw, pose, face, blink: u > 1.55 ? 0 : blinkAt(t, 0.2), seated: R ? "chair" : undefined }, partner: partnerActor(c, seg, t), crowd, puffs, tools };
+};
+
+// ------------------------------------------------------------------ ENDINGS
+const napSpot = (S: SetMeta) => ({ x: S.hero[0] + 0.4, z: S.hero[2] + 0.9 });
+/** The sleeping hero lies on his back along z: feet toward the cameras (+z), head away, face to the sky with a small
+ *  nod toward his chest — so every camera in front sees the sleeping face upright, never rotated 90°. */
+export const NAP_NOD = 0.42;
+export const napBody = (c: Ctx, N: { x: number; z: number }, bed: number) => {
+  const s = c.s, belly = c.plan.hero.look.build?.belly ?? 1;
+  const rootZ = N.z + 0.72 * s, backY = bed + BD.torsoR[2] * belly * 0.98 * s;
+  const headLocalY = BD.waistY + BD.headC;
+  const head: V3 = [N.x, backY + 0.02 * s, rootZ - headLocalY * s];
+  return { rootZ, backY, head, s, belly };
+};
+export const napLayout = (c: Ctx, total: number) =>
+  once(`nap|${c.plan.id}|${c.S.id}|${c.sp}|${total}`, () => {
+    const S = c.S, sp = c.sp, N = napSpot(S);
+    const H = homes(S, sp, c.partner);
+    const def = SPECIES[sp];
+    const n = vis(c, total);
+    const moundN = Math.min(70, Math.max(6, Math.round(n * 0.12)));
+    const keep0 = H.slice(0, Math.max(0, n - moundN - 1)).filter((h) => Math.hypot((h.p[0] - N.x) / 2.6, (h.p[2] - N.z) / 1.4) > 1 || h.p[1] > 0.6);
+    const P = new Pile(sp, S.bounds.x0 - 4, S.bounds.x1 + 4, -14, 16, 0.035).boxes(S.tops);
+    for (const h of keep0) P.place(h.pose, h.p[0], h.p[2], h.yaw, h.s ?? 1);
+    const capH = def.mound * Math.min(1, 0.35 + n / 900);
+    const cap = (x: number, z: number) => { const d = Math.hypot((x - N.x) / 2.4, (z - N.z) / 1.3); return capH * Math.max(0, 1 - d * d); };
+    const avoid: Zone[] = c.partner ? [{ kind: "circle", c: [S.watch.p[0], S.watch.p[2]], r: 0.6 }] : [];
+    const mound = P.drop({ cx: N.x, cz: N.z, rx: 2.4, rz: 1.3, n: moundN, seed: 102, facing: 0.4, yawJitter: 0.9, best: 2, power: 0.5, s: 0.9, cap, avoid });
+    const s = c.s;
+    // his body lies along z, the bed is the highest creature under it
+    const bed = P.maxIn(N.x - 0.27 * s, N.x + 0.27 * s, N.z - 0.82 * s, N.z + 0.78 * s);
+    const B = napBody(c, N, bed);
+    // keep his head and face clear: nothing beside the head may rise above the bed (no tails or bodies over the face)
+    const topOf = (q: Inst) => q.p[1] + shapeOf(sp, q.pose).height * (q.s ?? 1);
+    const clear = (q: Inst) => Math.hypot(q.p[0] - B.head[0], q.p[2] - B.head[2]) > 0.62 * s + 0.15 || topOf(q) < bed + 0.04;
+    const crowd = [...keep0, ...mound].filter(clear);
+    // Si Oren lies ACROSS his legs (facing +x): its tail curls toward his feet, away from the face
+    const thighZ = B.rootZ - 0.36 * s;
+    const pest: Inst = { p: [N.x + 0.04 * s, B.backY + 0.235 * B.belly * s - 0.01, thighZ], yaw: Math.PI / 2, pose: 0, seed: 11, eye: 0.42, wag: 1.0, s: Math.min(1, s * 1.05) };
+    return { crowd, pest, bed, N, B };
+  });
+const endingScene = (c: Ctx, seg: Seg, t: number): Scene => {
+  const e = seg.ending!;
+  const u = t - seg.t0;
+  const S = c.S, P = S.hero;
+  const n = vis(c, e.count);
+  const H = homes(S, c.sp, c.partner);
+  const partner = partnerActor(c, seg, t);
+  const heroTalk = talk(seg, c.plan.hero.id, t);
+  if (e.kind === "nap") {
+    const Lay = napLayout(c, e.count);
+    const breath = Math.sin(t * 2.0);
+    // on his back, hands folded behind the head like a pillow, head nodded toward his chest (face toward the camera)
+    const pose: Pose = { lean: 0.01 * breath, nod: NAP_NOD, turn: 0, tilt: 0, handL: [0.2, 1.3, -0.1], handR: [-0.2, 1.3, -0.1], poleL: [1, 0.3, -0.4], poleR: [-1, 0.3, -0.4], footL: [0.12, 0, 0], footR: [-0.12, 0, 0] };
+    const B = Lay.B;
+    const zzzAt: V3 = [B.head[0] + 0.18 * B.s, B.head[1] + 0.32 * B.s, B.head[2] - 0.12 * B.s];
+    const pest = { ...Lay.pest, p: [Lay.pest.p[0], Lay.pest.p[1] + 0.008 * breath, Lay.pest.p[2]] as V3 };
+    return {
+      hero: { pos: [Lay.N.x, B.backY, B.rootZ], yaw: 0, rot: [-Math.PI / 2, 0, 0], pose, face: faceAt([{ t: 0, e: "sleep" }], u), blink: 0 },
+      partner, crowd: [...Lay.crowd, pest], puffs: [], tools: [], zzz: { at: zzzAt, show: 1 - smooth(lin(u, 1.0, 1.7)) },
+    };
+  }
+  if (e.kind === "adopt") {
+    const seatY = 0.32;
+    const hipY = seatY + 0.21 - BD.waistY;
+    const stroke = 0.5 - 0.5 * Math.cos(u * 2 * Math.PI * 0.9);
+    const lapY = BD.waistY + hipY - 0.14 + 0.07;
+    const pose: Pose = { hip: [0, hipY, 0], lean: -0.04 + breathe(t), nod: 0.18, handL: [0.12, lapY + 0.24, 0.12 + 0.14 * stroke], handR: [-0.2, lapY + 0.16, 0.32], poleL: [1, -0.2, -0.3], poleR: [-1, -0.4, 0], footL: [0.11, 0, 0.42], footR: [-0.11, 0, 0.42] };
+    const face = withTalk(faceAt([{ t: 0, e: "defeated" }, { t: 0.9, e: "grin" }], u), heroTalk);
+    const pest: Inst = { p: toWorld(P, 0, c.s, [0, lapY, 0.24]), yaw: 0.25, pose: 0, seed: 11, eye: 0.42, wag: 1.4, s: Math.min(0.9, c.s * 0.95) };
+    const crowd = H.slice(1, n);
+    const belly = c.plan.hero.look.build?.belly ?? 1;
+    return { hero: { pos: P, yaw: 0, pose, face, blink: blinkAt(t, 0.7), seated: "chair" }, partner, crowd: [...crowd, pest], puffs: [], tools: [{ kind: "chair", p: toWorld(P, 0, c.s, [0, 0, -0.12 - 0.2 * (belly - 1)]), yaw: 0, s: 0.7 * c.s }] };
+  }
+  if (e.kind === "run") {
+    const t0 = 0.35, dur = 1.15;
+    const k = clamp((u - t0) / dur);
+    const path = (q: number): V3 => [P[0] + 1.0 * q * q * 1.6, 0, P[2] + 3.2 * q];
+    const pos = u < t0 ? P : path(k);
+    const yaw = u < t0 ? mix(0, 0.5, smooth(u / t0)) : 0.32;
+    const cyc = (u - t0) * 2 * Math.PI * 2.6;
+    const run = smooth(lin(u, t0, t0 + 0.15));
+    const sw = Math.sin(cyc) * run;
+    const pose: Pose = {
+      hip: [0, -0.02 + 0.03 * Math.abs(Math.cos(cyc)) * run, 0], lean: 0.22 * run, nod: -0.1 * run,
+      handL: [0.26, 1.28 - 0.25 * sw, 0.15 + 0.1 * sw], handR: [-0.26, 1.28 + 0.25 * sw, 0.15 - 0.1 * sw], poleL: [1, -0.3, -0.3], poleR: [-1, -0.3, -0.3],
+      footL: [0.1, 0.12 * Math.max(0, sw), 0.12 * sw], footR: [-0.1, 0.12 * Math.max(0, -sw), -0.12 * sw],
+    };
+    const face = withTalk(faceAt([{ t: 0, e: "shock" }, { t: t0, e: "yell" }], u), heroTalk);
+    // chasers: the nearest crowd hops into the free stage after him
+    const st = stageOf(S);
+    const chasers = once(`chase|${c.plan.id}|${S.id}|${c.sp}`, () => scatter({ sp: c.sp, x0: st.x0, x1: st.x1, z0: st.z0, z1: st.z1 + 0.6, n: 10, seed: 77, facing: 0.3, yawJitter: 0.3, avoid: [{ kind: "circle", c: [P[0], P[2]], r: 0.5 }] }));
+    const near = H.slice(0, n).map((h, i) => ({ h, i, d: Math.hypot(h.p[0] - P[0], h.p[2] - P[2] - 1.3) })).sort((a, b) => a.d - b.d).slice(0, chasers.length);
+    const used = new Set(near.map((q) => q.i));
+    const crowd: Inst[] = H.slice(0, n).filter((_, i) => !used.has(i));
+    near.forEach((q, j) => {
+      const tt = t0 + 0.45 + j * 0.06;
+      const h = hop(q.h.p, chasers[j].p, t, seg.t0 + tt, 0.5, 0.45);
+      crowd.push({ ...q.h, p: h.p, yaw: t > seg.t0 + tt ? 0.3 + (hash(j) - 0.5) * 0.4 : q.h.yaw, squash: h.squash, eye: t > seg.t0 + tt ? 1.1 : q.h.eye });
+    });
+    return { hero: u > t0 + dur + 0.2 ? null : { pos, yaw, pose, face, blink: 0 }, partner, crowd, puffs: [], tools: [] };
+  }
+  if (e.kind === "cliffhanger") {
+    const pose = poseTrack([
+      { t: 0, p: { handL: [0.3, 0.6, 0.06], handR: [-0.12, 1.42, 0.2], poleL: [0.7, -0.4, -0.5], poleR: [-1, 0.2, -0.2], lean: -0.04, nod: -0.1 } },
+      { t: 0.7, p: { handL: [0.3, 0.6, 0.06], handR: [-0.3, 0.6, 0.06], poleL: [0.7, -0.4, -0.5], poleR: [-0.7, -0.4, -0.5], lean: 0.0 } },
+      { t: 1.55, p: { handL: [0.3, 0.6, 0.06], handR: [-0.3, 0.6, 0.06], poleL: [0.7, -0.4, -0.5], poleR: [-0.7, -0.4, -0.5], lean: 0.0 } },
+      { t: 1.95, p: { handL: [0.26, 1.25, 0.12], handR: [-0.26, 1.25, 0.12], poleL: [1, -0.3, -0.2], poleR: [-1, -0.3, -0.2], lean: -0.12, turn: 1.0, twist: 0.4, hip: [0, -0.02, 0] } },
+    ], u);
+    const face = withTalk(faceAt([{ t: 0, e: "smug" }, { t: 0.6, e: "grin" }, { t: 1.7, e: "shock" }], u), heroTalk);
+    const rise = easeOut(lin(u, 1.0, 1.9));
+    const G = S.giant;
+    const giant = { p: [G.p[0], G.p[1] - (1 - rise) * shapeOf(c.sp, 1).height * G.scale * 1.05, G.p[2]] as V3, yaw: 0.15, scale: G.scale };
+    return { hero: { pos: P, yaw: 0, pose, face, blink: blinkAt(t, 0.3) }, partner, crowd: H.slice(0, n), puffs: [], tools: [], giant };
+  }
+  // menyerah: he sits down, they pile round him, a white flag goes up
+  const lay = once(`pile|${c.plan.id}|${S.id}|${c.sp}|${n}`, () => {
+    const Pl = new Pile(c.sp, P[0] - 4, P[0] + 4, P[2] - 3, P[2] + 5, 0.035).boxes(S.tops);
+    const keep = H.slice(0, n);
+    for (const h of keep) Pl.place(h.pose, h.p[0], h.p[2], h.yaw, h.s ?? 1);
+    Pl.box(P[0] - 0.36 * c.s, P[0] + 0.36 * c.s, P[2] - 0.32 * c.s, P[2] + 0.62 * c.s, 9);
+    const cap = (x: number, z: number) => 0.95 * c.s * Math.max(0, 1 - (Math.hypot((x - P[0]) / 1.6, (z - P[2] - 0.3) / 1.4)) ** 2) + 0.05;
+    const pile = Pl.drop({ cx: P[0], cz: P[2] + 0.3, rx: 1.6, rz: 1.4, n: Math.min(60, Math.max(8, Math.round(n * 0.08))), seed: 55, best: 3, power: 0.7, cap, facing: Math.PI, yawJitter: 1.2 });
+    return { keep: keep.slice(0, Math.max(0, n - pile.length)), pile };
+  });
+  const sitY = 0.08, hipY = sitY + 0.21 - BD.waistY;
+  const flag = smooth(lin(u, 1.55, 1.9));
+  const pose = poseTrack([
+    { t: 0, p: { hip: [0, hipY, 0], handL: [0.26, 0.5, 0.18], handR: [-0.26, 0.5, 0.18], lean: -0.04, nod: -0.05, footL: [0.11, 0, 0.42], footR: [-0.11, 0, 0.42], poleL: [1, -0.4, -0.2], poleR: [-1, -0.4, -0.2] } },
+    { t: 0.4, p: { hip: [0, hipY, 0], handL: [0.28, 0.4, 0.2], handR: [-0.28, 0.4, 0.2], lean: 0.1, nod: 0.2, footL: [0.11, 0, 0.42], footR: [-0.11, 0, 0.42], poleL: [1, -0.4, -0.2], poleR: [-1, -0.4, -0.2] } },
+    { t: 1.55, p: { hip: [0, hipY, 0], handL: [0.28, 0.4, 0.2], handR: [-0.28, 0.4, 0.2], lean: 0.12, nod: 0.25, footL: [0.11, 0, 0.42], footR: [-0.11, 0, 0.42], poleL: [1, -0.4, -0.2], poleR: [-1, -0.4, -0.2] } },
+    { t: 1.9, p: { hip: [0, hipY, 0], handL: [0.28, 0.4, 0.2], handR: [-0.22, 1.32, 0.12], lean: 0.02, nod: 0.05, footL: [0.11, 0, 0.42], footR: [-0.11, 0, 0.42], poleL: [1, -0.4, -0.2], poleR: [-1, -0.2, -0.3] } },
+  ], u);
+  const face = withTalk(faceAt([{ t: 0, e: "worried" }, { t: 0.5, e: "defeated" }, { t: 1.6, e: "sleep" }], u), heroTalk);
+  const crowd: Inst[] = [...lay.keep];
+  const puffs: Puff[] = [];
+  lay.pile.forEach((q, i) => {
+    const t0 = seg.t0 + 0.45 + (i / lay.pile.length) * 1.0;
+    if (t < t0) return;
+    const h = hop([q.p[0], q.p[1] + 1.2, q.p[2]], q.p, t, t0, 0.34, 0.2);
+    crowd.push({ ...q, p: h.p, squash: h.squash, s: (q.s ?? 1) * smooth(lin(t, t0, t0 + 0.14)) });
+    if (i % 4 === 0) puffs.push({ p: q.p, t0: t0 + 0.3, r: 0.18 });
+  });
+  const tools: ToolDesc[] = [];
+  if (flag > 0) tools.push({ kind: "flag", grip: toWorld(P, 0, c.s, pose.handR), wave: Math.sin(u * 5) * 0.15 * flag });
+  return { hero: { pos: P, yaw: 0, pose, face, blink: blinkAt(t, 0.9), seated: "chair" }, partner, crowd, puffs, tools };
+};
+
+// ------------------------------------------------------------------ what a level shot must show (camera solver)
+export const levelSubjects = (plan: Plan, segI: number): { targets: V3[]; arrivals: V3[]; arriveAt: number } => {
+  const c = ctxOf(plan), seg = plan.segs[segI], L = seg.level!;
+  const T = TOOLS[L.tool];
+  const tg = targetsOf(c, seg, T);
+  const H = homes(c.S, c.sp, c.partner);
+  const sc = stageCentre(c.S);
+  const dist = (a: Inst) => Math.hypot(a.p[0] - sc[0], a.p[2] - sc[2]);
+  const arr = H.slice(vis(c, L.from), vis(c, L.to)).filter((a) => dist(a) < 4 && a.p[1] < 1.6).sort((a, b) => dist(a) - dist(b)).slice(0, 10);
+  const F = L.flip - seg.t0;
+  const arriveAt = seg.t0 + (F >= T.flip ? 1.05 + (F - T.flip) : (1.05 * F) / T.flip);
+  return { targets: tg.flatMap((g) => [g.pre, g.home.p]), arrivals: arr.map((a) => a.p), arriveAt };
+};
+
+// ------------------------------------------------------------------ the film at time t
+export const sceneAt = (plan: Plan, t: number): Scene => {
+  const c = ctxOf(plan);
+  const seg = plan.segs[segAt(plan, t)];
+  if (seg.kind === "hook") return hookScene(c, seg, t);
+  if (seg.kind === "level") return levelScene(c, seg, t);
+  if (seg.kind === "peak") return peakScene(c, seg, t);
+  return endingScene(c, seg, t);
+};
+export const segIndexAt = segAt;
+void defaultPose; void EXPR; void sub; void easeIn;
+
+==== 43567 project/src/nekat/compile.ts
+// NEKAT director — compiles a Story (stories/<id>/story.json) into a Plan: segment timing from the voice-over (or
+// paced captions without one), the counter jumps on the punch word, the cast, the set, an automatic camera per shot
+// and the sound cues. Pure TypeScript: node runs it (scripts/make.mjs) and the browser reads the Plan (Film.tsx).
+import type { Arrive, Backfire, Cam, Cue, LineSpec, PLine, Plan, PShot, Seg, SegKind, Story, Timed } from "./types.ts";
+import { captionBoxes, captionHome, captionRect, captionTop, captionYs, frameOf, overlapArea, overlaps, partCardRect, titleRect, type Rect } from "./caption.ts";
+import { SETS, HIDE_Z } from "./sets/index.ts";
+import { dressProblems, withDressing } from "./dressing.ts";
+import { CREATURES, PEOPLE, creatureProblems, personProblems, resolveCreature, resolvePerson, type CreatureLook, type PersonLook } from "./cast.ts";
+import { TOOLS, ENDINGS } from "./tools.ts";
+import { SPECIES } from "./species.ts";
+import { fitShot, pushed, safeBox, clearLine, projectPt } from "./camera.ts";
+import { NAP_NOD, levelSubjects, sceneAt, tauOf, type Scene, type ToolDesc } from "./acts.ts";
+import { BD, headCentre, headTop, toWorld } from "./rig.ts";
+import { rideFit, rideOk } from "./ride.ts";
+import { drawnFor, homes, laneOf, stageCentre } from "./population.ts";
+import { shapeOf } from "./species.ts";
+import type { V3 } from "./math.ts";
+
+export const LEAD = 0.06;
+const BACKFIRES: Backfire[] = ["multiply", "dodge", "chase", "splash", "stuck"];
+const ARRIVES: Arrive[] = ["pop", "burst", "rain", "march", "climb"];
+const norm = (w: string) => w.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]/g, "");
+/** Caption text → the words the voice says (no *stars*, no line breaks). */
+export const plain = (s: string) => s.replace(/\*/g, "").replace(/\s*\n\s*/g, " ").trim();
+export const titleLines = (story: Story): string[] => {
+  if (Array.isArray(story.title)) return story.title.map((x) => x.toUpperCase());
+  const t = story.title.toUpperCase().trim();
+  const words = t.split(/\s+/);
+  if (words.length <= 2) return [t];
+  // "BISA GAK" / "<NAME…>" / "<REST?>": first two words, then split the rest in two balanced lines
+  const head = words.slice(0, 2).join(" ");
+  const rest = words.slice(2);
+  if (rest.length <= 2) return [head, rest.join(" ")];
+  const weak = new Set(["SI", "SANG", "DI", "KE", "DARI", "YANG", "SAMA", "DAN", "PAK", "BU", "MBAK", "MAS", "KAKEK", "NENEK", "BANG", "SAMPAI", "BUAT", "PAKAI"]);
+  let best = 1, bd = 1e9;
+  for (let k = 1; k < rest.length; k++) { const a = rest.slice(0, k).join(" ").length, b = rest.slice(k).join(" ").length; const pen = Math.abs(a - b) + (weak.has(rest[k - 1]) ? 30 : 0); if (pen < bd) { bd = pen; best = k; } }
+  return [head, rest.slice(0, best).join(" "), rest.slice(best).join(" ")];
+};
+
+// ------------------------------------------------------------------ the script as one list of lines
+export type Flat = { seg: SegKind; li: number; text: string; by?: string; vo: boolean; title?: boolean };
+export const flatLines = (story: Story): Flat[] => {
+  const out: Flat[] = [];
+  const say = story.hook?.say !== false;
+  out.push({ seg: "hook", li: -1, text: plain(Array.isArray(story.title) ? story.title.join(" ") : story.title), vo: say, title: true });
+  const push = (seg: SegKind, li: number, ls?: LineSpec[]) => (ls ?? []).forEach((l) => out.push({ seg, li, text: l.text, by: l.by, vo: l.vo !== false }));
+  push("hook", -1, story.hook?.lines);
+  story.levels.forEach((l, i) => push("level", i, l.lines));
+  push("peak", -1, story.peak?.lines);
+  push("ending", -1, story.ending?.lines);
+  return out;
+};
+/** The sentences the voice-over must say, in order (make.mjs aligns them with whisper). */
+export const voiceScript = (story: Story) => flatLines(story).filter((l) => l.vo).map((l) => plain(l.text));
+
+const paceWords = (text: string, t0: number, t1: number) => {
+  const raw = plain(text).split(/\s+/).filter(Boolean);
+  const wt = raw.map((w) => 0.55 + w.replace(/[,.?!…"“”]/g, "").length * 0.085 + (/[,.?!…]["”]?$/.test(w) ? 0.4 : 0));
+  const tot = wt.reduce((a, b) => a + b, 0) || 1;
+  let acc = 0;
+  return raw.map((w, i) => { const a = t0 + ((t1 - t0) * acc) / tot; acc += wt[i]; return { w, t0: a, t1: t0 + ((t1 - t0) * acc) / tot }; });
+};
+/** Reading time of a caption line (s). */
+const readDur = (text: string) => Math.min(2.6, Math.max(0.9, 0.42 + plain(text).split(/\s+/).length * 0.27));
+
+export type SeriesState = { count: number; set: string; part: number; cast: Record<string, { preset?: string; creature?: string; look: Record<string, unknown>; name?: string }>; hero: string; pest: string; partner?: string };
+export type CompileOpts = { aspect: number; audio?: string; timing?: Timed[]; state?: SeriesState; fast?: boolean };
+
+/** Compile a story. Throws an Error listing every problem in plain language when the story cannot be built. */
+export const compile = (story: Story, o: CompileOpts): Plan => {
+  const errors: string[] = [], warnings: string[] = [];
+  const st = o.state && story.continue ? o.state : undefined;
+  const setId = story.set ?? st?.set;
+  const S0 = SETS[setId];
+  if (!S0) throw new Error(`set "${setId}" does not exist (have: ${Object.keys(SETS).join(", ")})`);
+  for (const d of story.dressing ?? []) errors.push(...dressProblems(d, S0));
+  const S = withDressing(S0, errors.length ? undefined : story.dressing);
+  // ---------------------------------------------------------------- cast
+  const cast = { ...(st?.cast ?? {}), ...(story.cast ?? {}) };
+  const people = Object.entries(cast).filter(([, c]) => !c.creature);
+  const animals = Object.entries(cast).filter(([, c]) => !!c.creature);
+  for (const [id, c] of people) {
+    if (!c.preset || !PEOPLE[c.preset]) { errors.push(`cast "${id}": person preset "${c.preset}" does not exist (have: ${Object.keys(PEOPLE).join(", ")}) — an animal needs "creature"`); continue; }
+    for (const p of personProblems(resolvePerson(c.preset, c.look) as unknown as Record<string, unknown>)) errors.push(`cast "${id}": ${p}`);
+  }
+  for (const [id, c] of animals) {
+    if (!CREATURES[c.creature!] && !Object.values(CREATURES).some((x) => x.look.species === c.creature)) { errors.push(`cast "${id}": creature "${c.creature}" does not exist (have: ${Object.keys(CREATURES).join(", ")})`); continue; }
+    for (const p of creatureProblems(resolveCreature(c.creature!, c.look) as unknown as Record<string, unknown>)) errors.push(`cast "${id}": ${p}`);
+  }
+  const heroId = story.hero ?? st?.hero ?? people[0]?.[0];
+  const pestId = story.pest ?? st?.pest ?? animals[0]?.[0];
+  const partnerId = story.partner ?? st?.partner ?? people.find(([id]) => id !== heroId)?.[0];
+  if (!heroId || !cast[heroId] || cast[heroId].creature) errors.push(`the story needs a person as the hero ("hero": a cast id with a "preset")`);
+  if (!pestId || !cast[pestId] || !cast[pestId].creature) errors.push(`the story needs an animal that multiplies ("pest": a cast id with a "creature")`);
+  if (people.length > 2) warnings.push(`only the hero and one partner appear on screen: ${people.slice(2).map(([id]) => id).join(", ")} left out`);
+  // ---------------------------------------------------------------- levels
+  if (!story.levels?.length) errors.push(`"levels" is empty: write 2–6 tool attempts`);
+  if ((story.levels?.length ?? 0) > 7) warnings.push(`${story.levels.length} levels make a long episode (the genre runs 3–5); consider splitting into two parts`);
+  story.levels?.forEach((l, i) => {
+    if (!TOOLS[l.tool]) errors.push(`level ${i + 1}: tool "${l.tool}" does not exist (have: ${Object.keys(TOOLS).join(", ")})`);
+    if (l.backfire && !BACKFIRES.includes(l.backfire)) errors.push(`level ${i + 1}: backfire "${l.backfire}" unknown (have: ${BACKFIRES.join(", ")})`);
+    if (l.arrive && !ARRIVES.includes(l.arrive)) errors.push(`level ${i + 1}: arrive "${l.arrive}" unknown (have: ${ARRIVES.join(", ")})`);
+    if (!l.lines?.length) warnings.push(`level ${i + 1}: no lines — add a short shout and a punch line (the genre talks in captions)`);
+    for (const ln of l.lines ?? []) if (ln.by && !cast[ln.by]) errors.push(`level ${i + 1}: "by": "${ln.by}" is not in cast`);
+  });
+  if (!story.ending?.kind || !ENDINGS[story.ending.kind]) errors.push(`ending.kind "${story.ending?.kind}" unknown (have: ${Object.keys(ENDINGS).join(", ")})`);
+  for (const ln of [...(story.hook?.lines ?? []), ...(story.peak?.lines ?? []), ...(story.ending?.lines ?? [])]) if (ln.by && !cast[ln.by]) errors.push(`line "${ln.text.slice(0, 30)}…": "by": "${ln.by}" is not in cast`);
+  if (errors.length) throw new Error("the story cannot be built yet:\n  - " + errors.join("\n  - "));
+
+  const heroLook = resolvePerson(cast[heroId!].preset!, cast[heroId!].look);
+  const pestLook = resolveCreature(cast[pestId!].creature!, cast[pestId!].look);
+  const partnerLook: PersonLook | undefined = partnerId ? resolvePerson(cast[partnerId].preset!, cast[partnerId].look) : undefined;
+  const nameOf = (id?: string) => (id ? cast[id]?.name ?? id : undefined);
+  const sp = pestLook.species;
+
+  // ---------------------------------------------------------------- counter curve
+  const start = Math.max(1, Math.round(story.counter?.start ?? st?.count ?? 1));
+  const curve = story.counter?.curve ?? "escalate";
+  const mult = (i: number) => Array.isArray(curve) ? curve[Math.min(i, curve.length - 1)] : curve === "x2" ? 2 : curve === "x4" ? 4 : curve === "x8" ? 8 : [2, 2, 4, 8, 8, 10, 10][Math.min(i, 6)];
+  let n = start;
+  const tos = story.levels.map((l, i) => { const v = l.to ?? Math.round(n * mult(i)); if (v <= n) warnings.push(`level ${i + 1}: the counter goes ${n} → ${v} — it should grow every level`); n = v; return v; });
+  const lastTo = tos[tos.length - 1] ?? start;
+  const peakTo = story.peak?.to ?? (story.peak?.lines?.length ? lastTo * 8 : lastTo);
+  const capHere = homes(S, sp, !!partnerId).length;
+
+  // ---------------------------------------------------------------- timing
+  const flat = flatLines(story);
+  const voiced = !!o.timing;
+  const spokenIdx = flat.map((l, i) => (l.vo ? i : -1)).filter((i) => i >= 0);
+  if (voiced && o.timing!.length !== spokenIdx.length) throw new Error(`the voice timing has ${o.timing!.length} sentences, the script ${spokenIdx.length}`);
+  const timed = new Map<number, Timed>();
+  if (voiced) spokenIdx.forEach((fi, k) => timed.set(fi, o.timing![k]));
+  type SegDraft = { kind: SegKind; li: number; lines: number[] };
+  const drafts: SegDraft[] = [{ kind: "hook", li: -1, lines: [] }, ...story.levels.map((_, i) => ({ kind: "level" as SegKind, li: i, lines: [] as number[] })), ...(story.peak?.lines?.length || story.peak?.to ? [{ kind: "peak" as SegKind, li: -1, lines: [] }] : []), { kind: "ending", li: -1, lines: [] }];
+  flat.forEach((l, i) => { const d = drafts.find((x) => x.kind === l.seg && x.li === l.li); if (d) d.lines.push(i); });
+  const segT: { t0: number; t1: number; flipRel?: number; lines: PLine[] }[] = [];
+  const mkLine = (fi: number, t0: number, t1: number, spoken: boolean, words?: { w: string; t0: number; t1: number }[]): PLine => ({
+    text: flat[fi].text, by: flat[fi].by, who: flat[fi].by ? nameOf(flat[fi].by)?.toUpperCase() : undefined, t0, t1, spoken, words: words ?? paceWords(flat[fi].text, t0, t1),
+  });
+  const starIdx = (text: string) => { const m = text.match(/\*([^*]+)\*/); if (!m) return -1; const before = plain(text.slice(0, m.index)).split(/\s+/).filter(Boolean).length; return before; };
+  if (!voiced) {
+    let t = 0;
+    drafts.forEach((d) => {
+      const ls = d.lines.filter((fi) => !flat[fi].title);
+      const lines: PLine[] = [];
+      if (d.kind === "hook") {
+        let a = 2.15;
+        for (const fi of ls) { const dur = readDur(flat[fi].text); lines.push(mkLine(fi, t + a, t + a + dur, false)); a += dur + 0.1; }
+        const D = Math.max(2.3, a + 0.1);
+        segT.push({ t0: t, t1: t + D, lines });
+        t += D;
+      } else if (d.kind === "level") {
+        const T = TOOLS[story.levels[d.li].tool];
+        let punch = ls.findIndex((fi) => /\*[^*]+\*/.test(flat[fi].text) && !flat[fi].by);
+        if (punch < 0) punch = ls.findIndex((fi) => /\*[^*]+\*/.test(flat[fi].text));
+        if (punch < 0) punch = ls.length - 1;
+        let a = 0.12;
+        const pre = ls.slice(0, Math.max(0, punch));
+        for (const fi of pre) { const dur = readDur(flat[fi].text); lines.push(mkLine(fi, t + a, t + a + dur, false)); a += dur + 0.08; }
+        const F = Math.max(T.flip * 0.92, a + 0.12);
+        let b = F - 0.06;
+        for (const fi of ls.slice(Math.max(0, punch))) { const dur = readDur(flat[fi].text); lines.push(mkLine(fi, t + b, t + b + dur, false)); b += dur + 0.06; }
+        const D = Math.max(T.min, b + 0.12, F + 0.95);
+        segT.push({ t0: t, t1: t + D, flipRel: F, lines });
+        t += D;
+      } else if (d.kind === "peak") {
+        let a = 0.75;
+        for (const fi of ls) { const dur = readDur(flat[fi].text); lines.push(mkLine(fi, t + a, t + a + dur, false)); a += dur + 0.06; }
+        const D = Math.max(2.2, a + 0.15);
+        segT.push({ t0: t, t1: t + D, flipRel: 0.85, lines });
+        t += D;
+      } else {
+        let a = 0.2;
+        for (const fi of ls) { const dur = readDur(flat[fi].text) + 0.25; lines.push(mkLine(fi, t + a, t + a + dur, false)); a += dur + 0.08; }
+        const D = Math.max(3.4, a + 1.7);
+        segT.push({ t0: t, t1: t + D, lines });
+        t += D;
+      }
+    });
+  } else {
+    drafts.forEach((d, di) => {
+      const sp0 = d.lines.filter((fi) => flat[fi].vo).map((fi) => timed.get(fi)!);
+      if (!sp0.length && d.kind !== "hook") errors.push(`${d.kind === "level" ? `level ${d.li + 1}` : d.kind}: no line is in the voice-over — every part needs at least one spoken line`);
+      const t0 = di === 0 ? 0 : (sp0[0]?.t0 ?? 0) - LEAD;
+      segT.push({ t0, t1: 0, lines: [] });
+    });
+    if (errors.length) throw new Error("the story cannot be built yet:\n  - " + errors.join("\n  - "));
+    const lastSpoken = o.timing![o.timing!.length - 1];
+    segT.forEach((s, i) => { s.t1 = i < segT.length - 1 ? segT[i + 1].t0 : Math.max(lastSpoken.t1 + 1.7, s.t0 + 3.4); });
+    drafts.forEach((d, di) => {
+      const s = segT[di];
+      let cursor = s.t0 + 0.1;
+      for (const fi of d.lines) {
+        if (flat[fi].title) continue;
+        const tm = timed.get(fi);
+        if (tm) { s.lines.push(mkLine(fi, tm.t0, Math.min(s.t1 - 0.04, tm.t1 + 0.25), true, tm.words.map((w, k) => ({ w: w.w, t0: w.t, t1: tm.words[k + 1]?.t ?? tm.t1 })))); cursor = tm.t1 + 0.05; }
+        else { const dur = readDur(flat[fi].text); s.lines.push(mkLine(fi, cursor, Math.min(s.t1 - 0.04, cursor + dur), false)); cursor += dur + 0.06; }
+      }
+      if (d.kind === "level") {
+        const T = TOOLS[story.levels[d.li].tool];
+        if (s.t1 - s.t0 < T.min * 0.75) warnings.push(`level ${d.li + 1} (${T.label}) is ${(s.t1 - s.t0).toFixed(1)} s in the voice — the gag needs about ${T.min} s; the action is compressed (say a few more words there)`);
+      }
+    });
+  }
+  // flips: the starred word (or level.flip) of the punch line
+  const flipOf = (lines: PLine[], word: string | undefined, dflt: number, where: string, t0: number, t1: number, minGap = 0.55) => {
+    let at: number | undefined;
+    for (const l of lines) {
+      if (word) { const w = l.words.find((x) => norm(x.w).startsWith(norm(word))); if (w) { at = w.t0; break; } }
+      else { const k = starIdx(l.text); if (k >= 0 && l.words[k]) { at = l.words[k].t0; if (!l.by) break; } }
+    }
+    if (word && at === undefined) warnings.push(`${where}: the flip word "${word}" is not in its lines — the counter jumps at the default moment`);
+    let f = at ?? dflt;
+    if (f < t0 + minGap) { if (voiced && minGap > 0.3) warnings.push(`${where}: the counter would jump ${(f - t0).toFixed(2)} s after the cut — put the punch word later in the line`); f = t0 + minGap; }
+    if (f > t1 - 0.5) f = t1 - 0.5;
+    return f;
+  };
+  const segs: Seg[] = [];
+  let count = start;
+  drafts.forEach((d, di) => {
+    const s = segT[di];
+    const seg: Seg = { kind: d.kind, i: di, t0: +s.t0.toFixed(3), t1: +s.t1.toFixed(3), lines: s.lines, count };
+    if (d.kind === "level") {
+      const L = story.levels[d.li], T = TOOLS[L.tool];
+      const dflt = voiced ? (s.lines.filter((l) => !l.by).slice(-1)[0]?.t0 ?? s.lines.slice(-1)[0]?.t0 ?? s.t0 + T.flip) : s.t0 + (s.flipRel ?? T.flip);
+      const flip = flipOf(s.lines, L.flip, dflt, `level ${d.li + 1}`, s.t0, s.t1);
+      const backfire = L.backfire ?? T.backfire;
+      seg.level = { n: d.li + 1, tool: L.tool, label: (L.label ?? T.label).toUpperCase(), backfire, arrive: L.arrive ?? T.arrive, from: count, to: tos[d.li], flip: +flip.toFixed(3) };
+      count = tos[d.li];
+    } else if (d.kind === "peak") {
+      const flip = flipOf(s.lines, undefined, s.t0 + 0.85, "peak", s.t0, s.t1, 0.2);
+      const lastTool = story.levels[story.levels.length - 1]?.tool;
+      seg.peak = { from: count, to: peakTo, flip: +flip.toFixed(3), vehicle: !!TOOLS[lastTool]?.vehicle };
+      count = peakTo;
+    } else if (d.kind === "ending") {
+      const lastTool = story.levels[story.levels.length - 1]?.tool;
+      seg.ending = { kind: story.ending.kind, part: (story.ending.part ?? `PART ${story.part ?? (st ? st.part + 1 : 1)}`).toUpperCase(), next: (story.ending.next ?? "BERSAMBUNG…").toUpperCase(), count, vehicle: !!TOOLS[lastTool]?.vehicle };
+    }
+    seg.count = d.kind === "level" ? seg.level!.from : d.kind === "peak" ? seg.peak!.from : count;
+    segs.push(seg);
+  });
+  if (errors.length) throw new Error("the story cannot be built yet:\n  - " + errors.join("\n  - "));
+  const duration = +segs[segs.length - 1].t1.toFixed(3);
+  if (duration > 62) warnings.push(`the episode is ${duration.toFixed(0)} s — the genre lands best at 15–45 s`);
+  for (const sg of segs) for (const l of sg.lines) if (plain(l.text).length > 54) warnings.push(`caption "${plain(l.text).slice(0, 40)}…" is long for a phone (≤ 54 letters; split it into two lines)`);
+  const keys = [{ t: 0, n: start }];
+  for (const sg of segs) {
+    if (sg.level && sg.level.to !== sg.level.from) keys.push({ t: sg.level.flip, n: sg.level.to });
+    if (sg.peak && sg.peak.to !== sg.peak.from) keys.push({ t: sg.peak.flip, n: sg.peak.to });
+  }
+  const label = (story.counter?.label ?? SPECIES[sp].id).toUpperCase();
+  const plan: Plan = {
+    id: story.id, title: titleLines(story), set: S0.id, dressing: story.dressing?.length ? story.dressing : undefined, light: story.time ?? S.light ?? "siang", aspect: o.aspect, duration,
+    hero: { id: heroId!, name: nameOf(heroId)!, look: heroLook }, partner: partnerId && partnerLook ? { id: partnerId, name: nameOf(partnerId)!, look: partnerLook } : undefined,
+    pest: { id: pestId!, name: nameOf(pestId)!, look: pestLook as CreatureLook },
+    counter: { label, keys }, drawn: { end: Math.max(...keys.map((k) => k.n)), cap: capHere }, part: segs[segs.length - 1].ending?.part ?? "PART 1", segs, shots: [], cues: [], audio: o.audio, voiced, warnings,
+  };
+  // ---------------------------------------------------------------- shots
+  const shots: PShot[] = [];
+  segs.forEach((sg) => {
+    const D = sg.t1 - sg.t0;
+    if (sg.kind === "hook" && D > 4.4) { const m = sg.t0 + Math.max(2.2, D * 0.5); shots.push(draft(shots.length, sg.t0, m, sg.i, "hook"), draft(shots.length + 1, m, sg.t1, sg.i, "hook2")); }
+    else if (sg.kind === "hook") shots.push(draft(shots.length, sg.t0, sg.t1, sg.i, "hook"));
+    else if (sg.kind === "level" && D > 3.7 && sg.level!.flip - 0.3 - sg.t0 > 1.3 && sg.t1 - (sg.level!.flip - 0.3) > 1.3) {
+      const m = sg.level!.flip - 0.3;
+      shots.push(draft(shots.length, sg.t0, m, sg.i, "attempt"), draft(shots.length + 1, m, sg.t1, sg.i, "result"));
+    } else shots.push(draft(shots.length, sg.t0, sg.t1, sg.i, sg.kind === "level" ? "level" : sg.kind === "peak" ? "peak" : "end"));
+  });
+  plan.shots = shots;
+  // cameras (they need the scene, which needs the plan)
+  let prevAz: number | undefined;
+  for (const sh of shots) {
+    const r = solve(plan, sh, prevAz, o.fast);
+    sh.a = r.a; sh.b = r.b; sh.hold = r.hold; sh.vis = +r.vis.toFixed(2);
+    sh.shadowAt = [r.a.target[0], 0, r.a.target[2]];
+    sh.shadowBox = Math.max(5, Math.min(16, Math.hypot(r.a.pos[0] - r.a.target[0], r.a.pos[2] - r.a.target[2]) * 0.9 + 2.5));
+    const hz = HIDE_Z[S0.id];
+    const napEnd = sh.role === "end" && segs[sh.seg].ending?.kind === "nap";
+    if (hz !== undefined && !napEnd && r.a.pos[2] > hz && r.b.pos[2] > hz - 0.3) sh.hide = hz;
+    if (r.az !== undefined) prevAz = r.az;
+    if (r.vis < 0.75) warnings.push(`shot ${sh.i + 1} (${sh.role}, ${sh.t0.toFixed(1)} s): the camera could not see the hero clearly — check the still`);
+  }
+  if (plan.segs.some((g) => g.level && TOOLS[g.level.tool]?.vehicle) && !rideOk(plan.hero.look))
+    warnings.push(`${plan.hero.name} has no steering-wheel fit in the ride-on truck for this build (belly / head) — use a calmer build or another tool`);
+  placeCaptions(plan, warnings);
+  plan.cues = cuesOf(plan);
+  return plan;
+};
+
+// ------------------------------------------------------------------ captions clear of faces
+const smoothK = (x: number) => { const t = Math.max(0, Math.min(1, x)); return t * t * t * (t * (t * 6 - 15) + 10); };
+export const camOf = (sh: PShot, t: number): Cam => {
+  const k = smoothK((t - sh.t0 - (sh.hold ?? 0)) / Math.max(0.01, sh.t1 - sh.t0 - (sh.hold ?? 0)));
+  const m = (a: V3, b: V3): V3 => [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k];
+  return { pos: m(sh.a.pos, sh.b.pos), target: m(sh.a.target, sh.b.target), fov: sh.a.fov + (sh.b.fov - sh.a.fov) * k };
+};
+/** Screen rectangles (design px) that a caption must not cover at time t: heads (hero, partner), the tool's working end. */
+export const keepClear = (plan: Plan, t: number, cam: Cam): { who: string; r: Rect }[] => {
+  const wide = plan.aspect > 1, { W, H } = frameOf(wide);
+  const f = norm3(sub3(cam.target, cam.pos)), right = norm3(cross3(f, [0, 1, 0])), upv = cross3(right, f);
+  const px = (p: V3) => { const q = projectPt(p, cam.pos, cam.target, cam.fov, plan.aspect); return { x: (q.x * 0.5 + 0.5) * W, y: (1 - (q.y * 0.5 + 0.5)) * H, d: q.depth }; };
+  const onScreen = (r: Rect) => r.x1 > 0 && r.x0 < W && r.y1 > 0 && r.y0 < H;
+  const disc = (c: V3, rad: number, who: string) => {
+    const a = px(c);
+    if (a.d < 0.15) return null;
+    const e = px(add3(c, [upv[0] * rad, upv[1] * rad, upv[2] * rad]));
+    const R = Math.hypot(e.x - a.x, e.y - a.y);
+    const r = { x0: a.x - R, x1: a.x + R, y0: a.y - R * 1.05, y1: a.y + R * 1.2 };
+    return onScreen(r) ? { who, r } : null;
+  };
+  const sc = sceneAt(plan, t);
+  const out: { who: string; r: Rect }[] = [];
+  const headOf = (a: NonNullable<Scene["hero"]>, look: PersonLook): V3 => {
+    const s = look.build?.s ?? 1;
+    if (a.rot) return [a.pos[0], a.pos[1] + 0.02 * s, a.pos[2] - (BD.waistY + BD.headC) * s];
+    return toWorld(a.pos, a.yaw, s, headCentre(a.pose, look));
+  };
+  if (sc.hero) { const l = plan.hero.look; const d = disc(headOf(sc.hero, l), BD.headR * (l.build?.s ?? 1) * (l.build?.head ?? 1) * 1.3, plan.hero.name); if (d) out.push(d); }
+  if (sc.partner && plan.partner) { const l = plan.partner.look; const d = disc(headOf(sc.partner, l), BD.headR * (l.build?.s ?? 1) * (l.build?.head ?? 1) * 1.3, plan.partner.name); if (d) out.push(d); }
+  const seg = plan.segs[segIdx(plan, t)];
+  if (seg.kind === "level") {
+    for (const d of sc.tools) {
+      const pts = workingEnd(d);
+      if (!pts.length) continue;
+      const ps = pts.map(px).filter((q) => q.d > 0.15);
+      if (!ps.length) continue;
+      const r = { x0: Math.min(...ps.map((q) => q.x)) - 60, x1: Math.max(...ps.map((q) => q.x)) + 60, y0: Math.min(...ps.map((q) => q.y)) - 60, y1: Math.max(...ps.map((q) => q.y)) + 60 };
+      if (onScreen(r)) out.push({ who: "the tool", r });
+    }
+  }
+  return out;
+};
+/** The part of a tool a caption must not hide (not long handles or set-size vehicles). */
+const workingEnd = (d: ToolDesc): V3[] => {
+  switch (d.kind) {
+    case "broom": return [[d.top[0] + d.dir[0] * 1.25, d.top[1] + d.dir[1] * 1.25, d.top[2] + d.dir[2] * 1.25]];
+    case "net": return [[d.grip[0] + d.dir[0] * 1.6, d.grip[1] + d.dir[1] * 1.6, d.grip[2] + d.dir[2] * 1.6]];
+    case "umbrella": return [[d.grip[0] + d.dir[0] * 0.8, d.grip[1] + d.dir[1] * 0.8, d.grip[2] + d.dir[2] * 0.8]];
+    case "box": return [[d.p[0] - 0.46, d.p[1], d.p[2] - 0.46], [d.p[0] + 0.46, d.p[1] + 0.62, d.p[2] + 0.46], [d.p[0] - 0.46, d.p[1] + 0.62, d.p[2] + 0.46], [d.p[0] + 0.46, d.p[1], d.p[2] - 0.46]];
+    case "vacuum": return [d.can, [d.can[0], d.can[1] + 0.55, d.can[2]], d.handle];
+    case "bucket": case "bowl": case "toa": case "drone": return [d.p];
+    case "flag": return [[d.grip[0], d.grip[1] + 0.9, d.grip[2]]];
+    default: return [];
+  }
+};
+const segIdx = (plan: Plan, t: number) => { let i = 0; for (let k = 0; k < plan.segs.length; k++) if (t >= plan.segs[k].t0 - 1e-6) i = k; return i; };
+export const shotIdx = (plan: Plan, t: number) => { let i = 0; for (let k = 0; k < plan.shots.length; k++) if (t >= plan.shots[k].t0 - 1e-6) i = k; return i; };
+type Keep = { who: string; r: Rect };
+const lineSpan = (seg: Seg, ln: PLine) => { const t0 = Math.max(ln.t0, seg.t0), t1 = Math.min(ln.t1, seg.t1); return { t0, t1 }; };
+const lineSamples = (t0: number, t1: number) => [0.04, 0.25, 0.5, 0.75, 0.96].map((k) => t0 + (t1 - t0) * k);
+/** Everything a caption line must stay off over its whole span: faces + tool (projected per sample), the hook title, the end card. */
+const keepsOf = (plan: Plan, seg: Seg, ln: PLine): Keep[] => {
+  const wide = plan.aspect > 1, { t0, t1 } = lineSpan(seg, ln);
+  const out = lineSamples(t0, t1).flatMap((t) => keepClear(plan, t, camOf(plan.shots[shotIdx(plan, t)], t)));
+  const hook = plan.segs[0];
+  if (t0 < Math.min(hook.t1 - 0.05, 2.25)) out.push({ who: "the title", r: titleRect(plan.title, wide) });
+  const end = plan.segs[plan.segs.length - 1];
+  if (end.ending && t1 > end.t0 + endCardAt(end)) {
+    const k = end.ending.kind;
+    out.push({ who: "the end card", r: partCardRect(k === "nap" || k === "adopt" ? (wide ? 300 : 430) : wide ? 640 : 1180, wide) });
+  }
+  return out;
+};
+/** Nearest free height for a line (cost 0), else the least-covered one. */
+const bestY = (plan: Plan, seg: Seg, ln: PLine, keeps: Keep[]) => {
+  const wide = plan.aspect > 1;
+  const h0 = captionRect(ln.text, ln.who, 0, wide);
+  let best = { y: captionHome(wide, seg.kind), cost: Infinity, who: "" };
+  for (const y of captionYs(wide, seg.kind, h0.y1 - h0.y0)) {
+    const boxes = captionBoxes(ln.text, ln.who, y, wide);
+    const hit = keeps.filter((k) => boxes.some((b) => overlaps(b, k.r, 6)));
+    if (!hit.length) return { y, cost: 0, who: "" };
+    const cost = hit.reduce((acc, k) => acc + boxes.reduce((s0, b) => s0 + overlapArea(b, k.r), 0) + 1, 0);
+    if (cost < best.cost) best = { y, cost, who: hit[0].who };
+  }
+  return best;
+};
+/** A gentle reframe of one shot: tilt the aim (rad, + looks up) and widen the lens (×fov). Camera position unchanged, so
+ *  walls, hides and the lens-clear zone stay as solved. */
+const reframed = (c: Cam, tilt: number, zoom: number): Cam => {
+  const f = norm3(sub3(c.target, c.pos)), right = norm3(cross3(f, [0, 1, 0])), up = cross3(right, f);
+  const d = Math.hypot(c.target[0] - c.pos[0], c.target[1] - c.pos[1], c.target[2] - c.pos[2]);
+  const g: V3 = [f[0] * Math.cos(tilt) + up[0] * Math.sin(tilt), f[1] * Math.cos(tilt) + up[1] * Math.sin(tilt), f[2] * Math.cos(tilt) + up[2] * Math.sin(tilt)];
+  return { ...c, target: [c.pos[0] + g[0] * d, c.pos[1] + g[1] * d, c.pos[2] + g[2] * d], fov: Math.min(62, c.fov * zoom) };
+};
+const REFRAMES: [number, number][] = [[0.05, 1], [-0.05, 1], [0, 1.12], [0.1, 1], [-0.1, 1], [0.05, 1.12], [-0.05, 1.12], [0.1, 1.12], [-0.1, 1.12], [0, 1.25], [0.08, 1.25], [-0.08, 1.25]];
+/** Per caption line: the nearest height whose boxes (text + speaker chip) cover no face, no tool head (levels), no title
+ *  or end card. A shot whose lines find no free height is reframed (small tilt / wider lens) when that frees every line
+ *  in it and keeps the hero's head well inside the frame. Still covered → plan warning. */
+const placeCaptions = (plan: Plan, warnings: string[]) => {
+  const wide = plan.aspect > 1, { W, H } = frameOf(wide);
+  const lines = plan.segs.flatMap((seg) => seg.lines.map((ln) => ({ seg, ln }))).filter(({ seg, ln }) => { const s0 = lineSpan(seg, ln); return s0.t1 > s0.t0; });
+  const blocked = (L: typeof lines) => L.filter(({ seg, ln }) => bestY(plan, seg, ln, keepsOf(plan, seg, ln)).cost > 0);
+  const shotsOf = (seg: Seg, ln: PLine) => { const { t0, t1 } = lineSpan(seg, ln); return [...new Set(lineSamples(t0, t1).map((t) => shotIdx(plan, t)))]; };
+  const heroInside = (i: number) => {
+    const sh = plan.shots[i];
+    for (const k of [0.1, 0.5, 0.9]) {
+      const t = sh.t0 + (sh.t1 - sh.t0) * k;
+      const hero = keepClear(plan, t, camOf(sh, t)).find((c) => c.who === plan.hero.name);
+      if (hero && (hero.r.x0 < 30 || hero.r.x1 > W - 30 || hero.r.y0 < captionTop(wide) || hero.r.y1 > H - 120)) return false;
+    }
+    return true;
+  };
+  const todo = [...new Set(blocked(lines).flatMap(({ seg, ln }) => shotsOf(seg, ln)))];
+  for (const i of todo) {
+    const sh = plan.shots[i], a0 = sh.a, b0 = sh.b;
+    const mine = lines.filter(({ seg, ln }) => shotsOf(seg, ln).includes(i));
+    const before = blocked(mine).length;
+    if (!before) continue;
+    const wasInside = heroInside(i);
+    let done = false;
+    for (const [tilt, zoom] of REFRAMES) {
+      sh.a = reframed(a0, tilt, zoom); sh.b = reframed(b0, tilt, zoom);
+      if ((!wasInside || heroInside(i)) && blocked(mine).length === 0) { done = true; sh.reframe = { tilt, zoom }; break; }
+    }
+    if (!done) { sh.a = a0; sh.b = b0; }
+  }
+  for (const { seg, ln } of lines) {
+    const pick = bestY(plan, seg, ln, keepsOf(plan, seg, ln));
+    ln.y = pick.y;
+    if (pick.cost > 0) warnings.push(`caption "${plain(ln.text).slice(0, 36)}" (${ln.t0.toFixed(1)} s) still covers ${pick.who}${/^the /.test(pick.who) ? "" : "'s face"} at every height — shorten the line or give that beat a calmer camera`);
+  }
+};
+const sub3 = (a: V3, b: V3): V3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const cross3 = (a: V3, b: V3): V3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const norm3 = (a: V3): V3 => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; };
+const draft = (i: number, t0: number, t1: number, seg: number, role: PShot["role"]): PShot => ({ i, t0: +t0.toFixed(3), t1: +t1.toFixed(3), seg, role, a: { pos: [0, 2, 6], target: [0, 1, 0], fov: 45 }, b: { pos: [0, 2, 6], target: [0, 1, 0], fov: 45 }, shadowAt: [0, 0, 0], shadowBox: 8, vis: 1 });
+
+// ------------------------------------------------------------------ framing
+const toolPts = (d: ToolDesc): V3[] => {
+  switch (d.kind) {
+    case "broom": return [d.top, [d.top[0] + d.dir[0] * 1.3, d.top[1] + d.dir[1] * 1.3, d.top[2] + d.dir[2] * 1.3]];
+    case "hose": return [d.nozzle, d.reel];
+    case "vacuum": return [d.can, [d.can[0], 0.7, d.can[2]], d.handle];
+    case "truck": return [[d.p[0] - 1.0 * d.ride.k, 0, d.p[2]], [d.p[0] + 1.0 * d.ride.k, 1.3 * d.ride.k, d.p[2]]];
+    case "fan": return [d.p, [d.p[0], 1.95, d.p[2]]];
+    case "net": return [d.grip, [d.grip[0] + d.dir[0] * 1.9, d.grip[1] + d.dir[1] * 1.9, d.grip[2] + d.dir[2] * 1.9]];
+    case "umbrella": return [d.grip, [d.grip[0] + d.dir[0] * 1.0, d.grip[1] + d.dir[1] * 1.0 + 0.3, d.grip[2] + d.dir[2] * 1.0]];
+    case "drone": case "bowl": case "toa": case "remote": case "bucket": case "chair": return [d.p];
+    case "box": return [d.p, [d.p[0], d.p[1] + 0.62, d.p[2]]];
+    case "flag": return [d.grip, [d.grip[0], d.grip[1] + 0.9, d.grip[2]]];
+    default: return [];
+  }
+};
+const heroPts = (sc: Scene, look: PersonLook): V3[] => {
+  const h = sc.hero;
+  if (!h) return [];
+  const s = look.build?.s ?? 1;
+  if (h.rot) return [h.pos];
+  const top = toWorld(h.pos, h.yaw, s, headTop(h.pose, look));
+  return [top, [h.pos[0], h.pos[1] + (h.seated === "hidden" ? 0.6 : 0.02), h.pos[2]], toWorld(h.pos, h.yaw, s, [0.32, 0.9, 0.1]), toWorld(h.pos, h.yaw, s, [-0.32, 0.9, 0.1])];
+};
+type Solved = { a: PShot["a"]; b: PShot["b"]; vis: number; az?: number; hold?: number };
+const solve = (plan: Plan, sh: PShot, prevAz: number | undefined, fast?: boolean): Solved => {
+  const S = withDressing(SETS[plan.set], plan.dressing), seg = plan.segs[sh.seg], look = plan.hero.look, s = look.build?.s ?? 1, aspect = plan.aspect;
+  const hz = HIDE_Z[plan.set];
+  const sc0 = sceneAt(plan, sh.t0 + 0.02);
+  const scenes = [0.02, 0.35, 0.65, 0.95].map((k) => sceneAt(plan, sh.t0 + (sh.t1 - sh.t0) * k));
+  const centre = stageCentre(S);
+  const heroAll = scenes.flatMap((x) => heroPts(x, look));
+  const headW = sc0.hero ? toWorld(sc0.hero.pos, sc0.hero.yaw, s, headCentre(sc0.hero.pose, look)) : add3(S.hero, [0, 1.2, 0]);
+  const pick = (sc: Scene, R: number, cap: number) =>
+    sc.crowd.filter((q) => q.p[1] < 2.2 && Math.hypot(q.p[0] - centre[0], q.p[2] - centre[2]) < R).sort((a, b) => Math.hypot(a.p[0] - centre[0], a.p[2] - centre[2]) - Math.hypot(b.p[0] - centre[0], b.p[2] - centre[2])).slice(0, cap).map((q) => [q.p[0], q.p[1] + 0.3, q.p[2]] as V3);
+  const box = safeBox(aspect, sh.role === "hook" || sh.role === "hook2" ? "hook" : "x");
+  const wide = aspect > 1;
+  const azAround = (c: number, span: number, step: number) => { const out: number[] = []; for (let a = -span; a <= span + 1e-6; a += step) out.push(c + a); return out; };
+  if (sh.role === "hook" || sh.role === "hook2") {
+    const perch = S.perch.p;
+    const mate = scenes[0].partner ? [scenes[0].partner.pos, [scenes[0].partner.pos[0], scenes[0].partner.pos[1] + 1.45 * (plan.partner?.look.build?.s ?? 1), scenes[0].partner.pos[2]] as V3] : [];
+    const pts = [...heroAll, [perch[0], perch[1] + 0.05, perch[2]] as V3, [perch[0], perch[1] + 0.62, perch[2]] as V3, ...(seg.count <= 6 ? pick(scenes[1], 2.6, 6) : []), ...(sh.role === "hook" ? mate : [])];
+    const f = fitShot(sh.role === "hook2" ? heroAll : pts, { aspect, S, fov: wide ? 40 : 46, azs: azAround(sh.role === "hook2" ? -14 : 12, 30, 6), els: [10, 14, 18, 6], box, see: [headW, perch], prevAz, hideZ: hz, minD: 1.6 });
+    return { a: f.cam, b: pushed(f.cam, 0.08), vis: f.visFirst, az: f.az };
+  }
+  if (sh.role === "peak") {
+    const h = sc0.hero!;
+    const fwd = h.yaw;
+    let best: Solved | null = null;
+    for (const off of [24, -24, 38, -38, 12, -12]) {
+      const az = fwd + (off * Math.PI) / 180;
+      const d = 2.25 * s;
+      const tgt = add3(headW, [0, -0.16 * s, 0]);
+      const pos: V3 = [tgt[0] + Math.sin(az) * d, tgt[1] + 0.12, tgt[2] + Math.cos(az) * d];
+      const blockers = hz !== undefined && pos[2] > hz && pos[1] < 4 ? S.blockers.filter((b) => b.min[2] < hz) : S.blockers;
+      const ok = clearLine(pos, headW, blockers) && !blockers.some((b) => pos[0] > b.min[0] - 0.2 && pos[0] < b.max[0] + 0.2 && pos[1] < b.max[1] + 0.2 && pos[2] > b.min[2] - 0.2 && pos[2] < b.max[2] + 0.2);
+      if (!ok) continue;
+      const a = { pos, target: tgt, fov: wide ? 38 : 42 };
+      const b = { pos: [pos[0] + Math.cos(az) * -0.25, pos[1] - 0.02, pos[2] - Math.sin(az) * -0.25] as V3, target: add3(tgt, [0, 0.02, 0]), fov: a.fov };
+      best = { a, b, vis: 1, az };
+      break;
+    }
+    return best ?? { a: { pos: add3(headW, [0.8, 0.1, 2.0]), target: headW, fov: 42 }, b: { pos: add3(headW, [0.9, 0.1, 1.9]), target: headW, fov: 42 }, vis: 0.5 };
+  }
+  if (sh.role === "end") {
+    const e = seg.ending!;
+    if (e.kind === "nap") {
+      // start above his face, looking down along the face normal (head away from the camera = face upright on screen)
+      const hp = scenes[0].hero!.pos;
+      const head: V3 = [hp[0], hp[1] + 0.02 * s, hp[2] - (BD.waistY + BD.headC) * s];
+      // nearly overhead (0.3 rad toward his feet): the face (nodded NAP_NOD toward the chest) faces the lens, the legs
+      // and the creature on them stay low in the frame
+      const th = Math.min(0.3, NAP_NOD);
+      const nrm: V3 = [0, Math.cos(th), Math.sin(th)];
+      const d = (wide ? 1.75 : 1.55) * s + 0.2;
+      const a = { pos: [head[0] + 0.12, head[1] + nrm[1] * d, head[2] + nrm[2] * d] as V3, target: [head[0], head[1], head[2] + 0.2 * s] as V3, fov: wide ? 40 : 42 };
+      return { a, b: S.wide, vis: 1, hold: 0.55 };
+    }
+    if (e.kind === "adopt") {
+      const P = S.hero;
+      const a = { pos: add3(P, [0.55, 1.2 * s + 0.25, 2.5 * s + 0.4]), target: add3(P, [0, 0.95 * s, 0.1]), fov: wide ? 40 : 44 };
+      return { a, b: { pos: add3(P, [1.1, 2.7, 5.2]), target: add3(P, [0, 1.65, 0]), fov: a.fov }, vis: 1, hold: 0.6 };
+    }
+    if (e.kind === "run") {
+      const P = S.hero;
+      const a = { pos: add3(P, [-0.9, 1.4, 4.0]), target: add3(P, [0.25, 0.75, 1.0]), fov: wide ? 46 : 50 };
+      return { a, b: { ...a, target: add3(P, [0.55, 0.7, 1.4]) }, vis: 1 };
+    }
+    if (e.kind === "cliffhanger") {
+      // low in front of the hero, looking up: his feet near the bottom, the giant's eyes over the roof near the top
+      const G = S.giant, P = S.hero;
+      const h1 = shapeOf(plan.pest.look.species, 1).height * G.scale;
+      const eyes: V3 = [G.p[0], h1 * 0.8, G.p[2]], ears: V3 = [G.p[0], h1, G.p[2]];
+      const box = safeBox(aspect, "x");
+      for (const fov of wide ? [44, 50, 56] : [52, 58, 64, 70])
+        for (const back of [3.2, 3.8, 4.4, 5.0])
+          for (const up of [0.8, 1.1, 1.5]) {
+            const pos = add3(P, [0.55, up, back]);
+            if (pos[2] > S.bounds.z1) continue;
+            for (let k = 0; k <= 20; k++) {
+              const tgt: V3 = [P[0] + (G.p[0] - P[0]) * 0.25, 0.4 + k * 0.18, P[2] - 1.5];
+              const ok = [P, add3(P, [0, 1.5 * s, 0]), eyes, ears].every((q) => { const pr = projectPt(q, pos, tgt, fov, aspect); return pr.x > box[0] && pr.x < box[1] && pr.y > box[2] && pr.y < 0.62; })
+                && projectPt(eyes, pos, tgt, fov, aspect).y > projectPt(G.over, pos, tgt, fov, aspect).y + 0.03;
+              if (ok) { const a = { pos, target: tgt, fov }; return { a, b: pushed(a, 0.04), vis: 1 }; }
+            }
+          }
+      const a = { pos: add3(P, [0.55, 1.0, 4.4]), target: add3(P, [0, 2.2, -1.5]), fov: wide ? 50 : 64 };
+      return { a, b: pushed(a, 0.04), vis: 1 };
+    }
+    const P = S.hero;
+    const a = { pos: add3(P, [0.7, 3.1, 4.3]), target: add3(P, [0, 1.15, 0.15]), fov: wide ? 42 : 48 };
+    return { a, b: pushed(a, 0.1), vis: 1 };
+  }
+  // level shots: the hero (+ tool), the targets where they wait and land, the nearest arrivals
+  const L = seg.level!;
+  const T = TOOLS[L.tool];
+  const attempt = sh.role === "attempt";
+  const result = sh.role === "result";
+  const subj = levelSubjects(plan, sh.seg);
+  const lift = (p: V3): V3 => [p[0], p[1] + 0.35, p[2]];
+  const scenesH = T.vehicle ? scenes.filter((_, k) => sh.t0 + (sh.t1 - sh.t0) * [0.02, 0.35, 0.65, 0.95][k] >= subj.arriveAt) : scenes;
+  const heroL = (scenesH.length ? scenesH : scenes.slice(-1)).flatMap((x) => heroPts(x, look));
+  const tools = (scenesH.length ? scenesH : scenes.slice(-1)).flatMap((x) => x.tools.flatMap(toolPts));
+  const pts = [...heroL, ...tools, ...(result ? [] : subj.targets.map(lift)), ...(attempt ? [] : subj.arrivals.slice(0, result ? 10 : 6).map(lift))];
+  if (T.vehicle) { const ln = laneOf(S), k = rideFit(look).k; pts.push([ln.stopX - 1.0 * k, 0, ln.z], [ln.stopX + 1.0 * k, 1.25 * k, ln.z]); }
+  const els = result ? [22, 28, 16, 34] : attempt ? [12, 18, 8, 24] : [16, 22, 10, 28];
+  const center = T.vehicle ? 18 : result ? -10 : attempt ? 14 : 4;
+  const headL = T.vehicle && scenesH.length ? toWorld(scenesH[0].hero!.pos, scenesH[0].hero!.yaw, s, headCentre(scenesH[0].hero!.pose, look)) : headW;
+  const opts = { aspect, S, fov: wide ? 44 : result ? 56 : 54, azs: azAround(center, fast ? 30 : 36, fast ? 10 : 6), els, box, see: [headL, ...subj.targets.slice(0, 2).map(lift)], prevAz, hideZ: hz, minD: 1.6, prefer: center };
+  const f = fitShot(pts, opts);
+  if (sh.role === "level" && subj.arrivals.length) {
+    // tight on the attempt, then ease back after the flip to show who arrived (same angle: no swing)
+    const all = [...pts, ...subj.arrivals.slice(0, 10).map(lift)];
+    const g = fitShot(all, { ...opts, azs: [(f.az * 180) / Math.PI], els: [f.el], prevAz: undefined });
+    if (g.ok && g.d > f.d * 1.08) return { a: f.cam, b: g.cam, vis: f.visFirst, az: f.az, hold: Math.max(0, L.flip - sh.t0 - 0.15) };
+  }
+  return { a: f.cam, b: pushed(f.cam, 0.07), vis: f.visFirst, az: f.az };
+};
+const add3 = (a: V3, b: V3): V3 => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+
+// ------------------------------------------------------------------ sound cues (scripts/lib/nekat-sound.mjs plays them)
+const cuesOf = (plan: Plan): Cue[] => {
+  const c: Cue[] = [];
+  c.push({ t: 0.08, k: "title" });
+  plan.shots.forEach((sh, i) => { if (i) c.push({ t: sh.t0, k: "cut" }); });
+  for (const sg of plan.segs) {
+    if (sg.level) {
+      const L = sg.level, T = TOOLS[L.tool];
+      const F = L.flip - sg.t0;
+      const real = (τ: number) => sg.t0 + (F >= T.flip ? τ + (F - T.flip) : τ < T.flip ? (τ * F) / T.flip : F + (τ - T.flip));
+      c.push({ t: sg.t0 + 0.06, k: "chip", n: L.n });
+      c.push({ t: real(Math.max(0, T.impact - 0.35)), k: `tool:${T.sound}`, v: real(T.flip + 0.25) - real(Math.max(0, T.impact - 0.35)) });
+      if (L.backfire !== "stuck") c.push({ t: real(T.impact), k: T.effect === "hit" || T.effect === "catch" || T.effect === "trap" ? "impact" : T.effect === "suck" ? "slurp" : "hop" });
+      else c.push({ t: real(T.impact) + 0.1, k: "stuck", v: L.flip - real(T.impact) });
+      c.push({ t: L.flip, k: "flip", v: Math.round(L.to / Math.max(1, L.from)) });
+      c.push({ t: L.flip, k: "arrive", n: drawnFor(L.to, plan.drawn.end, plan.drawn.cap) - drawnFor(L.from, plan.drawn.end, plan.drawn.cap), v: L.arrive === "burst" ? 1 : L.arrive === "rain" ? 2 : L.arrive === "march" ? 3 : 0 });
+      const last = !plan.segs.some((x) => x.level && x.level.n > L.n);
+      if (L.n === 1 || last) c.push({ t: L.flip + 0.12, k: `voice:${plan.pest.look.species}`, n: Math.min(3, 1 + Math.floor(Math.log10(Math.max(1, L.to)))) });
+      if (L.backfire === "splash") c.push({ t: L.flip + 0.02, k: "splash" });
+      if (L.backfire === "chase") c.push({ t: L.flip + 0.3, k: "scramble", v: 1.0 });
+      if (L.backfire === "dodge") c.push({ t: real(Math.max(0.05, T.impact - 0.36)), k: "hop" });
+    }
+    if (sg.peak) {
+      c.push({ t: sg.t0 + 0.02, k: "sting" });
+      if (sg.peak.to !== sg.peak.from) { c.push({ t: sg.peak.flip, k: "flip", v: Math.round(sg.peak.to / Math.max(1, sg.peak.from)) }); c.push({ t: sg.peak.flip, k: "arrive", n: 60, v: 0 }); }
+
+    }
+    if (sg.ending) {
+      const e = sg.ending;
+      c.push({ t: sg.t0 + 0.05, k: `end:${e.kind}`, v: sg.t1 - sg.t0 });
+      c.push({ t: sg.t0 + endCardAt(sg), k: "part" });
+    }
+  }
+  return c.sort((a, b) => a.t - b.t);
+};
+/** When (from the ending's start) the PART card lands. */
+export const endCardAt = (sg: Seg) => {
+  const lastLine = sg.lines.length ? Math.max(...sg.lines.map((l) => l.t1)) - sg.t0 : 0;
+  const base = sg.ending?.kind === "cliffhanger" ? 2.35 : sg.ending?.kind === "menyerah" ? 2.0 : 1.85;
+  return Math.min(sg.t1 - sg.t0 - 1.2, Math.max(base, lastLine + 0.1));
+};
+void homes; void tauOf;
+
+==== 4471 project/src/nekat/kit/Creatures.tsx
+// NEKAT instanced creatures: any number (up to the species cap) in two poses, each with idle life — slow breathing, an
+// occasional 6-frame blink, a tail sway (outward only, never into its own body) or a head peck. Pop-ins are scale-eased
+// by the caller, never a one-frame appearance.
+import React, { useLayoutEffect, useMemo, useRef } from "react";
+import { Color, Euler, InstancedMesh, Matrix4, Quaternion, Vector3 } from "three";
+import { creatureGeo, creatureMat } from "./creatureGeo.ts";
+import { SPECIES } from "../species.ts";
+import { clamp, hash } from "../math.ts";
+import type { CreatureLook } from "../cast.ts";
+
+import type { Inst } from "../crowd.ts";
+export type { Inst };
+
+const TINTS: [number, number, number][] = [
+  [1, 1, 1], [1.03, 0.96, 0.9], [0.96, 0.93, 0.9], [1.02, 0.99, 0.95], [0.98, 0.9, 0.84], [1.04, 1.0, 0.97], [0.93, 0.88, 0.84],
+];
+export const blinkAt = (t: number, seed: number) => {
+  const P = 2.6 + 2.6 * hash(seed * 3.1);
+  const l = (((t + hash(seed * 7.7) * P) % P) + P) % P;
+  return l < 0.2 ? Math.sin((l / 0.2) * Math.PI) : 0;
+};
+const peck = (t: number, seed: number) => {
+  const P = 1.8 + 1.6 * hash(seed * 2.3);
+  const l = (((t + hash(seed * 5.1) * P) % P) + P) % P;
+  return l < 0.42 ? 0.5 - 0.5 * Math.cos((l / 0.42) * Math.PI * 2) : 0;
+};
+
+const M = new Matrix4(), M2 = new Matrix4(), Q = new Quaternion(), E = new Euler(0, 0, 0, "YXZ"), S = new Vector3(), T = new Vector3();
+const C = new Color();
+
+export const Creatures: React.FC<{ list: Inst[]; t: number; look: CreatureLook; max?: number; shadows?: boolean }> = ({ list, t, look, max, shadows = true }) => {
+  const def = SPECIES[look.species];
+  const cap = max ?? def.cap + 8;
+  const geo = useMemo(() => [creatureGeo(look, 0), creatureGeo(look, 1)], [look]);
+  const mats = useMemo(() => ({ body: creatureMat(look, "body"), eyes: creatureMat(look, "eyes"), part: creatureMat(look, "part") }), [look]);
+  const refs = [
+    [useRef<InstancedMesh>(null), useRef<InstancedMesh>(null), useRef<InstancedMesh>(null)],
+    [useRef<InstancedMesh>(null), useRef<InstancedMesh>(null), useRef<InstancedMesh>(null)],
+  ];
+
+  useLayoutEffect(() => {
+    for (const pose of [0, 1]) {
+      const [rb, re, rp] = refs[pose].map((r) => r.current);
+      const g = geo[pose], mv = def.poses[pose].move;
+      let n = 0;
+      for (const c of list) {
+        if (c.pose !== pose) continue;
+        const s = c.s ?? 1;
+        if (s <= 0.001 || n >= cap) continue;
+        const breathe = 1 + 0.018 * Math.sin(t * 2.4 + c.seed * 1.7);
+        const sq = c.squash ?? 0;
+        E.set(c.pitch ?? 0, c.yaw, c.roll ?? 0, "YXZ");
+        Q.setFromEuler(E);
+        S.set(s * (1 + 0.22 * sq), s * breathe * (1 - 0.3 * sq), s * (1 + 0.22 * sq));
+        T.set(c.p[0], c.p[1], c.p[2]);
+        M.compose(T, Q, S);
+        rb?.setMatrixAt(n, M);
+        if (re) {
+          const open = clamp((c.eye ?? 1) * (1 - 0.9 * blinkAt(t, c.seed)), 0.06, 1.2);
+          M2.compose(T.set(g.eyeAt[0], g.eyeAt[1], g.eyeAt[2]), Q.identity(), S.set(1, open, 1));
+          re.setMatrixAt(n, M2.premultiply(M));
+        }
+        if (rp && mv) {
+          const w = c.wag ?? 1;
+          const a = mv.mode === "sway" ? mv.amp * (0.5 - 0.5 * Math.cos(t * mv.speed * w + c.seed * 2.3)) : mv.amp * peck(t * w, c.seed);
+          E.set(mv.axis === "x" ? a : 0, mv.axis === "y" ? a : 0, 0, "YXZ");
+          M2.compose(T.set(g.partAt[0], g.partAt[1], g.partAt[2]), Q.setFromEuler(E), S.set(1, 1, 1));
+          rp.setMatrixAt(n, M2.premultiply(M));
+        }
+        const tint = TINTS[Math.floor(hash(c.seed * 5.3) * TINTS.length)];
+        C.setRGB(tint[0], tint[1], tint[2]);
+        rb?.setColorAt(n, C);
+        rp?.setColorAt(n, C);
+        re?.setColorAt(n, C.setRGB(1, 1, 1));
+        n++;
+      }
+      for (const m of [rb, re, rp]) {
+        if (!m) continue;
+        m.count = n;
+        m.instanceMatrix.needsUpdate = true;
+        if (m.instanceColor) m.instanceColor.needsUpdate = true;
+      }
+    }
+  });
+
+  const mesh = (pose: number, i: number) => {
+    const g = geo[pose];
+    const part = [g.body, g.eyes, g.part][i];
+    if (!part) return null;
+    const mat = [mats.body, mats.eyes, mats.part][i];
+    return <instancedMesh key={`${pose}${i}`} ref={refs[pose][i]} args={[part, mat, cap]} castShadow={shadows && i !== 1} receiveShadow frustumCulled={false} />;
+  };
+  return (
+    <group>
+      {[0, 1].flatMap((pose) => [0, 1, 2].map((i) => mesh(pose, i)))}
+    </group>
+  );
+};
+
+==== 25724 project/src/nekat/kit/Person.tsx
+// NEKAT person — chunky toy proportions (big head, round belly, short limbs, mitten hands), matte clay. Built entirely
+// from a PersonLook (cast.ts): skin, build, hair, face extras, top, bottom, hat, feet — so the buyer can recast the duo.
+// Posed from targets: torso lean/twist, head nod/turn, hand + foot targets (two-bone IK) so hands land exactly on the
+// tool they hold. The face is sculpted 3D (bead eyes, clay brows, mouth) and blends between 9 expressions.
+// Local frame: faces +z, up +y, his LEFT side is +x. Root = ground point between the feet. All pose numbers are in
+// "unit adult" space; build.s scales the whole figure (a bocil is 0.72).
+import React, { useMemo } from "react";
+import {
+  Color, CylinderGeometry, Euler, LatheGeometry, MeshStandardMaterial, Quaternion, SphereGeometry, TorusGeometry,
+  TubeGeometry, Vector2, Vector3, QuadraticBezierCurve3, ConeGeometry,
+} from "three";
+import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
+import { clay, plaid } from "./clay.ts";
+import { clamp, ik2, mix, type V3 } from "../math.ts";
+import { BD, headLift, type Face, type Pose } from "../rig.ts";
+export { BD, EXPR, EXPRS, defaultPose, type Expr, type Face, type Pose } from "../rig.ts";
+import type { PersonLook } from "../cast.ts";
+
+// ------------------------------------------------------------------ geometry caches
+const G = {
+  sphere: new SphereGeometry(1, 32, 20),
+  sphereLo: new SphereGeometry(1, 16, 12),
+  torso: new SphereGeometry(1, 48, 32),
+  cyl: new CylinderGeometry(1, 1, 1, 18, 1),
+  hairShort: new SphereGeometry(BD.headR * 1.04, 40, 20, 0, Math.PI * 2, 0, 1.12),
+  hairRing: new SphereGeometry(BD.headR * 1.035, 40, 10, Math.PI - 0.35, Math.PI + 0.7, 1.0, 0.62),
+  hairCap: new SphereGeometry(BD.headR * 1.04, 40, 20, 0, Math.PI * 2, 0, 1.25),
+  kerCap: new SphereGeometry(BD.headR * 1.09, 40, 16, 0, Math.PI * 2, 0, 0.98),
+  kerBand: new SphereGeometry(BD.headR * 1.09, 40, 16, Math.PI / 2 + 0.92, Math.PI * 2 - 1.84, 0.95, 1.35),
+  topi: new SphereGeometry(BD.headR * 1.06, 40, 16, 0, Math.PI * 2, 0, 1.2),
+  caping: new ConeGeometry(0.4, 0.2, 40, 1, true),
+  waistRoll: new TorusGeometry(0.232, 0.03, 10, 40),
+  ring: new TorusGeometry(0.042, 0.007, 8, 24),
+  spike: new ConeGeometry(0.05, 0.11, 10),
+};
+const rbox = new Map<string, RoundedBoxGeometry>();
+export const rb = (w: number, h: number, d: number, r: number) => {
+  const k = `${w}|${h}|${d}|${r}`;
+  let g = rbox.get(k);
+  if (!g) {
+    g = new RoundedBoxGeometry(w, h, d, 3, Math.min(r, w / 2 - 1e-3, h / 2 - 1e-3, d / 2 - 1e-3));
+    rbox.set(k, g);
+  }
+  return g;
+};
+const latheCache = new Map<string, LatheGeometry>();
+const lathe = (key: string, pts: [number, number][]) => {
+  let g = latheCache.get(key);
+  if (!g) {
+    g = new LatheGeometry(pts.map(([r, y]) => new Vector2(r, y)), 40);
+    latheCache.set(key, g);
+  }
+  return g;
+};
+/** Sarung / skirt / shorts tube from hem height `bottom` to the waist. */
+const skirtGeo = (bottom: number, flare = 0) =>
+  lathe(`sk|${bottom}|${flare}`, [
+    [0.205 + flare, bottom], [0.243 + flare, bottom + 0.004], [0.248 + flare * 0.7, bottom + 0.12], [0.262, 0.36], [0.262, 0.47], [0.245, 0.6], [0.228, 0.665],
+  ]);
+/** Seated hips of a sarung / skirt: from the seat line up to the waist, never dipping below the seat (the standing
+ *  profile's knee-level point would fold down through a seat). */
+const seatedHipGeo = () =>
+  lathe("seatedhip", [[0.2, 0.43], [0.24, 0.436], [0.26, 0.47], [0.262, 0.52], [0.252, 0.58], [0.24, 0.62], [0.228, 0.665]]);
+const capeGeo = (b: number) => lathe(`cape|${b}`, [[0.29 * b, 0.2], [0.305 * b, 0.25], [0.275 * b, 0.33], [0.17 * b, 0.4], [0.1, 0.44]]);
+/** Hip piece of trousers / shorts (the legs are tubes). */
+const hipGeo = () => lathe("hip", [[0.19, 0.5], [0.215, 0.515], [0.238, 0.58], [0.24, 0.62], [0.228, 0.665]]);
+const smileGeo = new Map<string, TubeGeometry>();
+const smileLine = (smile: number, w: number) => {
+  const s = Math.round(clamp(smile, -1, 1) * 6) / 6, ww = Math.round(w * 10) / 10;
+  const k = `${s}|${ww}`;
+  let g = smileGeo.get(k);
+  if (!g) {
+    const hw = 0.045 * ww;
+    const c = new QuadraticBezierCurve3(new Vector3(-hw, 0.012 * s, 0), new Vector3(0, -0.05 * s, 0), new Vector3(hw, 0.012 * s, 0));
+    g = new TubeGeometry(c, 16, 0.0085, 6, false);
+    smileGeo.set(k, g);
+  }
+  return g;
+};
+
+// ------------------------------------------------------------------ torso material: top painted in the shader
+const bodyMats = new Map<string, MeshStandardMaterial>();
+const KIND_ID: Record<string, number> = { singlet: 0, kaos: 1, kemeja: 2, daster: 3 };
+const torsoMat = (skin: string, shirt: string, shirt2: string, kind: string, stripes: boolean) => {
+  const k = `${skin}|${shirt}|${shirt2}|${kind}|${stripes}`;
+  let m = bodyMats.get(k);
+  if (m) return m;
+  m = clay("#ffffff").clone();
+  const u = { uSkin: { value: new Color(skin) }, uShirt: { value: new Color(shirt) }, uShirt2: { value: new Color(shirt2) }, uKind: { value: KIND_ID[kind] ?? 1 }, uStripes: { value: stripes ? 1 : 0 } };
+  m.onBeforeCompile = (sh) => {
+    Object.assign(sh.uniforms, u);
+    sh.vertexShader = sh.vertexShader
+      .replace("#include <common>", "#include <common>\nvarying vec3 vObj;")
+      .replace("#include <begin_vertex>", "#include <begin_vertex>\nvObj = position;");
+    sh.fragmentShader = sh.fragmentShader
+      .replace("#include <common>", "#include <common>\nvarying vec3 vObj; uniform vec3 uSkin; uniform vec3 uShirt; uniform vec3 uShirt2; uniform float uKind; uniform float uStripes;")
+      .replace(
+        "#include <color_fragment>",
+        `#include <color_fragment>
+        {
+          vec3 p = normalize(vObj);
+          float ax = abs(p.x);
+          float skinA = 0.0;
+          if (uKind < 0.5) {
+            float scoop = p.z > 0.0 ? 0.42 + 1.5 * ax * ax : 0.66 + 1.0 * ax * ax;
+            float neck = (ax < 0.36 && p.y > scoop) ? 1.0 : 0.0;
+            float arm = length(vec3(ax - 0.93, p.y - 0.5, p.z * 0.9)) < 0.5 ? 1.0 : 0.0;
+            skinA = max(neck, arm);
+          } else if (uKind < 2.5) {
+            skinA = (ax < 0.34 && p.y > 0.8 + 0.6 * ax * ax && p.z > -0.2) ? 1.0 : 0.0;
+          } else {
+            skinA = (ax < 0.3 && p.y > 0.84 + 0.6 * ax * ax && p.z > -0.2) ? 1.0 : 0.0;
+          }
+          vec3 shirt = uShirt;
+          if (uStripes > 0.5) {
+            float s = sin(p.y * 22.0);
+            float aa = fwidth(s) * 1.2;
+            shirt = mix(uShirt, uShirt2, smoothstep(0.35 - aa, 0.35 + aa, s));
+          }
+          if (uKind > 1.5 && uKind < 2.5) {
+            float placket = (ax < 0.035 && p.z > 0.0 && p.y < 0.8) ? 1.0 : 0.0;
+            shirt = mix(shirt, uShirt2, placket);
+          }
+          diffuseColor.rgb = mix(shirt, uSkin, skinA);
+        }`,
+      );
+  };
+  m.customProgramCacheKey = () => "nekat-torso2";
+  bodyMats.set(k, m);
+  return m;
+};
+
+// ------------------------------------------------------------------ helpers
+const UP = new Vector3(0, 1, 0);
+const tmpQ = new Quaternion();
+const Bone: React.FC<{ a: V3; b: V3; r: number; mat: MeshStandardMaterial; caps?: boolean }> = ({ a, b, r, mat, caps = true }) => {
+  const va = new Vector3(...a), vb = new Vector3(...b);
+  const d = vb.clone().sub(va);
+  const L = Math.max(1e-4, d.length());
+  const q = tmpQ.clone().setFromUnitVectors(UP, d.normalize());
+  const mid = va.clone().add(vb).multiplyScalar(0.5);
+  return (
+    <>
+      <mesh geometry={G.cyl} material={mat} position={mid} quaternion={q} scale={[r, L, r]} castShadow receiveShadow />
+      {caps ? (
+        <>
+          <mesh geometry={G.sphereLo} material={mat} position={va} scale={r} castShadow receiveShadow />
+          <mesh geometry={G.sphereLo} material={mat} position={vb} scale={r} castShadow receiveShadow />
+        </>
+      ) : null}
+    </>
+  );
+};
+const OnHead: React.FC<{ lon: number; lat: number; r: number; spin?: number; children: React.ReactNode }> = ({ lon, lat, r, spin = 0, children }) => (
+  <group rotation={new Euler(-lat, lon, 0, "YXZ")}>
+    <group position={[0, 0, r]} rotation={[0, 0, spin]}>
+      {children}
+    </group>
+  </group>
+);
+
+export type PersonProps = {
+  look: PersonLook;
+  pose: Pose;
+  face: Face;
+  blink?: number;
+  pos?: V3;
+  rot?: V3;
+  /** "hidden": everything below the waist hidden (inside a vehicle); "chair": thighs forward, shins down */
+  seated?: "hidden" | "chair" | false;
+  children?: React.ReactNode;
+};
+
+export const Person: React.FC<PersonProps> = ({ look, pose, face, blink = 0, pos = [0, 0, 0], rot = [0, 0, 0], seated = false, children }) => {
+  const R = BD.headR;
+  const hs = look.build?.head ?? 1;
+  const scale = look.build?.s ?? 1;
+  const belly = look.build?.belly ?? 1;
+  const hairColor = look.hair?.color ?? "#231c18";
+  const m = useMemo(() => {
+    const b = look.bottom;
+    const sh = b.kind === "sarung" ? plaid(b.color, b.color2 ?? "#2c4f69", b.color3 ?? "#e7c66b", [5, 2]) : null;
+    return {
+      skin: clay(look.skin),
+      shade: clay(new Color(look.skin).multiplyScalar(0.86).getStyle()),
+      hair: clay(hairColor, { rough: 0.9 }),
+      stache: clay(hairColor, { rough: 0.95, bump: 0.8 }),
+      torso: torsoMat(look.skin, look.top.color, look.top.color2 ?? "#ffffff", look.top.kind, !!look.top.stripes),
+      shirt: clay(look.top.color),
+      shirt2: clay(look.top.color2 ?? look.top.color),
+      bottom: sh ? clay("#ffffff", { map: sh, rough: 0.92 }) : clay(b.color, { rough: 0.9 }),
+      band: clay(b.color2 ?? b.color, { rough: 0.9 }),
+      sole: clay(look.feet?.color ?? "#4c8fd0"),
+      strap: clay(look.feet?.color2 ?? "#f2f2f0"),
+      eye: clay("#1d1816", { rough: 0.35, bump: 0 }),
+      white: clay("#fbfaf6", { rough: 0.5, bump: 0 }),
+      mouth: clay("#4a1f22", { rough: 0.9, bump: 0 }),
+      tongue: clay("#d86a6f", { rough: 0.8, bump: 0 }),
+      hat: clay(look.hat?.color ?? (look.hat?.kind === "caping" ? "#d9be7c" : "#222"), { rough: 0.85, double: look.hat?.kind === "caping" }),
+      glass: clay("#2b2626", { rough: 0.5, bump: 0 }),
+      blush: clay("#ec9a95", { rough: 0.9, bump: 0 }),
+      towel: clay(look.towel ?? "#ffffff"),
+    };
+  }, [look, hairColor]);
+
+  const hip = pose.hip ?? [0, 0, 0];
+  const P = new Vector3(hip[0], BD.waistY + hip[1], hip[2]);
+  const qT = new Quaternion().setFromEuler(new Euler(pose.lean ?? 0, pose.twist ?? 0, pose.side ?? 0, "YXZ"));
+  const tl = (x: number, y: number, z: number): V3 => {
+    const v = new Vector3(x, y, z).applyQuaternion(qT).add(P);
+    return [v.x, v.y, v.z];
+  };
+  const tr: V3 = [BD.torsoR[0] * belly, BD.torsoR[1], BD.torsoR[2] * belly];
+  const shL = tl(BD.shX * belly, BD.shY, -0.01), shR = tl(-BD.shX * belly, BD.shY, -0.01);
+  const head = tl(0, BD.headC + headLift(look), 0.0);
+  const qH = qT.clone().multiply(new Quaternion().setFromEuler(new Euler(pose.nod ?? 0, pose.turn ?? 0, pose.tilt ?? 0, "YXZ")));
+  const poleL = pose.poleL ?? [0.7, -0.4, -0.5], poleR = pose.poleR ?? [-0.7, -0.4, -0.5];
+  const [elL, haL] = ik2(shL, pose.handL, BD.upper, BD.fore, poleL);
+  const [elR, haR] = ik2(shR, pose.handR, BD.upper, BD.fore, poleR);
+  const footL = pose.footL ?? [BD.footX, 0, 0.02], footR = pose.footR ?? [-BD.footX, 0, 0.02];
+  const sleeve = look.top.kind !== "singlet";
+
+  const hand = (at: V3, from: V3, side: 1 | -1) => {
+    const d = new Vector3(at[0] - from[0], at[1] - from[1], at[2] - from[2]).normalize();
+    const q = new Quaternion().setFromUnitVectors(UP, d);
+    return (
+      <group position={at} quaternion={q}>
+        <mesh geometry={G.sphere} material={m.skin} scale={[BD.handR, BD.handR * 1.05, BD.handR * 0.95]} castShadow receiveShadow />
+        <mesh geometry={G.sphereLo} material={m.skin} position={[-side * 0.05, -0.005, 0.035]} scale={[0.028, 0.034, 0.028]} castShadow receiveShadow />
+      </group>
+    );
+  };
+  const foot = (f: V3) =>
+    look.feet?.kind === "shoes" ? (
+      <group position={f}>
+        <mesh geometry={rb(0.13, 0.03, 0.26, 0.012)} material={m.strap} position={[0, 0.015, 0.02]} castShadow receiveShadow />
+        <mesh geometry={rb(0.12, 0.085, 0.24, 0.04)} material={m.sole} position={[0, 0.06, 0.02]} castShadow receiveShadow />
+      </group>
+    ) : (
+      <group position={f}>
+        <mesh geometry={rb(0.13, 0.026, 0.255, 0.012)} material={m.sole} position={[0, 0.013, 0.02]} castShadow receiveShadow />
+        <mesh geometry={rb(0.1, 0.065, 0.2, 0.03)} material={m.skin} position={[0, 0.058, 0.015]} castShadow receiveShadow />
+        <mesh geometry={rb(0.018, 0.014, 0.1, 0.006)} material={m.strap} position={[0.028, 0.093, 0.04]} rotation={[0.15, 0.62, 0]} castShadow />
+        <mesh geometry={rb(0.018, 0.014, 0.1, 0.006)} material={m.strap} position={[-0.028, 0.093, 0.04]} rotation={[0.15, -0.62, 0]} castShadow />
+        <mesh geometry={G.sphereLo} material={m.strap} position={[0, 0.09, 0.085]} scale={0.012} />
+      </group>
+    );
+
+  // lower body
+  const bk = look.bottom.kind;
+  let lower: React.ReactNode = null;
+  if (seated === "chair") {
+    const wy = BD.waistY + hip[1];
+    const knee = (s: number): V3 => [s * 0.11 + hip[0], wy - 0.16, hip[2] + 0.36];
+    const thigh = (s: number): V3 => [s * 0.1 + hip[0], wy - 0.14, hip[2]];
+    const cover = bk === "sarung" || bk === "skirt";
+    lower = (
+      <>
+        {/* thighs: covered by the sarung / skirt lap, or legs (pants / shorts) */}
+        {cover ? (
+          <>
+            <group position={[hip[0], 0, hip[2]]} scale={[belly, 1, 0.88 * belly]}>
+              <mesh geometry={seatedHipGeo()} material={m.bottom} position={[0, hip[1], 0]} castShadow receiveShadow />
+            </group>
+            <mesh geometry={rb(0.46 * belly, 0.16, 0.5, 0.07)} material={m.bottom} position={[hip[0], wy - 0.12, hip[2] + 0.17]} castShadow receiveShadow />
+            <mesh geometry={rb(0.44 * belly, 0.3, 0.12, 0.05)} material={m.bottom} position={[hip[0], wy - 0.3, hip[2] + 0.38]} castShadow receiveShadow />
+          </>
+        ) : (
+          <>
+            <Bone a={thigh(1)} b={knee(1)} r={0.07} mat={bk === "shorts" || bk === "pants" ? m.bottom : m.skin} />
+            <Bone a={thigh(-1)} b={knee(-1)} r={0.07} mat={bk === "shorts" || bk === "pants" ? m.bottom : m.skin} />
+            <mesh geometry={rb(0.46 * belly, 0.22, 0.34, 0.1)} material={m.bottom} position={[hip[0], wy - 0.08, hip[2] - 0.02]} castShadow receiveShadow />
+          </>
+        )}
+        <Bone a={knee(1)} b={[footL[0], footL[1] + 0.07, footL[2] - 0.035]} r={0.05} mat={bk === "pants" ? m.bottom : m.skin} />
+        <Bone a={knee(-1)} b={[footR[0], footR[1] + 0.07, footR[2] - 0.035]} r={0.05} mat={bk === "pants" ? m.bottom : m.skin} />
+        {foot(footL)}
+        {foot(footR)}
+      </>
+    );
+  } else if (!seated) {
+    const legged = bk === "pants" || bk === "shorts";
+    const tube = bk === "sarung" ? skirtGeo(BD.hemY) : bk === "skirt" ? skirtGeo(0.075, 0.03) : hipGeo();
+    const hipJ = (s: number): V3 => [s * BD.footX * 0.92 + hip[0], 0.56 + hip[1] * 0.6, hip[2]];
+    const ankle = (f: V3): V3 => [f[0], f[1] + 0.07, f[2] - 0.035];
+    const kneeAt = (s: number, f: V3): V3 => { const a = hipJ(s), b = ankle(f); return [mix(a[0], b[0], 0.48), mix(a[1], b[1], 0.48), mix(a[2], b[2], 0.48) + 0.012]; };
+    lower = (
+      <>
+        <group position={[hip[0], hip[1], hip[2]]} scale={[belly, 1, 0.88 * belly]}>
+          <mesh geometry={tube} material={m.bottom} castShadow receiveShadow />
+          {bk === "sarung" ? <mesh geometry={G.waistRoll} material={m.bottom} position={[0, 0.655, 0]} rotation={[Math.PI / 2, 0, 0]} castShadow /> : null}
+          {look.bottom.color2 && bk !== "sarung" ? <mesh geometry={G.waistRoll} material={m.band} position={[0, 0.645, 0]} rotation={[Math.PI / 2, 0, 0]} scale={[1, 1, 0.6]} castShadow /> : null}
+        </group>
+        {legged ? (
+          <>
+            {bk === "pants" ? (
+              <>
+                <Bone a={hipJ(1)} b={ankle(footL)} r={0.07} mat={m.bottom} />
+                <Bone a={hipJ(-1)} b={ankle(footR)} r={0.07} mat={m.bottom} />
+              </>
+            ) : (
+              <>
+                <Bone a={hipJ(1)} b={kneeAt(1, footL)} r={0.085} mat={m.bottom} />
+                <Bone a={hipJ(-1)} b={kneeAt(-1, footR)} r={0.085} mat={m.bottom} />
+                <Bone a={kneeAt(1, footL)} b={ankle(footL)} r={0.048} mat={m.skin} />
+                <Bone a={kneeAt(-1, footR)} b={ankle(footR)} r={0.048} mat={m.skin} />
+              </>
+            )}
+          </>
+        ) : (
+          <>
+            <Bone a={[BD.footX * 0.9 + hip[0], 0.42 + hip[1] * 0.5, hip[2]]} b={ankle(footL)} r={0.048} mat={m.skin} />
+            <Bone a={[-BD.footX * 0.9 + hip[0], 0.42 + hip[1] * 0.5, hip[2]]} b={ankle(footR)} r={0.048} mat={m.skin} />
+          </>
+        )}
+        {foot(footL)}
+        {foot(footR)}
+      </>
+    );
+  }
+
+  const eyeH = face.eyeS * (1 - 0.88 * clamp(blink));
+  const eyeLat = 0.06 + face.lookY * 0.06, eyeLon = 0.36;
+  const lookOff = face.lookX * 0.06;
+  const mouthO = face.mouthOpen;
+  const hk = look.hat?.kind ?? "none";
+  const hairStyle = hk === "kerudung" ? "none" : look.hair?.style ?? "none";
+  const f = look.face ?? {};
+  const browR = f.brows === "bushy" ? 0.024 : f.brows === "thin" ? 0.013 : 0.019;
+
+  return (
+    <group position={pos} rotation={new Euler(rot[0], rot[1], rot[2], "YXZ")} scale={scale}>
+      <mesh geometry={G.torso} material={m.torso} position={tl(0, BD.torsoC, 0)} quaternion={qT} scale={tr} castShadow receiveShadow />
+      {sleeve ? (
+        <>
+          <Bone a={shL} b={[mix(shL[0], elL[0], 0.5), mix(shL[1], elL[1], 0.5), mix(shL[2], elL[2], 0.5)]} r={BD.armR + 0.014} mat={m.shirt} />
+          <Bone a={shR} b={[mix(shR[0], elR[0], 0.5), mix(shR[1], elR[1], 0.5), mix(shR[2], elR[2], 0.5)]} r={BD.armR + 0.014} mat={m.shirt} />
+        </>
+      ) : null}
+      {look.top.kind === "kemeja" ? (
+        <>
+          <mesh geometry={rb(0.12, 0.05, 0.11, 0.02)} material={m.shirt} position={tl(0.075, BD.shY + 0.07, 0.06)} quaternion={qT.clone().multiply(new Quaternion().setFromEuler(new Euler(0.5, 0, -0.5)))} castShadow />
+          <mesh geometry={rb(0.12, 0.05, 0.11, 0.02)} material={m.shirt} position={tl(-0.075, BD.shY + 0.07, 0.06)} quaternion={qT.clone().multiply(new Quaternion().setFromEuler(new Euler(0.5, 0, 0.5)))} castShadow />
+        </>
+      ) : null}
+      <Bone a={shL} b={elL} r={BD.armR} mat={m.skin} />
+      <Bone a={elL} b={haL} r={BD.armR * 0.92} mat={m.skin} />
+      <Bone a={shR} b={elR} r={BD.armR} mat={m.skin} />
+      <Bone a={elR} b={haR} r={BD.armR * 0.92} mat={m.skin} />
+      {hand(haL, elL, 1)}
+      {hand(haR, elR, -1)}
+      {look.towel ? <mesh geometry={rb(0.12, 0.02, 0.5, 0.01)} material={m.towel} position={tl(0.13, 0.39, 0)} quaternion={qT} castShadow /> : null}
+      {hk === "kerudung" ? <mesh geometry={capeGeo(belly)} material={m.hat} position={[P.x, P.y, P.z]} quaternion={qT} castShadow receiveShadow /> : null}
+      {lower}
+
+      {/* head */}
+      <group position={head} quaternion={qH} scale={hs}>
+        <mesh geometry={G.sphere} material={m.skin} scale={[R * 1.02, R, R * 0.98]} castShadow receiveShadow />
+        <OnHead lon={Math.PI / 2} lat={0.02} r={R * 0.96}><mesh geometry={G.sphereLo} material={m.shade} scale={[0.042, 0.058, 0.03]} castShadow /></OnHead>
+        <OnHead lon={-Math.PI / 2} lat={0.02} r={R * 0.96}><mesh geometry={G.sphereLo} material={m.shade} scale={[0.042, 0.058, 0.03]} castShadow /></OnHead>
+        {hairStyle === "short" ? <mesh geometry={G.hairShort} material={m.hair} rotation={[-0.5, 0, 0]} castShadow /> : null}
+        {hairStyle === "ring" ? <mesh geometry={G.hairRing} material={m.hair} castShadow /> : null}
+        {hairStyle === "spiky" ? (
+          <>
+            <mesh geometry={G.hairShort} material={m.hair} rotation={[-0.5, 0, 0]} castShadow />
+            {[[-0.07, -0.25], [0.07, -0.25], [0, 0.0], [-0.1, 0.2], [0.1, 0.2], [0, -0.45]].map(([x, a], i) => (
+              <mesh key={i} geometry={G.spike} material={m.hair} position={[x, R * 0.95 - Math.abs(x) * 0.4, -0.03 + a * 0.12]} rotation={[a - 0.35, 0, -x * 3]} castShadow />
+            ))}
+          </>
+        ) : null}
+        {hairStyle === "bun" ? (
+          <>
+            <mesh geometry={G.hairCap} material={m.hair} rotation={[-0.45, 0, 0]} castShadow />
+            <mesh geometry={G.sphere} material={m.hair} position={[0, R * 0.55, -R * 0.85]} scale={0.08} castShadow />
+          </>
+        ) : null}
+        {hairStyle === "long" ? (
+          <>
+            <mesh geometry={G.hairCap} material={m.hair} rotation={[-0.45, 0, 0]} castShadow />
+            <mesh geometry={rb(0.42, 0.44, 0.1, 0.05)} material={m.hair} position={[0, -0.06, -R * 0.78]} rotation={[0.12, 0, 0]} castShadow />
+            <mesh geometry={rb(0.07, 0.3, 0.1, 0.03)} material={m.hair} position={[R * 0.93, -0.03, -0.04]} castShadow />
+            <mesh geometry={rb(0.07, 0.3, 0.1, 0.03)} material={m.hair} position={[-R * 0.93, -0.03, -0.04]} castShadow />
+          </>
+        ) : null}
+        {hk === "peci" ? <mesh geometry={G.cyl} material={m.hat} position={[0, R * 0.86, -0.02]} rotation={[-0.18, 0, 0]} scale={[R * 0.8, 0.12, R * 0.74]} castShadow /> : null}
+        {hk === "kerudung" ? (
+          <>
+            <mesh geometry={G.kerCap} material={m.hat} rotation={[-0.15, 0, 0]} castShadow />
+            <mesh geometry={G.kerBand} material={m.hat} rotation={[-0.15, 0, 0]} castShadow />
+          </>
+        ) : null}
+        {hk === "topi" ? (
+          <>
+            <mesh geometry={G.topi} material={m.hat} rotation={[-0.25, 0, 0]} castShadow />
+            <mesh geometry={G.sphereLo} material={m.hat} position={[0, R * 0.66, R * 0.86]} rotation={[-0.15, 0, 0]} scale={[0.14, 0.014, 0.11]} castShadow />
+          </>
+        ) : null}
+        {hk === "caping" ? <mesh geometry={G.caping} material={m.hat} position={[0, R * 0.98, 0]} castShadow receiveShadow /> : null}
+        {/* eyes: every face mesh stays mounted (hidden ones scale to zero) so parts keep their identity frame to frame */}
+        {([1, -1] as const).map((s) => (
+          <OnHead key={s} lon={s * eyeLon + lookOff} lat={eyeLat} r={R * 0.985}>
+            <mesh geometry={G.sphereLo} material={m.white} position={[0, 0, -0.004]} scale={[0.05 * face.eyeW + 1e-4, 0.056 * face.eyeW + 1e-4, 0.02]} />
+            <mesh geometry={G.sphere} material={m.eye} position={[0, 0, 0.004 * face.eyeW]} scale={eyeH > 0.16 ? [0.029 * (1 - 0.3 * face.eyeW), Math.max(0.004, 0.039 * eyeH * (1 - 0.3 * face.eyeW)), 0.017] : [1e-4, 1e-4, 1e-4]} />
+            <mesh geometry={smileLine(0.9, 0.62)} material={m.eye} position={[0, 0.006, 0.006]} scale={eyeH > 0.16 ? 1e-4 : 1} />
+            <mesh geometry={G.sphereLo} material={m.white} position={[0.009, 0.012 * Math.min(1, eyeH), 0.016 + 0.004 * face.eyeW]} scale={eyeH > 0.35 ? 0.0075 : 1e-4} />
+            {f.lashes ? <mesh geometry={G.cyl} material={m.eye} position={[s * 0.026, 0.03, 0.006]} rotation={[0, 0, s * 0.9]} scale={eyeH > 0.16 ? [0.006, 0.03, 0.006] : [1e-4, 1e-4, 1e-4]} /> : null}
+          </OnHead>
+        ))}
+        {f.glasses ? (
+          <>
+            {([1, -1] as const).map((s) => (
+              <OnHead key={`g${s}`} lon={s * eyeLon} lat={0.06} r={R * 1.04}><mesh geometry={G.ring} material={m.glass} /></OnHead>
+            ))}
+            <OnHead lon={0} lat={0.07} r={R * 1.05}><mesh geometry={G.cyl} material={m.glass} rotation={[0, 0, Math.PI / 2]} scale={[0.006, 0.07, 0.006]} /></OnHead>
+          </>
+        ) : null}
+        {f.blush ? ([1, -1] as const).map((s) => (
+          <OnHead key={`bl${s}`} lon={s * 0.56} lat={-0.2} r={R * 0.975}><mesh geometry={G.sphereLo} material={m.blush} scale={[0.04, 0.024, 0.012]} /></OnHead>
+        )) : null}
+        {([1, -1] as const).map((s) => (
+          <OnHead key={`b${s}`} lon={s * 0.37} lat={0.36 + face.browY * 2.2} r={R * 1.0} spin={s * face.browA}>
+            <mesh geometry={G.cyl} material={m.stache} rotation={[0, 0, Math.PI / 2]} scale={[browR, 0.085, browR]} castShadow />
+            <mesh geometry={G.sphereLo} material={m.stache} position={[0.0425, 0, 0]} scale={browR} />
+            <mesh geometry={G.sphereLo} material={m.stache} position={[-0.0425, 0, 0]} scale={browR} />
+          </OnHead>
+        ))}
+        <OnHead lon={0} lat={-0.1} r={R * 0.99}><mesh geometry={G.sphere} material={m.shade} scale={[0.05, 0.043, 0.045]} castShadow /></OnHead>
+        <OnHead lon={0} lat={-0.5} r={R * 0.975}>
+          <mesh geometry={G.sphere} material={m.mouth} scale={mouthO > 0.06 ? [0.058 * face.mouthW, 0.01 + 0.05 * mouthO, 0.02] : [1e-4, 1e-4, 1e-4]} />
+          <mesh geometry={G.sphereLo} material={m.tongue} position={[0, -0.022 * mouthO, 0.008]} scale={mouthO > 0.4 ? [0.03 * face.mouthW, 0.016 * mouthO, 0.014] : [1e-4, 1e-4, 1e-4]} />
+          <mesh geometry={smileLine(face.smile, face.mouthW)} material={m.mouth} position={[0, 0.004, 0.006]} scale={mouthO > 0.06 ? 1e-4 : 1} />
+        </OnHead>
+        {f.moustache
+          ? [-1, -0.66, -0.33, 0, 0.33, 0.66, 1].map((u) => (
+              <OnHead key={`m${u}`} lon={u * 0.5} lat={-0.29 - 0.13 * u * u} r={R * 0.99}>
+                <mesh geometry={G.sphereLo} material={m.stache} scale={[0.04 - 0.012 * Math.abs(u), 0.03 - 0.008 * Math.abs(u), 0.022]} rotation={[0, 0, -u * 0.35]} castShadow />
+              </OnHead>
+            ))
+          : null}
+        {f.beard
+          ? [-1, -0.6, -0.2, 0.2, 0.6, 1].map((u) => (
+              <OnHead key={`bd${u}`} lon={u * 0.62} lat={-0.72 + 0.18 * u * u} r={R * 0.97}>
+                <mesh geometry={G.sphereLo} material={m.stache} scale={[0.045, 0.04, 0.03]} castShadow />
+              </OnHead>
+            ))
+          : null}
+      </group>
+      {children}
+    </group>
+  );
+};
+
+
+==== 30705 project/src/nekat/sets/parts.tsx
+// NEKAT set pieces (toy-diorama clay): rounded boxes, row houses (genteng or dak roofs, teras columns, teralis windows,
+// plint, toren), low painted fences with pillars, an iron gate, a generic matic scooter (no badges), a plastic chair,
+// potted plants, jemuran, a power pole with sagging cables, round trees, clay clouds — plus the farm and school pieces
+// (bamboo fence, kandang, hay bale, saung, rice terraces, banana tree, school block, flag pole, bench, planter, hills).
+// Every set (gang, kebun, sekolah) is built from these.
+import React, { useMemo } from "react";
+import {
+  CatmullRomCurve3, CylinderGeometry, Euler, ExtrudeGeometry, Shape, SphereGeometry, TorusGeometry, TubeGeometry, Vector3,
+  type Material,
+} from "three";
+import { clay, genteng, stripes } from "../kit/clay.ts";
+import { rb } from "../kit/Person.tsx";
+import type { V3 } from "../math.ts";
+
+const cyl = new CylinderGeometry(1, 1, 1, 20, 1);
+const cylLo = new CylinderGeometry(1, 1, 1, 10, 1);
+const sph = new SphereGeometry(1, 20, 14);
+const tireGeo = new TorusGeometry(0.17, 0.075, 12, 28);
+const potGeo = new CylinderGeometry(0.17, 0.12, 0.28, 18);
+const poleGeo = new CylinderGeometry(0.1, 0.15, 7, 14);
+
+/** Rounded clay box. */
+export const B: React.FC<{ p: V3; s: V3; c?: string; m?: Material; r?: number; rot?: V3; shadow?: boolean }> = ({ p, s, c = "#fff", m, r = 0.03, rot, shadow = true }) => (
+  <mesh geometry={rb(s[0], s[1], s[2], r)} material={m ?? clay(c)} position={p} rotation={rot ? new Euler(rot[0], rot[1], rot[2], "YXZ") : undefined} castShadow={shadow} receiveShadow />
+);
+export const Cyl: React.FC<{ p: V3; r: number; h: number; c?: string; m?: Material; rot?: V3; lo?: boolean; r2?: number }> = ({ p, r, h, c = "#fff", m, rot, lo }) => (
+  <mesh geometry={lo ? cylLo : cyl} material={m ?? clay(c)} position={p} rotation={rot} scale={[r, h, r]} castShadow receiveShadow />
+);
+export const Ball: React.FC<{ p: V3; s: V3 | number; c?: string; m?: Material }> = ({ p, s, c = "#fff", m }) => (
+  <mesh geometry={sph} material={m ?? clay(c)} position={p} scale={s} castShadow receiveShadow />
+);
+
+// ------------------------------------------------------------------ houses
+export type HouseSpec = {
+  /** centre x of the lot, facade line z (world), +1 faces +z (south row), −1 faces −z (north row) */
+  x: number; z: number; face: 1 | -1;
+  w: number; h: number; d: number;
+  wall: string; plint: string; trim: string;
+  roof: { kind: "gable"; color: string; line: string; rise: number; front: number } | { kind: "flat"; color: string };
+  door: { x: number; color: string };
+  windows: { x: number; w: number; curtain: string }[];
+  columns?: string;
+  toren?: string | null;
+  /** explicit yaw (street-end houses); overrides face */
+  rot?: number;
+};
+
+const prism = (w: number, depth: number, rise: number) => {
+  // triangle (gable end) in the z–y plane, extruded along x
+  const s = new Shape();
+  s.moveTo(-depth / 2, 0);
+  s.lineTo(depth / 2, 0);
+  s.lineTo(0, rise);
+  s.closePath();
+  const g = new ExtrudeGeometry(s, { depth: w, bevelEnabled: false });
+  g.rotateY(Math.PI / 2);
+  return g;
+};
+const prismCache = new Map<string, ExtrudeGeometry>();
+const gable = (w: number, d: number, rise: number) => {
+  const k = `${w}|${d}|${rise}`;
+  let g = prismCache.get(k);
+  if (!g) {
+    g = prism(w, d, rise);
+    prismCache.set(k, g);
+  }
+  return g;
+};
+
+export const House: React.FC<{ s: HouseSpec }> = ({ s }) => {
+  const { w, h, d } = s;
+  const wallM = clay(s.wall);
+  const roof = s.roof;
+  let roofEls: React.ReactNode = null;
+  let eaveY = h;
+  if (roof.kind === "gable") {
+    const slope = roof.rise / (d / 2);
+    const ang = Math.atan(slope);
+    const front = roof.front, back = 0.5;
+    const ridgeZ = -d / 2, ridgeY = h + roof.rise;
+    const Lf = (d / 2 + front) / Math.cos(ang), Lb = (d / 2 + back) / Math.cos(ang);
+    eaveY = ridgeY - slope * (d / 2 + front);
+    const tex = genteng(roof.color, roof.line, [Math.round(w * 1.4), Math.round(Lf * 1.6)]);
+    const rm = clay("#ffffff", { map: tex, rough: 0.85 });
+    const t = 0.12;
+    const fz = ridgeZ + (Lf / 2) * Math.cos(ang), fy = ridgeY - (Lf / 2) * Math.sin(ang);
+    const bz = ridgeZ - (Lb / 2) * Math.cos(ang), by = ridgeY - (Lb / 2) * Math.sin(ang);
+    roofEls = (
+      <>
+        <mesh geometry={rb(w + 0.6, t, Lf, 0.04)} material={rm} position={[0, fy + t / 2 / Math.cos(ang), fz]} rotation={[ang, 0, 0]} castShadow receiveShadow />
+        <mesh geometry={rb(w + 0.6, t, Lb, 0.04)} material={rm} position={[0, by + t / 2 / Math.cos(ang), bz]} rotation={[-ang, 0, 0]} castShadow receiveShadow />
+        <B p={[0, ridgeY + 0.1, ridgeZ]} s={[w + 0.7, 0.16, 0.26]} c={roof.line} r={0.06} />
+        {/* gable ends */}
+        <mesh geometry={gable(w, d, roof.rise)} material={wallM} position={[-w / 2, h, ridgeZ]} castShadow receiveShadow />
+        {/* fascia board along the front eave */}
+        <B p={[0, eaveY - 0.02, front - 0.02]} s={[w + 0.6, 0.16, 0.06]} c={s.trim} r={0.02} />
+      </>
+    );
+  } else {
+    roofEls = (
+      <>
+        <B p={[0, h + 0.1, -d / 2 + 0.3]} s={[w + 0.3, 0.2, d + 0.9]} c={roof.color} r={0.04} />
+        <B p={[0, h + 0.38, 0.62]} s={[w + 0.3, 0.36, 0.14]} c={roof.color} r={0.04} />
+      </>
+    );
+  }
+  const porchDepth = roof.kind === "gable" ? roof.front : 0;
+  return (
+    <group position={[s.x, 0, s.z]} rotation={[0, s.rot ?? (s.face === 1 ? 0 : Math.PI), 0]}>
+      {/* walls */}
+      <B p={[0, h / 2, -d / 2]} s={[w, h, d]} m={wallM} r={0.04} />
+      <B p={[0, 0.3, 0.012]} s={[w + 0.02, 0.6, 0.04]} c={s.plint} r={0.015} />
+      {/* teras floor + columns */}
+      {porchDepth > 0.4 ? (
+        <>
+          <B p={[0, 0.08, porchDepth / 2 - 0.05]} s={[w, 0.16, porchDepth - 0.1]} c="#efe4d2" r={0.03} />
+          {s.columns ? (
+            <>
+              <B p={[-w / 2 + 0.45, eaveY / 2, porchDepth - 0.3]} s={[0.24, eaveY, 0.24]} c={s.columns} r={0.04} />
+              <B p={[w / 2 - 0.45, eaveY / 2, porchDepth - 0.3]} s={[0.24, eaveY, 0.24]} c={s.columns} r={0.04} />
+            </>
+          ) : null}
+        </>
+      ) : null}
+      {/* door */}
+      <B p={[s.door.x, 1.02, 0.03]} s={[1.0, 2.04, 0.08]} c={s.trim} r={0.02} />
+      <B p={[s.door.x, 1.0, 0.07]} s={[0.84, 1.92, 0.06]} c={s.door.color} r={0.02} />
+      <B p={[s.door.x, 1.25, 0.1]} s={[0.6, 0.62, 0.04]} c={s.door.color} r={0.015} />
+      <Ball p={[s.door.x + 0.3, 1.0, 0.12]} s={0.035} c="#e8d9a8" />
+      {/* windows: frame, glass, curtain, teralis */}
+      {s.windows.map((wn, i) => (
+        <group key={i} position={[wn.x, 1.5, 0]}>
+          <B p={[0, 0, 0.03]} s={[wn.w + 0.16, 1.26, 0.07]} c={s.trim} r={0.02} />
+          <B p={[0, 0, 0.05]} s={[wn.w, 1.1, 0.04]} c="#9cc7d4" r={0.01} />
+          <B p={[-wn.w / 2 + wn.w * 0.17, 0, 0.075]} s={[wn.w * 0.3, 1.04, 0.03]} c={wn.curtain} r={0.01} />
+          <B p={[wn.w / 2 - wn.w * 0.17, 0, 0.075]} s={[wn.w * 0.3, 1.04, 0.03]} c={wn.curtain} r={0.01} />
+          <B p={[0, -0.68, 0.1]} s={[wn.w + 0.3, 0.07, 0.16]} c={s.trim} r={0.02} />
+          {Array.from({ length: Math.round(wn.w / 0.22) + 1 }, (_, k) => {
+            const n = Math.round(wn.w / 0.22);
+            return <B key={k} p={[-wn.w / 2 + (k * wn.w) / n, 0, 0.13]} s={[0.025, 1.1, 0.025]} c="#ffffff" r={0.01} shadow={false} />;
+          })}
+          <B p={[0, 0.2, 0.13]} s={[wn.w, 0.025, 0.025]} c="#ffffff" r={0.01} shadow={false} />
+          <B p={[0, -0.2, 0.13]} s={[wn.w, 0.025, 0.025]} c="#ffffff" r={0.01} shadow={false} />
+          {/* roster vents above */}
+          <B p={[0, 0.8, 0.03]} s={[wn.w, 0.16, 0.05]} c={s.plint} r={0.01} />
+        </group>
+      ))}
+      {roofEls}
+      {s.toren ? (
+        <group position={[w / 2 - 1.0, roof.kind === "flat" ? h + 0.2 : h + 0.9, -d / 2 - 0.6]}>
+          <Cyl p={[0, 0.35, 0]} r={0.06} h={0.7} c="#8a8f96" />
+          <Cyl p={[0, 1.15, 0]} r={0.48} h={0.95} c={s.toren} />
+          <Ball p={[0, 1.65, 0]} s={[0.48, 0.16, 0.48]} c={s.toren} />
+        </group>
+      ) : null}
+    </group>
+  );
+};
+
+// ------------------------------------------------------------------ fence (low painted wall with pillars), along x at z
+export const Fence: React.FC<{ x0: number; x1: number; z: number; gap?: [number, number]; wall: string; cap: string; h?: number }> = ({ x0, x1, z, gap, wall, cap, h = 0.86 }) => {
+  const segs: [number, number][] = gap ? [[x0, gap[0]], [gap[1], x1]] : [[x0, x1]];
+  const els: React.ReactNode[] = [];
+  segs.forEach(([a, b], si) => {
+    if (b - a < 0.05) return;
+    els.push(<B key={`w${si}`} p={[(a + b) / 2, h / 2, z]} s={[b - a, h, 0.2]} c={wall} r={0.03} />);
+    els.push(<B key={`c${si}`} p={[(a + b) / 2, h + 0.04, z]} s={[b - a + 0.04, 0.08, 0.3]} c={cap} r={0.03} />);
+    const n = Math.max(1, Math.round((b - a) / 2.4));
+    for (let i = 0; i <= n; i++) {
+      const x = a + ((b - a) * i) / n;
+      els.push(<B key={`p${si}${i}`} p={[x, (h + 0.3) / 2, z]} s={[0.34, h + 0.3, 0.34]} c={wall} r={0.04} />);
+      els.push(<B key={`q${si}${i}`} p={[x, h + 0.34, z]} s={[0.42, 0.08, 0.42]} c={cap} r={0.03} />);
+    }
+  });
+  return <>{els}</>;
+};
+
+/** Open swing gate (green iron bars), hinged at x, swung into the yard. */
+export const Gate: React.FC<{ x: number; z: number; w: number; open: number; color: string; dir?: 1 | -1 }> = ({ x, z, w, open, color, dir = 1 }) => (
+  <group position={[x, 0, z - 0.05]} rotation={[0, dir * open, 0]}>
+    <B p={[(dir * w) / 2, 0.12, 0]} s={[w, 0.05, 0.05]} c={color} r={0.015} />
+    <B p={[(dir * w) / 2, 1.0, 0]} s={[w, 0.05, 0.05]} c={color} r={0.015} />
+    {Array.from({ length: Math.round(w / 0.14) + 1 }, (_, i) => (
+      <B key={i} p={[dir * (i * 0.14), 0.56, 0]} s={[0.03, 0.92, 0.03]} c={color} r={0.012} />
+    ))}
+  </group>
+);
+
+// ------------------------------------------------------------------ props
+/** Generic matic scooter (no badges), facing +x in its local frame, wheels on y = 0. Seat top ≈ 0.78. */
+export const Motor: React.FC<{ p: V3; yaw: number; body: string; trim: string }> = ({ p, yaw, body, trim }) => {
+  const tire = clay("#2d2a2a", { rough: 0.9 });
+  const hub = clay("#b9bcc2", { rough: 0.6 });
+  const wheel = (x: number) => (
+    <group position={[x, 0.24, 0]}>
+      <mesh geometry={tireGeo} material={tire} castShadow receiveShadow />
+      <mesh geometry={cyl} material={hub} rotation={[Math.PI / 2, 0, 0]} scale={[0.11, 0.1, 0.11]} castShadow />
+    </group>
+  );
+  return (
+    <group position={p} rotation={[0, yaw, 0]}>
+      {wheel(0.62)}
+      {wheel(-0.6)}
+      {/* floorboard */}
+      <B p={[0.05, 0.3, 0]} s={[0.62, 0.1, 0.34]} c={trim} r={0.04} />
+      {/* rear body */}
+      <B p={[-0.45, 0.52, 0]} s={[0.72, 0.36, 0.4]} c={body} r={0.14} />
+      {/* seat */}
+      <B p={[-0.38, 0.75, 0]} s={[0.66, 0.1, 0.34]} c="#3a302c" r={0.05} />
+      {/* front shield + steering column */}
+      <B p={[0.5, 0.62, 0]} s={[0.16, 0.72, 0.4]} c={body} r={0.07} rot={[0, 0, -0.2]} />
+      <Cyl p={[0.6, 0.98, 0]} r={0.035} h={0.3} c={trim} rot={[0, 0, -0.2]} />
+      <B p={[0.64, 1.13, 0]} s={[0.16, 0.12, 0.62]} c={body} r={0.05} />
+      <Cyl p={[0.62, 1.13, 0.36]} r={0.03} h={0.12} c="#2d2a2a" rot={[Math.PI / 2, 0, 0]} />
+      <Cyl p={[0.62, 1.13, -0.36]} r={0.03} h={0.12} c="#2d2a2a" rot={[Math.PI / 2, 0, 0]} />
+      <Ball p={[0.73, 1.12, 0]} s={[0.04, 0.06, 0.09]} c="#f4f1e6" />
+      {/* front fender */}
+      <B p={[0.64, 0.45, 0]} s={[0.36, 0.08, 0.2]} c={body} r={0.04} rot={[0, 0, -0.25]} />
+      {/* side stand */}
+      <Cyl p={[0.0, 0.12, 0.2]} r={0.015} h={0.26} c="#555" rot={[0.5, 0, 0]} />
+    </group>
+  );
+};
+
+/** Red monobloc plastic chair facing +z. */
+export const Chair: React.FC<{ p: V3; yaw: number; color: string }> = ({ p, yaw, color }) => (
+  <group position={p} rotation={[0, yaw, 0]}>
+    <B p={[0, 0.44, 0]} s={[0.46, 0.05, 0.44]} c={color} r={0.02} />
+    <B p={[0, 0.72, -0.22]} s={[0.44, 0.5, 0.04]} c={color} r={0.02} rot={[-0.12, 0, 0]} />
+    {[[-0.2, -0.18], [0.2, -0.18], [-0.2, 0.18], [0.2, 0.18]].map(([x, z], i) => (
+      <Cyl key={i} p={[x, 0.21, z]} r={0.022} h={0.43} c={color} lo />
+    ))}
+  </group>
+);
+
+/** Terracotta pot with a clay plant blob (+ flowers). */
+export const Pot: React.FC<{ p: V3; s?: number; leaf?: string; flower?: string | null }> = ({ p, s = 1, leaf = "#6dbb72", flower = "#f39ab0" }) => (
+  <group position={p} scale={s}>
+    <mesh geometry={potGeo} material={clay("#cf7a52")} position={[0, 0.14, 0]} castShadow receiveShadow />
+    <Cyl p={[0, 0.29, 0]} r={0.185} h={0.05} c="#c26c46" />
+    <Ball p={[0, 0.43, 0]} s={[0.2, 0.17, 0.2]} c={leaf} />
+    <Ball p={[0.1, 0.52, 0.04]} s={[0.12, 0.12, 0.12]} c={leaf} />
+    <Ball p={[-0.09, 0.5, -0.05]} s={[0.12, 0.11, 0.12]} c={leaf} />
+    {flower ? (
+      <>
+        <Ball p={[0.06, 0.6, 0.1]} s={0.045} c={flower} />
+        <Ball p={[-0.1, 0.57, 0.08]} s={0.04} c={flower} />
+        <Ball p={[0.13, 0.5, 0.14]} s={0.04} c={flower} />
+      </>
+    ) : null}
+  </group>
+);
+
+/** Jemuran: two posts, a line, hanging clothes (local along x). */
+export const Jemuran: React.FC<{ p: V3; len: number; yaw?: number }> = ({ p, len, yaw = 0 }) => {
+  const clothes: { x: number; w: number; h: number; m: Material }[] = [
+    { x: 0.35, w: 0.5, h: 0.55, m: clay("#f6d36b") },
+    { x: 0.95, w: 0.55, h: 0.8, m: clay("#ffffff", { map: stripes("#8a6fb3", "#5c4a85", 5) }) },
+    { x: 1.55, w: 0.4, h: 0.5, m: clay("#ffffff", { map: stripes("#f2f2ee", "#e46f6f", 4, true) }) },
+    { x: 2.05, w: 0.42, h: 0.6, m: clay("#6fa6d9") },
+  ];
+  return (
+    <group position={p} rotation={[0, yaw, 0]}>
+      <Cyl p={[0, 0.9, 0]} r={0.035} h={1.8} c="#8a8f96" />
+      <Cyl p={[len, 0.9, 0]} r={0.035} h={1.8} c="#8a8f96" />
+      <Cyl p={[len / 2, 1.76, 0]} r={0.01} h={len} c="#555" rot={[0, 0, Math.PI / 2]} />
+      {clothes.filter((c) => c.x + c.w / 2 < len).map((c, i) => (
+        <mesh key={i} geometry={rb(c.w, c.h, 0.03, 0.012)} material={c.m} position={[c.x, 1.76 - c.h / 2, 0]} castShadow receiveShadow />
+      ))}
+    </group>
+  );
+};
+
+/** Concrete power pole with a crossbar; cables sag to the given anchor points. */
+export const Pole: React.FC<{ p: V3; anchors: V3[] }> = ({ p, anchors }) => {
+  const top: V3 = [p[0], 6.4, p[2]];
+  const cables = useMemo(
+    () =>
+      anchors.map((a) => {
+        const mid = new Vector3((top[0] + a[0]) / 2, (top[1] + a[1]) / 2 - 0.45, (top[2] + a[2]) / 2);
+        return new TubeGeometry(new CatmullRomCurve3([new Vector3(...top), mid, new Vector3(...a)]), 24, 0.012, 5, false);
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [JSON.stringify(anchors), p[0], p[2]],
+  );
+  return (
+    <>
+      <mesh geometry={poleGeo} material={clay("#b9b6ae")} position={[p[0], 3.5, p[2]]} castShadow receiveShadow />
+      <B p={[p[0], 6.3, p[2]]} s={[0.12, 0.12, 1.4]} c="#8f8c86" r={0.03} />
+      {cables.map((g, i) => (
+        <mesh key={i} geometry={g} material={clay("#2b2826", { bump: 0 })} />
+      ))}
+    </>
+  );
+};
+
+/** Round clay tree. */
+export const Tree: React.FC<{ p: V3; s?: number; leaf?: string }> = ({ p, s = 1, leaf = "#79bf6e" }) => (
+  <group position={p} scale={s}>
+    <Cyl p={[0, 1.2, 0]} r={0.16} h={2.4} c="#9a6b4a" />
+    <Ball p={[0, 2.9, 0]} s={[1.3, 1.1, 1.3]} c={leaf} />
+    <Ball p={[0.8, 2.5, 0.3]} s={[0.8, 0.7, 0.8]} c={leaf} />
+    <Ball p={[-0.75, 2.6, -0.2]} s={[0.85, 0.75, 0.85]} c={leaf} />
+    <Ball p={[0.2, 3.6, -0.1]} s={[0.8, 0.7, 0.8]} c={leaf} />
+  </group>
+);
+
+/** Flat-white clay clouds far away (no fog on them). */
+const cloudMat = (() => {
+  let m: Material | null = null;
+  return () => {
+    if (!m) {
+      const mm = clay("#ffffff", { rough: 0.95 }).clone();
+      mm.fog = false;
+      m = mm;
+    }
+    return m;
+  };
+})();
+export const Cloud: React.FC<{ p: V3; s?: number }> = ({ p, s = 1 }) => (
+  <group position={p} scale={s}>
+    {[[0, 0, 0, 2.2], [2.0, -0.4, 0.3, 1.6], [-2.1, -0.5, 0.2, 1.5], [0.9, 0.9, -0.2, 1.4], [-0.9, 0.7, 0.1, 1.3], [3.4, -0.8, 0, 1.0]].map(([x, y, z, r], i) => (
+      <mesh key={i} geometry={sph} material={cloudMat()} position={[x, y, z]} scale={[r, r * 0.8, r * 0.7]} />
+    ))}
+  </group>
+);
+
+
+// ------------------------------------------------------------------ farm pieces (kebun)
+/** Bamboo fence along x at z: posts + two horizontal bamboo rails. */
+export const BambooFence: React.FC<{ x0: number; x1: number; z: number; color?: string }> = ({ x0, x1, z, color = "#d8c27a" }) => {
+  const n = Math.max(1, Math.round((x1 - x0) / 1.5));
+  return (
+    <>
+      {Array.from({ length: n + 1 }, (_, i) => (
+        <Cyl key={i} p={[x0 + ((x1 - x0) * i) / n, 0.5, z]} r={0.05} h={1.0} c="#b89a55" />
+      ))}
+      {[0.42, 0.82].map((y) => (
+        <Cyl key={y} p={[(x0 + x1) / 2, y, z]} r={0.035} h={x1 - x0} c={color} rot={[0, 0, Math.PI / 2]} />
+      ))}
+    </>
+  );
+};
+/** Wooden chicken coop on short stilts: slat walls, a door, a single-slope roof (x0…x1, z0…z1 footprint). */
+export const Kandang: React.FC<{ x0: number; x1: number; z0: number; z1: number }> = ({ x0, x1, z0, z1 }) => {
+  const w = x1 - x0, d = z1 - z0, cx = (x0 + x1) / 2, cz = (z0 + z1) / 2, fl = 0.45, hb = 1.35, hf = 1.75;
+  const slats = Math.round(w / 0.16);
+  return (
+    <group>
+      {[[x0 + 0.1, z0 + 0.1], [x1 - 0.1, z0 + 0.1], [x0 + 0.1, z1 - 0.1], [x1 - 0.1, z1 - 0.1]].map(([x, z], i) => (
+        <B key={i} p={[x, (fl + hf) / 2, z]} s={[0.12, fl + hf, 0.12]} c="#8a5d3b" r={0.02} />
+      ))}
+      <B p={[cx, fl - 0.04, cz]} s={[w, 0.08, d]} c="#a8774a" r={0.02} />
+      <B p={[cx, fl + hb / 2, z0 + 0.04]} s={[w - 0.1, hb, 0.06]} c="#c08a55" r={0.02} />
+      <B p={[x0 + 0.04, fl + hb / 2, cz]} s={[0.06, hb, d - 0.1]} c="#c08a55" r={0.02} />
+      <B p={[x1 - 0.04, fl + hb / 2, cz]} s={[0.06, hb, d - 0.1]} c="#c08a55" r={0.02} />
+      {Array.from({ length: slats }, (_, i) => (
+        <B key={i} p={[x0 + 0.08 + (i + 0.5) * ((w - 0.16) / slats), fl + 0.62, z1 - 0.05]} s={[0.085, 1.24, 0.05]} c={i % 2 ? "#cf9a62" : "#c48c56"} r={0.015} />
+      ))}
+      <B p={[cx - w * 0.22, fl + 0.5, z1 + 0.0]} s={[0.55, 0.9, 0.07]} c="#9b6a42" r={0.02} />
+      <B p={[cx - w * 0.22 + 0.2, fl + 0.5, z1 + 0.05]} s={[0.05, 0.05, 0.05]} c="#e8d9a8" r={0.015} />
+      {/* ramp */}
+      <B p={[cx - w * 0.22, fl / 2 - 0.02, z1 + 0.45]} s={[0.45, 0.04, 0.95]} c="#a8774a" r={0.015} rot={[Math.atan(fl / 0.9), 0, 0]} />
+      {/* single-slope roof, high at the front */}
+      <B p={[cx, fl + (hb + hf) / 2 + 0.06, cz]} s={[w + 0.5, 0.08, Math.hypot(d + 0.5, hf - hb)]} c="#c9a35c" r={0.03} rot={[-Math.atan((hf - hb) / (d + 0.5)), 0, 0]} />
+    </group>
+  );
+};
+export const HayBale: React.FC<{ p: [number, number, number]; s?: [number, number, number]; yaw?: number }> = ({ p, s = [1.0, 0.62, 0.7], yaw = 0 }) => (
+  <group position={p} rotation={[0, yaw, 0]}>
+    <B p={[0, s[1] / 2, 0]} s={s} c="#e8c86a" r={0.08} />
+    <B p={[-s[0] * 0.25, s[1] / 2, 0]} s={[0.04, s[1] + 0.01, s[2] + 0.01]} c="#b98f3c" r={0.01} />
+    <B p={[s[0] * 0.25, s[1] / 2, 0]} s={[0.04, s[1] + 0.01, s[2] + 0.01]} c="#b98f3c" r={0.01} />
+  </group>
+);
+/** Bamboo hut on stilts with a thatch pyramid roof. */
+export const Saung: React.FC<{ p: [number, number, number]; yaw?: number }> = ({ p, yaw = 0 }) => (
+  <group position={p} rotation={[0, yaw, 0]}>
+    {[[-1.1, -1.0], [1.1, -1.0], [-1.1, 1.0], [1.1, 1.0]].map(([x, z], i) => (
+      <Cyl key={i} p={[x, 1.25, z]} r={0.07} h={2.5} c="#b89a55" />
+    ))}
+    <B p={[0, 0.55, 0]} s={[2.5, 0.1, 2.3]} c="#d8c27a" r={0.03} />
+    <B p={[0, 0.4, 0]} s={[2.4, 0.1, 0.1]} c="#a8874a" r={0.02} />
+    <mesh geometry={pyramid} material={clay("#c9a35c")} position={[0, 2.5, 0]} scale={[2.2, 1.0, 2.0]} rotation={[0, Math.PI / 4, 0]} castShadow receiveShadow />
+  </group>
+);
+const pyramid = new CylinderGeometry(0, 1.15, 1, 4, 1);
+/** Stepped rice terraces behind the farm (plain greens, dykes between: no fine stripes that could shimmer). */
+export const Terraces: React.FC<{ z0: number; rows: number; x0?: number; x1?: number }> = ({ z0, rows, x0 = -40, x1 = 40 }) => (
+  <>
+    {Array.from({ length: rows }, (_, i) => {
+      const z = z0 - i * 3.2, y = i * 0.4;
+      return (
+        <group key={i}>
+          <B p={[(x0 + x1) / 2, y - 0.2, z - 1.6]} s={[x1 - x0, 0.4 + 0.02, 3.2]} c={i % 2 ? "#8cc56b" : "#9ccf72"} r={0.05} shadow={false} />
+          <B p={[(x0 + x1) / 2, y + 0.04, z - 0.05]} s={[x1 - x0, 0.12, 0.22]} c="#c9a877" r={0.04} shadow={false} />
+        </group>
+      );
+    })}
+  </>
+);
+/** Banana plant: trunk + big drooping leaves. */
+export const Banana: React.FC<{ p: [number, number, number]; s?: number; yaw?: number }> = ({ p, s = 1, yaw = 0 }) => (
+  <group position={p} scale={s} rotation={[0, yaw, 0]}>
+    <Cyl p={[0, 1.0, 0]} r={0.13} h={2.0} c="#8fae5a" />
+    {[0, 1.25, 2.5, 3.75, 5.0].map((a, i) => (
+      <mesh key={i} geometry={rb(0.42, 0.04, 1.4, 0.02)} material={clay(i % 2 ? "#6fb35a" : "#7cc064")} position={[Math.sin(a) * 0.55, 2.05 - (i % 2) * 0.15, Math.cos(a) * 0.55]} rotation={[0.55, a, 0]} castShadow receiveShadow />
+    ))}
+  </group>
+);
+/** Coconut palm: curved trunk + fronds. */
+export const Palm: React.FC<{ p: [number, number, number]; s?: number; lean?: number }> = ({ p, s = 1, lean = 0.12 }) => (
+  <group position={p} scale={s}>
+    {Array.from({ length: 6 }, (_, i) => (
+      <Cyl key={i} p={[Math.sin(lean) * i * 0.75, 0.38 + i * 0.75, 0]} r={0.15 - i * 0.012} h={0.8} c={i % 2 ? "#a88a62" : "#b39470"} rot={[0, 0, -lean]} />
+    ))}
+    {Array.from({ length: 7 }, (_, i) => {
+      const a = (i / 7) * Math.PI * 2;
+      return <mesh key={i} geometry={rb(0.36, 0.04, 2.0, 0.02)} material={clay("#5fae5a")} position={[Math.sin(lean) * 4.3 + Math.sin(a) * 0.85, 4.45, Math.cos(a) * 0.85]} rotation={[0.42, a, 0]} castShadow receiveShadow />;
+    })}
+  </group>
+);
+/** Village well with a little roof. */
+export const Well: React.FC<{ p: [number, number, number] }> = ({ p }) => (
+  <group position={p}>
+    <Cyl p={[0, 0.35, 0]} r={0.55} h={0.7} c="#c9c2b5" />
+    <Cyl p={[0, 0.69, 0]} r={0.6} h={0.06} c="#b3ab9d" />
+    <Cyl p={[0, 0.6, 0]} r={0.42} h={0.2} c="#5d8fb0" />
+    <B p={[-0.6, 1.15, 0]} s={[0.08, 1.0, 0.08]} c="#8a5d3b" r={0.02} />
+    <B p={[0.6, 1.15, 0]} s={[0.08, 1.0, 0.08]} c="#8a5d3b" r={0.02} />
+    <mesh geometry={pyramid} material={clay("#c9663f")} position={[0, 1.9, 0]} scale={[1.0, 0.45, 0.8]} rotation={[0, Math.PI / 4, 0]} castShadow receiveShadow />
+  </group>
+);
+/** Clay water jar. */
+export const Gentong: React.FC<{ p: [number, number, number]; s?: number }> = ({ p, s = 1 }) => (
+  <group position={p} scale={s}>
+    <Ball p={[0, 0.32, 0]} s={[0.3, 0.32, 0.3]} c="#b5663f" />
+    <Cyl p={[0, 0.62, 0]} r={0.2} h={0.08} c="#a35a36" />
+  </group>
+);
+/** Wooden hand cart (gerobak). */
+export const Cart: React.FC<{ p: [number, number, number]; yaw?: number }> = ({ p, yaw = 0 }) => (
+  <group position={p} rotation={[0, yaw, 0]}>
+    <B p={[0, 0.62, 0]} s={[1.3, 0.35, 0.8]} c="#b07a4a" r={0.03} />
+    <B p={[1.0, 0.5, 0.25]} s={[0.9, 0.05, 0.05]} c="#8a5d3b" r={0.015} />
+    <B p={[1.0, 0.5, -0.25]} s={[0.9, 0.05, 0.05]} c="#8a5d3b" r={0.015} />
+    {[0.45, -0.45].map((z) => (
+      <mesh key={z} geometry={wheelGeo} material={clay("#7a5233")} position={[-0.15, 0.32, z]} castShadow />
+    ))}
+  </group>
+);
+const wheelGeo = new TorusGeometry(0.28, 0.05, 10, 26);
+/** Far rolling hills (fogged). */
+export const Hills: React.FC<{ z: number; color?: string }> = ({ z, color = "#93c47d" }) => (
+  <>
+    {[[-60, 14, 26], [-22, 18, 30], [20, 15, 28], [58, 19, 32], [0, 10, 22]].map(([x, h, r], i) => (
+      <mesh key={i} geometry={sph} material={clay(i % 2 ? color : "#86bb72")} position={[x, -2, z - (i % 3) * 8]} scale={[r, h, r * 0.6]} receiveShadow />
+    ))}
+  </>
+);
+
+// ------------------------------------------------------------------ school pieces (sekolah)
+/** One-storey school block: classrooms along x (front wall at z = front), a raised selasar with columns and a lean-to
+ *  roof, the main gable roof behind. Doors and windows repeat per classroom. */
+export const School: React.FC<{ x0: number; x1: number; front: number; wall?: string; trim?: string; roof?: string; door?: string }> = ({ x0, x1, front, wall = "#f4e6c4", trim = "#5a9f6a", roof = "#d9774f", door = "#9a6a45" }) => {
+  const w = x1 - x0, cx = (x0 + x1) / 2, d = 6, h = 3.0, sel = 2.2, fl = 0.35;
+  const rooms = Math.max(1, Math.round(w / 7.2)), rw = w / rooms;
+  const tex = genteng(roof, "#bf6140", [Math.round(w * 1.2), 6]);
+  const rm = clay("#ffffff", { map: tex, rough: 0.85 });
+  const ang = Math.atan(1.8 / 3.3), L = 3.6 / Math.cos(ang);
+  return (
+    <group>
+      <B p={[cx, h / 2, front - d / 2]} s={[w, h, d]} c={wall} r={0.04} />
+      <B p={[cx, 0.35, front + 0.012]} s={[w + 0.02, 0.7, 0.04]} c={trim} r={0.015} />
+      {/* selasar floor + edge + columns + lean-to roof */}
+      <B p={[cx, fl / 2, front + sel / 2]} s={[w + 0.6, fl, sel]} c="#e2dbcf" r={0.03} />
+      <B p={[cx, fl - 0.02, front + sel - 0.05]} s={[w + 0.62, 0.06, 0.12]} c="#c9c0b2" r={0.02} />
+      {Array.from({ length: rooms * 2 + 1 }, (_, i) => (
+        <B key={i} p={[x0 + (i * w) / (rooms * 2), fl + 1.3, front + sel - 0.25]} s={[0.24, 2.6, 0.24]} c="#fbf7ee" r={0.04} />
+      ))}
+      <B p={[cx, fl + 2.66, front + sel / 2 - 0.1]} s={[w + 0.8, 0.12, sel + 0.6]} c="#c96a48" r={0.03} rot={[0.08, 0, 0]} />
+      <B p={[cx, fl + 2.6, front + sel + 0.18]} s={[w + 0.8, 0.14, 0.06]} c={trim} r={0.02} />
+      {/* main gable roof (front + back slopes) */}
+      <mesh geometry={rb(w + 0.6, 0.12, L + 0.4, 0.04)} material={rm} position={[cx, h + 0.9, front - 1.5]} rotation={[ang, 0, 0]} castShadow receiveShadow />
+      <mesh geometry={rb(w + 0.6, 0.12, L + 0.4, 0.04)} material={rm} position={[cx, h + 0.9, front - d + 1.5]} rotation={[-ang, 0, 0]} castShadow receiveShadow />
+      <B p={[cx, h + 1.86, front - d / 2]} s={[w + 0.7, 0.16, 0.26]} c="#bf6140" r={0.06} />
+      {Array.from({ length: rooms }, (_, k) => {
+        const rx = x0 + rw * (k + 0.5);
+        return (
+          <group key={k}>
+            <B p={[rx - rw * 0.3, fl + 1.0, front + 0.03]} s={[0.95, 2.0, 0.08]} c="#fbf7ee" r={0.02} />
+            <B p={[rx - rw * 0.3, fl + 0.98, front + 0.07]} s={[0.8, 1.88, 0.06]} c={door} r={0.02} />
+            <Ball p={[rx - rw * 0.3 + 0.28, fl + 0.98, front + 0.12]} s={0.035} c="#e8d9a8" />
+            {[0.02, 0.27].map((u, j) => (
+              <group key={j} position={[rx + rw * u - rw * 0.02, fl + 1.45, front]}>
+                <B p={[0, 0, 0.03]} s={[1.5, 1.2, 0.07]} c="#fbf7ee" r={0.02} />
+                <B p={[0, 0, 0.05]} s={[1.34, 1.04, 0.04]} c="#9cc7d4" r={0.01} />
+                {[-0.34, 0, 0.34].map((x) => <B key={x} p={[x, 0, 0.09]} s={[0.04, 1.04, 0.03]} c="#fbf7ee" r={0.01} shadow={false} />)}
+                <B p={[0, 0.0, 0.09]} s={[1.34, 0.04, 0.03]} c="#fbf7ee" r={0.01} shadow={false} />
+                <B p={[0, -0.66, 0.1]} s={[1.6, 0.07, 0.16]} c={trim} r={0.02} />
+              </group>
+            ))}
+          </group>
+        );
+      })}
+    </group>
+  );
+};
+/** Flag pole on a stepped base (flag hangs still: no flapping strobe). */
+export const FlagPole: React.FC<{ p: [number, number, number] }> = ({ p }) => (
+  <group position={p}>
+    <B p={[0, 0.15, 0]} s={[1.4, 0.3, 1.4]} c="#d6d0c4" r={0.04} />
+    <B p={[0, 0.42, 0]} s={[0.8, 0.26, 0.8]} c="#e2dcd0" r={0.04} />
+    <Cyl p={[0, 3.9, 0]} r={0.05} h={7} c="#eeeeea" />
+    <Ball p={[0, 7.45, 0]} s={0.09} c="#e6c35a" />
+    <B p={[0.6, 6.95, 0]} s={[1.1, 0.34, 0.03]} c="#d93a33" r={0.01} />
+    <B p={[0.6, 6.61, 0]} s={[1.1, 0.34, 0.03]} c="#fbfaf6" r={0.01} />
+  </group>
+);
+/** Concrete-and-wood bench along x (seat top ≈ 0.45). */
+export const Bench: React.FC<{ p: [number, number, number]; len?: number; yaw?: number; color?: string }> = ({ p, len = 2.0, yaw = 0, color = "#6aa6d8" }) => (
+  <group position={p} rotation={[0, yaw, 0]}>
+    <B p={[0, 0.41, 0]} s={[len, 0.08, 0.45]} c={color} r={0.03} />
+    <B p={[-len / 2 + 0.2, 0.19, 0]} s={[0.14, 0.38, 0.36]} c="#cfc8bb" r={0.03} />
+    <B p={[len / 2 - 0.2, 0.19, 0]} s={[0.14, 0.38, 0.36]} c="#cfc8bb" r={0.03} />
+  </group>
+);
+/** Round tree in a square planter whose rim creatures can sit on. */
+export const Planter: React.FC<{ p: [number, number, number]; s?: number; leaf?: string }> = ({ p, s = 1, leaf = "#6fb862" }) => (
+  <group position={p}>
+    <B p={[0, 0.22, 0]} s={[1.7, 0.44, 1.7]} c="#d9d2c4" r={0.05} />
+    <B p={[0, 0.43, 0]} s={[1.4, 0.04, 1.4]} c="#8a6a48" r={0.02} />
+    <Tree p={[0, 0.45, 0]} s={s} leaf={leaf} />
+  </group>
+);
+/** Notice board on posts (coloured paper sheets, no text). */
+export const Board: React.FC<{ p: [number, number, number]; yaw?: number }> = ({ p, yaw = 0 }) => (
+  <group position={p} rotation={[0, yaw, 0]}>
+    <B p={[-0.8, 0.9, 0]} s={[0.08, 1.8, 0.08]} c="#8a5d3b" r={0.02} />
+    <B p={[0.8, 0.9, 0]} s={[0.08, 1.8, 0.08]} c="#8a5d3b" r={0.02} />
+    <B p={[0, 1.35, 0.03]} s={[1.8, 1.0, 0.07]} c="#a8774a" r={0.02} />
+    <B p={[0, 1.35, 0.07]} s={[1.6, 0.84, 0.03]} c="#d9b98a" r={0.01} />
+    {[[-0.45, 1.5, "#f6d36b"], [0.1, 1.45, "#9fd3e6"], [0.55, 1.55, "#f4a7a3"], [-0.2, 1.15, "#ffffff"], [0.45, 1.12, "#b9e0b0"]].map(([x, y, c], i) => (
+      <B key={i} p={[x as number, y as number, 0.09]} s={[0.36, 0.3, 0.01]} c={c as string} r={0.005} shadow={false} />
+    ))}
+  </group>
+);
+
+// ------------------------------------------------------------------ per-story dressing (stories/<id>/props.json)
+const coneGeo = new CylinderGeometry(0, 1, 1, 20, 1);
+/** A story's own object from simple clay parts (pos = the part's centre above the piece's ground point). */
+export const Dressing: React.FC<{ d: import("../dressing.ts").Dress }> = ({ d }) => (
+  <group position={[d.at[0], 0, d.at[1]]} rotation={[0, ((d.yaw ?? 0) * Math.PI) / 180, 0]}>
+    {d.parts.map((q, i) => {
+      const p = q.pos ?? [0, 0, 0];
+      const rot = (q.rot ?? [0, 0, 0]).map((v) => (v * Math.PI) / 180) as V3;
+      if (q.shape === "box") return <B key={i} p={p} s={q.size!} c={q.color} r={Math.min(0.04, Math.min(...q.size!) / 4)} rot={rot} />;
+      if (q.shape === "cyl") return <mesh key={i} geometry={cylGeoD} material={clay(q.color)} position={p} rotation={rot} scale={[q.r!, q.h ?? q.r! * 2, q.r!]} castShadow receiveShadow />;
+      if (q.shape === "cone") return <mesh key={i} geometry={coneGeo} material={clay(q.color)} position={p} rotation={rot} scale={[q.r!, q.h ?? q.r! * 2, q.r!]} castShadow receiveShadow />;
+      return <mesh key={i} geometry={sph} material={clay(q.color)} position={p} rotation={rot} scale={q.r} castShadow receiveShadow />;
+    })}
+  </group>
+);
+const cylGeoD = new CylinderGeometry(1, 1, 1, 20, 1);

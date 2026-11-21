@@ -1,0 +1,2765 @@
+VOYNANN Motion - packed source files of this folder. Do not edit by hand.
+The skill upload in the Claude app accepts at most 200 files, so the source files are packed here.
+`node <skill folder>/new-project.mjs <project folder> --kit=<style>` unpacks them into the project.
+Format: per file one line with four '=' signs, the byte length and the path, then exactly that many bytes.
+
+==== 31318 project/src/cine/character/Character.tsx
+// CINÉSTORY character: one procedural rig, many people. A CharSpec (the character bible as data) sets
+// skin, hair style, face shape, wardrobe and proportions; the rig is posed per frame from a Pose
+// (pose.ts). Head = one sculpted sphere (brow ridge, sockets, nose, cheekbones, lips, chin), eyes with
+// lids + lash lines; arms FK or 2-bone IK toward a target in chest space (door handle, key, phone).
+
+import React, { useMemo } from "react";
+import { CapsuleGeometry, DoubleSide, SphereGeometry, Euler, type Material, Matrix4, MeshPhysicalMaterial, Quaternion, Vector3 } from "three";
+import { cached, lathe, sphere, torus, box, cyl } from "../../kits/worldforge/geo.ts";
+import { mulberry32 } from "../../kits/worldforge/noise.ts";
+import { batikTex, eyeTex, phys, weaveTex } from "../mats.ts";
+import type { Arm, Hand, Hold, Leg, Pose } from "./pose.ts";
+
+export type CharSpec = {
+  key: string;
+  skin: string; hair: string; iris: string; lip: string; brow: string;
+  /** whole-body scale (1 = 1.80 m) and head scale */
+  scale: number; headScale: number;
+  top: "hoodie" | "tee" | "jacket"; topColor: string; trim: string;
+  legs: string; feet: "sandal" | "shoe"; sandal: string;
+  hairStyle: "crop" | "messy" | "long" | "bald";
+  /** face shape: jaw width, cheek fullness, nose length, brow thickness, chin (all ~0..1, 0.5 neutral) */
+  face: { jaw: number; cheek: number; nose: number; brow: number; chin: number };
+  /** batik shirt pattern (ink colour on topColor) and glasses */
+  batik?: string; glasses?: boolean;
+  /** knit cap colour, hijab colour (covers hair + neck), beard colour (chin, cheeks, moustache) */
+  cap?: string; hijab?: string; beard?: string;
+};
+
+const skinMat = (c: string) => phys(`skin${c}`, { color: c, roughness: 0.5, sheen: 0.4, sheenColor: "#ff9f80", sheenRoughness: 0.45, clearcoat: 0.08, clearcoatRoughness: 0.5 });
+const fabric = (key: string, c: string, o: Partial<ConstructorParameters<typeof MeshPhysicalMaterial>[0]> = {}) =>
+  phys(`fab${key}`, { color: c, roughness: 0.88, sheen: 0.45, sheenColor: "#9aa8c8", sheenRoughness: 0.55, ...o });
+
+const clothes = (c: CharSpec) => {
+  const top = c.batik
+    ? fabric(`top${c.key}`, "#ffffff", { map: batikTex(`top${c.key}`, c.topColor, c.batik, [3, 3]) })
+    : fabric(`top${c.key}`, "#ffffff", { map: weaveTex(`top${c.key}`, c.topColor, [7, 7]) });
+  return {
+    top,
+    sleeve: top,
+    pocket: fabric(`pocket${c.key}`, "#e4e6ea", { map: weaveTex(`top${c.key}`, c.topColor, [7, 7]) }),
+    legs: fabric(`legs${c.key}`, c.legs, { sheen: 0.5, sheenColor: "#8f97a8" }),
+    trim: fabric(`trim${c.key}`, c.trim, { sheen: 0.2 }),
+    sole: phys(`sole${c.sandal}`, { color: c.sandal, roughness: 0.7 }),
+  };
+};
+
+// ── geometry ────────────────────────────────────────────────────────────────
+
+/** Tapered limb along −Y from 0 to −len with round caps. */
+const limb = (len: number, r0: number, r1: number, mid = 0) =>
+  cached(`limb${len},${r0},${r1},${mid}`, () => {
+    const pts: [number, number][] = [];
+    const n = 8;
+    for (let i = 0; i <= n; i++) {
+      const a = (i / n) * (Math.PI / 2);
+      pts.push([Math.sin(a) * r1, -len - Math.cos(a) * r1]);
+    }
+    for (let i = 1; i < 10; i++) {
+      const k = i / 10;
+      const bulge = Math.sin(k * Math.PI) * mid;
+      pts.push([r1 + (r0 - r1) * k + bulge, -len + len * k]);
+    }
+    for (let i = 0; i <= n; i++) {
+      const a = (i / n) * (Math.PI / 2);
+      pts.push([Math.cos(a) * r0, Math.sin(a) * r0]);
+    }
+    return lathe(`limbL${len},${r0},${r1},${mid}`, pts, 28);
+  });
+
+const TORSO: [number, number][] = [
+  [0.0, -0.36], [0.172, -0.356], [0.19, -0.336], [0.188, -0.3], [0.191, -0.2], [0.2, -0.06], [0.21, 0.07], [0.216, 0.15],
+  [0.207, 0.205], [0.18, 0.238], [0.13, 0.262], [0.08, 0.274], [0.0, 0.279],
+];
+const PELVIS: [number, number][] = [[0, -0.13], [0.115, -0.125], [0.155, -0.08], [0.162, 0.0], [0.158, 0.09], [0.0, 0.1]];
+const capsule = (r: number, l: number) => cached(`cap${r},${l}`, () => new CapsuleGeometry(r, l, 6, 14));
+
+const g2 = (x: number, y: number, sx: number, sy: number) => Math.exp(-(x * x) / (sx * sx) - (y * y) / (sy * sy));
+
+/** Sculpt a unit-sphere point into the head surface (+Z = face), in head units. Shape knobs from the spec. */
+const sculpt = (x: number, y: number, z: number, f: CharSpec["face"]): [number, number, number] => {
+  const front = Math.max(0, z);
+  const ax = Math.abs(x);
+  // displacement along the normal (unit sphere: normal = position)
+  let d = 0;
+  d += 0.035 * (0.6 + f.brow) * g2(ax - 0.3, y - 0.27, 0.32, 0.075) * Math.pow(front, 2); // brow ridge
+  d -= 0.06 * g2(ax - 0.375, y - 0.07, 0.17, 0.12) * front; // eye sockets
+  const ridge = g2(x, 0, 0.075, 1) * (y < 0.18 && y > -0.33 ? Math.pow((0.18 - y) / 0.51, 1.3) : 0);
+  d += (0.2 + 0.08 * f.nose) * ridge * Math.pow(front, 4); // nose bridge → tip
+  d += 0.1 * g2(x, y + 0.27, 0.075, 0.065) * front; // tip
+  d += 0.06 * g2(ax - 0.12, y + 0.3, 0.06, 0.05) * front; // nostril wings
+  d -= 0.025 * g2(ax - 0.2, y + 0.38, 0.05, 0.06) * front; // nasolabial
+  d += 0.035 * (0.5 + f.cheek) * g2(ax - 0.55, y + 0.05, 0.2, 0.16) * front; // cheekbones
+  d += 0.022 * g2(x, y + 0.5, 0.17, 0.035) * front; // upper lip
+  d += 0.026 * g2(x, y + 0.6, 0.15, 0.04) * front; // lower lip
+  d -= 0.018 * g2(x, y + 0.69, 0.18, 0.03) * front; // under-lip groove
+  d += (0.03 + 0.04 * f.chin) * g2(x, y + 0.82, 0.2, 0.08) * front; // chin
+  x *= 1 + d; y *= 1 + d; z *= 1 + d;
+  // jaw taper (narrower lower face), forward chin, fuller lower cheeks
+  const low = Math.max(0, -y);
+  x *= 1 - (0.24 - 0.12 * f.jaw) * Math.pow(low, 1.5);
+  z += 0.14 * low * Math.max(0, z) * Math.max(0, z);
+  y *= 1 + 0.12 * low;
+  return [x * 0.102, y * 0.118, z * 0.112];
+};
+
+/** Sculpted head on a unit sphere, then scaled to head size. */
+const headGeo = (f: CharSpec["face"]) =>
+  cached(`head${f.jaw},${f.cheek},${f.nose},${f.brow},${f.chin}`, () => {
+    const g = new SphereGeometry(1, 96, 72);
+    const a = g.attributes.position;
+    for (let i = 0; i < a.count; i++) a.setXYZ(i, ...sculpt(a.getX(i), a.getY(i), a.getZ(i), f));
+    g.computeVertexNormals();
+    return g;
+  });
+
+/** A shell that follows the sculpted head: `lift(ux, uy, uz)` (relative, on the unit sphere) > 0 stands off the
+ *  skin, < 0 dives under it. The skin hides the dived part, so edges are smooth curves (no cut triangles). */
+const skinShell = (key: string, f: CharSpec["face"], lift: (x: number, y: number, z: number) => number) =>
+  cached(`shell${key}${f.jaw},${f.cheek},${f.nose},${f.brow},${f.chin}`, () => {
+    const g = new SphereGeometry(1, 96, 72);
+    const a = g.attributes.position;
+    for (let i = 0; i < a.count; i++) {
+      const ux = a.getX(i), uy = a.getY(i), uz = a.getZ(i);
+      const [x, y, z] = sculpt(ux, uy, uz, f);
+      const k = 1 + lift(ux, uy, uz);
+      a.setXYZ(i, x * k, y * k, z * k);
+    }
+    g.computeVertexNormals();
+    return g;
+  });
+const sstep = (a: number, b: number, x: number) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+
+/** Hijab: lifted head surface with an oval face opening; extra volume behind and wrapping under the chin. */
+const hijabGeo = (f: CharSpec["face"]) =>
+  skinShell("hijab", f, (x, y, z) => {
+    const o = (x / 0.6) ** 2 + ((y + 0.04) / 0.8) ** 2;
+    const open = sstep(1.12, 0.9, o) * sstep(0.0, 0.25, z);
+    const lift = 0.09 + 0.06 * Math.max(0, -z) + 0.1 * Math.max(0, y - 0.6) + 0.3 * Math.max(0, -y - 0.6) * (1 - 0.6 * Math.max(0, z));
+    return lift * (1 - open) - 0.06 * open;
+  });
+
+/** Beard: jaw, chin and cheeks below the cheekbones, a gap for the mouth; dives under the skin elsewhere. */
+const beardGeo = (f: CharSpec["face"]) =>
+  skinShell("beard", f, (x, y, z) => {
+    const jaw = sstep(-0.4, -0.58, y) * sstep(-0.35, 0.05, z);
+    const mouth = Math.exp(-(x * x) / (0.2 * 0.2) - ((y + 0.55) ** 2) / (0.09 * 0.09));
+    const m = jaw * (1 - 0.95 * mouth);
+    return 0.05 * m - 0.04 * (1 - m);
+  });
+
+/** Open sphere shell (phi start/length around Y, theta from the top), for caps, hijab and long hair. */
+const shell = (phi0: number, phiL: number, th0: number, thL: number) =>
+  cached(`shell${phi0},${phiL},${th0},${thL}`, () => new SphereGeometry(1, 48, 24, phi0, phiL, th0, thL));
+
+// ── IK ──────────────────────────────────────────────────────────────────────
+
+const UA = 0.28, FA = 0.25;
+const _q = new Quaternion();
+const ikArm = (S: Vector3, T: Vector3, pole: Vector3) => {
+  const d0 = new Vector3().subVectors(T, S);
+  const d = Math.min(Math.max(d0.length(), Math.abs(UA - FA) + 1e-3), UA + FA - 1e-3);
+  const u = d0.normalize();
+  const cosA = (UA * UA + d * d - FA * FA) / (2 * UA * d);
+  const sinA = Math.sqrt(Math.max(0, 1 - cosA * cosA));
+  const w = pole.clone().addScaledVector(u, -pole.dot(u));
+  if (w.lengthSq() < 1e-8) w.set(0, 0, -1).addScaledVector(u, -u.z);
+  w.normalize();
+  const upper = u.clone().multiplyScalar(cosA).addScaledVector(w, sinA).normalize();
+  const E = S.clone().addScaledVector(upper, UA);
+  const fore = new Vector3().subVectors(S.clone().addScaledVector(u, d), E).normalize();
+  const cosB = Math.min(1, Math.max(-1, upper.dot(fore)));
+  const bend = Math.acos(cosB);
+  const Y = upper.clone().negate();
+  let Z = fore.clone().addScaledVector(upper, -fore.dot(upper));
+  if (Z.lengthSq() < 1e-8) Z = w.clone().negate();
+  Z.normalize();
+  const X = new Vector3().crossVectors(Y, Z).normalize();
+  Z.crossVectors(X, Y).normalize();
+  const m = new Matrix4().makeBasis(X, Y, Z);
+  return { q: new Quaternion().setFromRotationMatrix(m), bend };
+};
+
+// ── parts ───────────────────────────────────────────────────────────────────
+
+const HandMesh: React.FC<{ s: number; h: Hand; skin: Material; t: number; tremble: number }> = ({ s, h, skin, t, tremble }) => {
+  const fingers = [0.026, 0.009, -0.008, -0.025];
+  const tr = tremble * 0.09;
+  return (
+    <group>
+      <mesh geometry={box(0.03, 0.085, 0.074, 0.013)} material={skin} position={[0, -0.05, 0.002]} castShadow receiveShadow />
+      {fingers.map((fz, i) => {
+        const c = i === 0 ? h.index : h.curl;
+        const jit = tr * Math.sin(t * 41 + i * 1.7);
+        const a = -s * (c * 1.4 + jit);
+        return (
+          <group key={i} position={[0, -0.09, fz]} rotation={[0, 0, a]}>
+            <mesh geometry={capsule(0.0088, 0.03)} material={skin} position={[0, -0.022, 0]} castShadow />
+            <group position={[0, -0.045, 0]} rotation={[0, 0, a * 0.9]}>
+              <mesh geometry={capsule(0.0082, 0.022)} material={skin} position={[0, -0.017, 0]} castShadow />
+            </group>
+          </group>
+        );
+      })}
+      <group position={[-s * 0.006, -0.025, 0.036]} rotation={new Euler(0.5, 0, -s * (0.35 + h.thumb * 0.8))}>
+        <mesh geometry={capsule(0.0105, 0.035)} material={skin} position={[0, -0.025, 0]} castShadow />
+      </group>
+    </group>
+  );
+};
+
+const Phone: React.FC<{ screen: Material; s: number }> = ({ screen, s }) => (
+  <group position={[-s * 0.024, -0.075, 0.012]}>
+    <mesh geometry={box(0.009, 0.152, 0.074, 0.004)} material={phys("phoneBody", { color: "#16181c", roughness: 0.3, metalness: 0.6 })} castShadow />
+    <mesh geometry={box(0.001, 0.146, 0.068, 0.0005)} material={screen} position={[-s * 0.0048, 0, 0]} rotation={[Math.PI, s > 0 ? Math.PI : 0, 0]} />
+  </group>
+);
+
+/** Props held in one hand (hand space: fingers along −Y, forward +Z). Binoculars are drawn at the eyes by Head. */
+const metal = () => phys("propMetal", { color: "#2a2c30", roughness: 0.35, metalness: 0.7 });
+const HeldProp: React.FC<{ h: Hold; s: number }> = ({ h, s }) => {
+  if (h.kind === "lantern") {
+    const glow = phys(`lanternGlass${Math.round(h.on * 20)}`, { color: "#ffe2b0", emissive: "#ffb45e", emissiveIntensity: 0.2 + 2.6 * h.on, roughness: 0.2, transmission: 0.2 });
+    return (
+      <group position={[0, -0.13, 0.02]}>
+        <mesh geometry={torus(0.035, 0.004, 6, 20, Math.PI)} material={metal()} position={[0, 0.05, 0]} />
+        <mesh geometry={cyl(0.045, 0.05, 0.02, 16)} material={metal()} position={[0, 0.0, 0]} castShadow />
+        <mesh geometry={cyl(0.04, 0.04, 0.11, 16)} material={glow} position={[0, -0.065, 0]} />
+        <mesh geometry={cyl(0.05, 0.055, 0.02, 16)} material={metal()} position={[0, -0.13, 0]} castShadow />
+      </group>
+    );
+  }
+  if (h.kind === "flashlight") {
+    const lens = phys(`torchLens${Math.round(h.on * 20)}`, { color: "#fff6e0", emissive: "#fff2d0", emissiveIntensity: 3 * h.on, roughness: 0.1 });
+    return (
+      <group position={[0, -0.06, 0.03]} rotation={[Math.PI / 2, 0, 0]}>
+        <mesh geometry={cyl(0.017, 0.017, 0.17, 16)} material={metal()} castShadow />
+        <mesh geometry={cyl(0.026, 0.018, 0.05, 16)} material={metal()} position={[0, 0.1, 0]} castShadow />
+        <mesh geometry={cyl(0.023, 0.023, 0.004, 16)} material={lens} position={[0, 0.126, 0]} />
+      </group>
+    );
+  }
+  if (h.kind === "mug") return <mesh geometry={cyl(0.04, 0.036, 0.1, 18)} material={phys("mug", { color: "#d8d2c4", roughness: 0.4, clearcoat: 0.5 })} position={[-s * 0.045, -0.075, 0.03]} castShadow />;
+  if (h.kind === "book") return <mesh geometry={box(0.035, 0.22, 0.16, 0.008)} material={phys("book", { color: "#5a3b2a", roughness: 0.8 })} position={[-s * 0.03, -0.1, 0.0]} castShadow />;
+  if (h.kind === "pen") return <mesh geometry={cyl(0.004, 0.004, 0.13, 6)} material={phys("pen", { color: "#1d2b4a", roughness: 0.4 })} position={[0, -0.09, 0.03]} rotation={[0.9, 0, 0]} />;
+  if (h.kind === "binoculars") return <Binoculars />;
+  return null;
+};
+const Binoculars: React.FC = () => (
+  <group rotation={[Math.PI / 2, 0, 0]}>
+    {[1, -1].map((k) => (
+      <group key={k} position={[k * 0.034, 0, 0]}>
+        <mesh geometry={cyl(0.021, 0.024, 0.12, 16)} material={metal()} castShadow />
+        <mesh geometry={cyl(0.026, 0.026, 0.02, 16)} material={phys("binoRub", { color: "#121315", roughness: 0.9 })} position={[0, 0.07, 0]} />
+      </group>
+    ))}
+    <mesh geometry={box(0.05, 0.05, 0.024, 0.008)} material={metal()} />
+  </group>
+);
+
+const ArmSide: React.FC<{ s: number; a: Arm; hand: Hand; c: CharSpec; t: number; tremble: number; phone?: Material; hold?: Hold | null }> = ({ s, a, hand, c, t, tremble, phone, hold }) => {
+  const S = new Vector3(s * 0.19, 0.2, -0.01);
+  const cl = clothes(c);
+  let q: Quaternion;
+  let el = a.el;
+  const fk = new Quaternion().setFromEuler(new Euler(-a.sw, s * a.tw, s * a.ab, "XZY"));
+  if (a.ik && a.ik.w > 0) {
+    const T = new Vector3(a.ik.t[0] * s, a.ik.t[1], a.ik.t[2]);
+    const pole = new Vector3(a.ik.pole[0] * s, a.ik.pole[1], a.ik.pole[2]);
+    const r = ikArm(S, T, pole);
+    q = fk.clone().slerp(r.q, a.ik.w);
+    el = el + (r.bend - el) * a.ik.w;
+  } else q = fk;
+  const jit = tremble * 0.06;
+  const wr = new Euler(a.wr[0] + jit * Math.sin(t * 37), s * a.wr[1], s * a.wr[2] + jit * Math.sin(t * 29 + 1), "XYZ");
+  const skin = skinMat(c.skin);
+  const short = c.top === "tee";
+  return (
+    <group position={S} quaternion={q}>
+      {short ? (
+        <>
+          <mesh geometry={limb(0.14, 0.064, 0.058)} material={cl.sleeve} castShadow receiveShadow />
+          <mesh geometry={limb(0.28, 0.044, 0.037)} material={skin} castShadow receiveShadow />
+        </>
+      ) : (
+        <mesh geometry={limb(0.28, 0.064, 0.054, 0.007)} material={cl.sleeve} castShadow receiveShadow />
+      )}
+      <group position={[0, -UA, 0]} rotation={[-el, 0, 0]}>
+        {short ? (
+          <mesh geometry={limb(0.25, 0.037, 0.03, 0.004)} material={skin} castShadow receiveShadow />
+        ) : (
+          <>
+            <mesh geometry={limb(0.225, 0.054, 0.047, 0.005)} material={cl.sleeve} castShadow receiveShadow />
+            <mesh geometry={cyl(0.042, 0.04, 0.045, 20)} material={cl.sleeve} position={[0, -0.222, 0]} castShadow />
+          </>
+        )}
+        <group position={[0, -FA, 0]} quaternion={_q.setFromEuler(wr).clone()}>
+          <HandMesh s={s} h={hand} skin={skin} t={t} tremble={tremble} />
+          {phone ? <Phone screen={phone} s={s} /> : null}
+          {hold && !(hold.kind === "binoculars" && hold.on > 0.6) ? <HeldProp h={hold} s={s} /> : null}
+        </group>
+      </group>
+    </group>
+  );
+};
+
+const LegSide: React.FC<{ s: number; l: Leg; c: CharSpec }> = ({ s, l, c }) => {
+  const cl = clothes(c);
+  const skin = skinMat(c.skin);
+  return (
+    <group position={[s * 0.095, -0.05, 0]} rotation={new Euler(-l.sw, s * l.tw, s * l.ab, "XZY")}>
+      <mesh geometry={limb(0.43, 0.09, 0.07, 0.005)} material={cl.legs} castShadow receiveShadow />
+      <group position={[0, -0.43, 0]} rotation={[l.kn, 0, 0]}>
+        <mesh geometry={limb(0.38, 0.066, 0.052, 0.012)} material={cl.legs} castShadow receiveShadow />
+        {/* jogger cuff */}
+        <mesh geometry={cyl(0.05, 0.048, 0.05, 20)} material={cl.legs} position={[0, -0.37, 0]} castShadow />
+        <group position={[0, -0.42, 0]} rotation={[-l.an, 0, 0]}>
+          <mesh geometry={cyl(0.034, 0.036, 0.06, 16)} material={skin} position={[0, -0.01, 0]} castShadow />
+          {c.feet === "sandal" ? (
+            <>
+              <mesh geometry={box(0.078, 0.042, 0.215, 0.02)} material={skin} position={[0, -0.05, 0.05]} castShadow receiveShadow />
+              <mesh geometry={box(0.098, 0.016, 0.265, 0.007)} material={cl.sole} position={[0, -0.077, 0.052]} castShadow receiveShadow />
+              {[1, -1].map((k) => (
+                <mesh key={k} geometry={box(0.009, 0.012, 0.11, 0.004)} material={cl.sole} position={[k * 0.03, -0.05, 0.1]} rotation={[0.25, k * 0.42, 0]} castShadow />
+              ))}
+            </>
+          ) : (
+            <>
+              <mesh geometry={box(0.104, 0.034, 0.28, 0.014)} material={phys("soleShoe", { color: "#3b3c40", roughness: 0.8 })} position={[0, -0.068, 0.055]} castShadow receiveShadow />
+              <mesh geometry={box(0.096, 0.08, 0.235, 0.035)} material={cl.sole} position={[0, -0.032, 0.045]} castShadow receiveShadow />
+            </>
+          )}
+        </group>
+      </group>
+    </group>
+  );
+};
+
+/** Hair clumps on the cap surface: local y = surface normal, local z = sweep direction. */
+const hairClumps = (style: CharSpec["hairStyle"]) => {
+  const out: { p: [number, number, number]; q: Quaternion; s: [number, number, number] }[] = [];
+  const C = new Vector3(0, 0.016, -0.004);
+  const r = mulberry32(style === "crop" ? 5 : 9);
+  const put = (az: number, el: number, rad: number, sweep: number, sc: [number, number, number]) => {
+    const n = new Vector3(Math.sin(az) * Math.cos(el), Math.sin(el), Math.cos(az) * Math.cos(el));
+    const pos = C.clone().addScaledVector(n, rad);
+    const q = new Quaternion().setFromUnitVectors(new Vector3(0, 1, 0), n);
+    q.multiply(new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), sweep));
+    out.push({ p: [pos.x, pos.y, pos.z], q, s: sc });
+  };
+  if (style === "crop") {
+    // soft fringe swept to his right, short textured top, tidy sides
+    for (let i = 0; i < 12; i++) put(-0.72 + i * 0.13 + (r() - 0.5) * 0.04, 0.56 + 0.05 * r(), 0.116, 2.7 + 0.08 * i + (r() - 0.5) * 0.3, [0.42, 0.2, 1.25 + 0.3 * r()]);
+    for (let i = 0; i < 30; i++) put(r() * Math.PI * 2, 0.75 + 0.6 * r(), 0.119, Math.PI + (r() - 0.5) * 1.2, [0.45 + 0.15 * r(), 0.2, 1.2 + 0.3 * r()]);
+  } else {
+    // longer, messier top with a side part
+    for (let i = 0; i < 12; i++) put(-0.8 + i * 0.14 + (r() - 0.5) * 0.05, 0.52 + 0.08 * r(), 0.12, 2.4 + 0.15 * i + 0.4 * r(), [0.5, 0.3, 1.5 + 0.4 * r()]);
+    for (let i = 0; i < 34; i++) put(r() * Math.PI * 2, 0.7 + 0.7 * r(), 0.124, Math.PI + (r() - 0.5) * 2.0, [0.55 + 0.2 * r(), 0.3, 1.4 + 0.5 * r()]);
+  }
+  return out;
+};
+
+const Head: React.FC<{ pose: Pose; c: CharSpec }> = ({ pose, c }) => {
+  const f = pose.face;
+  const skin = skinMat(c.skin);
+  const hair = phys(`hair${c.hair}`, { color: c.hair, roughness: 0.62, sheen: 0.7, sheenColor: "#4a3a30", sheenRoughness: 0.45 });
+  const eye = phys(`eye${c.key}`, { map: eyeTex(c.key, c.iris), roughness: 0.05, clearcoat: 1, clearcoatRoughness: 0.02 });
+  const brow = phys(`brow${c.brow}`, { color: c.brow, roughness: 0.75 });
+  const lash = phys("lash", { color: "#0b0806", roughness: 0.7 });
+  const lip = phys(`lip${c.lip}`, { color: c.lip, roughness: 0.42, clearcoat: 0.2 });
+  // upper lid edge sits ~30° above the eye centre when open (lid = 1), closes at 0, wide above 1
+  const lidA = Math.min(Math.PI / 2, Math.max(-1.2, Math.PI / 2 - 2.09 * f.lid));
+  const browY = 0.03 + 0.008 * f.browUp;
+  const clumps = useMemo(() => hairClumps(c.hairStyle === "long" ? "messy" : c.hairStyle === "bald" ? "crop" : c.hairStyle), [c.hairStyle]);
+  const open = Math.min(1, f.open + pose.talk);
+  const showHair = !c.hijab && c.hairStyle !== "bald";
+  const scarf = c.hijab ? phys(`hijab${c.hijab}`, { color: c.hijab, roughness: 0.85, sheen: 0.5, sheenColor: "#ffffff", sheenRoughness: 0.6, side: DoubleSide }) : null;
+  const knit = c.cap ? phys(`cap${c.cap}`, { color: c.cap, roughness: 0.95, sheen: 0.6, sheenColor: "#ffffff", sheenRoughness: 0.7 }) : null;
+  const beard = c.beard ? phys(`beard${c.beard}`, { color: c.beard, roughness: 0.9, sheen: 0.6, sheenColor: "#ffffff", sheenRoughness: 0.5 }) : null;
+  const H = Math.PI / 2;
+  const ER = 0.0178;
+  return (
+    <group position={[0, 0.09, 0.01]} scale={c.headScale}>
+      <mesh geometry={headGeo(c.face)} material={skin} castShadow receiveShadow />
+      {[1, -1].map((s) => (
+        <group key={`ear${s}`} position={[s * 0.1, -0.008, -0.008]} rotation={[0, s * 0.35, 0]}>
+          <mesh geometry={sphere(0.032, 20, 14)} material={skin} scale={[0.32, 0.95, 0.66]} castShadow />
+          <mesh geometry={torus(0.019, 0.005, 8, 20, Math.PI * 1.4)} material={skin} position={[s * 0.004, 0.002, 0.003]} rotation={[0, s * Math.PI / 2, 1.2]} />
+        </group>
+      ))}
+      {[1, -1].map((s) => (
+        <group key={`eye${s}`} position={[s * 0.0375, 0.009, 0.0905]}>
+          <mesh geometry={sphere(ER, 40, 24)} material={eye} rotation={[-f.eyeY, f.eyeX, 0]} />
+          <group rotation={[lidA, 0, 0]}>
+            <mesh geometry={sphere(ER + 0.0017, 32, 12, Math.PI * 2, Math.PI / 2)} material={skin} />
+            <mesh geometry={torus(ER + 0.0017, 0.0011, 6, 28, Math.PI)} material={lash} rotation={[Math.PI / 2, 0, 0]} />
+          </group>
+          <group rotation={[Math.PI + 0.98, 0, 0]}>
+            <mesh geometry={sphere(ER + 0.0013, 32, 12, Math.PI * 2, Math.PI / 2)} material={skin} />
+          </group>
+          <mesh geometry={capsule(0.0045 + 0.0025 * c.face.brow, 0.026)} material={brow} position={[s * 0.003, browY, 0.011]} rotation={[0.25, s * 0.25, Math.PI / 2 + s * (0.06 - 0.38 * f.browIn + 0.1 * f.browUp)]} scale={[1, 1, 0.6]} />
+        </group>
+      ))}
+      <group position={[0, -0.0655, 0.1028]}>
+        <mesh geometry={sphere(0.0125, 16, 10)} material={phys("mouthIn", { color: "#1a0a09", roughness: 0.95 })} position={[0, -0.002 - open * 0.002, -0.006]} scale={[1, 0.05 + open * 0.7, 0.45]} />
+        <mesh geometry={capsule(0.0036, 0.026)} material={lip} position={[0, 0.0016, -0.0025]} rotation={[0, 0, Math.PI / 2 + f.mouth * 0.06]} scale={[1, 1, 0.6]} />
+        <mesh geometry={capsule(0.0042, 0.022)} material={lip} position={[0, -0.0048 - open * 0.006, -0.003]} rotation={[0, 0, Math.PI / 2]} scale={[1, 1, 0.62]} />
+        <mesh geometry={box(0.03, 0.0012, 0.004, 0.0005)} material={phys("mouthLine", { color: "#3a1c18", roughness: 0.9 })} position={[0, -0.0014 - open * 0.003, 0.0]} />
+      </group>
+      {/* hair */}
+      {showHair ? <mesh geometry={sphere(0.122, 48, 24, Math.PI * 2, Math.PI * 0.56)} material={hair} position={[0, 0.014, -0.008]} rotation={[-0.44, 0, 0]} scale={[0.9, 1.04, 0.98]} castShadow /> : null}
+      {showHair && c.hairStyle === "long" ? (
+        <>
+          <mesh geometry={shell(H + 0.85, Math.PI * 2 - 1.7, 0.2, 1.95)} material={phys(`hairL${c.hair}`, { color: c.hair, roughness: 0.62, sheen: 0.7, sheenColor: "#4a3a30", sheenRoughness: 0.45, side: DoubleSide })} position={[0, -0.035, -0.014]} scale={[0.132, 0.25, 0.132]} castShadow />
+          {[1, -1].map((k) => <mesh key={k} geometry={capsule(0.022, 0.1)} material={hair} position={[k * 0.098, -0.045, 0.02]} rotation={[0.1, 0, k * 0.08]} scale={[0.7, 1, 0.9]} castShadow />)}
+        </>
+      ) : null}
+      {beard ? (
+        <>
+          <mesh geometry={beardGeo(c.face)} material={beard} castShadow />
+          <mesh geometry={capsule(0.0042, 0.026)} material={beard} position={[0, -0.0585, 0.1085]} rotation={[0.25, 0, Math.PI / 2]} scale={[1, 1, 0.7]} />
+        </>
+      ) : null}
+      {knit ? (
+        <group position={[0, 0.018, -0.006]} rotation={[-0.15, 0, 0]}>
+          <mesh geometry={shell(0, Math.PI * 2, 0, 1.3)} material={knit} scale={[0.128, 0.138, 0.131]} castShadow />
+          <mesh geometry={torus(1, 0.13, 10, 40)} material={knit} position={[0, 0.138 * Math.cos(1.3), 0]} rotation={[Math.PI / 2, 0, 0]} scale={[0.128 * Math.sin(1.3), 0.131 * Math.sin(1.3), 0.13]} castShadow />
+        </group>
+      ) : null}
+      {scarf ? <mesh geometry={hijabGeo(c.face)} material={scarf} castShadow /> : null}
+      {pose.hold?.kind === "binoculars" && pose.hold.on > 0.6 ? <group position={[0, 0.009, 0.165]}><Binoculars /></group> : null}
+      {c.glasses
+        ? [1, -1].map((s) => (
+            <group key={`gl${s}`}>
+              <mesh geometry={torus(0.022, 0.0022, 6, 28)} material={phys("glassFrame", { color: "#3a2a1e", roughness: 0.4 })} position={[s * 0.038, 0.01, 0.112]} scale={[1.15, 0.9, 1]} />
+              <mesh geometry={cyl(0.0018, 0.0018, 0.1, 6)} material={phys("glassFrame", { color: "#3a2a1e", roughness: 0.4 })} position={[s * 0.064, 0.012, 0.062]} rotation={[Math.PI / 2, 0, 0]} />
+            </group>
+          ))
+        : null}
+      {c.glasses ? <mesh geometry={cyl(0.0018, 0.0018, 0.026, 6)} material={phys("glassFrame", { color: "#3a2a1e", roughness: 0.4 })} position={[0, 0.016, 0.114]} rotation={[0, 0, Math.PI / 2]} /> : null}
+      {(showHair && !knit ? clumps : []).map((k, i) => (
+        <mesh key={i} geometry={sphere(0.036, 18, 12)} material={hair} position={k.p} quaternion={k.q} scale={k.s} castShadow />
+      ))}
+    </group>
+  );
+};
+
+export const Character: React.FC<{ pose: Pose; spec: CharSpec; t: number; visible?: boolean; phoneScreen?: Material }> = ({ pose, spec: c, t, visible = true, phoneScreen }) => {
+  const b = pose.breath * Math.sin((t / (pose.breath > 1.5 ? 1.4 : 3.6)) * Math.PI * 2);
+  const skin = skinMat(c.skin);
+  const cl = clothes(c);
+  return (
+    <group position={[pose.x, pose.y, pose.z]} rotation={[0, pose.yaw, 0]} scale={c.scale} visible={visible}>
+      <group position={[0, 0.96 + pose.hipY, 0]} rotation={new Euler(pose.hips[0], pose.hips[1], -pose.hips[2], "YXZ")}>
+        <mesh geometry={lathe("pelvis", PELVIS, 40)} material={cl.legs} scale={[1, 1, 0.68]} castShadow receiveShadow />
+        <group position={[0, 0.1, 0]} rotation={new Euler(pose.spine[0], pose.spine[1], -pose.spine[2], "YXZ")}>
+          <group position={[0, 0.2, 0]} rotation={new Euler(pose.chest[0] + 0.014 * b, pose.chest[1], -pose.chest[2], "YXZ")} scale={[1 + 0.007 * b, 1, 1 + 0.014 * b]}>
+            <mesh geometry={lathe("torso", TORSO, 48)} material={cl.top} scale={[1, 1, 0.63]} castShadow receiveShadow />
+            {c.top === "hoodie" ? (
+              <>
+                <mesh geometry={torus(0.085, 0.038, 12, 36, Math.PI * 1.55)} material={cl.top} position={[0, 0.262, -0.02]} rotation={[Math.PI / 2, 0, Math.PI * 0.225 + Math.PI]} scale={[1.08, 1, 1.15]} castShadow />
+                <mesh geometry={sphere(0.115, 28, 18)} material={cl.top} position={[0, 0.17, -0.11]} scale={[0.95, 0.68, 0.32]} castShadow />
+                <mesh geometry={box(0.24, 0.13, 0.024, 0.01)} material={cl.pocket} position={[0, -0.21, 0.116]} rotation={[-0.04, 0, 0]} castShadow />
+                <mesh geometry={box(0.36, 0.045, 0.22, 0.02)} material={cl.top} position={[0, -0.335, 0]} scale={[1.05, 1, 0.98]} />
+                {[1, -1].map((s) => (
+                  <group key={s} position={[s * 0.034, 0.215, 0.118]} rotation={[0.12, 0, s * 0.06]}>
+                    <mesh geometry={cyl(0.0045, 0.0045, 0.14, 8)} material={cl.trim} position={[0, -0.07, 0]} castShadow />
+                    <mesh geometry={cyl(0.0058, 0.0058, 0.02, 8)} material={phys("aglet", { color: "#b9b2a6", metalness: 0.7, roughness: 0.3 })} position={[0, -0.145, 0]} />
+                  </group>
+                ))}
+              </>
+            ) : c.top === "jacket" ? (
+              <>
+                <mesh geometry={lathe("torso", TORSO, 48)} material={cl.top} scale={[1.035, 1.01, 0.67]} castShadow receiveShadow />
+                <mesh geometry={torus(0.078, 0.022, 10, 36)} material={cl.top} position={[0, 0.272, 0.0]} rotation={[Math.PI / 2 - 0.25, 0, 0]} scale={[1.05, 0.9, 1.6]} castShadow />
+                <mesh geometry={box(0.012, 0.5, 0.012, 0.004)} material={cl.trim} position={[0, -0.06, 0.142]} rotation={[-0.05, 0, 0]} />
+                {[1, -1].map((k) => <mesh key={k} geometry={box(0.09, 0.07, 0.02, 0.008)} material={cl.top} position={[k * 0.1, -0.2, 0.13]} rotation={[-0.06, k * 0.25, 0]} castShadow />)}
+                <mesh geometry={box(0.37, 0.04, 0.23, 0.02)} material={cl.trim} position={[0, -0.34, 0]} />
+              </>
+            ) : (
+              <mesh geometry={torus(0.072, 0.012, 8, 30)} material={cl.trim} position={[0, 0.266, 0.006]} rotation={[Math.PI / 2, 0, 0]} scale={[1, 0.82, 1]} />
+            )}
+            {c.hijab ? (
+              <mesh geometry={lathe("hijabDrape", [[0.0, 0.36], [0.07, 0.355], [0.085, 0.3], [0.15, 0.22], [0.215, 0.15], [0.225, 0.11], [0.0, 0.11]], 40)} material={phys(`hijab${c.hijab}`, { color: c.hijab, roughness: 0.85, sheen: 0.5, sheenColor: "#ffffff", sheenRoughness: 0.6, side: DoubleSide })} scale={[1, 1, 0.72]} castShadow />
+            ) : null}
+            <group position={[0, 0.27, -0.01]} rotation={new Euler(pose.neck[0], pose.neck[1], -pose.neck[2], "YXZ")}>
+              <mesh geometry={cyl(0.052, 0.058, 0.12, 24)} material={skin} position={[0, 0.03, 0]} castShadow />
+              <group position={[0, 0.09, 0.01]} rotation={new Euler(pose.head[0], pose.head[1], -pose.head[2], "YXZ")}>
+                <Head pose={pose} c={c} />
+              </group>
+            </group>
+            <ArmSide s={1} a={pose.armL} hand={pose.handL} c={c} t={t} tremble={pose.tremble} phone={pose.phone === 2 && phoneScreen ? phoneScreen : undefined} hold={pose.hold?.side === 1 ? pose.hold : null} />
+            <ArmSide s={-1} a={pose.armR} hand={pose.handR} c={c} t={t + 3.1} tremble={pose.tremble} phone={pose.phone === 1 && phoneScreen ? phoneScreen : undefined} hold={pose.hold?.side === -1 ? pose.hold : null} />
+          </group>
+        </group>
+        <LegSide s={1} l={pose.legL} c={c} />
+        <LegSide s={-1} l={pose.legR} c={c} />
+      </group>
+    </group>
+  );
+};
+
+==== 33612 project/src/cine/neural/Brain.tsx
+// The neural world (a metaphor, not a scan): a glass brain with sulci, a neuron network carrying
+// signals, hero neurons for macro shots, the optic-fibre tunnel, the prediction core with its two
+// streams (information = cyan, experience = orange), the pareidolia point cloud and the socket face.
+// Brain-local units: the cerebrum spans z −1…1.
+
+import React, { useLayoutEffect, useMemo } from "react";
+import {
+  AdditiveBlending,
+  BufferGeometry,
+  CatmullRomCurve3,
+  Color,
+  DoubleSide,
+  Float32BufferAttribute,
+  IcosahedronGeometry,
+  Line,
+  LineBasicMaterial,
+  LineSegments,
+  Mesh,
+  MeshBasicMaterial,
+  Points,
+  ShaderMaterial,
+  TubeGeometry,
+  Vector3,
+} from "three";
+import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import { FX_LAYER } from "../../core/render/Post.tsx";
+import { ease, remap } from "../../core/motion/easing.ts";
+import { cached, cyl, sphere, torus, box } from "../../kits/worldforge/geo.ts";
+import { mulberry32 } from "../../kits/worldforge/noise.ts";
+import { canvasTex, phys } from "../mats.ts";
+import { planeG } from "./plane.ts";
+import { HUMAN, resample, inside, type Poly } from "./silhouettes.ts";
+import { BLUE, CYAN, glowMat, noise3, ORANGE, pointsMat } from "./glow.ts";
+
+const fx = (o: { layers: { set: (n: number) => void } } | null) => o?.layers.set(FX_LAYER);
+
+// ── brain shell ─────────────────────────────────────────────────────────────
+
+const ridged = (x: number, y: number, z: number) => {
+  const wx = x + 0.6 * noise3(x * 0.7 + 3, y * 0.7, z * 0.7);
+  const wz = z + 0.6 * noise3(x * 0.7, y * 0.7 + 5, z * 0.7);
+  const a = 1 - Math.abs(2 * noise3(wx, y, wz) - 1);
+  const b = 1 - Math.abs(2 * noise3(wx * 2.1 + 9, y * 2.1, wz * 2.1) - 1);
+  return Math.pow(a, 1.6) * 0.72 + b * 0.28;
+};
+
+export const brainGeo = () =>
+  cached("brainShell", () => {
+    let g: BufferGeometry = new IcosahedronGeometry(1, 6);
+    g.deleteAttribute("normal");
+    g.deleteAttribute("uv");
+    g = mergeVertices(g);
+    const a = g.attributes.position;
+    const fold = new Float32Array(a.count);
+    for (let i = 0; i < a.count; i++) {
+      const v = new Vector3(a.getX(i), a.getY(i), a.getZ(i));
+      const p = new Vector3(v.x * 0.8, v.y * 0.68, v.z * 1.0);
+      // longitudinal fissure between the hemispheres
+      const fis = Math.exp(-((v.x / 0.09) ** 2)) * Math.min(1, Math.max(0, (v.y + 0.25) * 1.6));
+      p.y -= 0.1 * fis;
+      p.x *= 1 + 0.04 * fis;
+      // flatter base, temporal lobes, narrower occipital
+      if (p.y < -0.2) p.y = -0.2 + (p.y + 0.2) * 0.55;
+      const temp = Math.exp(-(((Math.abs(v.x) - 0.85) / 0.25) ** 2) - ((v.y + 0.35) / 0.3) ** 2 - ((v.z - 0.15) / 0.45) ** 2);
+      p.x += Math.sign(v.x) * 0.06 * temp;
+      p.y -= 0.05 * temp;
+      if (v.z < -0.3) p.x *= 1 - 0.1 * (-0.3 - v.z);
+      const f = ridged(v.x * 4.2, v.y * 4.2, v.z * 4.2);
+      fold[i] = f;
+      const n = p.clone().normalize();
+      p.addScaledVector(n, (f - 0.55) * 0.055 * (1 - 0.7 * fis));
+      a.setXYZ(i, p.x, p.y, p.z);
+    }
+    g.setAttribute("fold", new Float32BufferAttribute(fold, 1));
+    g.computeVertexNormals();
+    return g;
+  });
+
+const cerebellumGeo = () =>
+  cached("cerebellum", () => {
+    let g: BufferGeometry = new IcosahedronGeometry(1, 4);
+    g.deleteAttribute("normal");
+    g.deleteAttribute("uv");
+    g = mergeVertices(g);
+    const a = g.attributes.position;
+    const fold = new Float32Array(a.count);
+    for (let i = 0; i < a.count; i++) {
+      const v = new Vector3(a.getX(i), a.getY(i), a.getZ(i));
+      const f = 0.5 + 0.5 * Math.sin(v.y * 34 + v.z * 6);
+      fold[i] = f;
+      const p = new Vector3(v.x * 0.5, v.y * 0.24, v.z * 0.3).addScaledVector(v, (f - 0.5) * 0.015);
+      a.setXYZ(i, p.x, p.y, p.z);
+    }
+    g.setAttribute("fold", new Float32BufferAttribute(fold, 1));
+    g.computeVertexNormals();
+    return g;
+  });
+
+const shellMat = () =>
+  new ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    blending: AdditiveBlending,
+    side: DoubleSide,
+    fog: false,
+    uniforms: {
+      uCyan: { value: new Color(CYAN) },
+      uOrange: { value: new Color(ORANGE) },
+      uTime: { value: 0 },
+      uOpacity: { value: 1 },
+      uOrangeAmt: { value: 1 },
+    },
+    vertexShader: /* glsl */ `attribute float fold; varying vec3 vN; varying vec3 vV; varying float vFold; varying vec3 vP;
+      void main(){ vec4 mv = modelViewMatrix * vec4(position,1.0); vN = normalize(normalMatrix * normal); vV = normalize(-mv.xyz); vFold = fold; vP = position; gl_Position = projectionMatrix * mv; }`,
+    fragmentShader: /* glsl */ `uniform vec3 uCyan; uniform vec3 uOrange; uniform float uTime; uniform float uOpacity; uniform float uOrangeAmt;
+      varying vec3 vN; varying vec3 vV; varying float vFold; varying vec3 vP;
+      void main(){
+        float f = clamp(1.0 - abs(dot(normalize(vN), normalize(vV))), 0.0, 1.0);
+        float rim = f * f;
+        float sulc = 1.0 - smoothstep(0.08, 0.42, vFold);
+        float crest = smoothstep(0.72, 1.0, vFold);
+        vec3 c = uCyan * (0.02 + 0.5 * rim + 0.1 * crest) + vec3(0.2, 0.5, 1.0) * 0.025;
+        float wave = sin(vP.z * 6.0 - uTime * 2.2 + sin(vP.x * 5.0 + vP.y * 3.0) * 1.7);
+        c += uOrange * smoothstep(0.86, 1.0, wave) * sulc * uOrangeAmt * 1.2;
+        c += uCyan * sulc * 0.06;
+        gl_FragColor = vec4(c * uOpacity, 1.0);
+      }`,
+  });
+
+export const BrainShell: React.FC<{ t: number; opacity?: number; orange?: number }> = ({ t, opacity = 1, orange = 1 }) => {
+  const m = useMemo(shellMat, []);
+  const m2 = useMemo(shellMat, []);
+  m.uniforms.uTime.value = t;
+  m.uniforms.uOpacity.value = opacity;
+  m.uniforms.uOrangeAmt.value = orange;
+  m2.uniforms.uTime.value = t + 3;
+  m2.uniforms.uOpacity.value = opacity * 0.8;
+  m2.uniforms.uOrangeAmt.value = orange * 0.5;
+  const stem = useMemo(() => glowMat({ color: CYAN, rim: 0.8, core: 0.05 }), []);
+  (stem.uniforms.uOpacity as { value: number }).value = opacity;
+  return (
+    <group>
+      <mesh geometry={brainGeo()} material={m} ref={fx} renderOrder={5} />
+      <mesh geometry={cerebellumGeo()} material={m2} position={[0, -0.36, -0.72]} ref={fx} renderOrder={5} />
+      <mesh geometry={cyl(0.1, 0.07, 0.55, 20, true)} material={stem} position={[0, -0.55, -0.35]} rotation={[0.35, 0, 0]} ref={fx} renderOrder={5} />
+    </group>
+  );
+};
+
+// ── neuron network ──────────────────────────────────────────────────────────
+
+export type Net = { pts: Vector3[]; edges: [number, number][] };
+export const makeNet = (seed: number, n: number, accept: (p: Vector3) => boolean, rng: () => Vector3, k = 2): Net => {
+  const r = mulberry32(seed);
+  const pts: Vector3[] = [];
+  let guard = 0;
+  while (pts.length < n && guard++ < n * 50) {
+    const p = rng();
+    if (accept(p)) pts.push(p);
+  }
+  const edges: [number, number][] = [];
+  for (let i = 0; i < pts.length; i++) {
+    const d = pts.map((q, j) => [q.distanceToSquared(pts[i]), j] as const).sort((a, b) => a[0] - b[0]);
+    for (let m = 1; m <= k; m++) if (d[m] && (r() < 0.9 || m === 1)) edges.push([i, d[m][1]]);
+  }
+  return { pts, edges };
+};
+
+const inBrain = (p: Vector3) => (p.x / 0.74) ** 2 + ((p.y + 0.03) / 0.58) ** 2 + (p.z / 0.93) ** 2 < 1 && p.y > -0.42;
+
+export const brainNet = (n = 760) =>
+  cached(`brainNet${n}`, () => {
+    const r = mulberry32(17);
+    const net = makeNet(9, n, inBrain, () => new Vector3(r() * 2 - 1, r() * 2 - 1, r() * 2 - 1));
+    const g = new BufferGeometry();
+    g.userData.net = net;
+    return g;
+  });
+
+/** Somas + connections + travelling signals. `pulse` scales signal traffic, `tint` 0 cyan … 1 orange share. */
+export const Network: React.FC<{ net: Net; t: number; opacity?: number; pulse?: number; orangeShare?: number; size?: number; seed?: number }> = ({ net, t, opacity = 1, pulse = 1, orangeShare = 0.25, size = 0.028, seed = 1 }) => {
+  const objs = useMemo(() => {
+    const somaG = new BufferGeometry();
+    const sp: number[] = [], sc: number[] = [];
+    const r = mulberry32(seed);
+    const cy = new Color(CYAN), bl = new Color(BLUE), or = new Color(ORANGE);
+    for (const p of net.pts) {
+      sp.push(p.x, p.y, p.z);
+      const c = r() < 0.12 ? or.clone() : cy.clone().lerp(bl, r() * 0.6);
+      c.multiplyScalar(0.6 + r() * 0.6);
+      sc.push(c.r, c.g, c.b);
+    }
+    somaG.setAttribute("position", new Float32BufferAttribute(sp, 3));
+    somaG.setAttribute("color", new Float32BufferAttribute(sc, 3));
+    const lineG = new BufferGeometry();
+    const lp: number[] = [], lc: number[] = [];
+    for (const [a, b] of net.edges) {
+      const A = net.pts[a], B = net.pts[b];
+      lp.push(A.x, A.y, A.z, B.x, B.y, B.z);
+      const k = 0.25 + r() * 0.35;
+      lc.push(0.25 * k, 0.75 * k, 1.0 * k, 0.25 * k, 0.75 * k, 1.0 * k);
+    }
+    lineG.setAttribute("position", new Float32BufferAttribute(lp, 3));
+    lineG.setAttribute("color", new Float32BufferAttribute(lc, 3));
+    const lineM = new LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.5, blending: AdditiveBlending, depthWrite: false, fog: false });
+    const P = 260;
+    const pulses = Array.from({ length: P }, () => ({ e: Math.floor(r() * net.edges.length), sp: 0.4 + r() * 1.1, ph: r(), orange: r() }));
+    const pulseG = new BufferGeometry();
+    pulseG.setAttribute("position", new Float32BufferAttribute(new Float32Array(P * 3), 3));
+    pulseG.setAttribute("color", new Float32BufferAttribute(new Float32Array(P * 3), 3));
+    return { somaG, lineG, lineM, pulses, pulseG, somaM: pointsMat(size * 2.2), pulseM: pointsMat(size * 2.6) };
+  }, [net, seed, size]);
+  useLayoutEffect(() => {
+    const pos = objs.pulseG.attributes.position as Float32BufferAttribute;
+    const col = objs.pulseG.attributes.color as Float32BufferAttribute;
+    const cy = new Color(CYAN), or = new Color(ORANGE);
+    objs.pulses.forEach((q, i) => {
+      const u = (t * q.sp + q.ph) % 1;
+      const [a, b] = net.edges[(q.e + Math.floor(t * q.sp + q.ph) * 7) % net.edges.length];
+      const A = net.pts[a], B = net.pts[b];
+      pos.setXYZ(i, A.x + (B.x - A.x) * u, A.y + (B.y - A.y) * u, A.z + (B.z - A.z) * u);
+      const c = q.orange < orangeShare ? or : cy;
+      const k = Math.sin(u * Math.PI) * pulse * 1.6;
+      col.setXYZ(i, c.r * k, c.g * k, c.b * k);
+    });
+    pos.needsUpdate = true;
+    col.needsUpdate = true;
+    objs.somaM.opacity = opacity;
+    objs.pulseM.opacity = opacity;
+    objs.lineM.opacity = 0.45 * opacity;
+  });
+  return (
+    <group>
+      <lineSegments geometry={objs.lineG} material={objs.lineM} ref={fx} renderOrder={4} />
+      <points geometry={objs.somaG} material={objs.somaM} ref={fx} renderOrder={6} />
+      <points geometry={objs.pulseG} material={objs.pulseM} ref={fx} renderOrder={7} frustumCulled={false} />
+    </group>
+  );
+};
+
+// ── hero neurons (macro) ───────────────────────────────────────────────────
+
+const neuronGeo = (seed: number) =>
+  cached(`neuron${seed}`, () => {
+    const r = mulberry32(seed);
+    const tubes: BufferGeometry[] = [];
+    const branch = (o: Vector3, dir: Vector3, len: number, rad: number, depth: number) => {
+      const pts = [o.clone()];
+      let p = o.clone(), d = dir.clone();
+      for (let i = 0; i < 5; i++) {
+        d.add(new Vector3(r() - 0.5, r() - 0.5, r() - 0.5).multiplyScalar(0.7)).normalize();
+        p = p.clone().addScaledVector(d, len / 5);
+        pts.push(p);
+      }
+      const curve = new CatmullRomCurve3(pts);
+      const tg = new TubeGeometry(curve, 24, rad, 6, false);
+      // taper
+      const a = tg.attributes.position;
+      for (let i = 0; i < a.count; i++) {
+        const seg = Math.floor(i / 7) / 24;
+        const c = curve.getPoint(Math.min(1, seg));
+        const v = new Vector3(a.getX(i), a.getY(i), a.getZ(i)).sub(c).multiplyScalar(1 - 0.7 * seg).add(c);
+        a.setXYZ(i, v.x, v.y, v.z);
+      }
+      tubes.push(tg);
+      if (depth > 0) for (let k = 0; k < 2; k++) branch(p, d.clone().add(new Vector3(r() - 0.5, r() - 0.5, r() - 0.5)).normalize(), len * 0.62, rad * 0.6, depth - 1);
+    };
+    for (let k = 0; k < 6; k++) {
+      const d = new Vector3(r() - 0.5, r() - 0.5, r() - 0.5).normalize();
+      branch(d.clone().multiplyScalar(0.12), d, 0.55 + r() * 0.3, 0.03, 2);
+    }
+    branch(new Vector3(0, -0.1, 0), new Vector3(0.2, -1, 0.3).normalize(), 1.6, 0.035, 0);
+    const parts = tubes.map((g) => { g.deleteAttribute("uv"); return g.index ? g.toNonIndexed() : g; });
+    const merged = new BufferGeometry();
+    let total = 0;
+    for (const p of parts) total += p.attributes.position.count;
+    const pos = new Float32Array(total * 3), nor = new Float32Array(total * 3);
+    let off = 0;
+    for (const p of parts) {
+      pos.set(p.attributes.position.array as Float32Array, off * 3);
+      nor.set(p.attributes.normal.array as Float32Array, off * 3);
+      off += p.attributes.position.count;
+    }
+    merged.setAttribute("position", new Float32BufferAttribute(pos, 3));
+    merged.setAttribute("normal", new Float32BufferAttribute(nor, 3));
+    return merged;
+  });
+
+export const HeroNeuron: React.FC<{ seed: number; p: [number, number, number]; s: number; color?: string; t: number; opacity?: number }> = ({ seed, p, s, color = CYAN, t, opacity = 1 }) => {
+  const m = useMemo(() => glowMat({ color, rim: 0.9, core: 0.1, power: 1.6 }), [color]);
+  const soma = useMemo(() => glowMat({ color: "#ffffff", rim: 0.8, core: 0.35, power: 1.4 }), []);
+  const halo = useMemo(() => glowMat({ color, rim: 0.0, core: 0.2, power: 1 }), [color]);
+  const beat = 0.75 + 0.25 * Math.sin(t * 2.4 + seed);
+  (m.uniforms.uOpacity as { value: number }).value = opacity;
+  (soma.uniforms.uOpacity as { value: number }).value = opacity * beat;
+  (halo.uniforms.uOpacity as { value: number }).value = opacity * 0.25 * beat;
+  return (
+    <group position={p} scale={s}>
+      <mesh geometry={neuronGeo(seed)} material={m} ref={fx} renderOrder={6} />
+      <mesh geometry={sphere(0.13, 24, 16)} material={soma} ref={fx} renderOrder={7} />
+      <mesh geometry={sphere(0.3, 24, 16)} material={halo} ref={fx} renderOrder={7} />
+    </group>
+  );
+};
+
+// ── optic tunnel ───────────────────────────────────────────────────────────
+
+const tunnelGeo = () =>
+  cached("tunnel", () => {
+    const r = mulberry32(31);
+    const pos: number[] = [], col: number[] = [];
+    for (let f = 0; f < 220; f++) {
+      const r0 = 0.18 + r() * 0.32, a0 = r() * Math.PI * 2, tw = 0.6 + r() * 0.6;
+      const k = 0.4 + r() * 0.6;
+      let prev: Vector3 | null = null;
+      for (let i = 0; i <= 60; i++) {
+        const z = 1.4 + (i / 60) * 5.5;
+        const rr = r0 * (0.65 + 0.35 * Math.min(1, (z - 1.4) / 2.5));
+        const a = a0 + z * tw;
+        const p = new Vector3(Math.cos(a) * rr, Math.sin(a) * rr, z);
+        if (prev) {
+          pos.push(prev.x, prev.y, prev.z, p.x, p.y, p.z);
+          const c = r() < 0.15 ? [1, 0.6, 0.24] : [0.37, 0.89, 1];
+          col.push(c[0] * k, c[1] * k, c[2] * k, c[0] * k, c[1] * k, c[2] * k);
+        }
+        prev = p;
+      }
+    }
+    const g = new BufferGeometry();
+    g.setAttribute("position", new Float32BufferAttribute(pos, 3));
+    g.setAttribute("color", new Float32BufferAttribute(col, 3));
+    return g;
+  });
+
+const OpticTunnel: React.FC<{ t: number; opacity: number }> = ({ t, opacity }) => {
+  const m = useMemo(() => new LineBasicMaterial({ vertexColors: true, transparent: true, blending: AdditiveBlending, depthWrite: false, fog: false }), []);
+  m.opacity = opacity;
+  const streaks = useMemo(() => {
+    const r = mulberry32(5);
+    const g = new BufferGeometry();
+    const n = 300;
+    g.setAttribute("position", new Float32BufferAttribute(new Float32Array(n * 3), 3));
+    const c = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) { const o = r() < 0.2; c.set(o ? [1, 0.6, 0.25] : [0.5, 0.92, 1], i * 3); }
+    g.setAttribute("color", new Float32BufferAttribute(c, 3));
+    return { g, seeds: Array.from({ length: n }, () => [r() * Math.PI * 2, 0.05 + r() * 0.45, r(), 0.6 + r()]), m: pointsMat(0.035) };
+  }, []);
+  useLayoutEffect(() => {
+    const a = streaks.g.attributes.position as Float32BufferAttribute;
+    streaks.seeds.forEach(([ang, rr, ph, sp], i) => {
+      const z = 6.9 - (((t * sp * 2.2 + ph) % 1) * 5.5);
+      a.setXYZ(i, Math.cos(ang + z) * rr, Math.sin(ang + z) * rr, z);
+    });
+    a.needsUpdate = true;
+    streaks.m.opacity = opacity;
+  });
+  return (
+    <group>
+      <lineSegments geometry={tunnelGeo()} material={m} ref={fx} renderOrder={4} />
+      <points geometry={streaks.g} material={streaks.m} ref={fx} frustumCulled={false} renderOrder={6} />
+    </group>
+  );
+};
+
+// ── photo card (the "camera" idea that the brain does not follow) ──────────
+
+const photoTex = () =>
+  canvasTex("photo", 512, 640, (g, w, h) => {
+    g.fillStyle = "#a9a396";
+    g.fillRect(0, 0, w, h);
+    const x0 = 28, y0 = 28, W = w - 56, H = h - 150;
+    const gr = g.createLinearGradient(0, y0, 0, y0 + H);
+    gr.addColorStop(0, "#152034");
+    gr.addColorStop(1, "#0a0f18");
+    g.fillStyle = gr;
+    g.fillRect(x0, y0, W, H);
+    g.strokeStyle = "rgba(120,150,200,0.35)";
+    g.lineWidth = 2;
+    const vx = x0 + W * 0.55, vy = y0 + H * 0.45;
+    for (const [ax, ay] of [[x0, y0], [x0 + W, y0], [x0, y0 + H], [x0 + W, y0 + H]]) { g.beginPath(); g.moveTo(ax, ay); g.lineTo(vx + (ax - vx) * 0.2, vy + (ay - vy) * 0.2); g.stroke(); }
+    g.fillStyle = "#7d9fd8";
+    g.fillRect(vx - 40, vy - 70, 80, 95);
+    g.fillStyle = "#04060a";
+    g.beginPath(); g.arc(vx, vy - 52, 13, 0, Math.PI * 2); g.fill();
+    g.fillRect(vx - 22, vy - 38, 44, 92);
+    g.fillRect(vx - 12, vy + 54, 9, 22); g.fillRect(vx + 3, vy + 54, 9, 22);
+    g.fillStyle = "#3a3f47";
+    g.font = "600 30px Manrope, sans-serif";
+    g.textAlign = "center";
+    g.fillText("02:01", w / 2, h - 62);
+  });
+
+// ── pareidolia point cloud ─────────────────────────────────────────────────
+
+/** The coat stand as the eye actually received it: helmet, coat, sleeves, tote, pole, boots. */
+const standPoints = () =>
+  cached("standPts", () => {
+    const r = mulberry32(77);
+    const inStand = (x: number, y: number) =>
+      Math.hypot(x - 0.0, y - 0.9) < 0.085 ||
+      (y > 0.32 && y < 0.82 && Math.abs(x) < 0.17 + (0.82 - y) * 0.05 && !(y > 0.78 && Math.abs(x) > 0.12)) ||
+      (y > 0.48 && y < 0.8 && Math.abs(Math.abs(x) - 0.2) < 0.035) ||
+      (x < -0.18 && x > -0.27 && y > 0.4 && y < 0.62) ||
+      (Math.abs(x) < 0.012 && y > 0.12 && y < 0.34) ||
+      (y < 0.13 && Math.abs(Math.abs(x) - 0.05) < 0.035);
+    const pos: number[] = [], col: number[] = [], home: number[] = [];
+    while (pos.length < 2200 * 3) {
+      const x = r() - 0.5, y = r() * 1.02;
+      if (!inStand(x, y)) continue;
+      const z = (r() - 0.5) * 0.12;
+      pos.push(x, y, z);
+      home.push(x, y, z);
+      const k = 0.9 + r() * 0.8;
+      col.push(1.0 * k, 0.95 * k, 0.85 * k);
+    }
+    const g = new BufferGeometry();
+    g.setAttribute("position", new Float32BufferAttribute(pos, 3));
+    g.setAttribute("color", new Float32BufferAttribute(col, 3));
+    g.userData.home = home;
+    return g;
+  });
+
+const lineFrom = (poly: Poly, z = 0.02) => {
+  const g = new BufferGeometry();
+  const pts = resample(poly, 220);
+  g.setAttribute("position", new Float32BufferAttribute(pts.flatMap(([x, y]) => [x, y, z]), 3));
+  return g;
+};
+
+export const PatternCloud: React.FC<{ t: number; t0: number }> = ({ t, t0 }) => {
+  const pts = standPoints();
+  const m = useMemo(() => pointsMat(0.026), []);
+  const lineG = useMemo(() => lineFrom(HUMAN), []);
+  const lineM = useMemo(() => new LineBasicMaterial({ color: ORANGE, transparent: true, blending: AdditiveBlending, depthWrite: false, fog: false }), []);
+  const glowG = useMemo(() => {
+    const g = new BufferGeometry();
+    const p = resample(HUMAN, 90);
+    g.setAttribute("position", new Float32BufferAttribute(p.flatMap(([x, y]) => [x, y, 0.02]), 3));
+    g.setAttribute("color", new Float32BufferAttribute(p.flatMap(() => [1, 0.55, 0.2]), 3));
+    return g;
+  }, []);
+  const glowM = useMemo(() => pointsMat(0.03), []);
+  const u = t - t0;
+  // points flicker into view blurry (0..1.2), the outline is drawn (2.7..3.4), holds, then flickers out (4.4..5.2)
+  const appear = ease.out(remap(u, 0, 1.2));
+  const draw = ease.inOut(remap(u, 2.6, 3.5));
+  const flick = u > 4.35 && u < 4.75 ? (Math.floor(u * 22) % 2 ? 0.25 : 1) : 1;
+  const out = 1 - ease.inOut(remap(u, 4.7, 5.25));
+  useLayoutEffect(() => {
+    const a = pts.attributes.position as Float32BufferAttribute;
+    const home = pts.userData.home as number[];
+    const jit = 0.06 * (1 - ease.out(remap(u, 0, 2.4)));
+    for (let i = 0; i < a.count; i++) {
+      const s = Math.sin(i * 12.9898 + t * 3.1) * 0.5;
+      a.setXYZ(i, home[i * 3] + s * jit, home[i * 3 + 1] + Math.cos(i * 4.1 + t * 2.3) * 0.5 * jit, home[i * 3 + 2]);
+    }
+    a.needsUpdate = true;
+    m.opacity = appear * (0.75 + 0.25 * Math.sin(t * 9));
+    lineG.setDrawRange(0, Math.floor(220 * draw));
+    lineM.opacity = draw * flick * out;
+    glowM.opacity = draw * flick * out * 0.9;
+  });
+  return (
+    <group>
+      <points geometry={pts} material={m} ref={fx} frustumCulled={false} renderOrder={6} />
+      <primitive object={useMemo(() => new Line(lineG, lineM), [lineG, lineM])} ref={fx} renderOrder={8} />
+      <points geometry={glowG} material={glowM} ref={fx} renderOrder={8} />
+    </group>
+  );
+};
+
+/** Wall socket with a face drawn over it. */
+export const SocketFace: React.FC<{ t: number; t0: number }> = ({ t, t0 }) => {
+  const u = t - t0;
+  const ring = useMemo(() => {
+    const mk = (cx: number, cy: number, r: number, a0 = 0, a1 = Math.PI * 2, n = 48) => {
+      const g = new BufferGeometry();
+      const p: number[] = [];
+      for (let i = 0; i <= n; i++) { const a = a0 + ((a1 - a0) * i) / n; p.push(cx + Math.cos(a) * r, cy + Math.sin(a) * r, 0.09); }
+      g.setAttribute("position", new Float32BufferAttribute(p, 3));
+      return g;
+    };
+    return [mk(-0.06, 0.02, 0.042), mk(0.06, 0.02, 0.042), mk(0, -0.02, 0.105, Math.PI * 1.22, Math.PI * 1.78)];
+  }, []);
+  const lm = useMemo(() => new LineBasicMaterial({ color: ORANGE, transparent: true, blending: AdditiveBlending, depthWrite: false, fog: false }), []);
+  const draw = ease.inOut(remap(u, 0.5, 1.3));
+  lm.opacity = draw;
+  ring.forEach((g) => g.setDrawRange(0, Math.floor(49 * draw)));
+  const plate = phys("bigPlate", { color: "#8f99a4", roughness: 0.45, clearcoat: 0.4 });
+  const holeM = phys("bigHole", { color: "#0d0f12", roughness: 0.9 });
+  const lines = useMemo(() => ring.map((g) => new Line(g, lm)), [ring, lm]);
+  return (
+    <group rotation={[0, 0.25 * (1 - ease.out(remap(u, 0, 2.4))), 0]}>
+      <mesh geometry={box(0.5, 0.5, 0.06, 0.04)} material={plate} castShadow />
+      <mesh geometry={cyl(0.17, 0.17, 0.05, 48)} material={phys("bigRecess", { color: "#d9dde1", roughness: 0.5 })} position={[0, 0, 0.03]} rotation={[Math.PI / 2, 0, 0]} />
+      {[-0.06, 0.06].map((x) => (
+        <mesh key={x} geometry={cyl(0.022, 0.022, 0.06, 20)} material={holeM} position={[x, 0.02, 0.04]} rotation={[Math.PI / 2, 0, 0]} />
+      ))}
+      <mesh geometry={box(0.08, 0.012, 0.02, 0.004)} material={phys("ground", { color: "#a9adb2", metalness: 0.9, roughness: 0.3 })} position={[0, -0.1, 0.06]} />
+      {lines.map((l, i) => <primitive key={i} object={l} ref={fx} renderOrder={8} />)}
+    </group>
+  );
+};
+
+// ── backdrop ───────────────────────────────────────────────────────────────
+
+export const NeuralBackdrop: React.FC<{ top: string; bottom: string; glow: string; r?: number }> = ({ top, bottom, glow, r = 140 }) => {
+  const m = useMemo(
+    () =>
+      new ShaderMaterial({
+        side: 1, depthWrite: false, fog: false,
+        uniforms: { uTop: { value: new Color(top) }, uBot: { value: new Color(bottom) }, uGlow: { value: new Color(glow) } },
+        vertexShader: /* glsl */ `varying vec3 vD; void main(){ vD = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+        fragmentShader: /* glsl */ `uniform vec3 uTop; uniform vec3 uBot; uniform vec3 uGlow; varying vec3 vD;
+          float h(vec3 p){ return fract(sin(dot(p, vec3(12.9898,78.233,37.719))) * 43758.5453); }
+          void main(){ vec3 d = normalize(vD); vec3 c = mix(uBot, uTop, d.y * 0.5 + 0.5);
+            c += uGlow * pow(max(0.0, 1.0 - length(d.xy - vec2(0.0, 0.05))), 3.0) * 0.35 * smoothstep(-0.2, 0.6, d.z);
+            gl_FragColor = vec4(c, 1.0); }`,
+      }),
+    [top, bottom, glow],
+  );
+  (m.uniforms.uTop.value as Color).set(top);
+  (m.uniforms.uBot.value as Color).set(bottom);
+  (m.uniforms.uGlow.value as Color).set(glow);
+  return <mesh geometry={sphere(r, 32, 16)} material={m} renderOrder={-10} />;
+};
+
+/** Dust motes of light drifting in the neural space. */
+export const Motes: React.FC<{ t: number; n?: number; R?: number; opacity?: number }> = ({ t, n = 500, R = 4, opacity = 1 }) => {
+  const o = useMemo(() => {
+    const r = mulberry32(55);
+    const g = new BufferGeometry();
+    g.setAttribute("position", new Float32BufferAttribute(new Float32Array(n * 3), 3));
+    const c = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) { const k = 0.2 + r() * 0.5; const orn = r() < 0.15; c.set(orn ? [k, 0.55 * k, 0.2 * k] : [0.4 * k, 0.8 * k, k], i * 3); }
+    g.setAttribute("color", new Float32BufferAttribute(c, 3));
+    return { g, s: Array.from({ length: n }, () => [r() * 2 - 1, r() * 2 - 1, r() * 2 - 1, r() * 6]), m: pointsMat(0.02 * R) };
+  }, [n, R]);
+  useLayoutEffect(() => {
+    const a = o.g.attributes.position as Float32BufferAttribute;
+    o.s.forEach(([x, y, z, ph], i) => a.setXYZ(i, (x + Math.sin(t * 0.21 + ph) * 0.05) * R, (y + ((t * 0.02 + ph) % 2) * 0.05) * R, (z + Math.cos(t * 0.17 + ph) * 0.05) * R));
+    a.needsUpdate = true;
+    o.m.opacity = opacity;
+  });
+  return <points geometry={o.g} material={o.m} ref={fx} frustumCulled={false} renderOrder={3} />;
+};
+
+// ── streams into the prediction core ───────────────────────────────────────
+
+export const Stream: React.FC<{ curve: CatmullRomCurve3; color: string; t: number; on: number; n?: number; thin?: boolean }> = ({ curve, color, t, on, n = 90, thin }) => {
+  const tube = useMemo(() => new TubeGeometry(curve, 80, thin ? 0.004 : 0.012, 6, false), [curve, thin]);
+  const tm = useMemo(() => glowMat({ color, rim: 1.2, core: 0.25 }), [color]);
+  (tm.uniforms.uOpacity as { value: number }).value = on * 0.8;
+  const o = useMemo(() => {
+    const g = new BufferGeometry();
+    g.setAttribute("position", new Float32BufferAttribute(new Float32Array(n * 3), 3));
+    const c = new Color(color);
+    g.setAttribute("color", new Float32BufferAttribute(Array.from({ length: n }, () => [c.r * 1.5, c.g * 1.5, c.b * 1.5]).flat(), 3));
+    return { g, m: pointsMat(thin ? 0.022 : 0.05) };
+  }, [n, color, thin]);
+  useLayoutEffect(() => {
+    const a = o.g.attributes.position as Float32BufferAttribute;
+    for (let i = 0; i < n; i++) {
+      const u = ((i / n) + t * 0.32) % 1;
+      const p = curve.getPoint(u);
+      a.setXYZ(i, p.x + Math.sin(i * 7.3) * 0.02, p.y + Math.cos(i * 3.1) * 0.02, p.z);
+    }
+    a.needsUpdate = true;
+    o.m.opacity = on;
+  });
+  return (
+    <group>
+      <mesh geometry={tube} material={tm} ref={fx} renderOrder={6} />
+      <points geometry={o.g} material={o.m} ref={fx} frustumCulled={false} renderOrder={7} />
+    </group>
+  );
+};
+
+export const CORE: [number, number, number] = [0, 0.06, -0.15];
+const INFO_CURVE = new CatmullRomCurve3([new Vector3(0.05, 0.12, 1.25), new Vector3(0.25, 0.2, 0.7), new Vector3(0.1, 0.1, 0.2), new Vector3(...CORE)]);
+const EXP_CURVE = new CatmullRomCurve3([new Vector3(-0.42, -0.32, -0.55), new Vector3(-0.35, -0.15, -0.2), new Vector3(-0.15, 0.0, -0.1), new Vector3(...CORE)]);
+
+const PredictionCore: React.FC<{ t: number; on: number; info: number; exp: number }> = ({ t, on, info, exp }) => {
+  const m = useMemo(() => glowMat({ color: "#ffd9a8", rim: 0.9, core: 0.55, power: 1.5 }), []);
+  const h = useMemo(() => glowMat({ color: ORANGE, rim: 0, core: 0.3, power: 1 }), []);
+  const ringM = useMemo(() => glowMat({ color: CYAN, rim: 1, core: 0.6 }), []);
+  const beat = 0.8 + 0.2 * Math.sin(t * 5.2) + 0.25 * info * exp;
+  (m.uniforms.uOpacity as { value: number }).value = on * beat;
+  (h.uniforms.uOpacity as { value: number }).value = on * 0.22 * beat;
+  (ringM.uniforms.uOpacity as { value: number }).value = on * 0.6;
+  return (
+    <group>
+      <group position={CORE}>
+        <mesh geometry={sphere(0.06, 32, 20)} material={m} ref={fx} renderOrder={8} />
+        <mesh geometry={sphere(0.17, 32, 20)} material={h} ref={fx} renderOrder={8} />
+        <mesh geometry={torus(0.12, 0.003, 6, 64)} material={ringM} rotation={[Math.PI / 2 + Math.sin(t) * 0.3, t * 0.7, 0]} ref={fx} renderOrder={8} />
+        <mesh geometry={torus(0.15, 0.002, 6, 64)} material={ringM} rotation={[0.4, -t * 0.5, 0.3]} ref={fx} renderOrder={8} />
+      </group>
+      <Stream curve={INFO_CURVE} color={CYAN} t={t} on={info} />
+      <Stream curve={EXP_CURVE} color={ORANGE} t={t * 0.8 + 0.3} on={exp} />
+    </group>
+  );
+};
+
+// ── the whole neural set for scene 5 ───────────────────────────────────────
+
+export const BrainSet: React.FC<{ t: number }> = ({ t }) => {
+  const net = brainNet().userData.net as Net;
+  const tunnel = 1 - ease.inOut(remap(t, 34.3, 35.0));
+  const photoIn = ease.out(remap(t, 35.5, 36.1));
+  const photoGone = ease.inOut(remap(t, 36.6, 37.5));
+  // dimmer while the camera is inside it, and behind the pattern / socket close-ups
+  const shell = ease.inOut(remap(t, 33.6, 34.8)) * (1 - 0.72 * ease.inOut(remap(t, 37.2, 37.9)) + 0.1 * ease.inOut(remap(t, 42.8, 43.6)));
+  const info = ease.inOut(remap(t, 37.9, 38.8));
+  const heroOn = ease.inOut(remap(t, 36.5, 37.3)) * (1 - ease.inOut(remap(t, 42.7, 43.3)));
+  const exp = ease.inOut(remap(t, 39.8, 40.6));
+  const photo = useMemo(() => phys("photoCard", { map: photoTex(), roughness: 0.5, emissive: "#ffffff", emissiveMap: photoTex(), emissiveIntensity: 0.08, transparent: true }), []);
+  photo.opacity = photoIn * (1 - photoGone);
+  return (
+    <group>
+      <NeuralBackdrop top="#0f3b66" bottom="#06162b" glow="#3aa6e8" r={60} />
+      <Motes t={t} R={4} />
+      {t < 35.2 ? <OpticTunnel t={t} opacity={tunnel} /> : null}
+      <BrainShell t={t} opacity={shell} orange={t > 38 ? 1.2 : 0.6} />
+      <Network net={net} t={t} opacity={Math.min(1, shell * 1.3) * (t > 42.9 ? 0.55 : 1)} pulse={1 + info + exp} orangeShare={0.2 + 0.25 * exp} />
+      {t > 36.5 && t < 43.4 ? (
+        <>
+          <HeroNeuron seed={3} p={[0.62, 0.34, 0.18]} s={0.3} t={t} opacity={heroOn} />
+          <HeroNeuron seed={7} p={[-0.32, 0.05, 0.25]} s={0.28} color={ORANGE} t={t} opacity={heroOn} />
+          <HeroNeuron seed={11} p={[0.2, -0.18, -0.35]} s={0.3} t={t} opacity={heroOn} />
+          <PredictionCore t={t} on={ease.inOut(remap(t, 37.0, 37.8)) * (1 - ease.inOut(remap(t, 42.8, 43.3)))} info={info} exp={exp} />
+        </>
+      ) : null}
+      {photo.opacity > 0.01 ? (
+        <mesh geometry={planeG(0.3, 0.37)} material={photo} position={[0.45 - photoGone * 0.3, 0.25 - photoGone * 0.12, 2.2 - photoGone * 0.8]} rotation={[0.02, 0.25 + photoGone * 0.2, 0.05]} />
+      ) : null}
+      {t > 36.6 && t < 37.8 ? <PhotoDust t={t} /> : null}
+      {t > 42.9 && t < 48.4 ? (
+        <group position={[0, -0.32, 1.55]} scale={0.6}>
+          <PatternCloud t={t} t0={43.0} />
+        </group>
+      ) : null}
+      {t > 48.2 ? (
+        <group position={[0, 0.0, 1.62]} scale={0.55}>
+          <SocketFace t={t} t0={48.4} />
+        </group>
+      ) : null}
+    </group>
+  );
+};
+
+const PhotoDust: React.FC<{ t: number }> = ({ t }) => {
+  const o = useMemo(() => {
+    const r = mulberry32(91);
+    const n = 600;
+    const g = new BufferGeometry();
+    g.setAttribute("position", new Float32BufferAttribute(new Float32Array(n * 3), 3));
+    const c: number[] = [];
+    for (let i = 0; i < n; i++) { const w = r() < 0.5; c.push(w ? 0.9 : 0.4, w ? 0.9 : 0.75, 1); }
+    g.setAttribute("color", new Float32BufferAttribute(c, 3));
+    return { g, s: Array.from({ length: n }, () => [r() - 0.5, r() - 0.5, r(), r()]), m: pointsMat(0.012) };
+  }, []);
+  useLayoutEffect(() => {
+    const u = ease.inOut(remap(t, 36.6, 37.8));
+    const a = o.g.attributes.position as Float32BufferAttribute;
+    o.s.forEach(([x, y, d, w], i) => {
+      const k = Math.min(1, u * (1 + w));
+      a.setXYZ(i, 0.45 + x * 0.3 * (1 - k * 0.8) - k * 0.4, 0.25 + y * 0.37 * (1 - k * 0.8) - k * 0.2, 2.2 - k * (1.2 + d * 0.7));
+    });
+    a.needsUpdate = true;
+    o.m.opacity = 1 - ease.in(remap(t, 37.3, 37.8));
+  });
+  return <points geometry={o.g} material={o.m} ref={fx} frustumCulled={false} renderOrder={8} />;
+};
+
+export { inside, Mesh, MeshBasicMaterial, Points, LineSegments };
+
+==== 7055 project/src/core/render/Post.tsx
+// Camera + finishing chain (from PRECISION; proven in PRECISION, TIMEFORGE and BUILDFORGE).
+// The rig applies the shot for this frame before R3F advances, then the composer renders: scene (MSAA) → ground-truth AO → depth of field → restrained
+// bloom → Khronos PBR Neutral tone mapping → grade (warmth, vignette, fine grain).
+
+import React, { useLayoutEffect, useMemo } from "react";
+import { useFrame, useThree } from "@react-three/fiber";
+import { type Camera, HalfFloatType, NeutralToneMapping, PerspectiveCamera, Vector2, WebGLRenderTarget } from "three";
+import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
+import { GTAOPass } from "three/examples/jsm/postprocessing/GTAOPass.js";
+import { BokehPass } from "three/examples/jsm/postprocessing/BokehPass.js";
+import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
+import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
+import { ShaderPass } from "three/examples/jsm/postprocessing/ShaderPass.js";
+import type { Pass } from "three/examples/jsm/postprocessing/Pass.js";
+
+/**
+ * Render layer for additive / volumetric effects (light shafts, glows, halos, beams). Put such
+ * meshes on this layer ONLY (`mesh.layers.set(FX_LAYER)`): the camera still renders them, but the
+ * depth-based passes (GTAO, depth of field) skip them. Large transparent volumes on the default
+ * layer corrupt those passes and can silently blank the whole frame.
+ */
+export const FX_LAYER = 1;
+
+/** Run a pass with the FX layer hidden from the camera (depth/normal passes must not see effects). */
+export const withoutFx = <P extends Pass>(pass: P, camera: Camera): P => {
+  const render = pass.render.bind(pass);
+  pass.render = (renderer, writeBuffer, readBuffer, deltaTime, maskActive) => {
+    camera.layers.disable(FX_LAYER);
+    try {
+      render(renderer, writeBuffer, readBuffer, deltaTime, maskActive);
+    } finally {
+      camera.layers.enable(FX_LAYER);
+    }
+  };
+  return pass;
+};
+
+export type Shot = {
+  pos: [number, number, number];
+  target: [number, number, number];
+  fov: number;
+  roll?: number;
+  /** Focus distance (world units) and lens aperture for the bokeh pass. */
+  focus: number;
+  aperture: number;
+  maxBlur: number;
+  exposure: number;
+};
+
+export const CameraRig: React.FC<{ shot: Shot; near?: number; far?: number }> = ({ shot, near = 1, far = 900 }) => {
+  const { camera, gl } = useThree();
+  useLayoutEffect(() => {
+    const cam = camera as PerspectiveCamera;
+    cam.position.set(...shot.pos);
+    cam.up.set(Math.sin(shot.roll ?? 0), Math.cos(shot.roll ?? 0), 0);
+    cam.lookAt(...shot.target);
+    cam.fov = shot.fov;
+    cam.near = near;
+    cam.far = far;
+    cam.updateProjectionMatrix();
+    cam.updateMatrixWorld();
+    cam.layers.enable(FX_LAYER);
+    gl.toneMapping = NeutralToneMapping;
+    gl.toneMappingExposure = shot.exposure;
+  }, [shot, camera, gl, near, far]);
+  return null;
+};
+
+/**
+ * Replaces non-finite pixels (NaN/Inf from a faulty custom shader) right after the scene render.
+ * Without it, bloom spreads a single NaN pixel across the whole frame and the frame renders blank
+ * with no error — found in testing with a custom light-shaft shader.
+ */
+const NanGuardShader = {
+  uniforms: { tDiffuse: { value: null } },
+  vertexShader: /* glsl */ `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+  fragmentShader: /* glsl */ `uniform sampler2D tDiffuse; varying vec2 vUv;
+    void main(){ vec4 c = texture2D(tDiffuse, vUv);
+      if (any(isnan(c)) || any(isinf(c))) c = vec4(0.0, 0.0, 0.0, 1.0);
+      gl_FragColor = clamp(c, 0.0, 64.0); }`,
+};
+
+const GradeShader = {
+  uniforms: {
+    tDiffuse: { value: null },
+    uTime: { value: 0 },
+    uVignette: { value: 0.14 },
+    uGrain: { value: 0.012 },
+    uRes: { value: new Vector2(1080, 1920) },
+  },
+  vertexShader: /* glsl */ `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+  fragmentShader: /* glsl */ `
+    uniform sampler2D tDiffuse; uniform float uTime; uniform float uVignette; uniform float uGrain; uniform vec2 uRes;
+    varying vec2 vUv;
+    float hash(vec2 p){ p = fract(p * vec2(443.897, 441.423)); p += dot(p, p.yx + 19.19); return fract((p.x + p.y) * p.x); }
+    void main(){
+      vec4 c = texture2D(tDiffuse, vUv);
+      float l = dot(c.rgb, vec3(0.2126, 0.7152, 0.0722));
+      // ivory highlights, a breath of cool in the shadows
+      c.rgb += smoothstep(0.6, 1.0, l) * vec3(0.002, 0.001, -0.003);
+      c.rgb += (1.0 - smoothstep(0.0, 0.5, l)) * vec3(-0.004, 0.0, 0.006);
+      // gentle S-curve: deeper form shadows without crushing the whites
+      c.rgb = mix(c.rgb, c.rgb * c.rgb * (3.0 - 2.0 * c.rgb), 0.24);
+      vec2 d = (vUv - 0.5) * vec2(1.0, 1.25);
+      c.rgb *= 1.0 - uVignette * smoothstep(0.35, 0.95, length(d));
+      float g = hash(vUv * uRes + uTime * 17.0) - 0.5;
+      c.rgb += g * uGrain;
+      gl_FragColor = c;
+    }`,
+};
+
+export const Post: React.FC<{ shot: Shot; frame: number; ao?: boolean; aoRadius?: number }> = ({ shot, frame, ao = true, aoRadius = 0.28 }) => {
+  const { gl, scene, camera, size } = useThree();
+  const chain = useMemo(() => {
+    const w = size.width, h = size.height;
+    const rt = new WebGLRenderTarget(w, h, { type: HalfFloatType, samples: 4 });
+    const composer = new EffectComposer(gl, rt);
+    composer.setPixelRatio(1);
+    composer.setSize(w, h);
+    composer.addPass(new RenderPass(scene, camera));
+    composer.addPass(new ShaderPass(NanGuardShader));
+    if (ao) {
+      const gtao = new GTAOPass(scene, camera, w, h);
+      gtao.blendIntensity = 1.0;
+      gtao.updateGtaoMaterial({ radius: aoRadius, distanceExponent: 1.8, thickness: 0.5, scale: 1.0, samples: 16, distanceFallOff: 1.0, screenSpaceRadius: false });
+      gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 5, rings: 2, samples: 16 });
+      composer.addPass(withoutFx(gtao, camera));
+    }
+    const dof = withoutFx(new BokehPass(scene, camera, { focus: 10, aperture: 0.002, maxblur: 0.008 }), camera);
+    composer.addPass(dof);
+    const bloom = new UnrealBloomPass(new Vector2(w, h), 0.14, 0.45, 2.2);
+    composer.addPass(bloom);
+    composer.addPass(new OutputPass());
+    const grade = new ShaderPass(GradeShader);
+    grade.uniforms.uRes.value.set(w, h);
+    composer.addPass(grade);
+    return { composer, dof, grade };
+  }, [gl, scene, camera, size.width, size.height, ao, aoRadius]);
+
+  useLayoutEffect(() => {
+    const u = chain.dof.uniforms as unknown as Record<string, { value: number }>;
+    u.focus.value = shot.focus;
+    u.aperture.value = shot.aperture;
+    u.maxblur.value = shot.maxBlur;
+    chain.dof.enabled = shot.maxBlur > 0 && shot.aperture > 0;
+    chain.grade.uniforms.uTime.value = frame % 997;
+  }, [frame, chain, shot]);
+
+  useFrame(() => {
+    chain.composer.render();
+  }, 1);
+  return null;
+};
+
+==== 26422 project/src/director/actions.ts
+// Acting library: every action is a pure function (segment, film time) → Pose for the procedural rig.
+// Postures (stand / sit / lie / bedsit) give the base body; actions layer head, arms, face and timing on
+// top. Blinks, saccades, weight shift and breathing keep everyone alive between actions.
+
+import { blend, FACE0, lerpN, phoneArm, restPose, runCycle, walkCycle, type Face, type HoldKind, type Pose } from "../cine/character/pose.ts";
+import { fromChest, lookAt, toChest, walkState, type PlanPath } from "../cine/character/rig.ts";
+import type { CharSpec } from "../cine/character/Character.tsx";
+import type { V3 } from "../worlds/types.ts";
+import type { ActionName, FaceName } from "./story.ts";
+
+const face = (o: Partial<Face>): Face => ({ ...FACE0, ...o });
+export const FACE: Record<FaceName, Face> = {
+  neutral: face({}),
+  calm: face({ lid: 0.78, mouth: 0.1 }),
+  alert: face({ browUp: 0.55, browIn: 0.2, lid: 1.0, mouth: -0.05 }),
+  fear: face({ browUp: 0.9, browIn: 0.85, lid: 1.1, mouth: -0.3, open: 0.12 }),
+  panic: face({ browUp: 1, browIn: 1, lid: 1.3, mouth: -0.4, open: 0.5 }),
+  squint: face({ browUp: 0.15, browIn: 0.9, lid: 0.66, mouth: -0.2, open: 0.05 }),
+  read: face({ browUp: 0.35, browIn: 0.4, lid: 0.8, mouth: -0.1, eyeY: -0.25 }),
+  sleep: face({ lid: 0, mouth: 0.05 }),
+  drowsy: face({ lid: 0.45, browUp: 0.1, mouth: 0 }),
+  smile: face({ mouth: 0.55, lid: 0.8, browUp: 0.15 }),
+  laugh: face({ mouth: 0.9, open: 0.55, lid: 0.45, browUp: 0.3 }),
+  sad: face({ browUp: 0.45, browIn: 0.9, lid: 0.7, mouth: -0.45 }),
+  think: face({ browUp: 0.3, browIn: 0.5, lid: 0.8, mouth: -0.1, eyeX: 0.15, eyeY: 0.18 }),
+  uneasy: face({ browUp: 0.4, browIn: 0.7, lid: 0.95, mouth: -0.15 }),
+  serious: face({ browUp: 0.2, browIn: 0.4, lid: 0.85, mouth: -0.05 }),
+  relief: face({ browUp: 0.3, browIn: -0.1, lid: 0.82, mouth: 0.5, open: 0.06 }),
+  surprised: face({ browUp: 1, browIn: 0.2, lid: 1.25, mouth: -0.1, open: 0.35 }),
+  curious: face({ browUp: 0.55, browIn: 0.2, lid: 0.95, mouth: 0.1 }),
+};
+
+export const DEFAULT_FACE: Partial<Record<ActionName, FaceName>> = {
+  stand: "calm", look: "alert", turn: "alert", walk: "calm", run: "panic", startle: "surprised", freeze: "fear", peer: "squint",
+  point: "serious", reach: "serious", wave: "smile", phone: "read", binoculars: "squint", raise: "alert", think: "think", nod: "calm",
+  shake: "serious", sigh: "relief", talk: "serious", shiver: "uneasy", sit: "calm", standUp: "calm", write: "read", lie: "calm",
+  sleep: "sleep", wake: "drowsy", sitUp: "drowsy", push: "calm", pickUp: "calm", putDown: "calm", give: "smile", receive: "smile", open: "calm", close: "calm", kneel: "calm",
+};
+
+export type Posture = "stand" | "sit" | "lie" | "bedsit";
+export type CState = { x: number; z: number; y: number; yaw: number; posture: Posture; seat?: number; bedHead?: [number, number]; bedY?: number; on?: string; onT?: number };
+
+export type Seg = {
+  who: string;
+  act: ActionName;
+  t0: number;
+  t1: number;
+  from: CState;
+  to: CState;
+  path?: PlanPath;
+  moveT0?: number;
+  moveT1?: number;
+  target?: V3;
+  face: FaceName;
+  hold: HoldKind | null;
+  seed: number;
+  /** terrain height under the feet (exteriors with hills) */
+  floor?: (x: number, z: number) => number;
+  /** both hands on world points (push handles), weight 0..1 */
+  hands?: (t: number) => { L: V3; R: V3; w: number } | null;
+  /** carrying an object in the right hand */
+  carry?: (t: number) => boolean;
+  /** seated on / riding an object that moves: world displacement of the seat since the segment began */
+  ride?: (t: number) => { dx: number; dz: number; dyaw: number; px: number; pz: number } | null;
+  /** the same hand gesture again soon after the last one: played with the head only */
+  again?: boolean;
+};
+
+const clamp01 = (x: number) => Math.min(1, Math.max(0, x));
+const ss = (a: number, b: number, x: number) => { const k = clamp01((x - a) / (b - a)); return k * k * (3 - 2 * k); };
+const wrap = (a: number) => { while (a > Math.PI) a -= Math.PI * 2; while (a < -Math.PI) a += Math.PI * 2; return a; };
+export const yawTo = (x: number, z: number, p: V3) => Math.atan2(p[0] - x, p[2] - z);
+
+// ── postures ────────────────────────────────────────────────────────────────
+
+const seated = (st: CState, c: CharSpec): Pose => {
+  const p = restPose();
+  Object.assign(p, { x: st.x, z: st.z, yaw: st.yaw, y: st.y + (st.seat ?? 0.45) - 0.96 * c.scale });
+  p.legL = { sw: 1.45, ab: 0.12, tw: 0, kn: 1.5, an: 0.1 };
+  p.legR = { sw: 1.4, ab: 0.08, tw: 0, kn: 1.55, an: 0.1 };
+  p.chest = [0.06, 0, 0];
+  p.armL = { ...p.armL, sw: 0.55, el: 1.0, ab: 0.15 };
+  p.armR = { ...p.armR, sw: 0.55, el: 1.0, ab: 0.15 };
+  return p;
+};
+
+const lying = (st: CState, c: CharSpec): Pose => {
+  const p = restPose();
+  const head = st.bedHead ?? [st.x, st.z];
+  const dir = [head[0] - st.x, head[1] - st.z], L = Math.hypot(dir[0], dir[1]) || 1;
+  const ux = dir[0] / L, uz = dir[1] / L;
+  // hips sit ~0.74 body-units from the head end; the body's up axis points at the head
+  Object.assign(p, { x: head[0] - ux * 0.74 * c.scale, z: head[1] - uz * 0.74 * c.scale, y: (st.bedY ?? 0.55) + st.y + 0.1 - 0.96 * c.scale, yaw: Math.atan2(-ux, -uz) });
+  p.hips = [-Math.PI / 2, 0, 0];
+  p.neck = [0.3, 0, 0];
+  p.head = [0.12, 0.15, 0.05];
+  p.armL = { ...p.armL, sw: 0.05, ab: 0.1, el: 0.35 };
+  p.armR = { ...p.armR, sw: 0.0, ab: 0.08, el: 0.3 };
+  p.legL = { ...p.legL, sw: 0.02, kn: 0.12 };
+  p.legR = { ...p.legR, sw: 0.0, ab: 0.08, kn: 0.25 };
+  p.breath = 0.8;
+  return p;
+};
+
+const bedSit = (st: CState, c: CharSpec): Pose => {
+  const p = lying(st, c);
+  p.hips = [0, 0, 0];
+  p.y += 0.02;
+  p.spine = [0.12, 0, 0];
+  p.neck = [0.1, 0, 0];
+  p.head = [0.1, 0, 0];
+  p.legL = { ...p.legL, sw: Math.PI / 2 - 0.12, kn: 0.35 };
+  p.legR = { ...p.legR, sw: Math.PI / 2 - 0.1, kn: 0.3 };
+  p.armL = { ...p.armL, sw: 0.25, ab: 0.2, el: 0.25 };
+  p.armR = { ...p.armR, sw: 0.25, ab: 0.2, el: 0.25 };
+  p.breath = 1;
+  return p;
+};
+
+const standing = (st: CState): Pose => {
+  const p = restPose();
+  Object.assign(p, { x: st.x, z: st.z, yaw: st.yaw, y: st.y });
+  return p;
+};
+
+export const base = (st: CState, c: CharSpec): Pose => (st.posture === "sit" ? seated(st, c) : st.posture === "lie" ? lying(st, c) : st.posture === "bedsit" ? bedSit(st, c) : standing(st));
+
+// ── life: blinks, saccades, weight shift ────────────────────────────────────
+
+const hash = (n: number) => { const x = Math.sin(n * 127.1) * 43758.5453; return x - Math.floor(x); };
+export const blinkAt = (t: number, seed: number) => {
+  const period = 3.2 + 1.4 * hash(seed);
+  const k = Math.floor((t + seed * 0.37) / period), ph = (t + seed * 0.37) - k * period - period * 0.3 * hash(k + seed);
+  return ph > 0 && ph < 0.17 ? Math.sin((ph / 0.17) * Math.PI) : 0;
+};
+const alive = (p: Pose, t: number, seed: number, sleeping: boolean) => {
+  if (!sleeping) {
+    const b = blinkAt(t, seed);
+    if (b > 0) p.face = { ...p.face, lid: lerpN(p.face.lid, 0, b) };
+    const sk = Math.floor(t * 0.9 + seed);
+    p.face = { ...p.face, eyeX: p.face.eyeX + 0.05 * (hash(sk) - 0.5), eyeY: p.face.eyeY + 0.03 * (hash(sk + 9) - 0.5) };
+  }
+  p.head = [p.head[0] + 0.012 * Math.sin(t * 0.7 + seed), p.head[1] + 0.02 * Math.sin(t * 0.43 + seed * 2), p.head[2]];
+  return p;
+};
+const shift = (p: Pose, t: number, seed: number) => {
+  const w = Math.sin(t * 0.38 + seed);
+  p.hips = [p.hips[0], p.hips[1], p.hips[2] + 0.025 * w];
+  p.chest = [p.chest[0], p.chest[1], p.chest[2] - 0.015 * w];
+  p.legL = { ...p.legL, kn: p.legL.kn + 0.04 * Math.max(0, w) };
+  p.legR = { ...p.legR, kn: p.legR.kn + 0.04 * Math.max(0, -w) };
+  return p;
+};
+
+// ── helpers ─────────────────────────────────────────────────────────────────
+
+const look = (p: Pose, target: V3 | undefined, c: CharSpec, k: number) => {
+  if (!target || k <= 0) return;
+  lookAt(p, target, c, k);
+  // eyes take the rest of the way
+  const dx = target[0] - p.x, dz = target[2] - p.z;
+  const rel = wrap(Math.atan2(dx, dz) - p.yaw - p.head[1] - p.neck[1]);
+  p.face = { ...p.face, eyeX: p.face.eyeX + Math.max(-0.3, Math.min(0.3, rel)) * 0.5 * k };
+};
+const armIK = (p: Pose, side: 1 | -1, t: [number, number, number], w: number, pole: [number, number, number] = [0.5, -0.7, -0.2]) => {
+  const key = side === 1 ? "armL" : "armR";
+  p[key] = { ...p[key], ik: { t: side === 1 ? t : [-t[0], t[1], t[2]], pole, w } };
+};
+/** World point → IK target for the right arm (true chest coordinates, like every armIK target), clamped to reach. */
+const reachR = (p: Pose, w: V3, c: CharSpec, reach = 0.5): [number, number, number] => {
+  const l = toChest(p, w, c);
+  const S = [-0.19, 0.2, -0.01];
+  const d = [l[0] - S[0], l[1] - S[1], l[2] - S[2]], n = Math.hypot(d[0], d[1], d[2]) || 1;
+  const k = Math.min(1, reach / n);
+  // true chest coordinates: armIK's mirror for the right arm and Character's side sign cancel out
+  return [S[0] + d[0] * k, S[1] + d[1] * k, S[2] + d[2] * k];
+};
+
+/** A point on a surface (desk, counter) the right hand can reach: when the real point is too far, the
+ *  nearest reachable point at the SAME height toward it — never a shortened reach down into the furniture. */
+const onSurface = (p: Pose, w: V3, c: CharSpec, reach: number): V3 => {
+  const sh = fromChest(p, [-0.19, 0.2, -0.01], c);
+  const R = reach * c.scale * 0.97, dy = w[1] - sh[1];
+  const dx = w[0] - sh[0], dz = w[2] - sh[2], hd = Math.hypot(dx, dz);
+  if (Math.hypot(hd, dy) <= R || Math.abs(dy) >= R) return w;
+  const hmax = Math.sqrt(R * R - dy * dy), k = hmax / (hd || 1);
+  return [sh[0] + dx * k, w[1], sh[2] + dz * k];
+};
+
+// ── the actions ─────────────────────────────────────────────────────────────
+
+export type ActCtx = { seg: Seg; t: number; c: CharSpec; talk: (t: number) => number };
+
+const idle = ({ seg, t, c }: ActCtx, lookK = 1): Pose => {
+  const p = base(seg.to, c);
+  if (seg.to.posture === "stand") shift(p, t, seg.seed);
+  p.face = FACE[seg.face];
+  look(p, seg.target, c, lookK * ss(seg.t0, seg.t0 + 0.7, t));
+  return p;
+};
+
+const ACT: Record<ActionName, (x: ActCtx) => Pose> = {
+  stand: (x) => idle(x, 0.85),
+  look: (x) => idle(x, 1),
+  turn: (x) => {
+    const { seg, t, c } = x;
+    const k = ss(seg.t0, seg.t0 + 0.9, t);
+    const p = base({ ...seg.to, yaw: seg.from.yaw + wrap(seg.to.yaw - seg.from.yaw) * k }, c);
+    const step = Math.sin(k * Math.PI);
+    p.legL = { ...p.legL, sw: 0.25 * step * Math.sin(k * Math.PI * 2), kn: 0.35 * step };
+    p.legR = { ...p.legR, sw: -0.2 * step * Math.sin(k * Math.PI * 2), kn: 0.2 * step };
+    p.face = FACE[seg.face];
+    look(p, seg.target, c, ss(seg.t0, seg.t0 + 0.5, t));
+    return p;
+  },
+  walk: (x) => move(x, false),
+  run: (x) => move(x, true),
+  startle: (x) => {
+    const { seg, t, c } = x;
+    const p = idle(x, 0);
+    const u = t - seg.t0, jolt = Math.exp(-Math.max(0, u) * 4) * ss(0, 0.06, u);
+    p.chest = [p.chest[0] - 0.12 * jolt, p.chest[1], p.chest[2]];
+    p.spine = [p.spine[0] - 0.05 * jolt, p.spine[1], p.spine[2]];
+    p.armL = { ...p.armL, ab: p.armL.ab + 0.25 * jolt + 0.05, el: p.armL.el + 0.5 * jolt };
+    p.armR = { ...p.armR, ab: p.armR.ab + 0.25 * jolt + 0.05, el: p.armR.el + 0.5 * jolt };
+    p.handL = { curl: 0.1, index: 0.05, thumb: 0.4 };
+    p.handR = { curl: 0.1, index: 0.05, thumb: 0.4 };
+    p.breath = 1.6;
+    if (seg.to.posture === "stand") { const back = 0.12 * ss(0, 0.35, u); p.x -= Math.sin(p.yaw) * back; p.z -= Math.cos(p.yaw) * back; }
+    look(p, seg.target, c, ss(seg.t0, seg.t0 + 0.25, t));
+    return p;
+  },
+  freeze: (x) => {
+    const { seg, t, c } = x;
+    const p = base(seg.to, c);
+    p.face = FACE[seg.face];
+    p.breath = 1.9;
+    p.tremble = 0.6;
+    if (seg.to.posture === "stand") {
+      p.hipY = -0.03;
+      p.legL = { ...p.legL, kn: 0.15 };
+      p.legR = { ...p.legR, kn: 0.12 };
+      p.armL = { ...p.armL, ab: 0.15, el: 0.45 };
+      p.armR = { ...p.armR, ab: 0.15, el: 0.42 };
+    }
+    look(p, seg.target, c, ss(seg.t0, seg.t0 + 0.4, t));
+    return p;
+  },
+  peer: (x) => {
+    const { seg, t, c } = x;
+    const p = idle(x, 0);
+    const k = ss(seg.t0, seg.t0 + 0.8, t);
+    // leans in, head forward, squinting (hands stay down: a raised hand reads as a salute and hides the face)
+    p.spine = [p.spine[0] + 0.06 * k, p.spine[1], p.spine[2]];
+    p.chest = [p.chest[0] + 0.1 * k, p.chest[1], p.chest[2]];
+    p.neck = [p.neck[0] + 0.08 * k, p.neck[1], p.neck[2]];
+    p.armL = { ...p.armL, el: p.armL.el + 0.25 * k };
+    p.armR = { ...p.armR, el: p.armR.el + 0.25 * k };
+    look(p, seg.target, c, ss(seg.t0, seg.t0 + 0.5, t));
+    return p;
+  },
+  point: (x) => {
+    const { seg, t, c } = x;
+    const p = idle(x, 1);
+    const k = ss(seg.t0 + 0.1, seg.t0 + 0.7, t) * (1 - ss(seg.t1 - 0.5, seg.t1, t));
+    if (seg.target) armIK(p, -1, reachR(p, seg.target, c, 0.53), k, [0.3, -0.8, 0.1]);
+    p.handR = { curl: lerpN(0.35, 1, k), index: lerpN(0.3, 0, k), thumb: 0.5 };
+    return p;
+  },
+  reach: (x) => {
+    const { seg, t, c } = x;
+    const p = idle(x, 1);
+    const k = ss(seg.t0 + 0.1, seg.t0 + 0.8, t) * (1 - ss(seg.t1 - 0.6, seg.t1, t));
+    if (seg.target) armIK(p, -1, reachR(p, seg.target, c, 0.55), k, [0.4, -0.8, -0.1]);
+    p.chest = [p.chest[0] + 0.08 * k, p.chest[1], p.chest[2]];
+    p.handR = { curl: 0.25, index: 0.15, thumb: 0.3 };
+    return p;
+  },
+  wave: (x) => {
+    const { seg, t } = x;
+    const p = idle(x, 1);
+    const k = ss(seg.t0, seg.t0 + 0.4, t) * (1 - ss(seg.t1 - 0.4, seg.t1, t));
+    p.armR = { ...p.armR, sw: lerpN(p.armR.sw, 0.3, k), ab: lerpN(p.armR.ab, 1.3, k), el: lerpN(p.armR.el, 0.9 + 0.35 * Math.sin(t * 9), k), wr: [0, 0, 0.2 * Math.sin(t * 9)] };
+    p.handR = { curl: 0.05, index: 0.0, thumb: 0.3 };
+    return p;
+  },
+  phone: (x) => {
+    const { seg, t, c } = x;
+    const p = idle(x, 0);
+    const k = ss(seg.t0, seg.t0 + 0.7, t) * (1 - ss(seg.t1 - 0.5, seg.t1, t));
+    p.phone = 2;
+    p.phoneOn = ss(seg.t0, seg.t0 + 0.3, t);
+    const arm = phoneArm();
+    p.armL = { ...arm, ik: { ...arm.ik!, w: k } };
+    p.head = [lerpN(p.head[0], 0.45, k), p.head[1], p.head[2]];
+    p.neck = [lerpN(p.neck[0], 0.12, k), p.neck[1], p.neck[2]];
+    if (k < 0.5) look(p, seg.target, c, 1 - k * 2);
+    return p;
+  },
+  binoculars: (x) => {
+    const { seg, t } = x;
+    const p = idle(x, 1);
+    const k = ss(seg.t0 + 0.1, seg.t0 + 0.9, t) * (1 - ss(seg.t1 - 0.6, seg.t1, t));
+    // both hands up to the eyes (binoculars sit on the face once raised)
+    const head = p.head, aimDown = Math.max(-0.4, Math.min(0.3, head[0] + p.neck[0]));
+    armIK(p, 1, [0.06, 0.42 - 0.2 * aimDown, 0.26], k, [0.7, -0.6, -0.1]);
+    armIK(p, -1, [0.06, 0.42 - 0.2 * aimDown, 0.26], k, [0.7, -0.6, -0.1]);
+    p.armL = { ...p.armL, wr: [0.2, 0, 0.6] };
+    p.armR = { ...p.armR, wr: [0.2, 0, 0.6] };
+    p.handL = { curl: 0.6, index: 0.5, thumb: 0.4 };
+    p.handR = { curl: 0.6, index: 0.5, thumb: 0.4 };
+    p.hold = { kind: "binoculars", side: -1, on: k };
+    return p;
+  },
+  raise: (x) => {
+    const { seg, t, c } = x;
+    const p = idle(x, 1);
+    const k = ss(seg.t0 + 0.1, seg.t0 + 0.8, t) * (1 - ss(seg.t1 - 0.6, seg.t1, t));
+    // aim at the target when there is one (the arm points the light at it), else straight ahead
+    const tgt: [number, number, number] = seg.target ? reachR(p, seg.target, c, 0.56) : seg.hold === "lantern" ? [0.1, 0.32, 0.42] : [0.0, 0.15, 0.5];
+    armIK(p, -1, tgt, k, [0.5, -0.8, 0.0]);
+    if (seg.hold === "flashlight") p.armR = { ...p.armR, wr: [-0.9 * k, 0, 0] };
+    if (seg.target && k > 0.3) p.aim = seg.target;
+    return p;
+  },
+  think: (x) => {
+    const { seg, t } = x;
+    const p = idle(x, 0.5);
+    const k = ss(seg.t0 + 0.1, seg.t0 + 0.8, t) * (1 - ss(seg.t1 - 0.5, seg.t1, t));
+    // the hand raised under the jaw for a moment, clear of the mouth (higher lands on the mouth / nose and reads as
+    // biting nails or rubbing it; held, or every time, a hand in front of the face is all a close-up shows) — the head
+    // and the eyes keep thinking
+    const off = Math.min(seg.t1 - 0.5, seg.t0 + 2.2);
+    const kh = seg.again ? 0 : ss(seg.t0 + 0.1, seg.t0 + 0.8, t) * (1 - ss(off, off + 0.6, t));
+    if (kh > 0) armIK(p, -1, [0.0, 0.25, 0.235], kh, [0.6, -0.8, 0.2]);
+    if (kh > 0) p.handR = { curl: 0.7, index: 0.4, thumb: 0.5 };
+    p.head = [p.head[0] + 0.08 * k, p.head[1] + 0.12 * k, p.head[2] + 0.08 * k];
+    return p;
+  },
+  nod: (x) => {
+    const { seg, t } = x;
+    const p = idle(x, 1);
+    const u = t - seg.t0;
+    p.head = [p.head[0] + 0.16 * Math.sin(u * 9) * Math.exp(-u * 1.1) * ss(0, 0.1, u), p.head[1], p.head[2]];
+    return p;
+  },
+  shake: (x) => {
+    const { seg, t } = x;
+    const p = idle(x, 1);
+    const u = t - seg.t0;
+    p.head = [p.head[0], p.head[1] + 0.22 * Math.sin(u * 8) * Math.exp(-u * 0.9) * ss(0, 0.1, u), p.head[2]];
+    return p;
+  },
+  sigh: (x) => {
+    const { seg, t } = x;
+    const p = idle(x, 0.6);
+    const u = t - seg.t0, k = Math.sin(Math.min(1, u / 2.2) * Math.PI);
+    p.chest = [p.chest[0] + 0.1 * k, p.chest[1], p.chest[2]];
+    p.head = [p.head[0] + 0.18 * k, p.head[1], p.head[2]];
+    p.breath = 1.4;
+    return p;
+  },
+  talk: (x) => {
+    const { seg, t, talk } = x;
+    const p = idle(x, 1);
+    const a = talk(t);
+    p.talk = Math.min(0.6, a * 1.3);
+    const g = Math.sin(t * 2.1 + seg.seed) * 0.5 + 0.5;
+    p.armR = { ...p.armR, sw: p.armR.sw + 0.35 * a + 0.1 * g, el: p.armR.el + 0.7 * a + 0.3 * g, ab: p.armR.ab + 0.1 };
+    p.handR = { curl: 0.2, index: 0.1, thumb: 0.3 };
+    p.head = [p.head[0] + 0.05 * Math.sin(t * 5.3) * a, p.head[1] + 0.04 * Math.sin(t * 1.7), p.head[2]];
+    return p;
+  },
+  shiver: (x) => {
+    const { seg, t } = x;
+    const p = idle(x, 0.6);
+    const k = ss(seg.t0, seg.t0 + 0.6, t);
+    armIK(p, 1, [-0.12, 0.1, 0.16], k, [0.6, -0.6, -0.2]);
+    armIK(p, -1, [-0.12, 0.06, 0.18], k, [0.6, -0.6, -0.2]);
+    p.chest = [p.chest[0] + 0.12 * k, p.chest[1], p.chest[2]];
+    p.tremble = 0.8 * k;
+    p.chest = [p.chest[0], p.chest[1] + 0.02 * Math.sin(t * 31) * k, p.chest[2]];
+    return p;
+  },
+  sit: (x) => {
+    const { seg, t, c } = x;
+    // walk to the seat (if needed) is a separate segment; here: stand → sit over 1 s
+    const k = ss(seg.t0, seg.t0 + 1.1, t);
+    const st = base({ ...seg.to, posture: "stand" }, c), si = base(seg.to, c);
+    const p = blend(st, si, k);
+    p.chest = [p.chest[0] + 0.25 * Math.sin(k * Math.PI), p.chest[1], p.chest[2]];
+    p.face = FACE[seg.face];
+    look(p, seg.target, c, ss(seg.t0 + 0.8, seg.t0 + 1.5, t));
+    return p;
+  },
+  standUp: (x) => {
+    const { seg, t, c } = x;
+    const k = ss(seg.t0, seg.t0 + 1.1, t);
+    const si = base(seg.from, c), st = base(seg.to, c);
+    const p = blend(si, st, k);
+    p.chest = [p.chest[0] + 0.3 * Math.sin(k * Math.PI), p.chest[1], p.chest[2]];
+    p.face = FACE[seg.face];
+    look(p, seg.target, c, ss(seg.t0 + 0.9, seg.t0 + 1.6, t));
+    return p;
+  },
+  write: (x) => {
+    const { seg, t, c } = x;
+    const p = base(seg.to, c);
+    const k = ss(seg.t0, seg.t0 + 0.8, t) * (1 - ss(seg.t1 - 0.5, seg.t1, t));
+    p.face = FACE[seg.face];
+    // lean over the desk — further when the paper is further away — so the forearm comes over the edge
+    const far = seg.target ? Math.max(0, Math.min(0.28, (Math.hypot(seg.target[0] - seg.to.x, seg.target[2] - seg.to.z) - 0.3) * 0.9)) : 0;
+    p.spine = [p.spine[0] + far * 0.5 * k, p.spine[1], p.spine[2]];
+    p.chest = [p.chest[0] + (0.22 + far * 0.5) * k, p.chest[1], p.chest[2]];
+    p.neck = [p.neck[0] + 0.15 * k, p.neck[1], p.neck[2]];
+    p.head = [p.head[0] + 0.32 * k, p.head[1], p.head[2]];
+    // write on the target (papers on the desk) when given, else just in front of the chest;
+    // the hand rests ON the paper (its centre ~5 cm above the surface), never inside the desk
+    const base3: [number, number, number] = seg.target ? reachR(p, onSurface(p, [seg.target[0], seg.target[1] + 0.05, seg.target[2]], c, 0.6), c, 0.6) : [-0.08, -0.12, 0.36];
+    const wob: [number, number, number] = [base3[0] + 0.04 * Math.sin(t * 7.3), base3[1] + 0.012 * Math.sin(t * 19), base3[2] + 0.02 * Math.sin(t * 2.3)];
+    // elbow out to the side and up, as when writing at a desk
+    armIK(p, -1, [wob[0], wob[1], wob[2]], k, [0.8, -0.35, -0.2]);
+    armIK(p, 1, [0.14, -0.16, 0.32], 0.8 * k, [0.6, -0.8, -0.2]);
+    p.hold = { kind: "pen", side: -1, on: 1 };
+    p.handR = { curl: 0.7, index: 0.5, thumb: 0.6 };
+    return p;
+  },
+  push: (x) => move(x, false),
+  pickUp: (x) => reachTo(x, 0.55),
+  putDown: (x) => reachTo(x, 0.55),
+  give: (x) => reachTo(x, 0.42),
+  receive: (x) => reachTo(x, 0.42),
+  open: (x) => reachTo(x, 0.55),
+  close: (x) => reachTo(x, 0.55),
+  kneel: (x) => {
+    const { seg, t, c } = x;
+    const p = idle(x, 1);
+    const k = ss(seg.t0, seg.t0 + 0.8, t) * (1 - ss(seg.t1 - 0.6, seg.t1, t));
+    p.hipY = -0.42 * k;
+    p.legL = { ...p.legL, sw: 1.25 * k, kn: 2.0 * k, an: -0.2 * k };
+    p.legR = { ...p.legR, sw: -0.15 * k, kn: 1.75 * k, an: 0.9 * k };
+    p.chest = [p.chest[0] + 0.12 * k, p.chest[1], p.chest[2]];
+    if (seg.target) armIK(p, -1, reachR(p, seg.target, c, 0.55), ss(seg.t0 + 0.5, seg.t0 + 1.1, t) * (1 - ss(seg.t1 - 0.6, seg.t1, t)), [0.4, -0.8, -0.1]);
+    return p;
+  },
+  lie: (x) => { const p = idle(x, 0.6); return p; },
+  sleep: (x) => {
+    const p = base(x.seg.to, x.c);
+    p.face = FACE.sleep;
+    p.breath = 0.7;
+    return p;
+  },
+  wake: (x) => {
+    const { seg, t, c } = x;
+    const p = base(seg.to, c);
+    const k = ss(seg.t0 + 0.2, seg.t0 + 1.4, t);
+    p.face = { ...blend({ ...p, face: FACE.sleep }, { ...p, face: FACE[seg.face] }, k).face };
+    look(p, seg.target, c, 0.6 * ss(seg.t0 + 1.0, seg.t0 + 2.0, t));
+    return p;
+  },
+  sitUp: (x) => {
+    const { seg, t, c } = x;
+    const k = ss(seg.t0, seg.t0 + 1.4, t);
+    const p = blend(lying(seg.from, c), bedSit(seg.to, c), k);
+    p.face = FACE[seg.face];
+    look(p, seg.target, c, ss(seg.t0 + 1.2, seg.t0 + 1.9, t));
+    return p;
+  },
+};
+
+/** reach toward the target (hold on it in the middle of the beat), used by pickUp / putDown / give / open */
+function reachTo(x: ActCtx, reach: number): Pose {
+  const { seg, t, c } = x;
+  const p = idle(x, 1);
+  const dur = Math.min(1.6, seg.t1 - seg.t0);
+  const k = ss(seg.t0 + 0.05, seg.t0 + 0.55, t) * (1 - ss(seg.t0 + dur - 0.4, seg.t0 + dur, t));
+  if (seg.target) {
+    const low = seg.target[1] < p.y + 0.75;
+    if (low) { p.spine = [p.spine[0] + 0.25 * k, p.spine[1], p.spine[2]]; p.chest = [p.chest[0] + 0.3 * k, p.chest[1], p.chest[2]]; p.hipY -= 0.08 * k; p.legL = { ...p.legL, kn: p.legL.kn + 0.4 * k }; p.legR = { ...p.legR, kn: p.legR.kn + 0.4 * k }; }
+    armIK(p, -1, reachR(p, seg.target, c, reach), k, [0.4, -0.8, -0.1]);
+  }
+  p.handR = { curl: lerpN(0.35, 0.15, k), index: 0.1, thumb: 0.3 };
+  return p;
+}
+
+function move(x: ActCtx, running: boolean): Pose {
+  const { seg, t, c } = x;
+  if (!seg.path || seg.moveT0 === undefined || seg.moveT1 === undefined) return idle(x);
+  const t0 = seg.moveT0, t1 = seg.moveT1;
+  if (t <= t1) {
+    const w = running ? walkState(seg.path, t, t0, t1, 0.35, 0.45, 1.9, 1.0) : walkState(seg.path, t, t0, t1, 0.4, 0.6, 1.15, 0.85);
+    // turn into the path first: the body comes round from where it faced (0.2–0.6 s by the angle) while the first
+    // steps ease in — never a jump to the path direction on the first frame of the walk
+    const dYaw = wrap(w.yaw - seg.from.yaw);
+    const turnT = Math.min(0.6, Math.max(0.2, (Math.abs(dYaw) / Math.PI) * 0.6));
+    const yaw = Math.abs(dYaw) > 0.05 ? seg.from.yaw + dYaw * ss(t0, t0 + turnT, t) : w.yaw;
+    let p = base({ ...seg.from, x: w.p[0], z: w.p[1], yaw, posture: "stand" }, c);
+    p = running ? runCycle(p, w.phase, Math.min(1, w.speed / 2.4)) : walkCycle(p, w.phase, w.moving);
+    p.face = FACE[seg.face];
+    look(p, seg.target, c, 0.7);
+    return p;
+  }
+  // arrived: settle into the mark's facing
+  const k = ss(t1, t1 + 0.6, t);
+  const endYaw = Math.atan2(seg.path.at(seg.path.length).dir[0], seg.path.at(seg.path.length).dir[1]);
+  const p = base({ ...seg.to, yaw: endYaw + wrap(seg.to.yaw - endYaw) * k }, c);
+  shift(p, t, seg.seed);
+  p.face = FACE[seg.face];
+  look(p, seg.target, c, 0.8 * k);
+  if (running) p.breath = 1.8;
+  return p;
+}
+
+/** The pose for one segment at film time t, alive (blinks etc.). */
+export const actPose = (x: ActCtx): Pose => {
+  const { seg, t, c } = x;
+  const p = ACT[seg.act](x);
+  const r = seg.ride?.(t);
+  if (r) {
+    // rotate around the object's pivot, then move with it
+    const ox = p.x - r.px, oz = p.z - r.pz, cs = Math.cos(r.dyaw), sn = Math.sin(r.dyaw);
+    p.x = r.px + ox * cs + oz * sn + r.dx; p.z = r.pz - ox * sn + oz * cs + r.dz; p.yaw += r.dyaw;
+  }
+  if (seg.floor && seg.to.posture === "stand") p.y = seg.floor(p.x, p.z);
+  if (seg.carry?.(t) && !(p.armR.ik && p.armR.ik.w > 0.4)) {
+    p.armR = { ...p.armR, sw: 0.28, ab: 0.14, el: 0.95, wr: [0.15, 0, 0.1], ik: undefined };
+    p.handR = { curl: 0.85, index: 0.8, thumb: 0.6 };
+  }
+  const h = seg.hands?.(t);
+  if (h && h.w > 0) {
+    armIK(p, 1, toChest(p, h.L, c), h.w, [0.3, -0.8, -0.4]);
+    const R = toChest(p, h.R, c);
+    armIK(p, -1, [R[0], R[1], R[2]], h.w, [0.3, -0.8, -0.4]);
+    p.handL = { curl: 0.8, index: 0.7, thumb: 0.5 }; p.handR = { curl: 0.8, index: 0.7, thumb: 0.5 };
+    p.chest = [p.chest[0] + 0.1 * h.w, p.chest[1], p.chest[2]];
+  }
+  return alive(p, t, seg.seed, seg.act === "sleep" || seg.face === "sleep");
+};
+/** Where an object held in the right hand sits, in chest space (matches the carry arm pose). */
+export const CARRY_CHEST: [number, number, number] = [-0.21, -0.36, 0.2];
+
+/** Which actions need which posture before they start. */
+export const NEEDS: Partial<Record<ActionName, Posture[]>> = {
+  walk: ["stand"], run: ["stand"], turn: ["stand"], push: ["stand"], kneel: ["stand"], wave: ["stand", "sit", "bedsit"], sit: ["stand"], standUp: ["sit"], write: ["sit"],
+  lie: ["lie", "stand"], sleep: ["lie"], wake: ["lie"], sitUp: ["lie"],
+};
+
+==== 38059 project/src/gen/build.ts
+// World builder (data side): world.json + object specs → a WorldData the director can use (places with
+// marks, POIs, camera space, solids, light rig) plus the resolved geometry the renderer draws (walls with
+// openings, doors, objects with world transforms and bounds, ground, paths, fixtures) and a navigation grid.
+// Pure functions; importable by Node (compile, sound, QA) and the browser (render).
+
+import { P_OFF, S_OFF, type LightState, type PointL, type SpotL } from "../cine/types.ts";
+import type { Mark, Place, PropDoc, SetState, WorldData } from "../worlds/types.ts";
+import { fbm } from "../kits/worldforge/noise.ts";
+import { BUILTIN } from "./objects/builtin-data.ts";
+import type { FixtureSpec, ObjectSpec, ObjectUse, OpeningSpec, PartSpec, RoomSpec, ScatterSpec, V2, V3, WorldSpec } from "./spec.ts";
+
+export type Box3 = { min: V3; max: V3 };
+export type ObjInfo = { id: string; doc: string; bounds: V3; center: V3; anchors: Record<string, V3>; walkable?: boolean; hand?: boolean; states: Record<string, number>; builtin: boolean };
+export type Inst = { id: string; use: string; pos: V3; yaw: number; scale: number; info: ObjInfo; variant?: string; color?: string; states: Record<string, number>; box: Box3; parts: Box3[] };
+export type Opening = OpeningSpec & { room: string; x: number; z: number; y: number; w: number; h: number; sill: number; axis: "x" | "z"; wallC: number; id: string };
+export type Built = {
+  spec: WorldSpec;
+  rooms: (RoomSpec & { y: number; height: number })[];
+  openings: Opening[];
+  insts: Inst[];
+  scatter: { use: string; info: ObjInfo; items: { pos: V3; yaw: number; scale: number }[]; variant?: string }[];
+  fixtures: (FixtureSpec & { id: string })[];
+  ground?: (x: number, z: number) => number;
+  bounds: Box3;
+  nav: Nav;
+  objects: Record<string, ObjectSpec>;
+};
+export type Nav = { x0: number; z0: number; cell: number; nx: number; nz: number; free: Uint8Array; floor: (x: number, z: number) => number };
+
+const deg = Math.PI / 180;
+const rot3 = (p: V3, r: V3 = [0, 0, 0]): V3 => {
+  let [x, y, z] = p;
+  const [ax, ay, az] = [r[0] * deg, r[1] * deg, r[2] * deg];
+  // XYZ euler (three.js default): apply X, then Y, then Z in object space = R = Rz·Ry·Rx? three uses intrinsic XYZ → R = Rx·Ry·Rz applied to the vector
+  let c = Math.cos(az), s = Math.sin(az); [x, y] = [x * c - y * s, x * s + y * c];
+  c = Math.cos(ay); s = Math.sin(ay); [x, z] = [x * c + z * s, -x * s + z * c];
+  c = Math.cos(ax); s = Math.sin(ax); [y, z] = [y * c - z * s, y * s + z * c];
+  return [x, y, z];
+};
+
+/** Local bounds of one part (before its own repeat/mirror). */
+const partBox = (p: PartSpec): Box3 => {
+  const sc = p.scale ?? [1, 1, 1];
+  let half: V3;
+  switch (p.shape) {
+    case "box": { const s = p.size ?? [0.1, 0.1, 0.1]; half = [s[0] / 2, s[1] / 2, s[2] / 2]; break; }
+    case "plane": case "text": { const s = p.size ?? [0.5, 0.3]; half = [s[0] / 2, s[1] / 2, 0.005]; break; }
+    case "cyl": case "cone": { const r = Math.max(p.r ?? 0.05, p.r2 ?? p.r ?? 0.05); half = [r, (p.h ?? 0.1) / 2, r]; break; }
+    case "capsule": { const r = p.r ?? 0.05; half = [r, (p.h ?? 0.1) / 2 + r, r]; break; }
+    case "sphere": { const r = p.r ?? 0.05; half = [r, r, r]; break; }
+    case "torus": { const R = (p.R ?? 0.2) + (p.r ?? 0.02); half = [R, R, p.r ?? 0.02]; break; }
+    case "lathe": { const pr = p.profile ?? [[0.1, 0], [0.1, 0.1]]; const R = Math.max(...pr.map((q) => q[0])); const y0 = Math.min(...pr.map((q) => q[1])), y1 = Math.max(...pr.map((q) => q[1])); return { min: add(p.at ?? [0, 0, 0], [-R * sc[0], y0 * sc[1], -R * sc[2]]), max: add(p.at ?? [0, 0, 0], [R * sc[0], y1 * sc[1], R * sc[2]]) }; }
+    case "rod": { const a = p.from ?? [0, 0, 0], b = p.to ?? [0, 1, 0], r = p.r ?? 0.02; return { min: [Math.min(a[0], b[0]) - r, Math.min(a[1], b[1]) - r, Math.min(a[2], b[2]) - r], max: [Math.max(a[0], b[0]) + r, Math.max(a[1], b[1]) + r, Math.max(a[2], b[2]) + r] }; }
+    case "pile": { const s = p.size ?? [0.4, 0.15, 0.3]; half = [s[0] / 2, s[1] / 2, s[2] / 2]; break; }
+    default: half = [0.05, 0.05, 0.05];
+  }
+  half = [half[0] * sc[0], half[1] * sc[1], half[2] * sc[2]];
+  const at = p.at ?? [0, 0, 0];
+  const lo: V3 = [Infinity, Infinity, Infinity], hi: V3 = [-Infinity, -Infinity, -Infinity];
+  for (const sx of [-1, 1]) for (const sy of [-1, 1]) for (const sz of [-1, 1]) {
+    const q = rot3([half[0] * sx, half[1] * sy, half[2] * sz], p.rot);
+    for (let k = 0; k < 3; k++) { lo[k] = Math.min(lo[k], at[k] + q[k]); hi[k] = Math.max(hi[k], at[k] + q[k]); }
+  }
+  return { min: lo, max: hi };
+};
+const add = (a: V3, b: V3): V3 => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+const union = (a: Box3, b: Box3): Box3 => ({ min: [Math.min(a.min[0], b.min[0]), Math.min(a.min[1], b.min[1]), Math.min(a.min[2], b.min[2])], max: [Math.max(a.max[0], b.max[0]), Math.max(a.max[1], b.max[1]), Math.max(a.max[2], b.max[2])] });
+
+/** Expand repeat / mirror into concrete parts (the renderer uses the same expansion). */
+export const expandParts = (parts: PartSpec[]): PartSpec[] => {
+  const out: PartSpec[] = [];
+  const rotY = (v: V3, a: number): V3 => [v[0] * Math.cos(a) + v[2] * Math.sin(a), v[1], -v[0] * Math.sin(a) + v[2] * Math.cos(a)];
+  for (const p of parts) {
+    const n = p.repeat?.n ?? 1;
+    for (let i = 0; i < n; i++) {
+      const step = p.repeat?.step ?? [0, 0, 0], sr = p.repeat?.stepRot ?? [0, 0, 0];
+      const off: V3 = [step[0] * i, step[1] * i, step[2] * i];
+      let q: PartSpec;
+      if (p.repeat?.around) {
+        const a = sr[1] * i * deg;
+        const r0 = p.rot ?? [0, 0, 0];
+        q = { ...p, repeat: undefined, at: add(rotY(p.at ?? [0, 0, 0], a), off), rot: [r0[0], r0[1] + sr[1] * i, r0[2]] };
+        if (p.from && p.to) { q.from = add(rotY(p.from, a), off); q.to = add(rotY(p.to, a), off); }
+      } else {
+        q = { ...p, repeat: undefined, at: add(p.at ?? [0, 0, 0], off), rot: add(p.rot ?? [0, 0, 0], [sr[0] * i, sr[1] * i, sr[2] * i]) };
+        if (p.from && p.to) { q.from = add(p.from, off); q.to = add(p.to, off); }
+      }
+      out.push(q);
+      if (p.mirror) {
+        const k = p.mirror === "x" ? 0 : 2;
+        const m = (v: V3): V3 => { const c: V3 = [...v]; c[k] = -c[k]; return c; };
+        const r = q.rot ?? [0, 0, 0];
+        out.push({ ...q, at: m(q.at ?? [0, 0, 0]), from: q.from ? m(q.from) : undefined, to: q.to ? m(q.to) : undefined, rot: p.mirror === "x" ? [r[0], -r[1], -r[2]] : [-r[0], -r[1], r[2]] });
+      }
+    }
+  }
+  return out;
+};
+
+export const objectInfo = (id: string, objects: Record<string, ObjectSpec>): ObjInfo => {
+  const b = BUILTIN[id];
+  if (b) return { id, doc: b.doc, bounds: b.bounds, center: [0, b.bounds[1] / 2, 0], anchors: b.anchors ?? {}, walkable: b.walkable, hand: b.hand, states: b.states ?? {}, builtin: true };
+  const o = objects[id];
+  if (!o) throw new Error(`object "${id}" is not in the library (built-in: ${Object.keys(BUILTIN).join(", ")}) and no objects/${id}.json was found`);
+  let box: Box3 | null = null;
+  for (const p of expandParts(o.parts)) box = box ? union(box, partBox(p)) : partBox(p);
+  const bb = box ?? { min: [-0.1, 0, -0.1], max: [0.1, 0.2, 0.1] };
+  const bounds: V3 = o.bounds ?? [bb.max[0] - bb.min[0], bb.max[1] - bb.min[1], bb.max[2] - bb.min[2]];
+  return { id, doc: o.doc, bounds, center: [(bb.min[0] + bb.max[0]) / 2, (bb.min[1] + bb.max[1]) / 2, (bb.min[2] + bb.max[2]) / 2], anchors: o.anchors ?? {}, walkable: o.walkable, hand: o.hand, states: o.states ?? {}, builtin: false };
+};
+
+/** World AABBs of the visible parts of a compound object (precise collision / line of sight). Built-ins: one box. */
+export const partBoxes = (id: string, objects: Record<string, ObjectSpec>, pos: V3, yaw: number, scale: number): Box3[] => {
+  const o = objects[id];
+  const sol = BUILTIN[id]?.solid;
+  if (!o && !sol) return [];
+  const out: Box3[] = [];
+  for (const p of o ? expandParts(o.parts) : [null]) {
+    const b: Box3 = p ? partBox(p) : { min: sol![0], max: sol![1] };
+    const sz = [b.max[0] - b.min[0], b.max[1] - b.min[1], b.max[2] - b.min[2]];
+    if (Math.max(...sz) < 0.06 || sz.filter((v) => v < 0.03).length >= 2) continue; // thin rods / tiny bits never block a camera
+    const lo: V3 = [Infinity, pos[1] + b.min[1] * scale, Infinity], hi: V3 = [-Infinity, pos[1] + b.max[1] * scale, -Infinity];
+    for (const x of [b.min[0], b.max[0]]) for (const z of [b.min[2], b.max[2]]) {
+      const w = toWorld(pos, yaw, scale, [x, 0, z]);
+      lo[0] = Math.min(lo[0], w[0]); hi[0] = Math.max(hi[0], w[0]); lo[2] = Math.min(lo[2], w[2]); hi[2] = Math.max(hi[2], w[2]);
+    }
+    out.push({ min: lo, max: hi });
+  }
+  return out;
+};
+
+/** World AABB of an object placed at pos/yaw/scale. */
+export const placedBox = (info: ObjInfo, pos: V3, yaw: number, scale: number): Box3 => {
+  const [w, h, d] = info.bounds, c = info.center;
+  const lo: V3 = [Infinity, pos[1] + (c[1] - h / 2) * scale, Infinity], hi: V3 = [-Infinity, pos[1] + (c[1] + h / 2) * scale, -Infinity];
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+    const lx = (c[0] + (sx * w) / 2) * scale, lz = (c[2] + (sz * d) / 2) * scale;
+    const x = pos[0] + lx * Math.cos(yaw) + lz * Math.sin(yaw), z = pos[2] - lx * Math.sin(yaw) + lz * Math.cos(yaw);
+    lo[0] = Math.min(lo[0], x); hi[0] = Math.max(hi[0], x); lo[2] = Math.min(lo[2], z); hi[2] = Math.max(hi[2], z);
+  }
+  return { min: lo, max: hi };
+};
+/** Object-space point → world. */
+export const toWorld = (pos: V3, yaw: number, scale: number, p: V3): V3 => [pos[0] + (p[0] * Math.cos(yaw) + p[2] * Math.sin(yaw)) * scale, pos[1] + p[1] * scale, pos[2] + (-p[0] * Math.sin(yaw) + p[2] * Math.cos(yaw)) * scale];
+
+const rng = (seed: number) => () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+
+// ── times of day ─────────────────────────────────────────────────────────────
+type TimeLook = { bg: string; fog: string; hemiSky: string; hemiGround: string; hemi: number; key: string; keyI: number; dir: V3; env: number; dark: number };
+export const TIMES: Record<string, TimeLook> = {
+  night: { bg: "#050913", fog: "#0c1424", hemiSky: "#2b3f66", hemiGround: "#0b0c0e", hemi: 0.4, key: "#a8c0ff", keyI: 1.4, dir: [-0.35, 0.62, 0.7], env: 0.05, dark: 1 },
+  dusk: { bg: "#2a2a3e", fog: "#6a5a68", hemiSky: "#7a7aa0", hemiGround: "#2a2018", hemi: 0.85, key: "#ffb27a", keyI: 2.4, dir: [0.7, 0.18, -0.65], env: 0.18, dark: 0.6 },
+  dawn: { bg: "#5a6a88", fog: "#9a9aa8", hemiSky: "#a8b8d8", hemiGround: "#3a3028", hemi: 1.0, key: "#ffd2a0", keyI: 2.8, dir: [0.6, 0.2, -0.75], env: 0.3, dark: 0.35 },
+  day: { bg: "#9ab8d8", fog: "#b8c8d8", hemiSky: "#cfe0f2", hemiGround: "#5a5040", hemi: 1.25, key: "#fff4e0", keyI: 3.2, dir: [0.45, 0.78, 0.4], env: 0.45, dark: 0 },
+};
+
+const FIX: Record<FixtureSpec["type"], { color: string; i: number; dist: number }> = {
+  panel: { color: "#eaf2ff", i: 3.4, dist: 8 }, tube: { color: "#e8f4ff", i: 2.8, dist: 7.5 }, bulb: { color: "#ffcf8a", i: 1.7, dist: 5 },
+  "lamp-post": { color: "#ffb05c", i: 9, dist: 16 }, string: { color: "#ffd08a", i: 2.2, dist: 6 }, spot: { color: "#fff2dc", i: 30, dist: 20 },
+  "exit-sign": { color: "#4dff9a", i: 0.5, dist: 2.2 }, lantern: { color: "#ffb45e", i: 1.6, dist: 5 }, fire: { color: "#ff8a3a", i: 3.2, dist: 7 }, screen: { color: "#8fb8ff", i: 0.7, dist: 2.5 },
+};
+const flick = (t: number, seed: number) => { const a = Math.sin(t * 13.1 + seed) + Math.sin(t * 7.7 + seed * 2) + Math.sin(t * 2.3 + seed * 3); return a > 1.6 ? 0.15 : a > 1.2 ? 0.6 : 1; };
+export const fixtureLevel = (f: FixtureSpec, s: SetState, t: number) => (f.prop ? s[f.prop] ?? 1 : 1) * (f.flicker ? flick(t, f.at[0] * 3 + f.at[2]) : 1);
+
+// ── the builder ──────────────────────────────────────────────────────────────
+
+export const buildWorld = (spec: WorldSpec, objectList: ObjectSpec[] = []): { data: WorldData; built: Built } => {
+  const objects: Record<string, ObjectSpec> = Object.fromEntries(objectList.map((o) => [o.id, o]));
+  const errs: string[] = [];
+  const rooms = (spec.rooms ?? []).map((r) => ({ ...r, y: r.y ?? 0, height: r.height ?? 2.9 }));
+  const roomById = Object.fromEntries(rooms.map((r) => [r.id, r]));
+  // terrain
+  const g = spec.ground;
+  // under (and just around) a room the terrain sinks below its floor: never coplanar (flicker) or poking through
+  const ground = g ? (x: number, z: number) => {
+    const v = (g.y ?? 0) + (g.hills ?? 0) * fbm(x * 0.035 + (g.seed ?? 3), z * 0.035, 4) * 4;
+    for (const r of rooms) if (x > r.rect[0] - 0.4 && x < r.rect[2] + 0.4 && z > r.rect[1] - 0.4 && z < r.rect[3] + 0.4) return Math.min(v, r.y - 0.03);
+    return v;
+  } : undefined;
+  // paths flatten the terrain a little: compute height as is (characters follow it)
+  const floorAt = (x: number, z: number) => {
+    for (const r of rooms) if (x >= r.rect[0] - 0.01 && x <= r.rect[2] + 0.01 && z >= r.rect[1] - 0.01 && z <= r.rect[3] + 0.01) return r.y;
+    return ground ? ground(x, z) : 0;
+  };
+  // openings
+  const openings: Opening[] = [];
+  for (const r of rooms) for (const o of r.openings ?? []) {
+    const [x0, z0, x1, z1] = r.rect;
+    const axis: "x" | "z" = o.wall === "north" || o.wall === "south" ? "x" : "z";
+    const wallC = o.wall === "north" ? z0 : o.wall === "south" ? z1 : o.wall === "west" ? x0 : x1;
+    const w = o.w ?? (o.type === "double-door" ? 1.5 : o.type === "window" ? 1.2 : o.type === "arch" ? 1.4 : 0.95);
+    const h = o.h ?? (o.type === "window" ? 1.1 : 2.1);
+    const sill = o.type === "window" ? o.sill ?? 0.95 : 0;
+    const slug = (x: string) => x.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+    const kindName = o.type === "window" ? "jendela" : o.type === "arch" ? "lengkung" : "pintu";
+    let id = o.id ?? (o.sign ? `${kindName}-${slug(o.sign)}` : `${kindName}-${r.id}-${o.wall}`);
+    while (openings.some((q) => q.id === id)) id += "-2";
+    openings.push({ ...o, room: r.id, x: axis === "x" ? o.at : wallC, z: axis === "x" ? wallC : o.at, y: r.y, w, h, sill, axis, wallC, id });
+  }
+  // objects
+  const inRoomXZ = (x: number, z: number) => rooms.some((r) => x >= r.rect[0] && x <= r.rect[2] && z >= r.rect[1] && z <= r.rect[3]);
+  const insts: Inst[] = [];
+  const surfaceOf = (ref: string) => {
+    const [oid, anchor = "top"] = ref.split(":");
+    const host = insts.find((i) => i.id === oid);
+    if (!host) { errs.push(`object placed "on": "${ref}" but "${oid}" is not defined before it`); return undefined; }
+    const a = host.info.anchors[anchor] ?? [0, host.info.bounds[1], 0];
+    return toWorld(host.pos, host.yaw, host.scale, a);
+  };
+  (spec.objects ?? []).forEach((u: ObjectUse, k) => {
+    let info: ObjInfo;
+    try { info = objectInfo(u.use, objects); } catch (e) { errs.push((e as Error).message); return; }
+    const yaw = u.yaw ?? 0, scale = u.scale ?? 1;
+    let pos: V3;
+    if (u.on) { const s = surfaceOf(u.on); pos = s ? [u.at.length === 3 ? s[0] + (u.at as V3)[0] : s[0] + u.at[0], s[1], u.at.length === 3 ? s[2] + (u.at as V3)[2] : s[2] + (u.at as V2)[1]] : [0, 0, 0]; }
+    else if (u.at.length === 3) { const a3 = u.at as V3; pos = inRoomXZ(a3[0], a3[2]) || !ground ? a3 : [a3[0], ground(a3[0], a3[2]) + a3[1], a3[2]]; }
+    else pos = [u.at[0], floorAt(u.at[0], u.at[1]), u.at[1]];
+    const id = u.id ?? `${u.use}-${k + 1}`;
+    insts.push({ id, use: u.use, pos, yaw, scale, info, variant: u.variant, color: u.color, states: { ...info.states, ...(u.states ?? {}) }, box: placedBox(info, pos, yaw, scale), parts: partBoxes(u.use, objects, pos, yaw, scale) });
+  });
+  // paths
+  const paths = spec.paths ?? [];
+  const nearPath = (x: number, z: number, m: number) => paths.some((p) => { for (let i = 1; i < p.points.length; i++) { const [ax, az] = p.points[i - 1], [bx, bz] = p.points[i]; const dx = bx - ax, dz = bz - az, L = dx * dx + dz * dz || 1, k = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / L)); if (Math.hypot(x - ax - dx * k, z - az - dz * k) < (p.width ?? 1.2) / 2 + m) return true; } return false; });
+  const inRoom = (x: number, z: number, m = 0) => rooms.some((r) => x > r.rect[0] - m && x < r.rect[2] + m && z > r.rect[1] - m && z < r.rect[3] + m);
+  // scatter
+  const scatter = (spec.scatter ?? []).map((sc: ScatterSpec, k) => {
+    let info: ObjInfo;
+    try { info = objectInfo(sc.use, objects); } catch (e) { errs.push((e as Error).message); return null; }
+    const r = rng(1000 + (sc.seed ?? k * 77)), items: { pos: V3; yaw: number; scale: number }[] = [];
+    const [ax0, az0, ax1, az1] = sc.area, minD = sc.minDist ?? Math.max(info.bounds[0], info.bounds[2]) * 0.8;
+    for (let tries = 0; items.length < sc.count && tries < sc.count * 40; tries++) {
+      const x = ax0 + r() * (ax1 - ax0), z = az0 + r() * (az1 - az0);
+      const av = sc.avoid ?? ["paths", "rooms", "objects"];
+      // trees keep only their trunk off the path (crowns may overhang it, like a real forest track)
+      if (av.includes("paths") && nearPath(x, z, sc.use.startsWith("tree") ? 1.3 : Math.max(info.bounds[0], info.bounds[2]) / 2 + 0.3)) continue;
+      if (av.includes("rooms") && inRoom(x, z, 0.5)) continue;
+      if (av.includes("objects") && insts.some((i) => x > i.box.min[0] - 0.6 && x < i.box.max[0] + 0.6 && z > i.box.min[2] - 0.6 && z < i.box.max[2] + 0.6)) continue;
+      if (items.some((q) => Math.hypot(q.pos[0] - x, q.pos[2] - z) < minD)) continue;
+      const s = (sc.scale?.[0] ?? 0.8) + r() * ((sc.scale?.[1] ?? 1.2) - (sc.scale?.[0] ?? 0.8));
+      items.push({ pos: [x, floorAt(x, z) - 0.02, z], yaw: r() * Math.PI * 2, scale: s });
+    }
+    return { use: sc.use, info, items, variant: sc.variant };
+  }).filter((x): x is NonNullable<typeof x> => !!x);
+  // fixtures
+  // outdoors (not inside a room) a fixture's y is its height above the ground
+  const lift = (p: V3): V3 => (ground && !inRoomXZ(p[0], p[2]) ? [p[0], ground(p[0], p[2]) + p[1], p[2]] : p);
+  // a lamp post given at its foot (y < 1.5) gets its head at the post height
+  const head = (f: FixtureSpec): V3 => (f.type === "lamp-post" && f.at[1] < 1.5 ? [f.at[0], f.at[1] + 4.2, f.at[2]] : f.at);
+  const fixtures = (spec.lights ?? []).map((f, i) => ({ ...f, at: lift(head(f)), to: f.to ? lift(f.to) : undefined, target: f.target ? lift(f.target) : undefined, id: f.id ?? `${f.type}-${i + 1}` }));
+  // world bounds
+  let wb: Box3 = { min: [-5, -1, -5], max: [5, 4, 5] };
+  if (rooms.length) wb = rooms.map((r) => ({ min: [r.rect[0], r.y, r.rect[1]] as V3, max: [r.rect[2], r.y + r.height, r.rect[3]] as V3 })).reduce(union);
+  if (g) wb = union(wb, { min: [-g.size / 2, -2, -g.size / 2], max: [g.size / 2, 20, g.size / 2] });
+  // ── navigation grid: walkable floor minus solids ───────────────────────────
+  const cell = 0.2, R = 0.28;
+  const nx0 = Math.floor(wb.min[0]) - 1, nz0 = Math.floor(wb.min[2]) - 1;
+  const nx = Math.ceil((wb.max[0] - nx0 + 1) / cell), nz = Math.ceil((wb.max[2] - nz0 + 1) / cell);
+  const free = new Uint8Array(nx * nz);
+  // per-part boxes that reach body height block walking (a stall's canopy or a hanging lamp does not)
+  const solidsXZ = insts.filter((i) => !i.info.walkable && i.box.max[1] - i.box.min[1] > 0.12).flatMap((i) => {
+    const fl0 = i.pos[1];
+    const ps = (i.parts.length ? i.parts : [i.box]).filter((b) => b.min[1] < fl0 + 1.7 && b.max[1] > fl0 + 0.12);
+    return ps.length ? ps : [];
+  });
+  // trees block with their trunk only; walkable undergrowth (ferns, grass) does not block
+  const scatterSolids = scatter.filter((s) => !s.info.walkable).flatMap((s) => s.items.map((it): Box3 => {
+    if (!s.use.startsWith("tree")) return placedBox(s.info, it.pos, it.yaw, it.scale);
+    const r = 0.3 * it.scale;
+    return { min: [it.pos[0] - r, it.pos[1], it.pos[2] - r], max: [it.pos[0] + r, it.pos[1] + 4.5 * it.scale, it.pos[2] + r] };
+  }));
+  const bld = (spec.buildings ?? []).map((b) => b.rect);
+  for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) {
+    const x = nx0 + (i + 0.5) * cell, z = nz0 + (j + 0.5) * cell;
+    let ok = false;
+    if (rooms.length) {
+      for (const r of rooms) if (x > r.rect[0] + R && x < r.rect[2] - R && z > r.rect[1] + R && z < r.rect[3] - R) ok = true;
+      // doorways connect rooms
+      for (const o of openings) if (o.type !== "window" && (o.axis === "x" ? Math.abs(z - o.wallC) < 0.5 && Math.abs(x - o.x) < o.w / 2 - 0.12 : Math.abs(x - o.wallC) < 0.5 && Math.abs(z - o.z) < o.w / 2 - 0.12)) ok = true;
+    }
+    if (g && !inRoom(x, z, 0.3)) ok = Math.abs(x) < g.size / 2 - 1 && Math.abs(z) < g.size / 2 - 1;
+    if (ok && bld.some((b) => x > b[0] - R && x < b[2] + R && z > b[1] - R && z < b[3] + R)) ok = false;
+    if (ok && solidsXZ.some((b) => x > b.min[0] - R && x < b.max[0] + R && z > b.min[2] - R && z < b.max[2] + R)) ok = false;
+    if (ok && scatterSolids.some((b) => x > b.min[0] - R * 0.6 && x < b.max[0] + R * 0.6 && z > b.min[2] - R * 0.6 && z < b.max[2] + R * 0.6)) ok = false;
+    free[j * nx + i] = ok ? 1 : 0;
+  }
+  const nav: Nav = { x0: nx0, z0: nz0, cell, nx, nz, free, floor: floorAt };
+  const built: Built = { spec, rooms, openings, insts, scatter, fixtures, ground, bounds: wb, nav, objects };
+
+  // ── places ──────────────────────────────────────────────────────────────────
+  const places: Record<string, Place> = {};
+  for (const [pid, ps] of Object.entries(spec.places)) {
+    const pr = (ps.rooms ?? []).map((r) => roomById[r]).filter(Boolean);
+    let area = ps.area;
+    if (!area && pr.length) area = [Math.min(...pr.map((r) => r.rect[0])), Math.min(...pr.map((r) => r.rect[1])), Math.max(...pr.map((r) => r.rect[2])), Math.max(...pr.map((r) => r.rect[3]))];
+    if (!area) area = [wb.min[0], wb.min[2], wb.max[0], wb.max[2]];
+    const kind = ps.kind ?? (pr.length ? "interior" : "exterior");
+    const inArea = (x: number, z: number, m = 0) => x >= area![0] - m && x <= area![2] + m && z >= area![1] - m && z <= area![3] + m;
+    const fl = (x: number, z: number) => floorAt(x, z);
+    // marks: explicit + automatic (object anchors, doors, room centres)
+    const marks: Record<string, Mark> = {};
+    for (const r of pr.length ? pr : rooms.filter((r) => inArea((r.rect[0] + r.rect[2]) / 2, (r.rect[1] + r.rect[3]) / 2))) marks[`${r.id}:center`] = { p: [(r.rect[0] + r.rect[2]) / 2, (r.rect[1] + r.rect[3]) / 2], y: r.y, doc: `middle of ${r.id}` };
+    for (const o of openings) {
+      if (o.type === "window" || !inArea(o.x, o.z, 1)) continue;
+      const r = roomById[o.room];
+      const inward = o.wall === "north" ? [0, 1] : o.wall === "south" ? [0, -1] : o.wall === "west" ? [1, 0] : [-1, 0];
+      const facing = Math.atan2(-inward[0], -inward[1]);
+      marks[`${o.id}:in`] = { p: [o.x + inward[0] * 0.75, o.z + inward[1] * 0.75], y: r.y, yaw: facing, doc: `inside ${o.room}, facing ${o.id}` };
+      marks[`${o.id}:out`] = { p: [o.x - inward[0] * 0.75, o.z - inward[1] * 0.75], y: r.y, yaw: facing + Math.PI, doc: `outside ${o.room} at ${o.id}, facing it` };
+    }
+    for (const i of insts) {
+      if (!inArea(i.pos[0], i.pos[2], 0.5)) continue;
+      const a = i.info.anchors;
+      const frontLocal: V3 = a.front ?? [0, 0, i.info.bounds[2] / 2 * (i.info.center[2] >= 0 ? 1 : 1) + 0.55];
+      const fw = toWorld(i.pos, i.yaw, i.scale, frontLocal);
+      marks[`${i.id}:front`] = { p: [fw[0], fw[2]], y: fl(fw[0], fw[2]), yaw: i.yaw + Math.PI, doc: `in front of ${i.id}, facing it` };
+      if (a.seat) { const sw = toWorld(i.pos, i.yaw, i.scale, a.seat); marks[`${i.id}:seat`] = { p: [sw[0], sw[2]], y: fl(sw[0], sw[2]), yaw: i.yaw, seat: sw[1] - fl(sw[0], sw[2]), doc: `sitting on ${i.id}` }; }
+      if (a.push) { const pw = toWorld(i.pos, i.yaw, i.scale, [a.push[0], 0, a.push[2] - 0.38]); marks[`${i.id}:push`] = { p: [pw[0], pw[2]], y: fl(pw[0], pw[2]), yaw: i.yaw, doc: `behind ${i.id}, hands on its handles` }; }
+      // a bed (anchors "bed" = mattress top centre, "head" = pillow end): lie / sleep / wake / sitUp there
+      if (a.bed) { const bw = toWorld(i.pos, i.yaw, i.scale, a.bed), hw = toWorld(i.pos, i.yaw, i.scale, a.head ?? [a.bed[0], a.bed[1], a.bed[2] - 0.8]); marks[`${i.id}:bed`] = { p: [bw[0], bw[2]], y: fl(bw[0], bw[2]), yaw: i.yaw, bed: { head: [hw[0], hw[2]], y: bw[1] }, doc: `lying in ${i.id}` }; }
+      if (a.behind) { const bw = toWorld(i.pos, i.yaw, i.scale, a.behind); marks[`${i.id}:behind`] = { p: [bw[0], bw[2]], y: fl(bw[0], bw[2]), yaw: i.yaw, doc: `behind ${i.id} (the seller's side), facing over it` }; }
+    }
+    for (const [k, m] of Object.entries(ps.marks ?? {})) {
+      const y = m.at.length === 3 ? (m.at as V3)[1] : fl(m.at[0], (m.at as V2)[1]);
+      const p: [number, number] = m.at.length === 3 ? [(m.at as V3)[0], (m.at as V3)[2]] : [m.at[0], (m.at as V2)[1]];
+      marks[k] = { p, y, yaw: m.yaw, seat: m.seat, bed: m.bed ? { head: m.bed.head, y: m.bed.y } : undefined, doc: m.doc };
+    }
+    // POIs: explicit + objects, openings, fixtures
+    const pois: Record<string, V3> = {};
+    for (const i of insts) if (inArea(i.pos[0], i.pos[2], 2)) pois[i.id] = [i.pos[0], i.box.max[1] - (i.box.max[1] - i.box.min[1]) * 0.35, i.pos[2]];
+    for (const o of openings) if (inArea(o.x, o.z, 2)) pois[o.id] = [o.x, o.y + o.sill + o.h * 0.55, o.z];
+    for (const f of fixtures) if (inArea(f.at[0], f.at[2], 2)) pois[f.id] = f.at;
+    Object.assign(pois, ps.pois ?? {});
+    // camera space and solids
+    const yTop = pr.length ? Math.max(...pr.map((r) => r.y + r.height)) - 0.2 : 40;
+    const yBot = pr.length ? Math.min(...pr.map((r) => r.y)) + 0.3 : (ground ? -5 : 0.3);
+    const m = kind === "interior" ? -0.25 : 25;
+    const solids = insts.filter((i) => !i.info.walkable && inArea(i.pos[0], i.pos[2], 8)).flatMap((i) => (i.parts.length ? i.parts : [i.box]));
+    for (const b of spec.buildings ?? []) solids.push({ min: [b.rect[0], (b.y ?? 0) - 1, b.rect[1]], max: [b.rect[2], (b.y ?? 0) + b.height, b.rect[3]] });
+    // seen from outside, a closed room is a building: cameras of an exterior place stay out of it
+    if (kind === "exterior") for (const r of rooms) if (!pr.includes(r) && !(r.open?.length)) solids.push({ min: [r.rect[0] - 0.1, r.y - 0.5, r.rect[1] - 0.1], max: [r.rect[2] + 0.1, r.y + r.height + 0.3, r.rect[3] + 0.1] });
+    for (const s of scatter) for (const it of s.items) {
+      if (!inArea(it.pos[0], it.pos[2], 15) || s.info.bounds[1] <= 1.2) continue;
+      // trees: the trunk blocks (crowns are above the action); other tall things: their box
+      if (s.use.startsWith("tree")) { const r = 0.3 * it.scale; solids.push({ min: [it.pos[0] - r, it.pos[1], it.pos[2] - r], max: [it.pos[0] + r, it.pos[1] + 4.5 * it.scale, it.pos[2] + r] }); }
+      else solids.push(placedBox(s.info, it.pos, it.yaw, it.scale));
+    }
+    // foliage the camera must not sit in (tree crowns, bushes) — scatter and placed built-ins
+    const crownBox = (use: string, pos: V3, yaw: number, scale: number): Box3 | null => {
+      const c = BUILTIN[use]?.crown;
+      if (!c) return null;
+      const lo: V3 = [Infinity, pos[1] + c[0][1] * scale, Infinity], hi: V3 = [-Infinity, pos[1] + c[1][1] * scale, -Infinity];
+      for (const x of [c[0][0], c[1][0]]) for (const z of [c[0][2], c[1][2]]) { const w = toWorld(pos, yaw, scale, [x, 0, z]); lo[0] = Math.min(lo[0], w[0]); hi[0] = Math.max(hi[0], w[0]); lo[2] = Math.min(lo[2], w[2]); hi[2] = Math.max(hi[2], w[2]); }
+      return { min: lo, max: hi };
+    };
+    const soft: Box3[] = [];
+    for (const sc of scatter) for (const it of sc.items) if (inArea(it.pos[0], it.pos[2], 20)) { const b = crownBox(sc.use, it.pos, it.yaw, it.scale); if (b) soft.push(b); }
+    for (const i of insts) if (inArea(i.pos[0], i.pos[2], 20)) { const b = crownBox(i.use, i.pos, i.yaw, i.scale); if (b) soft.push(b); }
+    const cx = (area[0] + area[2]) / 2, cz = (area[1] + area[3]) / 2, rad = Math.max(area[2] - area[0], area[3] - area[1]) / 2;
+    const est = ps.establish;
+    const firstMark = Object.values(marks)[0];
+    places[pid] = {
+      id: pid, doc: ps.doc, kind, floor: fl(cx, cz), marks, pois,
+      box: { min: [area[0] - m, yBot, area[1] - m], max: [area[2] + m, yTop, area[3] + m] },
+      zones: kind === "interior" && pr.length ? pr.map((r) => ({ min: [r.rect[0] + 0.25, r.y + 0.3, r.rect[1] + 0.25] as V3, max: [r.rect[2] - 0.25, r.y + r.height - 0.2, r.rect[3] - 0.25] as V3 })) : undefined,
+      solids, soft, ground: ground && kind === "exterior" ? ground : undefined,
+      establish: est ? { center: [est[0], est[1], est[2]], radius: est[3], height: est[4], yaw: est[5] } : { center: [cx, fl(cx, cz) + 1.2, cz], radius: kind === "interior" ? Math.min(rad, 4) : Math.max(8, rad * 0.9), height: kind === "interior" ? 1.0 : Math.max(4, rad * 0.4), yaw: 0.7 },
+      view: ps.view ?? Object.keys(pois)[0] ?? "",
+      window: undefined,
+      ambience: ps.ambience ?? (kind === "interior" ? "room" : "outdoor"), surface: (ps.surface ?? (kind === "interior" ? "tile" : "grass")) as Place["surface"], reverb: kind === "interior" ? 0.35 : 0.05,
+    };
+    void firstMark;
+  }
+
+  // wall pieces (full height, between openings) block the view: line-of-sight checks for cameras
+  const occl: Box3[] = [];
+  for (const r of rooms) {
+    const [x0, z0, x1, z1] = r.rect, Tw = 0.15;
+    const sides = [{ s: "north", ax: "x", c: z0 - Tw / 2, a0: x0, a1: x1 }, { s: "south", ax: "x", c: z1 + Tw / 2, a0: x0, a1: x1 }, { s: "west", ax: "z", c: x0 - Tw / 2, a0: z0, a1: z1 }, { s: "east", ax: "z", c: x1 + Tw / 2, a0: z0, a1: z1 }] as const;
+    for (const w of sides) {
+      if (r.open?.includes(w.s)) continue;
+      const holes = openings.filter((o) => o.axis === w.ax && Math.abs(o.wallC - (w.ax === "x" ? (w.s === "north" ? z0 : z1) : (w.s === "west" ? x0 : x1))) < 0.05 && o.type !== "window").map((o) => [(w.ax === "x" ? o.x : o.z) - o.w / 2, (w.ax === "x" ? o.x : o.z) + o.w / 2]).sort((a, b) => a[0] - b[0]);
+      let cur: number = w.a0;
+      const piece = (a: number, b: number) => { if (b - a > 0.2) occl.push(w.ax === "x" ? { min: [a, r.y, w.c - Tw / 2], max: [b, r.y + r.height, w.c + Tw / 2] } : { min: [w.c - Tw / 2, r.y, a], max: [w.c + Tw / 2, r.y + r.height, b] }); };
+      for (const [a, b] of holes) { piece(cur, a); cur = Math.max(cur, b); }
+      piece(cur, w.a1);
+    }
+  }
+  for (const P of Object.values(places)) P.occluders = occl;
+  // the swing of every door leaf: cameras stay out of it (an open leaf would fill the frame)
+  const swings: Box3[] = openings.filter((o) => o.type === "door" || o.type === "double-door").map((o) => {
+    const into = o.wall === "north" || o.wall === "west" ? 1 : -1, sw = (o.swing ?? 1) * into;
+    const lw = o.type === "double-door" ? o.w / 2 : o.w, d0 = Math.min(0, sw * lw), d1 = Math.max(0, sw * lw);
+    return o.axis === "x" ? { min: [o.x - o.w / 2, o.y, o.z + d0], max: [o.x + o.w / 2, o.y + o.h, o.z + d1] } : { min: [o.x + d0, o.y, o.z - o.w / 2], max: [o.x + d1, o.y + o.h, o.z + o.w / 2] };
+  });
+  for (const P of Object.values(places)) P.swings = swings;
+
+  // ── light rig per place ─────────────────────────────────────────────────────
+  const light = (place: string, time: string, s: SetState, t: number): LightState => {
+    const P = places[place];
+    const Tl = TIMES[time] ?? TIMES.night;
+    const interior = P?.kind === "interior";
+    const c: V3 = P ? [(P.box.min[0] + P.box.max[0]) / 2, 1.5, (P.box.min[2] + P.box.max[2]) / 2] : [0, 1.5, 0];
+    const near = fixtures.filter((f) => f.type !== "spot").map((f) => ({ f, d: Math.hypot(f.at[0] - c[0], f.at[2] - c[2]) })).sort((a, b) => a.d - b.d).slice(0, 5);
+    const pts: PointL[] = near.map(({ f }) => {
+      const k = FIX[f.type], lv = fixtureLevel(f, s, t) * (f.i ?? 1);
+      const pos: V3 = f.type === "string" && f.to ? [(f.at[0] + f.to[0]) / 2, (f.at[1] + f.to[1]) / 2 - 0.2, (f.at[2] + f.to[2]) / 2] : f.type === "panel" || f.type === "tube" ? [f.at[0], f.at[1] - 0.5, f.at[2]] : f.at;
+      return { pos, color: f.color ?? k.color, i: k.i * lv * (Tl.dark > 0.3 || interior ? 1 : 0.3), dist: k.dist };
+    });
+    while (pts.length < 5) pts.push(P_OFF);
+    // a soft fill so night interiors never crush
+    pts.push({ pos: [c[0], (P?.box.max[1] ?? 3) - 0.3, c[2]], color: interior ? "#8aa0c0" : Tl.hemiSky, i: interior ? 0.35 : 0.5, dist: interior ? 7 : 20 });
+    const spotF = fixtures.find((f) => f.type === "spot");
+    const spot0: SpotL = spotF ? { pos: spotF.at, target: spotF.target ?? [spotF.at[0], 0, spotF.at[2]], color: spotF.color ?? FIX.spot.color, i: FIX.spot.i * fixtureLevel(spotF, s, t) * (spotF.i ?? 1), angle: 0.6, penumbra: 0.6, dist: 20 } : S_OFF;
+    const box = P ? { min: [P.box.min[0] - 2, P.box.min[1] - 1, P.box.min[2] - 2] as V3, max: [P.box.max[0] + 2, Math.min(P.box.max[1], (interior ? 4 : 18)), P.box.max[2] + 2] as V3 } : wb;
+    const fog = spec.fog ?? (interior ? 0.1 : 0.3);
+    return {
+      bg: Tl.bg, fog: { color: Tl.fog, density: interior ? 0.006 + 0.01 * fog : 0.004 + 0.02 * fog }, env: Tl.env * (interior ? 0.5 : 1) + 0.02,
+      hemi: { sky: interior ? spec.ambient ?? "#9aa8c0" : Tl.hemiSky, ground: Tl.hemiGround, i: interior ? 0.36 + Tl.hemi * 0.25 : Tl.hemi },
+      moon: { dir: spec.sky?.sun ?? Tl.dir, color: Tl.key, i: Tl.keyI * (interior ? 0.8 : 1), box },
+      spots: [spot0, S_OFF],
+      pts: pts.slice(0, 6) as LightState["pts"],
+    };
+  };
+
+  const props: Record<string, PropDoc> = {};
+  for (const [k, p] of Object.entries(spec.props ?? {})) props[k] = { default: p.default, doc: p.doc, sfx: p.sfx ?? (p.door ? { up: "door-open", down: "door-close" } : p.lights ? { up: "click", down: "click" } : undefined) };
+  // every door gets an open prop automatically: "<door id>" 0..1
+  for (const o of openings) if ((o.type === "door" || o.type === "double-door") && !props[o.id]) props[o.id] = { default: 0, doc: `${o.id} (0 shut, 1 open)`, sfx: { up: "door-open", down: "door-close" } };
+  for (const i of insts) for (const [k, v] of Object.entries(i.states)) props[`${i.id}.${k}`] = { default: v, doc: `${i.id} ${k} (0..1)` };
+  // every object can appear / leave on a beat: "set": { "<id>.visible": 0 } (start hidden: "states": { "visible": 0 })
+  for (const i of insts) if (!props[`${i.id}.visible`]) props[`${i.id}.visible`] = { default: 1, doc: `${i.id} on screen (1) or gone (0)` };
+  for (const f of fixtures) if (f.prop && !props[f.prop]) props[f.prop] = { default: 1, doc: `lights ${f.prop} (0 off, 1 on)`, sfx: { up: "click", down: "click" } };
+  if (errs.length) throw new Error(errs.join("\n"));
+  const data: WorldData = { id: spec.id, doc: spec.doc, places, times: spec.times, props, light };
+  return { data, built };
+};
+
+// ── navigation ───────────────────────────────────────────────────────────────
+
+/** A* on the walk grid from a to b, then string-pulled to a few waypoints. Falls back to the straight line. */
+export const navPath = (nav: Nav, a: V2, b: V2): V2[] => {
+  const { x0, z0, cell, nx, nz, free } = nav;
+  const ci = (x: number) => Math.max(0, Math.min(nx - 1, Math.floor((x - x0) / cell))), cj = (z: number) => Math.max(0, Math.min(nz - 1, Math.floor((z - z0) / cell)));
+  const nearestFree = (i: number, j: number) => {
+    if (free[j * nx + i]) return [i, j];
+    for (let r = 1; r < 12; r++) for (let dj = -r; dj <= r; dj++) for (let di = -r; di <= r; di++) { const ii = i + di, jj = j + dj; if (ii >= 0 && jj >= 0 && ii < nx && jj < nz && free[jj * nx + ii]) return [ii, jj]; }
+    return [i, j];
+  };
+  const [si, sj] = nearestFree(ci(a[0]), cj(a[1])), [ti, tj] = nearestFree(ci(b[0]), cj(b[1]));
+  const N = nx * nz, g = new Float32Array(N).fill(Infinity), came = new Int32Array(N).fill(-1), open: number[] = [];
+  const h = (k: number) => Math.hypot((k % nx) - ti, Math.floor(k / nx) - tj);
+  const start = sj * nx + si, goal = tj * nx + ti;
+  g[start] = 0; open.push(start);
+  const f = new Float32Array(N).fill(Infinity); f[start] = h(start);
+  const closed = new Uint8Array(N);
+  let found = false, iter = 0;
+  while (open.length && iter++ < 200000) {
+    let bi = 0; for (let k = 1; k < open.length; k++) if (f[open[k]] < f[open[bi]]) bi = k;
+    const cur = open.splice(bi, 1)[0];
+    if (cur === goal) { found = true; break; }
+    closed[cur] = 1;
+    const cx = cur % nx, cz = Math.floor(cur / nx);
+    for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+      const x = cx + dx, z = cz + dz;
+      if (x < 0 || z < 0 || x >= nx || z >= nz) continue;
+      const k = z * nx + x;
+      if (!free[k] || closed[k]) continue;
+      if (dx && dz && (!free[cz * nx + x] || !free[z * nx + cx])) continue;
+      const ng = g[cur] + (dx && dz ? 1.414 : 1);
+      if (ng < g[k]) { g[k] = ng; f[k] = ng + h(k); came[k] = cur; if (!open.includes(k)) open.push(k); }
+    }
+  }
+  if (!found) return [a, b];
+  const cells: V2[] = [];
+  for (let k = goal; k !== -1; k = came[k]) cells.push([x0 + ((k % nx) + 0.5) * cell, z0 + (Math.floor(k / nx) + 0.5) * cell]);
+  cells.reverse();
+  // string pulling: keep a waypoint only where the straight line would cross a blocked cell
+  const clear = (p: V2, q: V2) => { const n = Math.ceil(Math.hypot(q[0] - p[0], q[1] - p[1]) / (cell * 0.5)); for (let s = 0; s <= n; s++) { const x = p[0] + ((q[0] - p[0]) * s) / Math.max(1, n), z = p[1] + ((q[1] - p[1]) * s) / Math.max(1, n); if (!free[cj(z) * nx + ci(x)]) return false; } return true; };
+  const out: V2[] = [a];
+  let anchor: V2 = a;
+  for (let k = 1; k < cells.length; k++) if (!clear(anchor, cells[k])) { out.push(cells[k - 1]); anchor = cells[k - 1]; }
+  out.push(b);
+  return out;
+};
+
+==== 57 project/src/gen/objects/sheet-list.json
+["bookshelf","park-bench","reading-table","wooden-chair"]
+==== 26984 project/src/worlds/coast/Coast.tsx
+// Coast world, picture side: sky, sea, the headland terrain with rocks and grass, fence and bench, the
+// lighthouse (turning lamp + beams), the keeper's cottage (exterior + furnished interior) and the fishing
+// boat whose lamps are "the light at sea". Pure function of (place, time, set state, t).
+
+import React, { useMemo } from "react";
+import { BufferAttribute, BufferGeometry, Color, ConeGeometry, DoubleSide, IcosahedronGeometry, InstancedMesh, Matrix4, MeshStandardMaterial, Quaternion, Shape, ShapeGeometry, Vector3 } from "three";
+import { box, cached, cyl, sphere, torus } from "../../kits/worldforge/geo.ts";
+import { expAxis } from "../../kits/worldforge/heightfield.ts";
+import { fbm, mulberry32 } from "../../kits/worldforge/noise.ts";
+import { canvasTex, phys } from "../../cine/mats.ts";
+import { Beam, Dust, Glow } from "../../cine/FX.tsx";
+import { SKIES, SkyDome } from "../../cine/env/Sky.tsx";
+import { Ocean, waveHeight, waveSlope } from "../../cine/env/Ocean.tsx";
+import { Bed, Chair, Desk, Door, HoledWall, MAT, OilLamp, Shelf, Slab, WallClock, Window } from "../../cine/set/parts.tsx";
+import type { Cam } from "../../cine/Post.tsx";
+import type { SetState, V3 } from "../types.ts";
+import { BED_AT, BENCH, BOAT, BOAT_YAW, COTTAGE, C_DOOR, C_WIN, DECK_Y, DESK, DESK_TOP, LAMP, LANTERN, LH, MOON, SEA_LIGHT, SUN_DAWN, TOP, beamAngle, coastZ, ground } from "./layout.ts";
+
+// ── terrain ─────────────────────────────────────────────────────────────────
+
+const PATHS: [number, number, number, number][] = [[6.4, 0.6, 3.6, 0.0], [3.9, -0.2, 2.5, -6.4], [3.4, -2.6, 5.6, -5.2], [6.4, 0.6, 9.0, 4.5]];
+const segDist = (x: number, z: number, [ax, az, bx, bz]: [number, number, number, number]) => {
+  const dx = bx - ax, dz = bz - az, k = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz)));
+  return Math.hypot(x - ax - dx * k, z - az - dz * k);
+};
+
+const terrainGeo = () =>
+  cached("coastTerrain", () => {
+    const ax = expAxis(-260, 260, 0.4, 0.03), az = expAxis(-160, 260, 0.4, 0.03);
+    const nx = ax.n, nz = az.n;
+    const pos = new Float32Array(nx * nz * 3), col = new Float32Array(nx * nz * 3);
+    const grass = new Color("#3e4a2c"), grass2 = new Color("#56603a"), path = new Color("#6e5d47"), rock = new Color("#5d5752"), wet = new Color("#26292a");
+    const c = new Color();
+    for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) {
+      const x = ax.coord[i], z = az.coord[j], h = ground(x, z), k = j * nx + i;
+      pos[k * 3] = x; pos[k * 3 + 1] = h; pos[k * 3 + 2] = z;
+      const e = 0.3, slope = Math.hypot(ground(x + e, z) - ground(x - e, z), ground(x, z + e) - ground(x, z - e)) / (2 * e);
+      c.copy(grass).lerp(grass2, 0.5 + 0.5 * fbm(x * 0.15, z * 0.15, 3));
+      const pd = Math.min(...PATHS.map((p) => segDist(x, z, p)));
+      if (h > TOP - 0.5) c.lerp(path, Math.max(0, Math.min(1, (0.55 - pd) / 0.25)) * 0.9);
+      c.lerp(rock, Math.min(1, Math.max(0, (slope - 0.7) / 0.6)));
+      if (h < 1.6) c.lerp(wet, Math.min(1, (1.6 - h) / 1.6));
+      col[k * 3] = c.r; col[k * 3 + 1] = c.g; col[k * 3 + 2] = c.b;
+    }
+    const idx = new Uint32Array((nx - 1) * (nz - 1) * 6);
+    let n = 0;
+    for (let j = 0; j < nz - 1; j++) for (let i = 0; i < nx - 1; i++) {
+      const a = j * nx + i, b = a + 1, cc = a + nx, d = cc + 1;
+      idx[n++] = a; idx[n++] = cc; idx[n++] = b; idx[n++] = b; idx[n++] = cc; idx[n++] = d;
+    }
+    const g = new BufferGeometry();
+    g.setAttribute("position", new BufferAttribute(pos, 3));
+    g.setAttribute("color", new BufferAttribute(col, 3));
+    g.setIndex(new BufferAttribute(idx, 1));
+    g.computeVertexNormals();
+    g.computeBoundingSphere();
+    return g;
+  });
+const terrainMat = new MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0 });
+
+const rockGeo = () =>
+  cached("coastRock", () => {
+    const g = new IcosahedronGeometry(1, 2);
+    const a = g.attributes.position;
+    for (let i = 0; i < a.count; i++) {
+      const v = new Vector3(a.getX(i), a.getY(i), a.getZ(i));
+      v.multiplyScalar(1 + 0.28 * fbm(v.x * 1.7 + 3, v.y * 1.7 + v.z, 3));
+      a.setXYZ(i, v.x, v.y * 0.75, v.z);
+    }
+    g.computeVertexNormals();
+    return g;
+  });
+const rockMat = new MeshStandardMaterial({ color: "#4a4643", roughness: 0.92, flatShading: true });
+
+const Rocks: React.FC = () => {
+  const mesh = useMemo(() => {
+    const r = mulberry32(31), n = 330;
+    const m = new InstancedMesh(rockGeo(), rockMat, n);
+    const M = new Matrix4(), q = new Quaternion(), c = new Color();
+    for (let i = 0; i < n; i++) {
+      const face = i % 7 < 3;
+      const x = (face ? -45 : -95) + r() * (face ? 90 : 190), zc = coastZ(x);
+      const z = face ? zc - 0.2 - r() * 1.4 : zc - 0.5 - r() * r() * 9, s = face ? 0.45 + r() * 0.9 : 0.8 + r() * 3.2;
+      const y = face ? 0.5 + r() * (TOP - 2) : Math.max(ground(x, z), -1.2 + r() * 1.5);
+      q.setFromAxisAngle(new Vector3(r(), r(), r()).normalize(), r() * 6);
+      M.compose(new Vector3(x, y, z), q, new Vector3(s * (0.8 + r() * 0.6), s * (0.6 + r() * 0.6), s));
+      m.setMatrixAt(i, M);
+      m.setColorAt(i, c.setHSL(0.07, 0.06, (face ? 0.3 : 0.2) + r() * 0.12));
+    }
+    m.castShadow = true;
+    m.receiveShadow = true;
+    return m;
+  }, []);
+  return <primitive object={mesh} />;
+};
+
+const Grass: React.FC<{ t: number }> = ({ t }) => {
+  const { mesh, base } = useMemo(() => {
+    const r = mulberry32(77), base: [number, number, number, number, number][] = [];
+    while (base.length < 2200) {
+      const x = -26 + r() * 56, z = -12 + r() * 40, h = ground(x, z);
+      if (h < TOP - 0.3 || z < coastZ(x) + 0.6) continue;
+      if (x > COTTAGE.x0 - 0.4 && x < COTTAGE.x1 + 0.4 && z > COTTAGE.z0 - 0.4 && z < COTTAGE.z1 + 0.4) continue;
+      if (Math.hypot(x, z) < LH.r0 + 0.8) continue;
+      if (Math.min(...PATHS.map((p) => segDist(x, z, p))) < 0.6) continue;
+      base.push([x, h, z, 0.6 + r() * 0.9, r() * 6.28]);
+    }
+    const g = cached("grassBlade", () => new ConeGeometry(0.05, 0.42, 4, 1).translate(0, 0.21, 0));
+    const m = new InstancedMesh(g, new MeshStandardMaterial({ color: "#ffffff", roughness: 0.9 }), base.length);
+    const c = new Color();
+    base.forEach((_, i) => m.setColorAt(i, c.setHSL(0.2 + 0.05 * r(), 0.32, 0.17 + 0.08 * r())));
+    m.receiveShadow = true;
+    return { mesh: m, base };
+  }, []);
+  const M = new Matrix4(), q = new Quaternion(), e = new Vector3();
+  base.forEach(([x, y, z, s, ph], i) => {
+    const sway = 0.18 * Math.sin(t * 1.6 + x * 0.35 + ph * 0.3) + 0.08 * Math.sin(t * 3.1 + ph);
+    q.setFromAxisAngle(e.set(1, 0, 0.3).normalize(), sway);
+    M.compose(new Vector3(x, y - 0.02, z), q, new Vector3(s, s, s));
+    mesh.setMatrixAt(i, M);
+  });
+  mesh.instanceMatrix.needsUpdate = true;
+  return <primitive object={mesh} />;
+};
+
+const Fence: React.FC = () => {
+  const posts: V3[] = [];
+  for (let x = -7; x <= 9.01; x += 2) posts.push([x, ground(x, coastZ(x) + 1.1), coastZ(x) + 1.1]);
+  const wood = MAT.wood("#5a4a3a");
+  return (
+    <group>
+      {posts.map((p, i) => <mesh key={i} geometry={box(0.09, 1.05, 0.09, 0.01)} material={wood} position={[p[0], p[1] + 0.5, p[2]]} castShadow />)}
+      {posts.slice(1).map((p, i) => {
+        const a = posts[i], dx = p[0] - a[0], dz = p[2] - a[2], L = Math.hypot(dx, dz), yaw = Math.atan2(dx, dz);
+        return [0.5, 0.92].map((hh) => (
+          <mesh key={`${i}${hh}`} geometry={box(0.05, 0.07, L, 0.01)} material={wood} position={[(a[0] + p[0]) / 2, (a[1] + p[1]) / 2 + hh, (a[2] + p[2]) / 2]} rotation={[0, yaw, 0]} castShadow />
+        ));
+      })}
+    </group>
+  );
+};
+
+const Bench: React.FC = () => {
+  const w = MAT.wood("#6a5038");
+  return (
+    <group position={BENCH}>
+      <Slab min={[-0.85, 0.42, -0.2]} max={[0.85, 0.47, 0.22]} m={w} />
+      <Slab min={[-0.85, 0.52, 0.2]} max={[0.85, 0.9, 0.25]} m={w} />
+      {[-0.7, 0.7].map((x) => <Slab key={x} min={[x - 0.04, 0, -0.18]} max={[x + 0.04, 0.42, 0.2]} m={MAT.steel()} />)}
+    </group>
+  );
+};
+
+// ── lighthouse ──────────────────────────────────────────────────────────────
+
+const Lighthouse: React.FC<{ t: number; beam: number; dark: number; cam: Cam }> = ({ t, beam, dark, cam }) => {
+  const white = phys("lhWhite", { color: "#e7e3d9", roughness: 0.7 }), red = phys("lhRed", { color: "#a3302a", roughness: 0.6 });
+  const stone = phys("lhStone", { color: "#8a857c", roughness: 0.9 }), iron = phys("lhIron", { color: "#1d2124", roughness: 0.5, metalness: 0.6 });
+  const rAt = (y: number) => LH.r0 + (LH.r1 - LH.r0) * (y / LH.h);
+  const bands = [0.7, 4, 8, 12, LH.h];
+  const a = beamAngle(t);
+  const glass = phys(`lhGlass${Math.round(beam * dark * 10)}`, { color: "#cfe0ef", roughness: 0.05, transparent: true, opacity: 0.25, emissive: "#ffe8c0", emissiveIntensity: 0.12 * beam * dark, side: DoubleSide, depthWrite: false });
+  const core = phys(`lhCore${Math.round(beam * 10)}`, { color: "#fff6e0", emissive: "#fff0d0", emissiveIntensity: 0.3 + 2 * beam, roughness: 0.2 });
+  // the beam's flare toward the camera
+  const toCam = new Vector3(cam.pos[0] - LAMP[0], 0, cam.pos[2] - LAMP[2]).normalize();
+  const face = Math.max(...[0, Math.PI].map((o) => Math.max(0, -Math.sin(a + o) * toCam.x - Math.cos(a + o) * toCam.z)));
+  const camD = Math.hypot(cam.pos[0] - LAMP[0], cam.pos[1] - LAMP[1], cam.pos[2] - LAMP[2]);
+  const near = Math.min(1, Math.max(0.06, (camD - 3) / 25));
+  return (
+    <group>
+      <mesh geometry={cyl(2.95, 3.05, 0.8, 40)} material={stone} position={[0, TOP + 0.3, 0]} castShadow receiveShadow />
+      {bands.slice(0, -1).map((y0, i) => {
+        const y1 = bands[i + 1];
+        return <mesh key={i} geometry={cyl(rAt(y1), rAt(y0), y1 - y0, 48)} material={i % 2 ? red : white} position={[0, TOP + (y0 + y1) / 2, 0]} castShadow receiveShadow />;
+      })}
+      {/* door (faces +x) and small windows */}
+      <group position={[rAt(1) - 0.02, TOP + 0.7, 0]}>
+        <Slab min={[-0.05, 0, -0.55]} max={[0.12, 2.15, 0.55]} m={stone} />
+        <Slab min={[0.1, 0.02, -0.45]} max={[0.16, 2.0, 0.45]} m={phys("lhDoor", { color: "#2f4a3c", roughness: 0.55, clearcoat: 0.3 })} />
+        <mesh geometry={sphere(0.035, 10, 8)} material={MAT.brass()} position={[0.18, 1.0, 0.33]} />
+        <Slab min={[0.0, -0.7, -0.7]} max={[0.75, 0.0, 0.7]} m={stone} />
+      </group>
+      {[[5.5, -Math.PI / 2], [9.5, Math.PI], [13.2, -Math.PI / 2 + 0.6], [7.5, 0.4]].map(([y, ang], i) => {
+        const r = rAt(y);
+        return (
+          <group key={i} position={[Math.sin(ang) * r, TOP + y, Math.cos(ang) * r]} rotation={[0, ang, 0]}>
+            <mesh geometry={box(0.42, 0.72, 0.1, 0.02)} material={stone} />
+            <mesh geometry={box(0.3, 0.58, 0.04, 0.01)} material={phys("lhWin", { color: "#0c0f14", emissive: "#ffb46a", emissiveIntensity: 0.25 * dark, roughness: 0.2 })} position={[0, 0, 0.04]} />
+          </group>
+        );
+      })}
+      {/* gallery deck, corbels, railing */}
+      <mesh geometry={cyl(2.75, 2.6, 0.3, 48)} material={stone} position={[0, DECK_Y - 0.15, 0]} castShadow receiveShadow />
+      {Array.from({ length: 16 }, (_, i) => {
+        const ang = (i / 16) * Math.PI * 2;
+        return <mesh key={i} geometry={box(0.18, 0.5, 0.6, 0.02)} material={white} position={[Math.sin(ang) * (LH.r1 + 0.35), DECK_Y - 0.5, Math.cos(ang) * (LH.r1 + 0.35)]} rotation={[0, ang, 0]} castShadow />;
+      })}
+      {Array.from({ length: 28 }, (_, i) => {
+        const ang = (i / 28) * Math.PI * 2;
+        return <mesh key={i} geometry={cyl(0.022, 0.022, 1.05, 6)} material={iron} position={[Math.sin(ang) * 2.6, DECK_Y + 0.52, Math.cos(ang) * 2.6]} castShadow />;
+      })}
+      {[1.05, 0.55].map((h) => <mesh key={h} geometry={torus(2.6, 0.028, 6, 96)} material={iron} position={[0, DECK_Y + h, 0]} rotation={[Math.PI / 2, 0, 0]} castShadow />)}
+      {/* lamp room */}
+      <mesh geometry={cyl(LANTERN.r + 0.08, LANTERN.r + 0.1, 0.8, 32)} material={white} position={[0, DECK_Y + 0.4, 0]} castShadow receiveShadow />
+      <mesh geometry={cyl(LANTERN.r, LANTERN.r, 1.85, 32, true)} material={glass} position={[0, DECK_Y + 1.73, 0]} />
+      {Array.from({ length: 10 }, (_, i) => {
+        const ang = (i / 10) * Math.PI * 2;
+        return <mesh key={i} geometry={box(0.05, 1.9, 0.05, 0.005)} material={iron} position={[Math.sin(ang) * LANTERN.r, DECK_Y + 1.73, Math.cos(ang) * LANTERN.r]} castShadow />;
+      })}
+      {[DECK_Y + 0.82, DECK_Y + 2.65].map((y) => <mesh key={y} geometry={torus(LANTERN.r, 0.04, 6, 48)} material={iron} position={[0, y, 0]} rotation={[Math.PI / 2, 0, 0]} />)}
+      <mesh geometry={cyl(0.28, LANTERN.r + 0.32, 1.0, 32)} material={red} position={[0, LANTERN.y1 + 0.15, 0]} castShadow />
+      <mesh geometry={sphere(0.3, 20, 14)} material={iron} position={[0, LANTERN.y1 + 0.85, 0]} castShadow />
+      <mesh geometry={cyl(0.02, 0.02, 1.1, 6)} material={iron} position={[0, LANTERN.y1 + 1.5, 0]} />
+      {/* lens + bright core, turning */}
+      <group position={LAMP} rotation={[0, a, 0]}>
+        <mesh geometry={sphere(0.14, 20, 14)} material={core} />
+        {[-0.3, -0.15, 0, 0.15, 0.3].map((y) => <mesh key={y} geometry={torus(0.42 - Math.abs(y) * 0.6, 0.05, 8, 32)} material={phys("lens", { color: "#c8dce4", roughness: 0.02, transparent: true, opacity: 0.35 })} position={[0, y, 0]} rotation={[Math.PI / 2, 0, 0]} />)}
+        {[1, -1].map((s) => <mesh key={s} geometry={cyl(0.38, 0.38, 0.04, 28)} material={phys(`bullseye${Math.round(beam * 10)}`, { color: "#e8f4f8", roughness: 0.02, transparent: true, opacity: 0.4, emissive: "#fff0d0", emissiveIntensity: 0.22 * beam })} position={[0, 0, s * -0.5]} rotation={[Math.PI / 2, 0, 0]} />)}
+      </group>
+      {/* beams read as volumes from afar; close to the lamp (on the gallery) they would be solid tubes */}
+      {[0, Math.PI].map((o) => <Beam key={o} pos={LAMP} yaw={a + o} pitch={-0.015} len={160} radius={9} color="#fff2d6" i={0.55 * beam * dark * Math.min(1, Math.max(0, (camD - 5) / 6))} />)}
+      <Glow pos={LAMP} size={(2.2 + 14 * face ** 24) * near} color="#ffe9c4" i={beam * (0.35 + 0.65 * dark) * (0.5 + 0.5 * face ** 6) * near} />
+    </group>
+  );
+};
+
+// ── cottage ─────────────────────────────────────────────────────────────────
+
+const chartTex = () =>
+  canvasTex("seaChart", 512, 360, (g, w, h) => {
+    g.fillStyle = "#d9cfb3"; g.fillRect(0, 0, w, h);
+    g.strokeStyle = "rgba(60,80,110,0.55)"; g.lineWidth = 2;
+    for (let i = 0; i < 6; i++) { g.beginPath(); g.moveTo(0, 60 + i * 50); for (let x = 0; x <= w; x += 16) g.lineTo(x, 60 + i * 50 + 18 * Math.sin(x * 0.02 + i)); g.stroke(); }
+    g.fillStyle = "#8a7a58"; g.beginPath(); g.moveTo(w, 0); g.lineTo(w * 0.62, 0); g.bezierCurveTo(w * 0.7, h * 0.3, w * 0.55, h * 0.5, w * 0.72, h); g.lineTo(w, h); g.fill();
+    g.strokeStyle = "rgba(120,30,30,0.8)"; g.setLineDash([8, 6]); g.beginPath(); g.moveTo(w * 0.15, h * 0.8); g.lineTo(w * 0.6, h * 0.35); g.stroke();
+  });
+const logTex = () =>
+  canvasTex("logbook", 512, 320, (g, w, h) => {
+    g.fillStyle = "#efe6cf"; g.fillRect(0, 0, w, h);
+    g.strokeStyle = "rgba(90,110,160,0.35)"; g.lineWidth = 1;
+    for (let y = 30; y < h; y += 18) { g.beginPath(); g.moveTo(10, y); g.lineTo(w - 10, y); g.stroke(); }
+    g.strokeStyle = "rgba(40,40,60,0.75)"; g.lineWidth = 2;
+    const r = mulberry32(4);
+    for (let y = 26; y < h - 40; y += 18) { g.beginPath(); let x = 20; g.moveTo(x, y); while (x < (y > 200 ? 180 : w / 2 - 30)) { x += 6 + r() * 10; g.lineTo(x, y - r() * 6); } g.stroke(); }
+    g.fillStyle = "rgba(60,60,60,0.4)"; g.fillRect(w / 2 - 2, 0, 4, h);
+  });
+
+const Cottage: React.FC<{ s: SetState; dark: number; inside: boolean; t: number }> = ({ s, dark, inside, t }) => {
+  const { x0, x1, z0, z1, y, h, t: th } = COTTAGE;
+  const wallOut = MAT.wall("#d9dcd6"), dado = MAT.dado("#4f6b6a"), roofM = phys("roof", { color: "#6e3426", roughness: 0.75 });
+  const lamp = s.lamp ?? 1;
+  const rise = 1.5, ov = 0.45, halfW = (z1 - z0) / 2 + ov, slope = Math.atan2(rise, halfW), L = Math.hypot(rise, halfW);
+  const gable = useMemo(() => {
+    const sh = new Shape();
+    sh.moveTo(z0 - 0.02, 0); sh.lineTo(z1 + 0.02, 0); sh.lineTo((z0 + z1) / 2, rise); sh.closePath();
+    return new ShapeGeometry(sh);
+  }, [z0, z1]);
+  return (
+    <group>
+      {/* foundation + floor */}
+      <Slab min={[x0 - 0.1, TOP - 1.5, z0 - 0.1]} max={[x1 + 0.1, y - 0.1, z1 + 0.1]} m={phys("found", { color: "#6d675e", roughness: 0.95 })} />
+      <Slab min={[x0, y - 0.12, z0]} max={[x1, y, z1]} m={MAT.planks([3, 3], "#c9a27a")} />
+      <Slab min={[x0 - 0.6, TOP - 0.3, C_DOOR.z - 0.6]} max={[x0, y - 0.05, C_DOOR.z + 0.6]} m={phys("found", { color: "#6d675e", roughness: 0.95 })} />
+      {/* walls */}
+      <HoledWall axis="z" c={x0 + th / 2} a0={z0} a1={z1} y0={y} top={h} t={th} m={wallOut} dado={dado} holes={[{ a0: C_DOOR.z - C_DOOR.w / 2, a1: C_DOOR.z + C_DOOR.w / 2, y0: 0, y1: 2.05 }]} />
+      <HoledWall axis="z" c={x1 - th / 2} a0={z0} a1={z1} y0={y} top={h} t={th} m={wallOut} dado={dado} holes={[{ a0: -1.1, a1: -0.2, y0: 1.0, y1: 1.9 }]} />
+      <HoledWall axis="x" c={z0 + th / 2} a0={x0} a1={x1} y0={y} top={h} t={th} m={wallOut} dado={dado} holes={[{ a0: C_WIN.x - C_WIN.w / 2, a1: C_WIN.x + C_WIN.w / 2, y0: C_WIN.y0, y1: C_WIN.y1 }]} />
+      <HoledWall axis="x" c={z1 - th / 2} a0={x0} a1={x1} y0={y} top={h} t={th} m={wallOut} dado={dado} holes={[{ a0: 8.3, a1: 9.1, y0: 1.1, y1: 1.85 }]} />
+      {/* windows, door */}
+      <Window at={[C_WIN.x, y + C_WIN.y0, z0 + th / 2]} axis="x" w={C_WIN.w} h={C_WIN.y1 - C_WIN.y0} />
+      <Window at={[x1 - th / 2, y + 1.0, -0.65]} axis="z" w={0.9} h={0.9} />
+      <Window at={[8.7, y + 1.1, z1 - th / 2]} axis="x" w={0.8} h={0.75} />
+      <Door at={[x0 + th / 2, y, C_DOOR.z]} axis="z" w={C_DOOR.w} open={s.door ?? 0} inside={-1} leaf={phys("cDoor", { color: "#3d5a6e", roughness: 0.5, clearcoat: 0.3 })} />
+      {/* roof: two pitches along x + gables */}
+      {[1, -1].map((k) => (
+        <mesh key={k} geometry={box(x1 - x0 + 2 * ov, 0.09, L, 0.01)} material={roofM} position={[(x0 + x1) / 2, y + h + rise / 2, (z0 + z1) / 2 + k * (halfW / 2)]} rotation={[k * slope, 0, 0]} castShadow receiveShadow />
+      ))}
+      {[x0, x1].map((x) => <mesh key={x} geometry={gable} material={wallOut} position={[x + (x === x0 ? 0.02 : -0.02), y + h, 0]} rotation={[0, Math.PI / 2, 0]} castShadow />)}
+      {/* ceiling */}
+      <Slab min={[x0 + th, y + h - 0.05, z0 + th]} max={[x1 - th, y + h, z1 - th]} m={MAT.planks([2, 2], "#b89a78")} />
+      {/* porch lamp */}
+      <mesh geometry={box(0.16, 0.22, 0.16, 0.02)} material={phys(`porch${Math.round(lamp * dark * 10)}`, { color: "#2a2620", emissive: "#ffb76e", emissiveIntensity: 2.5 * lamp * dark, roughness: 0.4 })} position={[x0 - 0.12, y + 2.35, C_DOOR.z + 0.62]} />
+      {inside ? <Interior lamp={lamp} t={t} /> : null}
+      {/* warm window glow seen from outside */}
+      {!inside ? <Glow pos={[C_WIN.x, y + 1.5, z0 - 0.05]} size={2.4} color="#ffb05a" i={0.22 * lamp * dark} /> : null}
+    </group>
+  );
+};
+
+const Interior: React.FC<{ lamp: number; t: number }> = ({ lamp, t }) => {
+  const y = COTTAGE.y;
+  return (
+    <group>
+      <Desk at={DESK} w={1.5} d={0.66} top={DESK_TOP} wood="#6e4c30" />
+      <Chair at={[DESK[0], y, DESK[2] + 0.75]} yaw={Math.PI} />
+      {/* open logbook + pen, radio, mug, oil lamp */}
+      <group position={[DESK[0] - 0.15, y + DESK_TOP + 0.012, DESK[2] + 0.06]} rotation={[0, 0.08, 0]}>
+        <mesh geometry={box(0.42, 0.016, 0.3, 0.004)} material={phys("logCover", { color: "#4a2c1e", roughness: 0.7 })} />
+        <mesh geometry={box(0.4, 0.004, 0.28, 0)} material={phys("logPages", { color: "#ffffff", map: logTex(), roughness: 0.85 })} position={[0, 0.011, 0]} />
+        <mesh geometry={cyl(0.004, 0.004, 0.14, 6)} material={phys("pen", { color: "#1d2b4a", roughness: 0.4 })} position={[0.12, 0.018, 0.05]} rotation={[Math.PI / 2, 0, 0.6]} />
+      </group>
+      <group position={[DESK[0] - 0.58, y + DESK_TOP, DESK[2] - 0.12]}>
+        <mesh geometry={box(0.3, 0.2, 0.16, 0.02)} material={phys("radio", { color: "#5a4632", roughness: 0.6 })} position={[0, 0.1, 0]} castShadow />
+        <mesh geometry={box(0.16, 0.06, 0.01, 0.004)} material={phys("dial", { color: "#1a2a1a", emissive: "#7aff9a", emissiveIntensity: 0.6, roughness: 0.3 })} position={[0.03, 0.13, 0.082]} />
+        <mesh geometry={cyl(0.003, 0.003, 0.45, 6)} material={MAT.steel()} position={[-0.11, 0.42, 0]} rotation={[0, 0, 0.25]} />
+      </group>
+      <mesh geometry={cyl(0.04, 0.035, 0.09, 16)} material={MAT.plastic("#d9d2c2")} position={[DESK[0] + 0.15, y + DESK_TOP + 0.045, DESK[2] - 0.15]} castShadow />
+      <OilLamp at={[DESK[0] + 0.5, y + DESK_TOP, DESK[2] - 0.05]} on={lamp * (0.94 + 0.06 * Math.sin(t * 13) * Math.sin(t * 7.3))} />
+      <Bed at={BED_AT} yaw={Math.PI} L={1.9} W={0.92} blanket="#4a5a7a" />
+      <Shelf at={[COTTAGE.x1 - COTTAGE.t, y + 1.55, 1.2]} yaw={-Math.PI / 2} w={1.2} />
+      <WallClock at={[10.4, y + 2.05, COTTAGE.z1 - COTTAGE.t - 0.02]} yaw={Math.PI} time={2.3} />
+      <mesh geometry={box(0.9, 0.62, 0.01, 0)} material={phys("chart", { color: "#ffffff", map: chartTex(), roughness: 0.8 })} position={[COTTAGE.x0 + COTTAGE.t + 0.01, y + 1.55, -1.3]} rotation={[0, Math.PI / 2, 0]} />
+      {/* yellow raincoat on a hook by the door */}
+      <mesh geometry={box(0.42, 0.95, 0.12, 0.05)} material={phys("raincoat", { color: "#d8a21e", roughness: 0.4, clearcoat: 0.6 })} position={[COTTAGE.x0 + COTTAGE.t + 0.08, y + 1.35, 1.55]} rotation={[0, Math.PI / 2, 0.04]} castShadow />
+      <mesh geometry={box(1.6, 0.012, 1.0, 0.004)} material={MAT.fabric("rug", "#7a3a2a", "#c9a26a")} position={[9.3, y + 0.006, 0.4]} receiveShadow />
+      <Dust min={[COTTAGE.x0 + 0.3, y + 0.2, COTTAGE.z0 + 0.3]} max={[COTTAGE.x1 - 0.3, y + 2.4, COTTAGE.z1 - 0.3]} n={200} t={t} i={0.25} size={0.008} color="#ffd9b0" />
+    </group>
+  );
+};
+
+// ── the boat and its lamps (the "light at sea") ─────────────────────────────
+
+const Boat: React.FC<{ t: number; amp: number; seaLight: number; boat: number; fog: number; cam: Cam }> = ({ t, amp, seaLight, boat, fog, cam }) => {
+  const hy = waveHeight(BOAT[0], BOAT[2], t, amp) * 0.85;
+  const [sx, sz] = waveSlope(BOAT[0], BOAT[2], t, amp);
+  const hull = phys("hull", { color: "#2c4a6a", roughness: 0.6 }), stripe = phys("hullStripe", { color: "#e6e0d0", roughness: 0.6 }), wood = MAT.wood("#5a4030");
+  // blink: the lamps dip behind the swells now and then (their reflection on the water comes from the point light)
+  const blink = 0.55 + 0.45 * Math.min(1, Math.max(0, 0.5 + 0.9 * (Math.sin(t * 1.25) + 0.6 * Math.sin(t * 0.71 + 1.0))));
+  const on = Math.max(seaLight * blink, boat);
+  const lampM = phys(`boatLamp${Math.round(on * 10)}`, { color: "#fff8e8", emissive: "#ffe4b0", emissiveIntensity: 8 * on, roughness: 0.2 });
+  const dist = Math.hypot(cam.pos[0] - SEA_LIGHT[0], cam.pos[2] - SEA_LIGHT[2]);
+  const far = Math.min(1, Math.max(0, (dist - 30) / 120));
+  return (
+    <group>
+      <group position={[BOAT[0], hy, BOAT[2]]} rotation={[sz * 0.8, BOAT_YAW, -sx * 0.8]}>
+        <mesh geometry={cached("boatHull", () => new IcosahedronGeometry(1, 3))} material={hull} scale={[1.15, 0.7, 5.0]} position={[0, 0.25, 0]} castShadow />
+        <mesh geometry={box(1.7, 0.06, 7.6, 0.03)} material={wood} position={[0, 0.72, 0]} castShadow receiveShadow />
+        <mesh geometry={box(2.2, 0.12, 0.12, 0.02)} material={stripe} position={[0, 0.62, 3.2]} />
+        <mesh geometry={box(1.3, 0.85, 1.5, 0.05)} material={phys("cabin", { color: "#c9b48a", roughness: 0.7 })} position={[0, 1.18, 2.0]} castShadow />
+        <mesh geometry={box(1.55, 0.06, 1.8, 0.02)} material={phys("cabinRoof", { color: "#3a5a7a", roughness: 0.6 })} position={[0, 1.64, 2.0]} rotation={[0.08, 0, 0]} castShadow />
+        <mesh geometry={cyl(0.07, 0.09, 5.2, 8)} material={wood} position={[0, 2.95, -0.6]} castShadow />
+        <mesh geometry={cyl(0.04, 0.04, 3.4, 6)} material={wood} position={[0, 4.2, -0.6]} rotation={[0, 0, Math.PI / 2]} />
+        {[-1.5, -0.5, 0.5, 1.5].map((x) => <mesh key={x} geometry={sphere(0.14, 12, 8)} material={lampM} position={[x, 4.05, -0.6]} />)}
+        {/* outriggers (cadik) */}
+        {[1, -1].map((k) => (
+          <group key={k}>
+            <mesh geometry={cyl(0.12, 0.12, 8.5, 8)} material={wood} position={[k * 2.6, 0.1, 0]} rotation={[Math.PI / 2, 0, 0]} />
+            {[-2.2, 2.2].map((z) => <mesh key={z} geometry={cyl(0.05, 0.05, 2.7, 6)} material={wood} position={[k * 1.35, 0.55, z]} rotation={[0, 0, Math.PI / 2 - k * 0.2]} />)}
+          </group>
+        ))}
+      </group>
+      {/* the light as seen from far away: glow + halo in fog + its streak on the water */}
+      <Glow pos={[SEA_LIGHT[0], SEA_LIGHT[1] + hy, SEA_LIGHT[2]]} size={(3 + 4 * fog) * (0.4 + 0.6 * far)} color="#ffe8c4" i={on * (0.55 + 0.45 * far)} />
+      <Glow pos={[SEA_LIGHT[0], SEA_LIGHT[1] + hy, SEA_LIGHT[2]]} size={(6 + 7 * fog) * far} color="#c8d8ff" i={on * fog * 0.14 * far} />
+    </group>
+  );
+};
+
+// ── the world ───────────────────────────────────────────────────────────────
+
+const TIME_SKY: Record<string, { look: keyof typeof SKIES; dir: V3; dark: number; sea: string }> = {
+  night: { look: "night", dir: MOON, dark: 1, sea: "#08141f" },
+  dusk: { look: "dusk", dir: [0.6, 0.12, -0.78], dark: 0.6, sea: "#1a2232" },
+  dawn: { look: "dawn", dir: SUN_DAWN, dark: 0.35, sea: "#1d3346" },
+  day: { look: "day", dir: [0.4, 0.75, -0.5], dark: 0, sea: "#1d4258" },
+};
+
+export const CoastSet: React.FC<{ place: string; time: string; s: SetState; t: number; cam: Cam }> = ({ place, time, s, t, cam }) => {
+  const T = TIME_SKY[time] ?? TIME_SKY.night;
+  const inside = place === "cottage";
+  const amp = s.waves ?? 1;
+  return (
+    <group>
+      <SkyDome look={SKIES[T.look]} dir={T.dir} cam={cam.pos} t={t} />
+      <Ocean t={t} amp={amp} color={T.sea} />
+      <mesh geometry={terrainGeo()} material={terrainMat} receiveShadow castShadow />
+      <Rocks />
+      <Grass t={t} />
+      <Fence />
+      <Bench />
+      <Lighthouse t={t} beam={s.beam ?? 1} dark={T.dark} cam={cam} />
+      <Cottage s={s} dark={T.dark} inside={inside} t={t} />
+      <Boat t={t} amp={amp} seaLight={(s.seaLight ?? 0) * (0.3 + 0.7 * T.dark)} boat={s.boat ?? 0} fog={s.fog ?? 0.3} cam={cam} />
+      {place === "gallery" ? <Dust min={[-3, DECK_Y, -3]} max={[3, DECK_Y + 3, 3]} n={140} t={t} i={0.18} size={0.012} /> : null}
+    </group>
+  );
+};

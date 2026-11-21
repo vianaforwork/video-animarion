@@ -1,0 +1,4214 @@
+VOYNANN Motion - packed source files of this folder. Do not edit by hand.
+The skill upload in the Claude app accepts at most 200 files, so the source files are packed here.
+`node <skill folder>/new-project.mjs <project folder> --kit=<style>` unpacks them into the project.
+Format: per file one line with four '=' signs, the byte length and the path, then exactly that many bytes.
+
+==== 95 project/.gitignore
+node_modules
+out
+.gl-mode
+.DS_Store
+public/audio/*
+!public/audio/.keep
+src/stories/data/*.json
+
+==== 24254 project/library/lexicon-id.json
+{
+ "doc": "Indonesian word lists for the story analyzer (scripts/analyze.mjs + scripts/story-nlp.mjs). Keys are lowercase ROOTS or word forms (one or two words) — the analyzer strips affixes (me-/mem-/men-/meng-/meny-, ber-, ter-, di-, ke-, -kan, -i, -an, -nya, -lah), so a root covers every form (\"ambil\" = mengambil, mengambilnya, diambil). object values: a library object id, \"builtin:<id>\", \"prop:<id>\" (held prop), \"world:<thing>\" (built by the world itself: doors, windows, lamps), \"ui:<thing>\" (shown as a screen/card insert: a message, a photo, CCTV footage), \"look:<thing>\" (clothing / accessory on a person), \"generate:<english name>\" (author it from primitives) or \"complex:<english name>\" (too organic / detailed for primitives). actions: an engine action, \"face:<face>\" or \"unsupported:<what>\". states: what happens to a thing (on / off / sound / out / open / shut / buzz). sources: sound sources → SFX. figures: words for an unnamed (often uncanny) person. stop: words that are never names or objects.",
+ "places": {
+  "rumah sakit": "hospital",
+  "bangsal": "hospital",
+  "lorong": "corridor",
+  "icu": "hospital",
+  "ugd": "hospital",
+  "puskesmas": "hospital",
+  "klinik": "hospital",
+  "pasar": "market",
+  "lapak": "market",
+  "los": "market",
+  "warung": "shop",
+  "toko": "shop",
+  "kios": "shop",
+  "hutan": "forest",
+  "jalan setapak": "forest",
+  "kemah": "forest",
+  "perkemahan": "forest",
+  "gunung": "mountain",
+  "kebun": "garden",
+  "sawah": "ricefield",
+  "sekolah": "school",
+  "kelas": "school",
+  "kantin": "school",
+  "kantor": "office",
+  "ruang rapat": "office",
+  "meja kerja": "office",
+  "rumah": "house",
+  "kamar": "house",
+  "dapur": "house",
+  "ruang tamu": "house",
+  "teras": "house",
+  "kos": "kos",
+  "kamar kos": "kos",
+  "jalan": "street",
+  "jalan raya": "street",
+  "trotoar": "street",
+  "gang": "street",
+  "perempatan": "street",
+  "halte": "street",
+  "kota": "street",
+  "pantai": "coast",
+  "pesisir": "coast",
+  "mercusuar": "coast",
+  "laut": "coast",
+  "dermaga": "coast",
+  "stasiun": "station",
+  "masjid": "mosque",
+  "taman": "park",
+  "perpustakaan": "library",
+  "kafe": "cafe",
+  "ruang kerja": "office",
+  "lantai": "building",
+  "gedung": "building",
+  "kantor polisi": "office",
+  "ruangan": "room",
+  "ruang": "room",
+  "kamar mandi": "house",
+  "toilet": "house",
+  "parkiran": "street",
+  "basemen": "building",
+  "rooftop": "building",
+  "atap gedung": "building",
+  "gerbang kos": "kos",
+  "rumah kos": "kos",
+  "kos-kosan": "kos",
+  "sudut kamar": "house",
+  "ujung ruangan": "room",
+  "ujung lorong": "corridor",
+  "pantri": "office",
+  "pantry": "office",
+  "ruang baca": "library",
+  "ruang tunggu": "hospital",
+  "kamar tidur": "house",
+  "ruang makan": "house",
+  "minimarket": "shop",
+  "supermarket": "shop",
+  "swalayan": "shop",
+  "kasir": "shop",
+  "apotek": "shop",
+  "laundry": "shop"
+ },
+ "time": {
+  "malam": "night",
+  "tengah malam": "night",
+  "dini hari": "night",
+  "gelap": "night",
+  "subuh": "dawn",
+  "fajar": "dawn",
+  "pagi": "day",
+  "siang": "day",
+  "sore": "dusk",
+  "senja": "dusk",
+  "petang": "dusk",
+  "magrib": "dusk",
+  "larut": "night",
+  "larut malam": "night",
+  "tengah hari": "day",
+  "dini": "night",
+  "jam malam": "night",
+  "pagi buta": "dawn",
+  "malam hari": "night",
+  "siang hari": "day",
+  "sore hari": "dusk",
+  "matahari terbit": "dawn",
+  "matahari terbenam": "dusk"
+ },
+ "roles": {
+  "suster": "perawat",
+  "perawat": "perawat",
+  "dokter": "dokter",
+  "pedagang": "pedagang",
+  "penjual": "pedagang",
+  "pembeli": "ibu",
+  "pemuda": "pemuda",
+  "pemudi": "pemudi",
+  "nenek": "ibu",
+  "kakek": "kakek",
+  "ibu": "ibu",
+  "bu": "ibu",
+  "bapak": "bapak",
+  "pak": "bapak",
+  "anak": "anak",
+  "pendaki": "pendaki",
+  "penjaga": "penjaga-mercusuar",
+  "mbak": "pemudi",
+  "mas": "pemuda",
+  "guru": "bapak",
+  "murid": "anak",
+  "satpam": "bapak",
+  "ibu kos": "ibu",
+  "bapak kos": "bapak",
+  "karyawan": "pemuda",
+  "pegawai": "pemuda",
+  "adik": "anak",
+  "kakak": "pemudi",
+  "pasien": "kakek",
+  "nelayan": "penjaga-mercusuar",
+  "polisi": "bapak",
+  "petugas": "bapak",
+  "sopir": "bapak",
+  "mahasiswa": "pemuda",
+  "mahasiswi": "pemudi",
+  "teman": "pemuda",
+  "penumpang": "pemuda",
+  "supir": "bapak"
+ },
+ "objects": {
+  "kursi roda": "wheelchair",
+  "infus": "iv-stand",
+  "tiang infus": "iv-stand",
+  "meja perawat": "nurse-desk",
+  "meja jaga": "nurse-desk",
+  "troli": "med-trolley",
+  "kursi tunggu": "waiting-chairs",
+  "kursi": "office-chair",
+  "lapak": "market-stall",
+  "keranjang": "orange-basket",
+  "timbangan": "market-scale",
+  "kantong": "plastic-bag",
+  "kantong plastik": "plastic-bag",
+  "kresek": "plastic-bag",
+  "uang": "money",
+  "kaleng": "money-tin",
+  "krat": "crate-stack",
+  "peti": "crate-stack",
+  "karung": "rice-sack",
+  "beras": "rice-sack",
+  "jeruk": "orange-basket",
+  "buah": "fruit-stall",
+  "sayur": "market-stall",
+  "cabai": "market-stall",
+  "tomat": "market-stall",
+  "burung hantu": "owl-branch",
+  "tenda": "tent",
+  "papan": "signpost",
+  "rambu": "signpost",
+  "api unggun": "campfire",
+  "pohon": "builtin:tree-broad",
+  "pinus": "builtin:tree-pine",
+  "kelapa": "builtin:tree-palm",
+  "semak": "builtin:bush",
+  "batu": "builtin:rock",
+  "ranting": "builtin:log",
+  "batang": "builtin:log",
+  "rumput": "builtin:grass-tuft",
+  "pakis": "builtin:fern",
+  "senter": "prop:flashlight",
+  "lentera": "prop:lantern",
+  "ponsel": "prop:phone",
+  "hp": "prop:phone",
+  "telepon": "prop:phone",
+  "buku": "prop:book",
+  "gelas": "prop:mug",
+  "cangkir": "prop:mug",
+  "kopi": "prop:mug",
+  "teropong": "prop:binoculars",
+  "pintu": "world:door",
+  "jendela": "world:window",
+  "lampu": "world:lamp",
+  "tangga": "world:stairs",
+  "dinding": "world:wall",
+  "atap": "world:roof",
+  "meja": "generate:table / desk",
+  "lemari": "library:wardrobe",
+  "rak": "generate:shelf",
+  "kasur": "library:bed",
+  "ranjang": "library:bed",
+  "sofa": "library:sofa",
+  "papan tulis": "library:blackboard",
+  "bangku": "generate:bench / seat",
+  "laptop": "library:laptop",
+  "komputer": "generate:desktop computer",
+  "tas": "generate:bag",
+  "payung": "generate:umbrella",
+  "kotak": "generate:box",
+  "botol": "generate:bottle",
+  "piring": "generate:plate",
+  "kulkas": "library:fridge",
+  "televisi": "library:tv-cabinet",
+  "tv": "library:tv-cabinet",
+  "jam": "library:wall-clock",
+  "gerobak": "generate:food cart",
+  "tiang listrik": "generate:utility pole",
+  "lampu jalan": "world:lamp-post",
+  "mobil": "complex:car",
+  "motor": "complex:motorcycle",
+  "sepeda": "complex:bicycle",
+  "bus": "complex:bus",
+  "kapal": "complex:boat",
+  "perahu": "complex:boat",
+  "pesawat": "complex:airplane",
+  "kucing": "complex:cat",
+  "anjing": "complex:dog",
+  "ayam": "complex:chicken",
+  "kambing": "complex:goat",
+  "sapi": "complex:cow",
+  "kuda": "complex:horse",
+  "ikan": "complex:fish",
+  "burung": "complex:bird",
+  "gitar": "complex:guitar",
+  "piano": "complex:piano",
+  "patung": "complex:statue",
+  "boneka": "complex:doll",
+  "sekeranjang": "orange-basket",
+  "kembalian": "money",
+  "dompet": "generate:wallet",
+  "sekantong": "plastic-bag",
+  "printer": "library:office-printer",
+  "mesin cetak": "library:office-printer",
+  "fotokopi": "library:office-printer",
+  "mesin fotokopi": "library:office-printer",
+  "kertas": "generate:paper sheet",
+  "lembar": "generate:paper sheet",
+  "lembaran": "generate:paper sheet",
+  "dokumen": "generate:paper sheet",
+  "daftar absensi": "generate:attendance sheet",
+  "absensi": "generate:attendance sheet",
+  "map": "generate:folder",
+  "berkas": "generate:folder",
+  "kamera keamanan": "library:cctv-camera",
+  "kamera pengawas": "library:cctv-camera",
+  "cctv": "library:cctv-camera",
+  "layar": "generate:screen / monitor",
+  "monitor": "library:desk-monitor",
+  "jam dinding": "library:wall-clock",
+  "meja kerja": "library:office-desk",
+  "kubikel": "library:office-desk",
+  "lemari arsip": "library:filing-cabinet",
+  "dispenser": "generate:water dispenser",
+  "lift": "world:lift door",
+  "cermin": "generate:mirror",
+  "gagang pintu": "world:door handle",
+  "gagang": "world:door handle",
+  "ambang pintu": "world:door",
+  "gerbang": "world:gate",
+  "pagar": "world:fence",
+  "kipas": "library:standing-fan",
+  "kipas angin": "library:standing-fan",
+  "bantal": "generate:pillow",
+  "foto": "ui:photo on the phone",
+  "pesan": "ui:phone message",
+  "rekaman": "ui:video footage",
+  "notifikasi": "ui:phone message",
+  "video": "ui:video footage",
+  "jaket": "look:jacket",
+  "kemeja": "look:collared shirt",
+  "baju": "look:clothes",
+  "gelang": "look:bracelet",
+  "gelang benang": "look:bracelet",
+  "kacamata": "look:glasses",
+  "topi": "look:cap",
+  "kerudung": "look:hijab",
+  "hijab": "look:hijab",
+  "seragam": "look:uniform",
+  "bel": "generate:call bell",
+  "bel panggilan": "generate:call bell",
+  "telur": "generate:egg tray",
+  "pondok": "generate:wooden cabin",
+  "pondok kayu": "generate:wooden cabin",
+  "kelinci": "complex:rabbit",
+  "lampu meja": "generate:desk lamp",
+  "lampu senter": "prop:flashlight",
+  "kamera": "generate:camera",
+  "jam masuk": "ui:attendance entry",
+  "jam keluar": "ui:attendance entry",
+  "daftar": "generate:paper sheet",
+  "ombak": "world:waves",
+  "kabut": "world:fog",
+  "meja baca": "library:reading-table",
+  "langit": "world:sky",
+  "angkot": "complex:minibus (angkot)",
+  "taksi": "complex:car",
+  "ojek": "complex:motorcycle",
+  "kereta": "complex:train",
+  "becak": "complex:pedicab",
+  "spion": "world:mirror (vehicle)",
+  "loker": "library:locker-row",
+  "surat": "generate:folded letter",
+  "amplop": "generate:envelope",
+  "kue": "generate:cake",
+  "lilin": "generate:candles",
+  "oven": "generate:oven",
+  "kompor": "library:kitchen-counter",
+  "panci": "generate:pot",
+  "kunci": "generate:key",
+  "halte": "generate:bus stop shelter",
+  "kasir": "library:counter",
+  "mesin kasir": "generate:cash register",
+  "antrean": "world:queue (2–3 people at most)",
+  "qris": "library:qris",
+  "uang tunai": "money",
+  "tempat tidur": "library:bed",
+  "whiteboard": "library:whiteboard",
+  "meja makan": "library:dining-table",
+  "meja tamu": "library:coffee-table",
+  "rak buku": "library:bookshelf",
+  "rak sepatu": "library:shoe-rack",
+  "foto keluarga": "library:wall-photo",
+  "bingkai foto": "library:wall-photo",
+  "mading": "library:notice-board",
+  "papan pengumuman": "library:notice-board",
+  "tiang bendera": "library:flagpole",
+  "bendera": "library:flagpole",
+  "meja sekolah": "library:school-desk",
+  "bangku sekolah": "library:school-chair",
+  "kursi kantor": "library:office-chair",
+  "meja rapat": "library:meeting-table",
+  "tanaman": "library:potted-plant",
+  "pot": "library:potted-plant"
+ },
+ "actions": {
+  "berjalan": "walk",
+  "melangkah": "walk",
+  "jalan": "walk",
+  "menyusuri": "walk",
+  "menghampiri": "walk",
+  "mendekat": "walk",
+  "mendekati": "walk",
+  "pulang": "walk",
+  "berlari": "run",
+  "lari": "run",
+  "berlarian": "run",
+  "duduk": "sit",
+  "terduduk": "sit",
+  "berdiri": "standUp",
+  "bangkit": "standUp",
+  "menunjuk": "point",
+  "mengambil": "pickUp",
+  "memungut": "pickUp",
+  "meraih": "reach",
+  "meletakkan": "putDown",
+  "menaruh": "putDown",
+  "menimbang": "putDown",
+  "memasukkan": "pickUp",
+  "memberikan": "give",
+  "menyerahkan": "give",
+  "memberi": "give",
+  "menyodorkan": "give",
+  "menerima": "receive",
+  "membuka": "open",
+  "menutup": "close",
+  "mendorong": "push",
+  "berlutut": "kneel",
+  "jongkok": "kneel",
+  "berjongkok": "kneel",
+  "mengunci": "kneel",
+  "menulis": "write",
+  "mencatat": "write",
+  "menoleh": "look",
+  "melihat": "look",
+  "menatap": "look",
+  "memandang": "look",
+  "mengamati": "look",
+  "memperhatikan": "look",
+  "berhenti": "freeze",
+  "terdiam": "freeze",
+  "membeku": "freeze",
+  "mematung": "freeze",
+  "mengintip": "peer",
+  "mengarahkan": "raise",
+  "mengangkat": "raise",
+  "menyorot": "raise",
+  "berpikir": "think",
+  "mengangguk": "nod",
+  "menggeleng": "shake",
+  "menghela": "sigh",
+  "berbicara": "talk",
+  "berkata": "talk",
+  "bertanya": "talk",
+  "menjawab": "talk",
+  "menawar": "talk",
+  "menggigil": "shiver",
+  "tidur": "sleep",
+  "terbangun": "wake",
+  "bangun": "wake",
+  "terkejut": "startle",
+  "kaget": "startle",
+  "melambai": "wave",
+  "menelepon": "phone",
+  "membaca": "phone",
+  "berbaring": "lie",
+  "memeluk": "unsupported:hug",
+  "berenang": "unsupported:swim",
+  "memanjat": "unsupported:climb",
+  "melompat": "unsupported:jump",
+  "menari": "unsupported:dance",
+  "makan": "unsupported:eat",
+  "minum": "unsupported:drink",
+  "mengemudi": "unsupported:drive",
+  "menyetir": "unsupported:drive",
+  "naik": "unsupported:ride/climb",
+  "menggendong": "unsupported:carry a person",
+  "memukul": "unsupported:hit",
+  "jatuh": "unsupported:fall",
+  "terjatuh": "unsupported:fall",
+  "menangis": "face:sad",
+  "bersembunyi": "unsupported:hide",
+  "membayar": "give",
+  "datang": "walk",
+  "menata": "reach",
+  "menerangi": "raise",
+  "tersesat": "walk",
+  "susur": "walk",
+  "dekati": "walk",
+  "pergi": "walk",
+  "tunjuk": "point",
+  "ambil": "pickUp",
+  "pungut": "pickUp",
+  "raih": "reach",
+  "sentuh": "reach",
+  "pegang": "reach",
+  "tekan": "reach",
+  "letak": "putDown",
+  "taruh": "putDown",
+  "simpan": "putDown",
+  "beri": "give",
+  "serah": "give",
+  "sodor": "give",
+  "bayar": "give",
+  "terima": "receive",
+  "buka": "open",
+  "tutup": "close",
+  "dorong": "push",
+  "lutut": "kneel",
+  "tulis": "write",
+  "catat": "write",
+  "toleh": "look",
+  "lihat": "look",
+  "tatap": "look",
+  "pandang": "look",
+  "amati": "look",
+  "perhati": "look",
+  "perhatikan": "look",
+  "periksa": "look",
+  "baca": "look",
+  "perbesar": "phone",
+  "potret": "phone",
+  "telepon": "phone",
+  "henti": "freeze",
+  "intip": "peer",
+  "sorot": "raise",
+  "angkat": "pickUp",
+  "pikir": "think",
+  "angguk": "nod",
+  "geleng": "shake",
+  "hela": "sigh",
+  "bicara": "talk",
+  "tanya": "talk",
+  "jawab": "talk",
+  "tawar": "talk",
+  "bisik": "talk",
+  "teriak": "talk",
+  "gigil": "shiver",
+  "gemetar": "shiver",
+  "kejut": "startle",
+  "lambai": "wave",
+  "baring": "lie",
+  "balik": "turn",
+  "putar": "turn",
+  "turut": "nod",
+  "peluk": "unsupported:hug",
+  "renang": "unsupported:swim",
+  "panjat": "unsupported:climb",
+  "lompat": "unsupported:jump",
+  "tari": "unsupported:dance",
+  "setir": "unsupported:drive",
+  "gendong": "unsupported:carry a person",
+  "sembunyi": "unsupported:hide",
+  "tangis": "face:sad",
+  "tawa": "face:laugh",
+  "senyum": "face:smile",
+  "meninggalkan": "walk",
+  "menjaga": "stand",
+  "berjaga": "stand",
+  "mengirim": "phone",
+  "mengirimkan": "phone",
+  "terlihat": "none",
+  "tampak": "none",
+  "kelihatan": "none",
+  "tertulis": "none",
+  "tercatat": "none",
+  "terdengar": "none",
+  "terasa": "none",
+  "masuk ke": "walk",
+  "masuk": "walk",
+  "keluar": "walk",
+  "tiup": "unsupported:blow (lean in, face only)",
+  "tepuk": "unsupported:clap",
+  "temu": "look",
+  "tancap": "putDown",
+  "keluarkan": "pickUp",
+  "mengeluarkan": "pickUp",
+  "menunggu": "stand",
+  "tunggu": "stand"
+ },
+ "emotions": {
+  "takut": "fear",
+  "ketakutan": "fear",
+  "ngeri": "fear",
+  "panik": "panic",
+  "lega": "relief",
+  "tersenyum": "smile",
+  "senyum": "smile",
+  "tertawa": "laugh",
+  "sedih": "sad",
+  "menangis": "sad",
+  "cemas": "uneasy",
+  "gelisah": "uneasy",
+  "khawatir": "uneasy",
+  "tersesat": "uneasy",
+  "kaget": "surprised",
+  "terkejut": "surprised",
+  "ternyata": "surprised",
+  "penasaran": "curious",
+  "tenang": "calm",
+  "serius": "serious",
+  "waspada": "alert",
+  "curiga": "alert",
+  "bingung": "think",
+  "lelah": "drowsy",
+  "mengantuk": "drowsy",
+  "ramah": "smile",
+  "senang": "smile",
+  "bahagia": "smile",
+  "gemetar": "fear",
+  "merinding": "fear",
+  "mengerikan": "fear",
+  "seram": "fear",
+  "yakin": "serious",
+  "heran": "curious",
+  "tersentak": "surprised",
+  "napas gemetar": "fear"
+ },
+ "sounds": {
+  "ranting": "twig",
+  "patah": "twig",
+  "berderit": "creak",
+  "derit": "creak",
+  "ketukan": "knock",
+  "mengetuk": "knock",
+  "klik": "click",
+  "terkunci": "click",
+  "mengunci": "click",
+  "bip": "beep",
+  "monitor": "beep",
+  "uang": "coins",
+  "koin": "coins",
+  "kantong": "bag",
+  "kresek": "bag",
+  "roda": "roll",
+  "meluncur": "roll",
+  "angin": "wind-gust",
+  "guntur": "thunder",
+  "petir": "thunder",
+  "ombak": "wave-crash",
+  "lonceng": "bell",
+  "bel": "bell",
+  "mesin": "engine",
+  "notifikasi": "notif",
+  "jantung": "heartbeat",
+  "napas": "breath",
+  "gemerisik": "rustle",
+  "daun": "rustle",
+  "kembalian": "coins",
+  "langkah kaki": "steps",
+  "dengung": "hum",
+  "berdengung": "hum",
+  "dering": "notif",
+  "jepret": "click",
+  "statis": "static",
+  "radio": "radio"
+ },
+ "figures": {
+  "sosok": "figure",
+  "seseorang": "figure",
+  "bayangan": "figure",
+  "orang lain": "figure",
+  "laki-laki": "figure",
+  "perempuan": "figure",
+  "pria": "figure",
+  "wanita": "figure",
+  "hantu": "figure",
+  "makhluk": "figure",
+  "seorang laki-laki": "figure",
+  "seorang perempuan": "figure",
+  "penumpang lain": "figure",
+  "orang asing": "figure"
+ },
+ "states": {
+  "nyala": "on",
+  "padam": "off",
+  "mati": "off",
+  "bunyi": "sound",
+  "dering": "sound",
+  "getar": "buzz",
+  "keluar": "out",
+  "muncul": "appear",
+  "hilang": "vanish",
+  "lenyap": "vanish",
+  "buka": "open",
+  "tutup": "shut",
+  "kedip": "flicker",
+  "kelip": "flicker",
+  "masuk": "arrive",
+  "datang": "arrive"
+ },
+ "sources": {
+  "printer": "machine",
+  "mesin": "machine",
+  "fotokopi": "machine",
+  "pintu": "door-open",
+  "kamera": "click",
+  "klik": "click",
+  "jepret": "click",
+  "bel": "bell",
+  "lonceng": "bell",
+  "ponsel": "notif",
+  "hp": "notif",
+  "pesan": "notif",
+  "langkah": "steps",
+  "kaki": "steps",
+  "jantung": "heartbeat",
+  "napas": "breath",
+  "angin": "wind-gust",
+  "semak": "rustle",
+  "daun": "rustle",
+  "ranting": "twig",
+  "ombak": "wave-crash",
+  "petir": "thunder",
+  "guntur": "thunder",
+  "radio": "radio",
+  "monitor": "beep",
+  "mesin jahit": "machine",
+  "roda": "roll",
+  "ketukan": "knock",
+  "ketuk": "knock"
+ },
+ "stop": [
+  "ada",
+  "adalah",
+  "agar",
+  "akan",
+  "akhirnya",
+  "aku",
+  "andaikan",
+  "aneh",
+  "apa",
+  "apalagi",
+  "arah",
+  "artinya",
+  "asalkan",
+  "atas",
+  "atau",
+  "aturan",
+  "awalnya",
+  "ayo",
+  "badan",
+  "bagian",
+  "bahkan",
+  "bahwa",
+  "balik",
+  "baris",
+  "baru",
+  "bawah",
+  "bayangin",
+  "bayangkan",
+  "beberapa",
+  "begitu",
+  "belakang",
+  "belas",
+  "beliau",
+  "belum",
+  "benar",
+  "berbeda",
+  "besok",
+  "biarpun",
+  "biasa",
+  "bukan",
+  "bunyi",
+  "cara",
+  "coba",
+  "cuma",
+  "dalam",
+  "dan",
+  "dari",
+  "deh",
+  "dengan",
+  "depan",
+  "detik",
+  "detik-detik",
+  "di",
+  "dia",
+  "dirinya",
+  "ditambah",
+  "dong",
+  "engkau",
+  "fenomena",
+  "hai",
+  "hal",
+  "hal-hal",
+  "halo",
+  "hampir",
+  "hanya",
+  "harga",
+  "hati",
+  "hingga",
+  "ia",
+  "ialah",
+  "ini",
+  "itu",
+  "jadi",
+  "jam",
+  "jangan",
+  "jauh",
+  "jika",
+  "juga",
+  "jumlah",
+  "justru",
+  "kaki",
+  "kalau",
+  "kali",
+  "kalimat",
+  "kami",
+  "kamu",
+  "karena",
+  "ke",
+  "keadaan",
+  "kecuali",
+  "kedua",
+  "keduanya",
+  "kegelapan",
+  "kemarin",
+  "kembali",
+  "kemudian",
+  "kepala",
+  "ketiga",
+  "ketika",
+  "kita",
+  "kok",
+  "lagi",
+  "lain",
+  "lainnya",
+  "lalu",
+  "langsung",
+  "lebih",
+  "lho",
+  "luar",
+  "lusa",
+  "maaf",
+  "maka",
+  "malamnya",
+  "mari",
+  "masih",
+  "mata",
+  "mengerikan",
+  "menit",
+  "mereka",
+  "meskipun",
+  "mulai",
+  "nama",
+  "namun",
+  "nanti",
+  "napas",
+  "nomor",
+  "normal",
+  "orang",
+  "pada",
+  "padahal",
+  "paginya",
+  "paling",
+  "pelan-pelan",
+  "per",
+  "pergelangan",
+  "perlahan",
+  "permisi",
+  "persis",
+  "pertama",
+  "pikiran",
+  "puluh",
+  "pun",
+  "rambut",
+  "rambutnya",
+  "rasa",
+  "ratus",
+  "ribu",
+  "saat",
+  "saja",
+  "sama",
+  "sampai",
+  "samping",
+  "sana",
+  "sangat",
+  "saya",
+  "seakan",
+  "sebab",
+  "sebelum",
+  "sebelumnya",
+  "sebenarnya",
+  "sebentar",
+  "sebuah",
+  "sebulan",
+  "sedang",
+  "seekor",
+  "sehingga",
+  "sejenak",
+  "sekarang",
+  "selamat",
+  "selembar",
+  "semakin",
+  "semalaman",
+  "sementara",
+  "semua",
+  "semuanya",
+  "sendiri",
+  "sendirian",
+  "seolah",
+  "seorang",
+  "seperti",
+  "sesaat",
+  "sesekali",
+  "sesuatu",
+  "sesudah",
+  "sesudahnya",
+  "setelah",
+  "setiap",
+  "sewa",
+  "sewanya",
+  "siangnya",
+  "siapa",
+  "siapa-siapa",
+  "sih",
+  "sini",
+  "sisi",
+  "situ",
+  "sorenya",
+  "sosok",
+  "suara",
+  "sudah",
+  "sudut",
+  "sungguh",
+  "supaya",
+  "tadi",
+  "tak",
+  "tangan",
+  "tangannya",
+  "tapi",
+  "tengah",
+  "tepat",
+  "terakhir",
+  "terima",
+  "terkadang",
+  "ternyata",
+  "tersebut",
+  "tetapi",
+  "tiba-tiba",
+  "tidak",
+  "tolong",
+  "tubuh",
+  "tunggu",
+  "ujung",
+  "untuk",
+  "wajah",
+  "wajahnya",
+  "waktu",
+  "walau",
+  "walaupun",
+  "ya",
+  "yang"
+ ],
+ "abstract": [
+  "aturan",
+  "nasihat",
+  "janji",
+  "izin",
+  "kabar",
+  "cerita",
+  "perintah",
+  "tugas",
+  "kesempatan",
+  "waktu",
+  "jawaban",
+  "pertanyaan",
+  "alasan",
+  "peringatan",
+  "salam"
+ ],
+ "generic_places": [
+  "dinding",
+  "gedung",
+  "jalan",
+  "kamar",
+  "kasir",
+  "kota",
+  "lantai",
+  "lorong",
+  "ruang",
+  "ruangan",
+  "sudut kamar",
+  "ujung ruangan"
+ ],
+ "place_hints": {
+  "perawat": "hospital",
+  "suster": "hospital",
+  "dokter": "hospital",
+  "pasien": "hospital",
+  "nurse-desk": "hospital",
+  "wheelchair": "hospital",
+  "iv-stand": "hospital",
+  "pedagang": "market",
+  "penjual": "market",
+  "market-stall": "market",
+  "market-scale": "market",
+  "ibu kos": "kos",
+  "bapak kos": "kos",
+  "karyawan": "office",
+  "pegawai": "office",
+  "penjaga": "coast",
+  "pendaki": "forest",
+  "guru": "school",
+  "murid": "school",
+  "library:sofa": "house",
+  "library:fridge": "house",
+  "library:tv-cabinet": "house",
+  "library:dining-table": "house",
+  "library:coffee-table": "house",
+  "library:kitchen-counter": "house",
+  "library:shoe-rack": "house",
+  "library:wall-photo": "house",
+  "library:bed": "house",
+  "library:blackboard": "school",
+  "library:school-desk": "school",
+  "library:school-chair": "school",
+  "library:notice-board": "school",
+  "library:flagpole": "school",
+  "library:locker-row": "school",
+  "library:office-printer": "office",
+  "library:office-desk": "office",
+  "library:office-chair": "office",
+  "library:filing-cabinet": "office",
+  "library:meeting-table": "office",
+  "library:counter": "shop",
+  "library:qris": "shop",
+  "library:store-shelf": "shop",
+  "library:bookshelf": "library",
+  "library:reading-table": "library",
+  "library:wardrobe": "house"
+ },
+ "implied": {
+  "office": [
+   "office desks with monitors / computers",
+   "office chairs",
+   "ceiling panel lights",
+   "a printer / copier corner",
+   "filing cabinets",
+   "windows with the city outside"
+  ],
+  "hospital": [
+   "nurse station desk",
+   "beds or waiting chairs",
+   "IV stands",
+   "handrails",
+   "ceiling tubes",
+   "door signs"
+  ],
+  "kos": [
+   "bed / mattress",
+   "wardrobe",
+   "small desk",
+   "a corridor of numbered doors",
+   "a yard / gate"
+  ],
+  "house": [
+   "sofa or chairs",
+   "table",
+   "cabinet",
+   "window with curtains",
+   "ceiling lamp"
+  ],
+  "market": [
+   "stalls in rows",
+   "goods on the counters",
+   "string lights / awnings",
+   "shop façades around"
+  ],
+  "forest": [
+   "trees in layers",
+   "bushes and ferns",
+   "a path",
+   "rocks and logs"
+  ],
+  "coast": [
+   "sea",
+   "rocks",
+   "boat",
+   "lighthouse"
+  ],
+  "library": [
+   "bookshelves",
+   "reading tables",
+   "chairs",
+   "ceiling lights"
+  ],
+  "park": [
+   "trees",
+   "benches",
+   "lamp posts",
+   "paths"
+  ],
+  "school": [
+   "desks and chairs in rows",
+   "whiteboard",
+   "teacher's desk",
+   "corridor lockers"
+  ],
+  "street": [
+   "buildings",
+   "sidewalk",
+   "street lamps",
+   "parked vehicles off focus"
+  ]
+ },
+ "generic_subjects": [
+  "otak",
+  "kita",
+  "manusia",
+  "orang",
+  "orang-orang",
+  "fenomena",
+  "ilmuwan",
+  "penelitian",
+  "peneliti",
+  "tubuh",
+  "pikiran",
+  "psikologi",
+  "sains",
+  "cerita-cerita",
+  "banyak",
+  "sebagian",
+  "kebanyakan",
+  "mata",
+  "telinga",
+  "indra"
+ ],
+ "explain_cues": [
+  "disebut",
+  "dinamakan",
+  "dikenal",
+  "artinya",
+  "berarti",
+  "misalnya",
+  "contohnya",
+  "faktanya",
+  "secara",
+  "psikologi",
+  "ilmiah",
+  "penelitian",
+  "fenomena",
+  "teori",
+  "efek",
+  "bias"
+ ]
+}
+==== 0 project/public/audio/.keep
+
+==== 19298 project/scripts/analyze.mjs
+// Story analyzer: script + word-timed VO → what the story needs, before any world or story.json is written.
+//   node scripts/analyze.mjs stories/<id> [--lexicon=library/lexicon-id.json]
+// Reads stories/<id>/script.txt and words.json ([word, t0, t1] in VO seconds). Writes
+//   stories/<id>/analysis.json   sentences with times + pauses, suggested scene cuts, and the story read in
+//                                context (scripts/story-nlp.mjs): time of day with its evidence and the story's
+//                                clock, location + areas, characters (named, roles, figures, a double), who does
+//                                what to which object and whether it is acted / on a screen / dialogue / written /
+//                                hypothetical / negated, state changes of things, sounds, dialogue and written text
+//   stories/<id>/REQUIREMENTS.md what can be reused (worlds, library objects, looks, actions, SFX), what must be
+//                                generated (world, objects from primitives) and what is not supported
+// Words the lexicon does not know are still listed ("unlisted things"), so read the report, not only the tables.
+
+import fs from "node:fs";
+import path from "node:path";
+import { analyzeStory } from "./story-nlp.mjs";
+
+const args = process.argv.slice(2);
+const dir = args.find((a) => !a.startsWith("--"));
+const opt = (k, d) => (args.find((a) => a.startsWith(`--${k}=`)) ?? `=${d}`).split("=").slice(1).join("=");
+if (!dir || !fs.existsSync(path.join(dir, "words.json"))) {
+  console.error("usage: node scripts/analyze.mjs stories/<id>   (needs script.txt and words.json there)");
+  process.exit(1);
+}
+const id = path.basename(dir);
+const LEX = JSON.parse(fs.readFileSync(opt("lexicon", "library/lexicon-id.json"), "utf8"));
+const words = JSON.parse(fs.readFileSync(path.join(dir, "words.json"), "utf8")).map((w) => (Array.isArray(w) ? w : [w.w ?? w.word, w.t0 ?? w.start, w.t1 ?? w.end]));
+const script = fs.existsSync(path.join(dir, "script.txt")) ? fs.readFileSync(path.join(dir, "script.txt"), "utf8") : words.map((w) => w[0]).join(" ");
+const r2 = (x) => Math.round(x * 100) / 100;
+
+// ── sentences, pauses, paragraphs ─────────────────────────────────────────
+const sentences = [];
+let cur = null;
+words.forEach(([w, t0, t1], i) => {
+  if (!cur) cur = { i: sentences.length, text: "", t0, t1, w0: i, w1: i };
+  cur.text += (cur.text ? " " : "") + w;
+  cur.t1 = t1; cur.w1 = i;
+  if (/[.!?…]["”']?$/.test(w) || i === words.length - 1) { sentences.push(cur); cur = null; }
+});
+sentences.forEach((s, k) => {
+  s.pauseAfter = r2((sentences[k + 1]?.t0 ?? s.t1) - s.t1);
+  s.t0 = r2(s.t0); s.t1 = r2(s.t1);
+  s.cue = words[s.w0][0].replace(/[^\p{L}\p{N}-]/gu, "");
+});
+const pauses = [];
+for (let i = 1; i < words.length; i++) { const g = words[i][1] - words[i - 1][2]; if (g >= 0.3) pauses.push({ after: words[i - 1][0], before: words[i][0], at: r2(words[i - 1][2]), len: r2(g) }); }
+const paras = script.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
+const perPara = paras.map((p) => p.split(/(?<=[.!?…]["”]?)\s+/).filter((x) => /\p{L}/u.test(x)).length);
+const paraOk = perPara.reduce((a, b) => a + b, 0) === sentences.length;
+let k0 = 0;
+const paraOf = [];
+if (paraOk) perPara.forEach((n, pi) => { for (let k = 0; k < n; k++) paraOf[k0 + k] = pi; k0 += n; });
+// Scene cuts: paragraphs when the script has real multi-sentence paragraphs; otherwise the narrator's long pauses
+// and turn words ("Tapi", "Tiba-tiba", "Sore itu", "Beberapa detik kemudian"), kept between ~6 and ~25 s.
+// (an ellipsis is a pause, not a sentence end, when judging whether paragraphs hold several sentences)
+const fullStops = paras.map((p) => p.split(/(?<=[^.][.!?]["”]?)\s+(?=["“]?\p{Lu})/u).filter((x) => /\p{L}/u.test(x)).length);
+const multi = paraOk && fullStops.filter((n) => n > 1).length >= Math.max(2, paras.length / 3);
+const gaps = sentences.slice(0, -1).map((s) => s.pauseAfter).sort((a, b) => a - b);
+const longGap = Math.max(0.8, gaps[Math.floor(gaps.length * 0.7)] ?? 0.8);
+const TURN = /^(tapi|namun|tiba-tiba|lalu|kemudian|sementara|keesokan|beberapa|sore|malam|pagi|siang|subuh|dan|padahal|kali|saat|ketika)$/i;
+const scenes = [];
+sentences.forEach((s, k) => {
+  if (k === 0) return scenes.push({ at: s.cue, t0: s.t0, sentences: [k], why: "start" });
+  const last = scenes.at(-1), len = s.t0 - last.t0, gap = sentences[k - 1].pauseAfter;
+  let why = null;
+  const startsSentence = /^["“]?\p{Lu}/u.test(words[s.w0][0]); // never cut inside a sentence ("…dua pagi... jangan …")
+  if (!startsSentence) why = null;
+  else if (multi) { if (paraOf[k] !== paraOf[k - 1]) why = "paragraph break in the script"; }
+  else if (len >= 6 && gap >= longGap) why = `pause ${gap}s before it`;
+  else if (len >= 6 && gap >= 0.6 && TURN.test(s.cue)) why = `turn word “${s.cue}” after a ${gap}s pause`;
+  else if (len >= 25 && gap >= 0.45) why = `the scene is ${Math.round(len)} s long`;
+  if (why) scenes.push({ at: s.cue, t0: s.t0, sentences: [k], why }); else last.sentences.push(k);
+});
+
+// ── the story in context ──────────────────────────────────────────────────
+const S = analyzeStory(script, words, LEX);
+
+// ── requirements: reuse / generate / unsupported ──────────────────────────
+const ls = (d, ext) => (fs.existsSync(d) ? fs.readdirSync(d).filter((f) => f.endsWith(ext)).map((f) => path.join(d, f)) : []);
+const objDirs = ["assets/objects", path.join(dir, "objects"), "library/objects"];
+const objFile = (oid) => objDirs.map((d) => path.join(d, `${oid}.json`)).find((f) => fs.existsSync(f));
+const BUILTIN = ["tree-pine", "tree-broad", "tree-palm", "bush", "fern", "rock", "log", "grass-tuft"];
+const PROPS = ["phone", "binoculars", "lantern", "flashlight", "mug", "book"];
+const ACTIONS = ["stand", "look", "turn", "walk", "run", "startle", "freeze", "peer", "point", "reach", "wave", "phone", "binoculars", "raise", "think", "nod", "shake", "sigh", "talk", "shiver", "sit", "standUp", "write", "lie", "sleep", "wake", "sitUp", "push", "pickUp", "putDown", "give", "receive", "open", "close", "kneel", "pickUp+putDown"];
+const looksSrc = fs.existsSync("src/cine/character/looks.ts") ? fs.readFileSync("src/cine/character/looks.ts", "utf8") : "";
+const LOOKS = [...looksSrc.matchAll(/^ {2}"?([a-z][a-z-]*)"?: \{/gm)].map((m) => m[1]);
+const sfxSrc = fs.existsSync("scripts/sound-story.ts") ? fs.readFileSync("scripts/sound-story.ts", "utf8") : "";
+const SFX = [...sfxSrc.matchAll(/case "([a-z-]+)":/g)].map((m) => m[1]);
+const BUILTIN_WORLDS = { kos: "built-in world 'kos' (boarding house: room, corridor, stairs, yard)", coast: "built-in world 'coast' (lighthouse, beach, sea)" };
+const worldFiles = [...ls("worlds", ".world.json"), ...ls("library/worlds", ".world.json"), ...(fs.existsSync("stories") ? fs.readdirSync("stories", { withFileTypes: true }).filter((e) => e.isDirectory()).flatMap((e) => ls(path.join("stories", e.name), ".world.json")) : [])];
+const worldDocs = worldFiles.map((f) => { try { const w = JSON.parse(fs.readFileSync(f, "utf8")); return { file: f, id: w.id, doc: w.doc ?? "" }; } catch { return null; } }).filter(Boolean);
+const KIND_WORDS = { hospital: ["hospital", "ward", "clinic"], corridor: ["corridor"], market: ["market", "stall"], forest: ["forest", "track", "camp"], school: ["school", "classroom"], office: ["office"], house: ["house", "home", "room", "kitchen"], street: ["street", "road", "sidewalk"], coast: ["coast", "beach", "lighthouse"], kos: ["kos", "boarding"], shop: ["shop", "store", "kiosk"], library: ["library", "reading"], park: ["park"] };
+const kinds = Object.entries(S.location.kinds).sort((a, b) => b[1] - a[1]).filter(([, w], i, all) => w >= 1 && w >= all[0][1] * 0.5).map(([k]) => k);
+const worldReq = kinds.map((k) => {
+  if (BUILTIN_WORLDS[k]) return { kind: k, status: "reuse", use: BUILTIN_WORLDS[k] };
+  // best match, not the first: the kind's main word counts most ("house" beats a passing "room")
+  const words = KIND_WORDS[k] ?? [k];
+  const score = (d) => words.reduce((n, x, i) => n + (new RegExp(`\\b${x}`).test(d.doc.toLowerCase()) ? (i === 0 ? 3 : 1) : 0), 0);
+  const w = worldDocs.map((d) => ({ d, s: score(d) })).filter((x) => x.s > 0).sort((a, b) => b.s - a.s)[0]?.d;
+  return w ? { kind: k, status: "reuse-or-adapt", use: w.file, note: w.doc } : { kind: k, status: "generate", use: `write ${id}.world.json (${k}): rooms/ground/paths/objects/scatter/lights + places with marks` };
+});
+const objReq = [];
+for (const o of [...S.objects].sort((a, b) => Number(b.used) - Number(a.used))) {
+  const [kind, name] = o.value.includes(":") ? o.value.split(/:(.*)/s) : ["library", o.value];
+  let status, note;
+  if (kind === "library") { const f = objFile(name); status = f ? "reuse" : "generate"; note = f ? f : `library id "${name}" missing — author it`; }
+  else if (kind === "builtin") { status = BUILTIN.includes(name) ? "reuse" : "generate"; note = `built-in ${name}`; }
+  else if (kind === "prop") { status = PROPS.includes(name) ? "reuse" : "unsupported"; note = `held prop "${name}" (cast "prop")`; }
+  else if (kind === "world") { status = "world"; note = `made by the world DSL (${name})`; }
+  else if (kind === "ui") { status = "ui"; note = `${name}: show as a screen / card insert (ui card, text, a cut to a full-frame view) — screens cannot show live pictures`; }
+  else if (kind === "look") { status = "look"; note = `${name} on a person: choose the look / custom colours (references/cinestory/characters.md); accessories the rig lacks are said, not shown`; }
+  else if (kind === "generate") { status = "generate"; note = `no library object for "${name}" — build from primitives into assets/objects/<id>.json, check it on the object sheet`; }
+  else { status = "complex"; note = `"${name}" is too organic/detailed for primitives — needs a model asset, an agreed simplified stand-in, or keep it off screen (do NOT silently substitute)`; }
+  objReq.push({ word: o.word, t: o.mentions[0], mentions: o.mentions.length, story: o.used, need: name, status, note });
+}
+const acted = S.interactions.filter((i) => i.mode === "acted" || i.mode === "state");
+const actReq = acted.map((a) => ({ t: a.t, word: a.word, who: a.who, action: a.action, obj: a.obj, with: a.with, target: a.target, mode: a.mode, status: a.supported === false ? "unsupported" : ACTIONS.includes(a.action) ? "supported" : "unsupported" }));
+const notActed = S.interactions.filter((i) => !(i.mode === "acted" || i.mode === "state"));
+const lookFor = (p) => p.look ?? (p.kind === "figure" && p.double ? `same look as ${p.double.of}` : undefined);
+const lookReq = [...S.characters.map((c) => ({ who: c.name, look: lookFor(c) })), ...S.unnamed.map((u) => ({ who: u.id, look: lookFor(u), double: u.double }))].map((x) => ({ ...x, status: x.look && (LOOKS.includes(x.look) || x.look.startsWith("same look")) ? "reuse" : "choose" }));
+const sfxReq = S.sounds.map((s) => ({ word: s.word, t: s.t, sfx: s.sfx, status: SFX.includes(s.sfx) ? "available" : "missing" }));
+
+const analysis = {
+  id, vo: { words: words.length, start: r2(words[0][1]), end: r2(words.at(-1)[2]) },
+  sentences: sentences.map(({ i, text, t0, t1, pauseAfter, cue }) => ({ i, text, t0, t1, pauseAfter, cue, para: paraOk ? paraOf[i] : undefined })),
+  pauses, scenes: scenes.map((s) => ({ ...s, text: s.sentences.map((k) => sentences[k].text).join(" ") })),
+  protagonist: S.protagonist, explanation: S.explanation, unmapped: S.unmapped, characters: S.characters, unnamed: S.unnamed, time: S.time, location: S.location,
+  objects: S.objects, mentions: S.mentions, interactions: S.interactions, states: S.states, sounds: S.sounds, emotions: S.emotions, dialogue: S.dialogue, texts: S.texts,
+  requirements: { implied: LEX.implied?.[S.location.main] ?? [], world: worldReq, time: S.time.stated ? S.time.value : "day (nothing said — decide from the story)", clock: S.time.clocks.find((c) => !c.rule)?.clock, objects: objReq, actions: actReq, looks: lookReq, sfx: sfxReq },
+};
+fs.writeFileSync(path.join(dir, "analysis.json"), JSON.stringify(analysis, null, 1));
+
+const who = (w) => (w ?? "?").replace(/^role:/, "");
+const md = [
+  `# Requirements — ${id}`, "",
+  `VO ${analysis.vo.start}–${analysis.vo.end} s · ${sentences.length} sentences · ${scenes.length} suggested scenes · time: **${analysis.requirements.time}**${analysis.requirements.clock ? ` · clock ${analysis.requirements.clock}` : ""} · place: **${S.location.main ?? "?"}**`, "",
+  "## Time of day", "", ...(S.time.evidence.length ? S.time.evidence.map((e) => `- ${e}`) : ["- nothing in the script says it — decide from the story"]), ...S.time.ignored.map((e) => `- ignored: ${e}`), ...S.time.clocks.map((c) => `- clock ${c.t}s “${c.text}” → **${c.clock}**${c.rule ? " (a rule / not now)" : ""}`), "",
+  "## Location", "", `- main: **${S.location.main ?? "?"}** (${Object.entries(S.location.kinds).map(([k, v]) => `${k} ${Math.round(v * 10) / 10}`).join(", ")})`, ...S.location.areas.map((a) => `- area: ${a.name} (${a.kind}, first at ${a.t}s)`), "",
+  "## World", "", ...(worldReq.length ? worldReq.map((w) => `- ${w.kind}: **${w.status}** — ${w.use}`) : ["- no place found — decide from the script"]), "",
+  "Ready-made worlds in this project (reuse or adapt a copy before writing a new one; `node scripts/worlds.mjs <id>` lists places, marks, seats and props):", "",
+  ...Object.entries(BUILTIN_WORLDS).map(([k, v]) => `- \`${k}\` — ${v}`), ...worldDocs.map((d) => `- \`${d.id}\` (${d.file}) — ${d.doc}`), "",
+  "## Characters", "", ...(S.characters.length + S.unnamed.length ? [
+    ...S.characters.map((c) => `- **${c.name}**${c.role ? ` (${c.role})` : ""}${c.name === S.protagonist ? " — protagonist" : ""} — ${c.mentions.length} mentions from ${c.mentions[0]}s`),
+    ...S.unnamed.map((u) => `- ${u.kind === "figure" ? `a figure (“${u.role}”)` : `unnamed ${u.role}`} — from ${u.mentions[0]}s${u.double ? ` — **a double of ${u.double.of}** (${u.double.evidence.join(", ")}): same look` : ""}`)] : ["- none found (pronouns only? read the script)"]), "",
+  "## Objects (story objects first)", "", "| word | needs | status | story object | note |", "|---|---|---|---|---|", ...objReq.map((o) => `| ${o.word} (${o.t}s, ×${o.mentions}) | ${o.need} | **${o.status}** | ${o.story ? "yes" : ""} | ${o.note} |`), "",
+  ...((LEX.implied?.[S.location.main] ?? []).length ? [`## Implied by the place (${S.location.main}) — dress the set, the script does not name them`, "", ...LEX.implied[S.location.main].map((x) => `- ${x}`), ""] : []),
+  ...(S.mentions.length ? ["## Unlisted things (not in the lexicon — decide: build, world, or ignore)", "", ...S.mentions.map((m) => `- ${m.t}s **${m.word}** — “${m.context}”`), ""] : []),
+  "## Interactions — acted on screen", "", ...(actReq.length ? actReq.map((a) => `- ${a.t}s “${a.word}” → **${who(a.who)}: ${a.action}**${a.obj ? ` ${a.obj}` : ""}${a.with ? ` with ${a.with}` : ""}${a.target ? ` → ${a.target}` : ""}${a.mode === "state" ? " (a pose, not a movement)" : ""}${a.status === "unsupported" ? " — **unsupported**: stage around it" : ""}`) : ["- none"]), "",
+  ...(S.unmapped.length ? ["## Verbs the lexicon does not know (decide: an action, a state, a face, or nothing)", "", ...S.unmapped.map((u) => `- ${u.t}s **${u.word}** — “${u.sentence}”`), ""] : []),
+  "## Not acted (do NOT stage these as actions)", "", ...(notActed.length ? notActed.map((a) => `- ${a.t}s “${a.word}” (${who(a.who)}: ${a.action}) — ${{ "on-screen": "seen on a screen / photo: show it in that view", dialogue: "said in dialogue", written: "written text: show as an insert / card", hypothetical: "a rule / an 'if' / 'as if'", negated: "negated", said: "a rule or words handed over, not an object", "unclear who": "who does it is not said (heard in the dark?)", "non-cast": "done by an animal / thing: off screen or by sound" }[a.mode] ?? a.mode}`) : ["- none"]), "",
+  "## State changes (set props / object states on these words)", "", ...(S.states.length ? S.states.map((s) => `- ${s.t}s ${s.thing}: **${s.state}**${s.by ? ` (by ${who(s.by)})` : ""}${s.mode !== "acted" ? ` — ${s.mode}` : ""}`) : ["- none"]), "",
+  ...(S.explanation.length ? ["## Explanation passages (explain with graphics: mood \"science\", the mind studio or ui cards — not acted by the cast)", "", ...S.explanation.map((e) => `- ${e.t}s ${e.text}`), ""] : []),
+  "## Dialogue and written text", "", ...(S.dialogue.length + S.texts.length ? [...S.dialogue.map((d) => `- ${d.t}s said by **${who(d.speaker)}**: “${d.text}” → a \`talk\` beat`), ...S.texts.map((d) => `- ${d.t}s written on **${d.on}**: “${d.text}” → insert / ui card`)] : ["- none"]), "",
+  "## Sounds", "", ...(sfxReq.length ? sfxReq.map((s) => `- ${s.t}s “${s.word}” → ${s.sfx} (${s.status})`) : ["- none"]), "",
+  "## Emotions", "", ...(S.emotions.length ? S.emotions.map((e) => `- ${e.t}s “${e.word}” → face ${e.face}${e.who ? ` (${who(e.who)})` : ""}`) : ["- none"]), "",
+  "## Looks", "", ...lookReq.map((l) => `- ${who(l.who)}: ${l.look ?? "?"} (${l.status})`), "",
+  "## Scenes (cue → text)", "", ...analysis.scenes.map((s) => `- **${s.t0}s "${s.at}"** (${s.why}): ${s.text}`), "",
+  "## Pauses to keep (≥ 0.3 s)", "", ...(pauses.length ? pauses.map((p) => `- ${p.at}s, ${p.len}s after "${p.after}"`) : ["- none"]), "",
+  "Read in context (quotes, conditions, negation, screens, pronouns), but it is still a reading aid: check the interactions against the script before directing.", "",
+].join("\n");
+fs.writeFileSync(path.join(dir, "REQUIREMENTS.md"), md);
+
+const count = (arr, st) => arr.filter((x) => x.status === st).length;
+console.log(`${id}: ${sentences.length} sentences, ${scenes.length} scenes, ${pauses.length} pauses ≥0.3 s`);
+console.log(`  time: ${analysis.requirements.time}${analysis.requirements.clock ? ` (clock ${analysis.requirements.clock})` : ""} · place: ${S.location.main ?? "?"} · areas: ${S.location.areas.map((a) => a.name).join(", ") || "-"}`);
+console.log(`  characters: ${[...S.characters.map((c) => c.name), ...S.unnamed.map((u) => (u.double ? `${u.id} (double of ${u.double.of})` : who(u.id)))].join(", ") || "-"}`);
+console.log(`  world: ${worldReq.map((w) => `${w.kind}→${w.status}`).join(", ") || "-"}`);
+console.log(`  objects: ${count(objReq, "reuse")} reuse · ${count(objReq, "generate")} generate · ${count(objReq, "world")} world-built · ${count(objReq, "ui")} ui · ${count(objReq, "look")} look · ${count(objReq, "complex")} complex · ${count(objReq, "unsupported")} unsupported · ${S.mentions.length} unlisted`);
+console.log(`  acted: ${actReq.map((a) => `${who(a.who)}:${a.action}${a.obj ? "(" + a.obj + ")" : ""}${a.status === "supported" ? "" : "!"}`).join(", ") || "-"}`);
+console.log(`  not acted: ${notActed.map((a) => `${a.action}[${a.mode}]`).join(", ") || "-"} · states: ${S.states.length} · dialogue: ${S.dialogue.length} · written: ${S.texts.length}`);
+console.log(`  → ${path.join(dir, "analysis.json")} · ${path.join(dir, "REQUIREMENTS.md")}`);
+
+==== 18190 project/scripts/make.mjs
+// One command from a story to a checked video.
+//   node scripts/make.mjs stories/<id>/story.json [--stills=3,10,18.5] [--preview] [--final] [--no-sound] [--no-qa] [--force]
+//
+//   1. resolve   story.json (+ words.json, VO envelope) → src/stories/data/<id>.json, regenerate the registry
+//   2. direct    compile the story (blocking, acting, shots, sound cues), print the plan; stops on errors
+//   3. sound     scripts/sound-story.ts → public/audio/<id>-mix.wav (+ captions out/<id>/<id>.srt)
+//   4. render    --stills: contact sheet · --preview: 540×960@30 with audio (landscape 960×540) · --final (default):
+//                1080×1920@60 portrait (story "format": "landscape" → 1920×1080@60), mastered to −14 LUFS
+//                (interrupted? run the same command again — finished segments are reused)
+//   --from=12 --to=30  render only that part of the film (preview / final): a section to review
+//   5. QA        QA gate (scripts/qa-gate.mjs: tembus / loncat / kedip of the tagged people, props and furniture,
+//                camera snaps, a scan of the 3D alone for flicker) — after --preview as a report, before --final as
+//                a stop (--force-qa goes on anyway); then scripts/qa.mjs → out/<id>/qa/ (frame scan, sync, loudness)
+
+import { spawnSync } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
+import { deliveryScan, sceneGate } from "./qa-gate.mjs";
+
+const args = process.argv.slice(2);
+const file = args.find((a) => !a.startsWith("--"));
+const flag = (k) => args.includes(`--${k}`);
+const opt = (k, d) => (args.find((a) => a.startsWith(`--${k}=`)) ?? `=${d ?? ""}`).split("=").slice(1).join("=");
+if (!file || !fs.existsSync(file)) {
+  console.error("usage: node scripts/make.mjs stories/<id>/story.json [--stills=…] [--preview] [--final] [--no-sound] [--no-qa]");
+  process.exit(1);
+}
+const step = (s) => console.log(`\n▶ ${s}`);
+const sh = (cmd, a, opts = {}) => {
+  const r = spawnSync(cmd, a, { stdio: "inherit", ...opts });
+  if (r.status !== 0) { console.error(`✗ ${cmd} ${a.join(" ")} failed`); process.exit(r.status ?? 1); }
+};
+
+// 1 ── resolve ───────────────────────────────────────────────────────────────
+step("resolve story");
+const dir = path.dirname(file);
+const story = JSON.parse(fs.readFileSync(file, "utf8"));
+if (!/^[a-z0-9-]+$/.test(story.id ?? "")) { console.error(`story.id "${story.id}" must use only a-z, 0-9 and "-"`); process.exit(1); }
+if (typeof story.words === "string") story.words = JSON.parse(fs.readFileSync(path.join(dir, story.words), "utf8"));
+if (!Array.isArray(story.words) || !story.words.length) { console.error("story.words is missing (run scripts/transcribe.mjs first)"); process.exit(1); }
+// dynamic world: worlds/<name>.world.json (project) or stories/<id>/<name>.world.json, plus every object it
+// or the story uses from library/objects and assets/objects (project objects win)
+{
+  const cands = [path.join(dir, `${story.world}.world.json`), path.join("worlds", `${story.world}.world.json`), path.join("library", "worlds", `${story.world}.world.json`)];
+  const wf = cands.find((f) => fs.existsSync(f));
+  delete story.worldSpec; delete story.objectSpecs;
+  if (wf) {
+    story.worldSpec = JSON.parse(fs.readFileSync(wf, "utf8"));
+    const objDirs = ["assets/objects", path.join(dir, "objects"), "library/objects"];
+    const need = new Set([...(story.worldSpec.objects ?? []).map((o) => o.use), ...(story.worldSpec.scatter ?? []).map((o) => o.use)]);
+    const { BUILTIN } = await import(path.resolve("src/gen/objects/builtin-data.ts"));
+    story.objectSpecs = [];
+    const missing = [];
+    for (const id of need) {
+      if (BUILTIN[id]) continue;
+      const f = objDirs.map((d) => path.join(d, `${id}.json`)).find((x) => fs.existsSync(x));
+      if (!f) { missing.push(id); continue; }
+      story.objectSpecs.push(JSON.parse(fs.readFileSync(f, "utf8")));
+    }
+    if (missing.length) { console.error(`✗ objects not found: ${missing.join(", ")} — write assets/objects/<id>.json (see references/cinestory/objects.md) or use a library object`); process.exit(1); }
+    console.log(`  world ${wf}: ${(story.worldSpec.rooms ?? []).length} rooms, ${(story.worldSpec.objects ?? []).length} objects, ${(story.worldSpec.scatter ?? []).length} scatters · object specs: ${story.objectSpecs.map((o) => o.id).join(", ") || "built-in only"}`);
+  }
+}
+// branding: only the user's own brand kit (voynann-brand.json in the project or the story folder); "brand": false
+// in story.json switches it off. The logo is copied to public/brand/.
+{
+  const given = story.brand;
+  delete story.brand;
+  const kitFile = [path.join(dir, "voynann-brand.json"), "voynann-brand.json"].find((f) => fs.existsSync(f));
+  if (given !== false && kitFile) {
+    const kit = JSON.parse(fs.readFileSync(kitFile, "utf8"));
+    const b = { brand: kit.brand, handle: kit.handle, cta: kit.cta, colors: kit.colors, watermark: !!kit.watermark, intro: kit.intro };
+    if (kit.logo) {
+      const src = path.join(path.dirname(kitFile), kit.logo);
+      if (fs.existsSync(src)) { fs.mkdirSync("public/brand", { recursive: true }); fs.copyFileSync(src, path.join("public/brand", path.basename(src))); b.logoFile = `brand/${path.basename(src)}`; }
+      else console.log(`  ⚠ brand logo ${src} not found — the brand is used without a logo`);
+    }
+    story.brand = b;
+    console.log(`  brand kit ${kitFile}: ${[kit.brand, kit.handle].filter(Boolean).join(" ")}${b.logoFile ? " + logo" : ""}`);
+  }
+}
+const voPath = path.join("public", story.vo?.file ?? "");
+if (!story.vo?.file || !fs.existsSync(voPath)) { console.error(`VO not found: ${voPath}`); process.exit(1); }
+// VO loudness envelope, 60 per second (mouth flaps for "talk", music ducking hints)
+{
+  const raw = spawnSync("ffmpeg", ["-v", "error", "-i", voPath, "-f", "f32le", "-ac", "1", "-ar", "6000", "-"], { maxBuffer: 1 << 28 }).stdout;
+  const x = new Float32Array(raw.buffer, raw.byteOffset, Math.floor(raw.length / 4));
+  const env = [];
+  for (let i = 0; i < x.length; i += 100) { let s = 0; for (let k = i; k < Math.min(x.length, i + 100); k++) s += x[k] * x[k]; env.push(Math.sqrt(s / 100)); }
+  const peak = Math.max(...env.slice().sort((a, b) => a - b).slice(Math.floor(env.length * 0.98))) || 1;
+  story.voenv = env.map((v) => +Math.min(1, v / peak).toFixed(2));
+}
+const mix = `audio/${story.id}-mix.wav`;
+const willSound = !flag("no-sound");
+if (willSound || fs.existsSync(path.join("public", mix))) story.audio = mix;
+const writeResolved = () => {
+  fs.mkdirSync("src/stories/data", { recursive: true });
+  fs.writeFileSync(`src/stories/data/${story.id}.json`, JSON.stringify(story));
+  const ids = fs.readdirSync("src/stories/data").filter((f) => f.endsWith(".json")).map((f) => f.replace(/\.json$/, "")).sort();
+  const v = (s) => "s_" + s.replace(/-/g, "_");
+  fs.writeFileSync("src/stories/registry.ts", `// Generated by scripts/make.mjs — every story in src/stories/data becomes two compositions.\nimport type { Story } from "../director/story.ts";\n${ids.map((id) => `import ${v(id)} from "./data/${id}.json";`).join("\n")}\n\nexport const STORIES: Story[] = [${ids.map((id) => `${v(id)} as unknown as Story`).join(", ")}];\n`);
+};
+// compositions must not reference a mix that does not exist yet
+if (story.audio && !fs.existsSync(path.join("public", story.audio))) { const a = story.audio; delete story.audio; writeResolved(); story.audio = a; } else writeResolved();
+console.log(`  ${story.id}: ${story.words.length} words, world ${story.world}, cast ${(story.cast ?? []).map((c) => `${c.id} (${c.look})`).join(" + ") || "none"}, ${story.scenes?.length ?? 0} scenes`);
+
+// 2 ── direct ────────────────────────────────────────────────────────────────
+step("direct (compile the story)");
+const { compile } = await import(path.resolve("src/director/compile.ts"));
+let P;
+try { P = compile(story); } catch (e) { console.error(`✗ story problems:\n${String(e.message).split("\n").map((l) => "  - " + l).join("\n")}`); process.exit(1); }
+console.log(`  ${P.format} ${P.format === "portrait" ? "1080×1920" : "1920×1080"} · duration ${P.duration}s · ${P.scenes.length} scenes · ${P.shots.length} shots · ${P.ui.length} overlays · ${P.captions.length} caption lines · ${P.sound.sfx.length} SFX · ${P.sound.steps.length} footsteps`);
+for (const s of P.shots) console.log(`  ${s.t0.toFixed(2).padStart(6)}–${Math.min(s.t1, P.duration).toFixed(2).padEnd(6)} sc${s.scene + 1} ${P.scenes[s.scene].place.id.padEnd(8)} ${s.kind.padEnd(10)} ${s.who ?? "-"}${s.target ? " → " + s.target : ""}`);
+for (const w of P.warnings) console.log(`  ⚠ ${w}`);
+const outDir = path.join("out", story.id);
+
+// 2b ── geometry preflight (objects, marks, bodies, cameras, continuity) — before any render
+step("preflight (geometry QC)");
+{
+  const { preflight } = await import(path.resolve("src/director/preflight.ts"));
+  const t0 = Date.now();
+  const pf = preflight(P);
+  fs.mkdirSync(path.join(outDir, "qa"), { recursive: true });
+  fs.writeFileSync(path.join(outDir, "qa", "preflight.json"), JSON.stringify(pf, null, 1));
+  for (const e of pf.errors) console.log(`  ✗ ${e.check}: ${e.msg}`);
+  for (const w of pf.warnings) console.log(`  ⚠ ${w.check}: ${w.msg}`);
+  console.log(`  ${pf.errors.length} errors · ${pf.warnings.length} warnings · ${Object.entries(pf.stats).map(([k, v]) => `${k} ${v}`).join(" · ")} · ${((Date.now() - t0) / 1000).toFixed(1)} s → ${path.join(outDir, "qa", "preflight.json")}`);
+  if (pf.errors.length && !flag("force")) { console.error("✗ preflight found geometry errors — fix the world/story (or --force to render anyway)"); process.exit(1); }
+}
+fs.mkdirSync(outDir, { recursive: true });
+fs.writeFileSync(path.join(outDir, "shots.json"), JSON.stringify({ duration: P.duration, voOffset: P.offset, shots: P.shots.map((s) => ({ kind: s.kind, who: s.who, target: s.target, scene: s.scene, t0: s.t0, t1: Math.min(s.t1, P.duration) })) }, null, 1));
+// captions (.srt): sentences from the VO words, in film time
+{
+  const W = story.words, cues = [];
+  let cur = [];
+  const flush = () => { if (cur.length) cues.push([cur[0][1] + P.offset, cur[cur.length - 1][2] + P.offset, cur.map((w) => w[0]).join(" ")]); cur = []; };
+  W.forEach((w, i) => { cur.push(w); const next = W[i + 1]; if (/[.?!]$/.test(w[0]) || cur.length >= 12 || (next && next[1] - w[2] > 0.6)) flush(); });
+  flush();
+  const ts = (t) => { const ms = Math.round(t * 1000), h = Math.floor(ms / 3600000), m = Math.floor(ms / 60000) % 60, s = Math.floor(ms / 1000) % 60; return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")},${String(ms % 1000).padStart(3, "0")}`; };
+  fs.writeFileSync(path.join(outDir, `${story.id}.srt`), cues.map((c, i) => `${i + 1}\n${ts(c[0])} --> ${ts(c[1])}\n${c[2]}\n`).join("\n"));
+}
+
+// 3 ── sound ─────────────────────────────────────────────────────────────────
+if (willSound) {
+  step("sound");
+  sh("node", ["--max-old-space-size=4096", "scripts/sound-story.ts", `src/stories/data/${story.id}.json`]);
+  writeResolved();
+}
+
+// 4 ── render ────────────────────────────────────────────────────────────────
+const stills = opt("stills");
+if (stills) {
+  step("stills");
+  const all = stills.split(",").map((x) => parseFloat(x)).filter((x) => Number.isFinite(x));
+  const ok = all.filter((x) => x >= 0 && x < P.duration - 0.05);
+  if (ok.length < all.length) console.log(`  (skipped stills past the end of the ${P.duration}s film: ${all.filter((x) => !ok.includes(x)).join(", ")})`);
+  if (!ok.length) { console.error("✗ no stills inside the film"); process.exit(1); }
+  sh("node", ["scripts/stills.mjs", path.join(outDir, "stills"), ok.map((x) => `${x}s`).join(","), `${story.id}-preview`]);
+}
+const preview = flag("preview"), final = flag("final") || (!preview && !stills);
+let video = null;
+const portrait = P.format === "portrait";
+const size = portrait ? "1080x1920" : "1920x1080";
+const from = opt("from"), to = opt("to");
+const range = from || to ? [Math.max(0, Number(from || 0)), Math.min(P.duration, Number(to || P.duration))] : null;
+// planned cuts (the shot list): the camera may jump there, nowhere else
+const cuts = P.shots.slice(1).map((x) => x.t0);
+const gateDir = path.join(outDir, "qa-gate");
+const gate = { comp: `${story.id}-preview`, cuts, out: gateDir, extra: range ? [`--from=${Math.round(range[0] * 30)}`, `--to=${Math.round(range[1] * 30) - 1}`] : [] };
+let gateWord = null, deliveredWord = null;
+if (preview) {
+  step(`render preview (${portrait ? "540×960" : "960×540"} @ 30, with audio)${range ? ` ${range[0]}–${range[1]} s` : ""}`);
+  video = path.join(outDir, `${story.id}_preview${range ? `_${range[0]}-${range[1]}s` : ""}.mp4`);
+  sh("npx", ["remotion", "render", `${story.id}-preview`, video, "--codec=h264", "--crf=22", `--concurrency=${opt("concurrency", "4")}`, ...(range ? [`--frames=${Math.round(range[0] * 30)}-${Math.round(range[1] * 30) - 1}`] : [])]);
+  if (!flag("no-qa")) gateWord = sceneGate({ ...gate, force: true }); // a report: fix every FAIL before the preview is shown
+}
+if (final && !flag("no-qa")) gateWord = sceneGate({ ...gate, force: flag("force-qa") });
+if (final) {
+  step(`render final (${portrait ? "1080×1920" : "1920×1080"} @ 60, H.264 + AAC, −14 LUFS)${range ? ` ${range[0]}–${range[1]} s` : ""}`);
+  const seg = path.join(outDir, "seg"), stamp = path.join(seg, "story.json");
+  const resolved = fs.readFileSync(`src/stories/data/${story.id}.json`, "utf8");
+  if (!fs.existsSync(stamp) || fs.readFileSync(stamp, "utf8") !== resolved) fs.rmSync(seg, { recursive: true, force: true });
+  fs.mkdirSync(seg, { recursive: true });
+  fs.writeFileSync(stamp, resolved);
+  video = path.join(outDir, `${story.id}_${size}_60fps${range ? `_${range[0]}-${range[1]}s` : ""}.mp4`);
+  sh("node", ["scripts/render-final.mjs", `--comp=${story.id}-final`, `--out=${video}`, `--vo=public/${mix}`, "--offset=0", `--parts=${opt("parts", range ? "2" : "6")}`, `--concurrency=${opt("concurrency", "3")}`, `--seg=${seg}${range ? `-${range[0]}-${range[1]}` : ""}`, ...(range ? [`--from=${range[0]}`, `--to=${range[1]}`] : []), "--no-qa"]);
+  if (!flag("no-qa")) deliveredWord = deliveryScan({ file: video, cuts: range ? cuts.filter((t) => t > range[0] && t < range[1]).map((t) => t - range[0]) : cuts, out: path.join(gateDir, "delivered") });
+}
+
+// 5 ── QA ────────────────────────────────────────────────────────────────────
+if (video && !flag("no-qa")) {
+  step("QA");
+  sh("node", ["scripts/qa.mjs", video, `--vo=${voPath}`, `--offset=${range ? P.offset - range[0] : P.offset}`, `--expect=${range ? range[1] - range[0] : P.duration}`, `--shots=${path.join(outDir, "shots.json")}`, `--size=${size}`, ...(range ? [`--from=${range[0]}`] : []), ...(final ? ["--final"] : [])]);
+  // visual review gate: automated checks never see a post through a face — a person has to look.
+  // REVIEW.md stays "PENDING" until every row is filled; never call the video QA PASS before that.
+  const pf = JSON.parse(fs.readFileSync(path.join(outDir, "qa", "preflight.json"), "utf8"));
+  const rows = ["object clipping / sinking", "floating objects", "people inside objects or each other", "feet / hands / contact plausible", "camera inside walls or blocked view", "continuity across cuts (position, props, light)", "frame errors (black / white / frozen / flicker)", "VO sync and pauses kept", "every object reads as what the script says", "story logic: nothing seen before its reveal, nothing left after it leaves", "no head / back of head covering > 1/4 of a frame (except close-ups)", ...(portrait ? ["text inside the safe area, never over a face (captions, tags, cards, titles)", "faces and key objects readable on a phone (not too dark)"] : []), "pacing: no long stretch of one view / one graphic; reactions on the words"];
+  fs.writeFileSync(path.join(outDir, "qa", "REVIEW.md"), [
+    `# Visual review — ${story.id} (${path.basename(video)})`, "", "STATUS: PENDING VISUAL REVIEW", "",
+    `QA gate (${gateDir}): ${gateWord ?? "not run"}${deliveredWord ? ` · delivered-file scan: ${deliveredWord}` : ""} — STATUS may be PASS only when the gate is PASS (or every CHECK strip has an "ok: …" verdict) and the delivered scan is not FAIL.`, "",
+    `Look at EVERY page of the 1-fps contact sheet — ${(JSON.parse(fs.readFileSync(path.join(outDir, "qa", "qa.json"), "utf8")).contactPages ?? []).map((p) => `${p.file} (${p.from}–${p.to} s)`).join(", ") || "contact_1fps_*.jpg"} — one tile per second, left→right then top→bottom; together they cover the whole video — and shots_start_mid_end.jpg (open the video for anything doubtful). Tick each page below.`, "", ...(JSON.parse(fs.readFileSync(path.join(outDir, "qa", "qa.json"), "utf8")).contactPages ?? []).map((p) => `- [ ] ${p.file} (${p.from}–${p.to} s) seen`), "", "Then fill every row with PASS / FIX + what you saw. Set STATUS to PASS only when no FIX is left.", "",
+    "| check | verdict | notes |", "|---|---|---|", ...rows.map((r) => `| ${r} | | |`), "",
+    `## Preflight (${pf.errors.length} errors, ${pf.warnings.length} warnings) — confirm each on screen`, "",
+    ...(pf.errors.length + pf.warnings.length ? [...pf.errors, ...pf.warnings].map((w) => `- [ ] ${w.level === "error" ? "ERROR" : "warn"} ${w.check}: ${w.msg}`) : ["- none"]), "",
+  ].join("\n"));
+  console.log(`  review gate → ${path.join(outDir, "qa", "REVIEW.md")} (PENDING until a visual review is written)`);
+}
+console.log(`\n✓ done${video ? `: ${video}` : ""}`);
+
+==== 24878 project/scripts/synth.ts
+// CHARACTERFLOW sound kit: a tiny deterministic synthesiser (no samples, no third-party audio).
+// Buses, filters, oscillators, instruments, foley generators, reverb and a VO-ducking mixer.
+// Topic scores (scripts/sound.ts) place these on the film clock.
+
+import { spawnSync } from "node:child_process";
+import fs from "node:fs";
+
+export const SR = 48000;
+export const S = (t: number) => Math.round(t * SR);
+
+export const rng = (seed: number) => () => {
+  seed |= 0;
+  seed = (seed + 0x6d2b79f5) | 0;
+  let x = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+  x = (x + Math.imul(x ^ (x >>> 7), 61 | x)) ^ x;
+  return ((x ^ (x >>> 14)) >>> 0) / 4294967296;
+};
+export const clamp = (x: number, a: number, b: number) => Math.min(b, Math.max(a, x));
+export const smooth = (a: number, b: number, x: number) => { const k = clamp((x - a) / (b - a), 0, 1); return k * k * (3 - 2 * k); };
+export const dbg = (db: number) => 10 ** (db / 20);
+const mtof = (m: number) => 440 * 2 ** ((m - 69) / 12);
+const NOTE: Record<string, number> = { C: 0, "C#": 1, Db: 1, D: 2, "D#": 3, Eb: 3, E: 4, F: 5, "F#": 6, Gb: 6, G: 7, "G#": 8, Ab: 8, A: 9, "A#": 10, Bb: 10, B: 11 };
+export const nf = (n: string) => { const m = /^([A-G][#b]?)(-?\d)$/.exec(n)!; return mtof(12 * (Number(m[2]) + 1) + NOTE[m[1]]); };
+
+export class Bus {
+  L: Float32Array; R: Float32Array; N: number;
+  constructor(N: number) { this.N = N; this.L = new Float32Array(N); this.R = new Float32Array(N); }
+  /** add a mono signal at time t (s), equal-power pan −1..1 */
+  add(t: number, x: Float32Array, gain = 1, pan = 0) {
+    const o = S(t);
+    const gl = Math.cos(((pan + 1) * Math.PI) / 4) * gain * Math.SQRT2, gr = Math.sin(((pan + 1) * Math.PI) / 4) * gain * Math.SQRT2;
+    for (let i = 0; i < x.length; i++) { const j = o + i; if (j < 0 || j >= this.N) continue; this.L[j] += x[i] * gl; this.R[j] += x[i] * gr; }
+  }
+  addSt(t: number, l: Float32Array, r: Float32Array, gain = 1) {
+    const o = S(t);
+    for (let i = 0; i < l.length; i++) { const j = o + i; if (j < 0 || j >= this.N) continue; this.L[j] += l[i] * gain; this.R[j] += r[i] * gain; }
+  }
+}
+
+/** RBJ biquad, in place. `f` may vary per sample. */
+export const biquad = (x: Float32Array, type: "lp" | "hp" | "bp" | "peak", f: number | ((i: number) => number), q = 0.707, gainDb = 0) => {
+  let x1 = 0, x2 = 0, y1 = 0, y2 = 0, b0 = 0, b1 = 0, b2 = 0, a1 = 0, a2 = 0, lastF = -1;
+  const coef = (fc: number) => {
+    const w = (2 * Math.PI * clamp(fc, 10, SR * 0.45)) / SR, cw = Math.cos(w), sw = Math.sin(w), al = sw / (2 * q);
+    let a0: number;
+    if (type === "lp") { b0 = (1 - cw) / 2; b1 = 1 - cw; b2 = b0; a0 = 1 + al; a1 = -2 * cw; a2 = 1 - al; }
+    else if (type === "hp") { b0 = (1 + cw) / 2; b1 = -(1 + cw); b2 = b0; a0 = 1 + al; a1 = -2 * cw; a2 = 1 - al; }
+    else if (type === "bp") { b0 = al; b1 = 0; b2 = -al; a0 = 1 + al; a1 = -2 * cw; a2 = 1 - al; }
+    else { const A = 10 ** (gainDb / 40); b0 = 1 + al * A; b1 = -2 * cw; b2 = 1 - al * A; a0 = 1 + al / A; a1 = -2 * cw; a2 = 1 - al / A; }
+    b0 /= a0; b1 /= a0; b2 /= a0; a1 /= a0; a2 /= a0;
+  };
+  for (let i = 0; i < x.length; i++) {
+    const fc = typeof f === "number" ? f : f(i);
+    if (typeof f !== "number" ? (i & 31) === 0 : lastF < 0) { coef(fc); lastF = fc; }
+    const y = b0 * x[i] + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
+    x2 = x1; x1 = x[i]; y2 = y1; y1 = y;
+    x[i] = y;
+  }
+  return x;
+};
+
+export const noise = (n: number, seed = 1) => { const r = rng(seed); const a = new Float32Array(n); for (let i = 0; i < n; i++) a[i] = r() * 2 - 1; return a; };
+export const pink = (n: number, seed = 1) => {
+  const w = noise(n, seed); let b0 = 0, b1 = 0, b2 = 0;
+  for (let i = 0; i < n; i++) { b0 = 0.99765 * b0 + w[i] * 0.099046; b1 = 0.963 * b1 + w[i] * 0.2965164; b2 = 0.57 * b2 + w[i] * 1.0526913; w[i] = (b0 + b1 + b2 + w[i] * 0.1848) * 0.2; }
+  return w;
+};
+export const envExp = (x: Float32Array, tau: number, attack = 0.002) => { for (let i = 0; i < x.length; i++) { const t = i / SR; x[i] *= Math.min(1, t / attack) * Math.exp(-t / tau); } return x; };
+export const envAR = (x: Float32Array, a: number, r: number) => { const d = x.length / SR; for (let i = 0; i < x.length; i++) { const t = i / SR; x[i] *= smooth(0, a, t) * (1 - smooth(d - r, d, t)); } return x; };
+export const sine = (dur: number, f: number | ((t: number) => number), phase = 0) => {
+  const n = S(dur), a = new Float32Array(n); let p = phase;
+  for (let i = 0; i < n; i++) { const fr = typeof f === "number" ? f : f(i / SR); p += (2 * Math.PI * fr) / SR; a[i] = Math.sin(p); }
+  return a;
+};
+export const saw = (dur: number, f: number, seed = 0) => {
+  const n = S(dur), a = new Float32Array(n); let p = rng(seed)();
+  for (let i = 0; i < n; i++) { p += f / SR; p -= Math.floor(p); a[i] = 2 * p - 1; }
+  return a;
+};
+export const mixInto = (dst: Float32Array, src: Float32Array, g = 1) => { for (let i = 0; i < Math.min(dst.length, src.length); i++) dst[i] += src[i] * g; return dst; };
+
+// ── instruments ─────────────────────────────────────────────────────────────
+export type Out = { dry: Bus; verb: Bus };
+
+/** Warm pad: 3 detuned saws per note → 2-pole low-pass, slow envelope. */
+export const pad = (o: Out, t0: number, t1: number, notes: string[], g: number, cutoff = 900, a = 1.5, r = 1.5, pan = 0, bright = 0) => {
+  const dur = t1 - t0, n = S(dur);
+  const L = new Float32Array(n), R = new Float32Array(n);
+  notes.forEach((nn, k) => {
+    const f = nf(nn);
+    for (const [d, p] of [[-0.006, -0.6], [0, 0], [0.007, 0.6]] as const) {
+      const s = saw(dur, f * (1 + d), k * 7 + Math.round(d * 1000));
+      const gl = Math.cos(((p * 0.7 + pan + 1) * Math.PI) / 4), gr = Math.sin(((p * 0.7 + pan + 1) * Math.PI) / 4);
+      for (let i = 0; i < n; i++) { L[i] += s[i] * gl; R[i] += s[i] * gr; }
+    }
+  });
+  const fc = (i: number) => cutoff * (1 + bright * smooth(0, n, i));
+  biquad(L, "lp", fc, 0.6); biquad(L, "lp", fc, 0.6); biquad(R, "lp", fc, 0.6); biquad(R, "lp", fc, 0.6);
+  envAR(L, a, r); envAR(R, a, r);
+  const k = g / Math.max(1, notes.length * 1.2);
+  o.dry.addSt(t0, L, R, k);
+  o.verb.addSt(t0, L, R, k * 0.5);
+};
+
+export const pluck = (o: Out, t: number, note: string, g: number, pan = 0, decay = 0.996, brightness = 0.5) => {
+  const f = nf(note), p = Math.max(2, Math.round(SR / f));
+  const n = S(2.2), y = new Float32Array(n), buf = noise(p, Math.round(t * 1000 + f));
+  biquad(buf, "lp", 1500 + brightness * 5000);
+  for (let i = 0; i < n; i++) { const j = i % p; const v = buf[j]; buf[j] = decay * 0.5 * (v + buf[(j + 1) % p]); y[i] = v; }
+  envExp(y, 0.9, 0.002);
+  o.dry.add(t, y, g, pan);
+  o.verb.add(t, y, g * 0.5, pan);
+};
+
+export const bell = (o: Out, t: number, note: string, g: number, dur = 3, pan = 0) => {
+  const f = nf(note), n = S(dur), y = new Float32Array(n);
+  for (const [m, a, tau] of [[1, 1, 1.4], [2.76, 0.45, 0.7], [5.4, 0.25, 0.35], [8.93, 0.12, 0.2]] as const) mixInto(y, envExp(sine(dur, f * m), tau * (dur / 3), 0.002), a);
+  o.dry.add(t, y, g * 0.3, pan);
+  o.verb.add(t, y, g * 0.35, pan);
+};
+
+export const kalimba = (o: Out, t: number, note: string, g: number, pan = 0) => {
+  const f = nf(note), y = envExp(sine(1.8, f), 0.55, 0.002);
+  mixInto(y, envExp(sine(1.8, f * 5.4), 0.06, 0.001), 0.25);
+  mixInto(y, envExp(sine(1.8, f * 2), 0.25, 0.002), 0.15);
+  o.dry.add(t, y, g * 0.35, pan);
+  o.verb.add(t, y, g * 0.3, pan);
+};
+
+/** Electric-piano chord (sine partials + tremolo). */
+export const ep = (o: Out, t: number, notes: string[], g: number, dur: number) => {
+  notes.forEach((nn, k) => {
+    const f = nf(nn), y = envExp(sine(dur, f), dur * 0.45, 0.01);
+    mixInto(y, envExp(sine(dur, f * 2), dur * 0.18, 0.005), 0.25);
+    mixInto(y, envExp(sine(dur, f * 3), dur * 0.08, 0.003), 0.08);
+    for (let i = 0; i < y.length; i++) y[i] *= 1 + 0.12 * Math.sin((2 * Math.PI * 4.5 * i) / SR);
+    envAR(y, 0.01, 0.4);
+    o.dry.add(t + k * 0.014, y, (g * 0.3) / notes.length, (k / Math.max(1, notes.length - 1) - 0.5) * 0.5);
+    o.verb.add(t, y, (g * 0.25) / notes.length);
+  });
+};
+
+export const subPulse = (o: Out, t: number, g: number, f0 = 55) => { const x = envExp(sine(0.6, (u) => f0 - 18 * Math.min(1, u * 5)), 0.12, 0.004); o.dry.add(t, x, g); };
+
+// ── foley / design ──────────────────────────────────────────────────────────
+export const click = (o: Out, t: number, f: number, g: number, pan = 0, tau = 0.012) => {
+  const x = envExp(biquad(noise(S(0.08), Math.round(t * 997)), "bp", f, 2.5), tau * 0.5, 0.0005);
+  mixInto(x, envExp(sine(0.08, f * 0.62), tau, 0.0005), 0.4);
+  o.dry.add(t, x, g, pan);
+  o.verb.add(t, x, g * 0.15, pan);
+};
+export const thud = (o: Out, t: number, g: number, f = 60, tau = 0.18, pan = 0) => {
+  const x = envExp(sine(0.8, (u) => f * (1.25 - 0.3 * Math.min(1, u * 4))), tau, 0.002);
+  mixInto(x, envExp(biquad(noise(S(0.8), Math.round(t * 31)), "lp", 500), tau * 0.4, 0.002), 0.6);
+  o.dry.add(t, x, g, pan);
+  o.verb.add(t, x, g * 0.3, pan);
+};
+/** Fabric: band-passed noise with a slow, uneven swell. */
+export const rustle = (o: Out, t: number, dur: number, g: number, pan = 0, f = 2400) => {
+  const n = S(dur);
+  const x = biquad(biquad(noise(n, Math.round(t * 113)), "bp", f, 0.7), "hp", 700);
+  const r = rng(Math.round(t * 71));
+  let e = 0;
+  for (let i = 0; i < n; i++) {
+    const u = i / n;
+    if ((i & 255) === 0) e = 0.55 + 0.45 * r();
+    x[i] *= Math.sin(Math.PI * u) * e;
+  }
+  o.dry.add(t, x, g, pan);
+  o.verb.add(t, x, g * 0.12, pan);
+};
+export const whoosh = (o: Out, t: number, dur: number, g: number, f0: number, f1: number, pan0 = -0.4, pan1 = 0.4) => {
+  const n = S(dur);
+  const x = biquad(noise(n, Math.round(t * 71)), "bp", (i) => f0 * (f1 / f0) ** (i / n), 1.2);
+  for (let i = 0; i < n; i++) { const u = i / n; x[i] *= Math.sin(Math.PI * u) ** 1.5; }
+  const L = new Float32Array(n), R = new Float32Array(n);
+  for (let i = 0; i < n; i++) { const p = pan0 + (pan1 - pan0) * (i / n); L[i] = x[i] * Math.cos(((p + 1) * Math.PI) / 4); R[i] = x[i] * Math.sin(((p + 1) * Math.PI) / 4); }
+  o.dry.addSt(t, L, R, g);
+  o.verb.addSt(t, L, R, g * 0.3);
+};
+export const heartbeat = (o: Out, t: number, g: number) => {
+  for (const [dt, k] of [[0, 1], [0.17, 0.7]] as const) {
+    const x = envExp(sine(0.4, (u) => 58 - 22 * Math.min(1, u * 6)), 0.07, 0.004);
+    biquad(x, "lp", 160);
+    o.dry.add(t + dt, x, g * k);
+  }
+};
+/** A soft notification "bloop": a rising sine blip with a bell sparkle. */
+export const pop = (o: Out, t: number, g: number, f = 880, pan = 0) => {
+  const x = envExp(sine(0.35, (u) => f * (0.75 + 0.35 * Math.min(1, u * 18))), 0.07, 0.003);
+  mixInto(x, envExp(sine(0.35, f * 2.01), 0.04, 0.002), 0.25);
+  mixInto(x, envExp(sine(0.35, f * 3.02), 0.02, 0.001), 0.12);
+  o.dry.add(t, x, g, pan);
+  o.verb.add(t, x, g * 0.35, pan);
+};
+export const shimmer = (o: Out, t: number, dur: number, g: number, base = 2400, seed = 1) => {
+  const r = rng(seed);
+  for (let k = 0; k < Math.round(dur * 26); k++) {
+    const tt = t + r() * dur, f = base * (1 + r() * 2);
+    const x = envExp(sine(0.25, f), 0.05 + r() * 0.08, 0.002);
+    const w = Math.sin(Math.PI * ((tt - t) / dur));
+    o.dry.add(tt, x, g * 0.05 * w, r() * 1.6 - 0.8);
+    o.verb.add(tt, x, g * 0.05 * w, 0);
+  }
+};
+/** Breath: filtered noise, inhale (rising) then exhale (falling). */
+export const breath = (o: Out, t: number, inhale: number, exhale: number, g: number) => {
+  const a = biquad(biquad(pink(S(inhale), Math.round(t * 17)), "bp", (i) => 900 + 700 * (i / S(inhale)), 0.8), "hp", 300);
+  for (let i = 0; i < a.length; i++) a[i] *= Math.sin((Math.PI * i) / a.length) ** 1.2;
+  const b = biquad(biquad(pink(S(exhale), Math.round(t * 19)), "bp", (i) => 1300 - 700 * (i / S(exhale)), 0.7), "hp", 250);
+  for (let i = 0; i < b.length; i++) b[i] *= Math.sin((Math.PI * i) / b.length) ** 0.8;
+  o.dry.add(t, a, g * 0.9);
+  o.dry.add(t + inhale, b, g);
+};
+/** Pen on paper: short scratchy grains, one per stroke. */
+export const scribble = (o: Out, t0: number, t1: number, g: number, seed = 5) => {
+  const r = rng(seed);
+  let t = t0;
+  while (t < t1) {
+    const d = 0.05 + r() * 0.1;
+    const x = biquad(biquad(noise(S(d), Math.round(t * 1000)), "bp", 3500 + r() * 2500, 1.4), "hp", 1800);
+    for (let i = 0; i < x.length; i++) x[i] *= Math.sin((Math.PI * i) / x.length) * (0.6 + 0.4 * Math.sin(i * 0.004 * (1 + r())));
+    o.dry.add(t, x, g * (0.6 + 0.4 * r()), 0.15);
+    t += d + r() * 0.05;
+  }
+};
+
+/** Freeverb-style stereo reverb. */
+export const freeverb = (x: Float32Array, spread: number, room = 0.84, damp = 0.25) => {
+  const k = SR / 44100;
+  const combs = [1116, 1188, 1277, 1356, 1422, 1491, 1557, 1617].map((d) => ({ b: new Float32Array(Math.round((d + spread) * k)), i: 0, f: 0 }));
+  const aps = [556, 441, 341, 225].map((d) => ({ b: new Float32Array(Math.round((d + spread) * k)), i: 0 }));
+  const y = new Float32Array(x.length);
+  for (let n = 0; n < x.length; n++) {
+    const inp = x[n] * 0.015;
+    let out = 0;
+    for (const c of combs) { const o = c.b[c.i]; c.f = o * (1 - damp) + c.f * damp; c.b[c.i] = inp + c.f * room; c.i = (c.i + 1) % c.b.length; out += o; }
+    for (const a of aps) { const o = a.b[a.i]; a.b[a.i] = out + o * 0.5; a.i = (a.i + 1) % a.b.length; out = o - out; }
+    y[n] = out;
+  }
+  return y;
+};
+
+/** Decode an audio file to mono float at SR. */
+export const decode = (file: string) => {
+  const raw = spawnSync("ffmpeg", ["-v", "error", "-i", file, "-f", "f32le", "-ac", "1", "-ar", String(SR), "-"], { maxBuffer: 1 << 30 }).stdout as Buffer;
+  return new Float32Array(raw.buffer, raw.byteOffset, Math.floor(raw.length / 4));
+};
+
+/** Speech envelope → ducking gain 0…1 (attack 60 ms, release 380 ms). */
+export const duckEnvelope = (vo: Float32Array) => {
+  const N = vo.length, win = S(0.02), duck = new Float32Array(N);
+  let env = 0;
+  for (let i = 0; i < N; i += win) {
+    let e = 0;
+    for (let j = i; j < Math.min(N, i + win); j++) e += vo[j] * vo[j];
+    const on = Math.sqrt(e / win) > 0.012 ? 1 : 0;
+    const a = on > env ? 1 - Math.exp(-0.02 / 0.06) : 1 - Math.exp(-0.02 / 0.38);
+    env += (on - env) * a;
+    for (let j = i; j < Math.min(N, i + win); j++) duck[j] = env;
+  }
+  return duck;
+};
+
+export const writeWav = (file: string, l: Float32Array, r: Float32Array, k = 1) => {
+  const N = l.length;
+  const b = Buffer.alloc(44 + N * 4);
+  b.write("RIFF", 0); b.writeUInt32LE(36 + N * 4, 4); b.write("WAVE", 8); b.write("fmt ", 12);
+  b.writeUInt32LE(16, 16); b.writeUInt16LE(1, 20); b.writeUInt16LE(2, 22); b.writeUInt32LE(SR, 24); b.writeUInt32LE(SR * 4, 28);
+  b.writeUInt16LE(4, 32); b.writeUInt16LE(16, 34); b.write("data", 36); b.writeUInt32LE(N * 4, 40);
+  for (let i = 0; i < N; i++) {
+    b.writeInt16LE(Math.round(clamp(l[i] * k, -1, 1) * 32767), 44 + i * 4);
+    b.writeInt16LE(Math.round(clamp(r[i] * k, -1, 1) * 32767), 46 + i * 4);
+  }
+  fs.writeFileSync(file, b);
+};
+
+// ── comedy kit ──────────────────────────────────────────────────────────────
+/** Cartoon boing: a sine that springs up in pitch with a wobble. */
+export const boing = (o: Out, t: number, g: number, f0 = 180, f1 = 520, dur = 0.6, pan = 0) => {
+  const x = sine(dur, (u) => (f0 + (f1 - f0) * Math.min(1, u / (dur * 0.35))) * (1 + 0.08 * Math.sin(u * 2 * Math.PI * 14) * Math.exp(-u * 4)));
+  envAR(x, 0.005, dur * 0.5);
+  mixInto(x, envExp(sine(dur, f1 * 2), 0.08, 0.002), 0.15);
+  o.dry.add(t, x, g, pan);
+  o.verb.add(t, x, g * 0.3, pan);
+};
+/** Referee whistle: a pea-trill around 2.6 kHz. */
+export const whistle = (o: Out, t: number, dur: number, g: number, pan = 0) => {
+  const n = S(dur), x = new Float32Array(n);
+  let p = 0;
+  for (let i = 0; i < n; i++) {
+    const u = i / SR;
+    const f = 2650 + 180 * Math.sign(Math.sin(2 * Math.PI * 28 * u));
+    p += (2 * Math.PI * f) / SR;
+    x[i] = Math.sin(p) * (0.85 + 0.15 * Math.sin(2 * Math.PI * 28 * u));
+  }
+  mixInto(x, biquad(noise(n, Math.round(t * 99)), "bp", 2650, 3), 0.25);
+  envAR(x, 0.01, 0.05);
+  o.dry.add(t, x, g, pan);
+  o.verb.add(t, x, g * 0.25, pan);
+};
+/** Crowd cheer: band-limited noise swell with "voices" (formant wobble). */
+export const cheer = (o: Out, t: number, dur: number, g: number) => {
+  const n = S(dur);
+  const x = biquad(biquad(pink(n, 55), "bp", (i) => 900 + 400 * Math.sin(i / SR * 9), 0.8), "hp", 250);
+  for (let i = 0; i < n; i++) { const u = i / n; x[i] *= Math.sin(Math.PI * Math.min(1, u * 1.6)) * (1 - u) * 1.4 * (0.8 + 0.2 * Math.sin(i / SR * 37)); }
+  o.dry.add(t, x, g, 0);
+  o.verb.add(t, x, g * 0.4, 0);
+};
+/** Rubber squeak (an aborted gesture). */
+export const squeak = (o: Out, t: number, g: number, pan = 0) => {
+  const x = sine(0.16, (u) => 1400 + 900 * Math.sin(u * Math.PI * 6));
+  envAR(x, 0.01, 0.06);
+  o.dry.add(t, x, g, pan);
+};
+/** Zipper: a fast train of clicks. */
+export const zipper = (o: Out, t: number, dur: number, g: number, pan = 0) => {
+  const r = rng(Math.round(t * 77));
+  for (let tt = 0; tt < dur; tt += 0.008 + r() * 0.006) {
+    const x = envExp(biquad(noise(S(0.02), Math.round((t + tt) * 3000)), "bp", 3500 + r() * 2500, 2), 0.003, 0.0005);
+    o.dry.add(t + tt, x, g * (0.6 + 0.4 * Math.sin((Math.PI * tt) / dur)), pan);
+  }
+};
+/** Clock tick-tock. */
+export const ticktock = (o: Out, t0: number, t1: number, g: number) => {
+  let k = 0;
+  for (let t = t0; t < t1; t += 0.5, k++) {
+    const f = k % 2 ? 2300 : 3100;
+    const x = envExp(biquad(noise(S(0.05), k + 9), "bp", f, 6), 0.006, 0.0005);
+    mixInto(x, envExp(sine(0.05, f * 0.5), 0.01, 0.0005), 0.3);
+    o.dry.add(t, x, g, k % 2 ? 0.25 : -0.25);
+  }
+};
+/** Sad trombone: four falling notes, the last one wobbling. */
+export const sadTrombone = (o: Out, t: number, g: number) => {
+  const notes: [number, number][] = [[nf("D4"), 0.42], [nf("C#4"), 0.42], [nf("C4"), 0.42], [nf("B3"), 1.4]];
+  let tt = t;
+  notes.forEach(([f, d], k) => {
+    const n = S(d), x = new Float32Array(n);
+    let p = 0;
+    for (let i = 0; i < n; i++) {
+      const u = i / SR;
+      const vib = k === 3 ? 1 + 0.03 * Math.sin(2 * Math.PI * 6 * u) * Math.min(1, u * 2) : 1;
+      p += (2 * Math.PI * f * vib * (1 - 0.01 * Math.exp(-u * 20))) / SR;
+      const ph = (p / (2 * Math.PI)) % 1;
+      x[i] = 2 * ph - 1;
+    }
+    biquad(x, "lp", 1400, 1.5);
+    biquad(x, "peak", 600, 1, 6);
+    envAR(x, 0.03, k === 3 ? 0.5 : 0.06);
+    o.dry.add(tt, x, g * 0.35, 0.1);
+    o.verb.add(tt, x, g * 0.2, 0.1);
+    tt += d;
+  });
+};
+/** Tape rewind: a high, warbling whirr that speeds up. */
+export const rewindTape = (o: Out, t: number, dur: number, g: number) => {
+  const n = S(dur), x = new Float32Array(n);
+  let p = 0;
+  for (let i = 0; i < n; i++) {
+    const u = i / n;
+    const f = 600 + 2400 * u * u + 300 * Math.sin(i / SR * 2 * Math.PI * 11);
+    p += (2 * Math.PI * f) / SR;
+    x[i] = Math.sin(p) * 0.4 + Math.sin(p * 1.5) * 0.2;
+  }
+  mixInto(x, biquad(noise(n, 31), "bp", (i) => 1500 + 3000 * (i / n), 1), 0.5);
+  envAR(x, 0.05, 0.12);
+  o.dry.add(t, x, g, 0);
+};
+/** Hand clap / high five: sharp noise burst with a body thump. */
+export const clap = (o: Out, t: number, g: number, pan = 0) => {
+  const x = envExp(biquad(noise(S(0.25), Math.round(t * 333)), "bp", 1800, 0.9), 0.035, 0.0008);
+  mixInto(x, envExp(sine(0.25, 190), 0.03, 0.001), 0.4);
+  o.dry.add(t, x, g, pan);
+  o.verb.add(t, x, g * 0.4, pan);
+};
+/** Sneaker step on pavers. */
+export const sneakerStep = (o: Out, t: number, g: number, pan = 0, seed = 1) => {
+  const r = rng(Math.round(t * 1000) + seed);
+  const x = envExp(biquad(noise(S(0.12), Math.round(t * 1000) + seed), "bp", 1100 + 500 * r(), 1.2), 0.018, 0.001);
+  mixInto(x, envExp(sine(0.12, 85 + 20 * r()), 0.03, 0.002), 0.5);
+  mixInto(x, envExp(biquad(noise(S(0.12), seed + 7), "hp", 5000), 0.006, 0.003), 0.15);
+  o.dry.add(t, x, g, pan);
+};
+
+// ── CINÉSTORY kit: cinematic drones, hits, doors, weather beds ─────────────
+
+/** Sustained drone: detuned saws per note, a moving low-pass and a gain curve (both functions of time in the drone). */
+export const drone = (o: Out, t0: number, t1: number, notes: [string, number][], gain: (t: number) => number, cut: (t: number) => number) => {
+  const n = S(t1 - t0), L = new Float32Array(n), R = new Float32Array(n);
+  notes.forEach(([nn, g], k) => {
+    const f = nf(nn);
+    for (const [d, p] of [[-0.004, -0.5], [0.005, 0.5]] as const) {
+      const s = saw(t1 - t0, f * (1 + d), k * 11 + (p > 0 ? 3 : 0));
+      for (let i = 0; i < n; i++) { L[i] += s[i] * g * (p < 0 ? 1 : 0.6); R[i] += s[i] * g * (p > 0 ? 1 : 0.6); }
+    }
+  });
+  biquad(L, "lp", (i) => cut(i / SR), 0.7); biquad(R, "lp", (i) => cut(i / SR), 0.7);
+  for (let i = 0; i < n; i++) { const g = gain(i / SR) * smooth(0, 1.2, i / SR) * (1 - smooth(t1 - t0 - 1.2, t1 - t0, i / SR)); L[i] *= g; R[i] *= g; }
+  o.dry.addSt(t0, L, R, 0.5);
+  o.verb.addSt(t0, L, R, 0.35);
+};
+/** Low cinematic boom (sub drop + noise body). */
+export const boom = (o: Out, t: number, g: number, f = 48) => {
+  const x = envExp(sine(2.2, (u) => f + 30 * Math.exp(-u * 6)), 0.7, 0.003);
+  const body = envExp(biquad(noise(S(1.2), 91), "lp", 300), 0.25, 0.002);
+  o.dry.add(t, x, g); o.dry.add(t, body, g * 0.5); o.verb.add(t, body, g * 0.6);
+};
+/** Rising swell into a moment (filtered noise + a glide). */
+export const riser = (o: Out, t: number, dur: number, g: number) => {
+  const n = S(dur), x = pink(n, 61);
+  biquad(x, "bp", (i) => 300 + 5000 * (i / n) ** 2, 0.9);
+  for (let i = 0; i < n; i++) x[i] *= (i / n) ** 2.2;
+  const tone = sine(dur, (u) => 110 * 2 ** (2 * (u / dur)));
+  for (let i = 0; i < n; i++) tone[i] *= 0.15 * (i / n) ** 3;
+  o.dry.add(t, x, g); o.dry.add(t, tone, g); o.verb.add(t, x, g * 0.5);
+};
+/** Three knuckle knocks on wood. */
+export const knock = (o: Out, t: number, g: number, n = 3, gap = 0.3) => {
+  for (let k = 0; k < n; k++) {
+    const x = envExp(biquad(noise(S(0.12), 33 + k), "bp", 420, 1.2), 0.035, 0.001);
+    const b = envExp(sine(0.15, 150), 0.03, 0.001);
+    o.dry.add(t + k * gap, x, g * 2.2); o.dry.add(t + k * gap, b, g * 0.6); o.verb.add(t + k * gap, x, g * 0.8);
+  }
+};
+/** Wooden creak: a slowly gliding rough resonance. */
+export const creak = (o: Out, t: number, dur: number, g: number, base = 180, pan = 0) => {
+  const n = S(dur), r = rng(7 + Math.round(base));
+  const x = new Float32Array(n);
+  let ph = 0;
+  for (let i = 0; i < n; i++) { const u = i / n; const f = base * (1 + 0.6 * Math.sin(u * Math.PI) + 0.1 * (r() - 0.5)); ph += f / SR; x[i] = (ph % 1 < 0.12 ? 1 : 0) * (0.6 + 0.4 * r()); }
+  biquad(x, "bp", base * 4, 3); envAR(x, 0.05, 0.1);
+  o.dry.add(t, x, g, pan); o.verb.add(t, x, g * 0.4, pan);
+};
+export const doorOpen = (o: Out, t: number, g: number) => { click(o, t, 1800, g * 0.5, 0.2); creak(o, t + 0.08, 0.9, g * 0.8, 210, 0.2); };
+export const doorClose = (o: Out, t: number, g: number) => { creak(o, t, 0.35, g * 0.4, 260, 0.2); thud(o, t + 0.32, g * 1.4, 70, 0.16, 0.2); click(o, t + 0.34, 2400, g * 0.4, 0.2); };
+/** Ship's / foghorn blast. */
+export const foghorn = (o: Out, t: number, g: number, dur = 2.6) => {
+  const x = saw(dur, 92, 5), y = saw(dur, 92 * 1.498, 9);
+  for (let i = 0; i < x.length; i++) x[i] = x[i] * 0.6 + y[i] * 0.4;
+  biquad(x, "lp", 700, 0.8); envAR(x, 0.25, 0.6);
+  o.dry.add(t, x, g); o.verb.add(t, x, g * 1.2);
+};
+/** Radio static burst with a faint tone underneath. */
+export const radio = (o: Out, t: number, dur: number, g: number) => {
+  const x = biquad(biquad(noise(S(dur), 71), "bp", 2200, 0.6), "hp", 500);
+  const r = rng(72);
+  for (let i = 0; i < x.length; i++) x[i] *= 0.5 + 0.5 * (Math.sin(i / SR * 37 + r() * 0.3) > -0.2 ? 1 : 0.2);
+  envAR(x, 0.03, 0.15);
+  o.dry.add(t, x, g, 0.3);
+};
+/** A gull's cry. */
+export const gull = (o: Out, t: number, g: number, pan = 0) => {
+  for (let k = 0; k < 3; k++) {
+    const d = 0.22 + 0.05 * k, x = sine(d, (u) => 1700 + 900 * Math.sin((u / d) * Math.PI) - 300 * k);
+    for (let i = 0; i < x.length; i++) x[i] = Math.tanh(x[i] * 3) * Math.sin((Math.PI * i) / x.length);
+    biquad(x, "bp", 2000, 1.2);
+    o.dry.add(t + k * 0.28, x, g, pan); o.verb.add(t + k * 0.28, x, g * 0.7, pan);
+  }
+};
+/** One wave breaking on rocks (noise burst with a long hiss tail). */
+export const waveCrash = (o: Out, t: number, g: number, pan = 0, dist = 0) => {
+  const n = S(3.5), x = pink(n, 300 + Math.round(t * 10));
+  biquad(x, "lp", 2600 - 1800 * dist, 0.7);
+  for (let i = 0; i < n; i++) { const u = i / SR; x[i] *= smooth(0, 0.35, u) * Math.exp(-Math.max(0, u - 0.35) * 1.1); }
+  o.dry.add(t, x, g, pan); o.verb.add(t, x, g * 0.5, pan);
+};
+
+==== 19126 project/src/cine/ui.tsx
+// CINÉSTORY motion-graphics kit (2D overlay: 1080×1920 portrait or 1920×1080 landscape; sizes and positions come from the layout in film/Overlay.tsx). Every element is driven by an appear amount
+// `a` (0..1) and/or a progress value, so shots animate them as pure functions of time. Readable,
+// documentary style: Manrope, thin rules, glass cards, cyan = information, amber = interpretation.
+
+import React from "react";
+
+export const CYAN = "#8fdcff";
+export const AMBER = "#ffbf73";
+export const RED = "#ff6b5e";
+export const INK = "#eef3fb";
+const FONT = "Manrope, sans-serif";
+const clamp = (x: number) => Math.min(1, Math.max(0, x));
+const eo = (x: number) => 1 - (1 - clamp(x)) ** 3;
+/** appear amount for an element living in [t0, t1] with fades. */
+export const span = (v: number, t0: number, t1: number, fin = 0.45, fout = 0.4) => eo((v - t0) / fin) * (1 - clamp((v - (t1 - fout)) / fout));
+
+const abs = (x: number, y: number): React.CSSProperties => ({ position: "absolute", left: x, top: y });
+
+/** Chip label: small caps text in a thin-bordered glass box. */
+export const Tag: React.FC<{ x: number; y: number; a: number; text: string; sub?: string; color?: string; size?: number; anchor?: "l" | "c" | "r" }> = ({ x, y, a, text, sub, color = CYAN, size = 26, anchor = "l" }) =>
+  a <= 0.001 ? null : (
+    <div style={{ ...abs(x, y), transform: `translate(${anchor === "c" ? "-50%" : anchor === "r" ? "-100%" : "0"}, -50%) translateY(${(1 - a) * 14}px)`, opacity: a, fontFamily: FONT }}>
+      <div style={{ padding: "10px 18px", border: `1.5px solid ${color}`, background: "rgba(8,14,26,0.55)", backdropFilter: "blur(6px)", borderRadius: 6, color: INK, whiteSpace: "nowrap" }}>
+        <div style={{ fontSize: size, fontWeight: 600, letterSpacing: "0.08em", color }}>{text}</div>
+        {sub ? <div style={{ fontSize: size * 0.72, fontWeight: 400, marginTop: 4, color: INK, opacity: 0.9 }}>{sub}</div> : null}
+      </div>
+    </div>
+  );
+
+/** Callout: a dot on a projected 3D point, a leader line, and a label. */
+export const Callout: React.FC<{ p: { x: number; y: number; z?: number }; a: number; text: string; sub?: string; dx?: number; dy?: number; color?: string; W?: number; H?: number; size?: number }> = ({ p, a, text, sub, dx = 160, dy = -90, color = CYAN, W = 1920, H = 1080, size = 26 }) => {
+  if (a <= 0.001 || (p.z !== undefined && p.z <= 0)) return null;
+  const lx = p.x + dx * eo(a * 1.4), ly = p.y + dy * eo(a * 1.4);
+  return (
+    <>
+      <svg width={W} height={H} style={abs(0, 0)}>
+        <circle cx={p.x} cy={p.y} r={7 * a} fill="none" stroke={color} strokeWidth={2} opacity={a} />
+        <circle cx={p.x} cy={p.y} r={2.5} fill={color} opacity={a} />
+        <line x1={p.x} y1={p.y} x2={lx} y2={ly} stroke={color} strokeWidth={1.5} opacity={a * 0.9} />
+      </svg>
+      <Tag x={lx + (dx >= 0 ? 8 : -8)} y={ly} a={clamp(a * 1.6 - 0.4)} text={text} sub={sub} color={color} anchor={dx >= 0 ? "l" : "r"} size={size} />
+    </>
+  );
+};
+
+/** Big centred title (section headings, key terms). */
+export const Title: React.FC<{ a: number; text: string; sub?: string; kicker?: string; y?: number; size?: number; color?: string; maxWidth?: number; left?: number; right?: number }> = ({ a, text, sub, kicker, y = 540, size = 84, color = INK, maxWidth, left = 0, right = 0 }) =>
+  a <= 0.001 ? null : (
+    <div style={{ position: "absolute", left, right, top: y, transform: "translateY(-50%)", textAlign: "center", fontFamily: FONT, color, opacity: a }}>
+      {kicker ? <div style={{ fontSize: 22, fontWeight: 600, letterSpacing: "0.5em", color: CYAN, marginBottom: 18, paddingLeft: "0.5em" }}>{kicker}</div> : null}
+      <div style={{ fontSize: size, fontWeight: 300, letterSpacing: `${0.22 + 0.08 * (1 - a)}em`, paddingLeft: "0.22em", whiteSpace: maxWidth ? "normal" : "nowrap", maxWidth, margin: maxWidth ? "0 auto" : undefined, lineHeight: 1.15, textShadow: `${EDGE}, 0 2px 30px rgba(0,0,0,0.45)` }}>{text}</div>
+      {sub ? <div style={{ fontSize: 30, fontWeight: 400, marginTop: 22, opacity: 0.88, textShadow: EDGE }}>{sub}</div> : null}
+    </div>
+  );
+
+// light text that must read on any picture (a white floor, a bright sky) carries a dark edge or sits on glass
+const EDGE = "0 1px 3px rgba(0,0,0,0.6), 0 2px 18px rgba(0,0,0,0.55)";
+
+/** Lower-third statement (left, above the letterbox), on a glass plate. */
+export const Lower: React.FC<{ a: number; text: string; sub?: string; color?: string; y?: number; x?: number; size?: number; maxWidth?: number }> = ({ a, text, sub, color = CYAN, y = 860, x = 120, size = 40, maxWidth }) =>
+  a <= 0.001 ? null : (
+    <div style={{ ...abs(x, y), maxWidth, transform: `translateY(-100%) translateX(${(1 - a) * -20}px)`, opacity: a, fontFamily: FONT, color: INK, padding: "16px 22px 18px", background: "rgba(8,14,26,0.55)", backdropFilter: "blur(6px)", borderRadius: 10, boxSizing: "border-box" }}>
+      <div style={{ width: 70 * a, height: 3, background: color, marginBottom: 14 }} />
+      <div style={{ fontSize: size, fontWeight: 600, letterSpacing: "0.02em", lineHeight: 1.15, textShadow: EDGE }}>{text}</div>
+      {sub ? <div style={{ fontSize: size * 0.65, fontWeight: 400, marginTop: 8, opacity: 0.9, textShadow: EDGE }}>{sub}</div> : null}
+    </div>
+  );
+
+/** Rubber stamp (✓/✗ verdicts). */
+export const Stamp: React.FC<{ x: number; y: number; a: number; text: string; color?: string; rot?: number; size?: number }> = ({ x, y, a, text, color = RED, rot = -8, size = 64 }) =>
+  a <= 0.001 ? null : (
+    <div style={{ ...abs(x, y), transform: `translate(-50%,-50%) rotate(${rot}deg) scale(${1 + 0.6 * (1 - eo(a * 1.5))})`, opacity: clamp(a * 2), fontFamily: FONT, fontWeight: 700, fontSize: size, letterSpacing: "0.1em", color, whiteSpace: "nowrap", border: `5px solid ${color}`, borderRadius: 10, padding: "6px 26px", textShadow: "0 0 18px rgba(0,0,0,0.4)" }}>{text}</div>
+  );
+
+/** Glass card. */
+export const Card: React.FC<{ x: number; y: number; w: number; h?: number; a: number; children: React.ReactNode; color?: string }> = ({ x, y, w, h, a, children, color = "rgba(143,220,255,0.55)" }) =>
+  a <= 0.001 ? null : (
+    <div style={{ ...abs(x, y), width: w, height: h, transform: `translateY(${(1 - a) * 20}px)`, opacity: a, padding: "26px 30px", boxSizing: "border-box", fontFamily: FONT, color: INK, background: "rgba(8,14,26,0.62)", border: `1.5px solid ${color}`, borderRadius: 14, backdropFilter: "blur(8px)" }}>{children}</div>
+  );
+
+/** A row of steps joined by arrows; `k` lights them one by one (0..n). */
+export const Flow: React.FC<{ x: number; y: number; a: number; items: string[]; k: number; colors?: string[]; w?: number; vertical?: boolean }> = ({ x, y, a, items, k, colors, w = 300, vertical }) =>
+  a <= 0.001 ? null : (
+    <div style={{ ...abs(x, y), display: "flex", flexDirection: vertical ? "column" : "row", alignItems: "center", opacity: a, fontFamily: FONT }}>
+      {items.map((it, i) => {
+        const on = clamp(k - i);
+        const c = colors?.[i] ?? CYAN;
+        return (
+          <React.Fragment key={i}>
+            {i > 0 ? <div style={{ width: vertical ? 2 : 70, height: vertical ? 46 : 2, background: c, opacity: 0.25 + 0.75 * on, position: "relative", transform: vertical ? "none" : undefined }}><div style={vertical ? { position: "absolute", left: -7, bottom: -2, width: 0, height: 0, borderTop: `12px solid ${c}`, borderLeft: "8px solid transparent", borderRight: "8px solid transparent", opacity: 0.25 + 0.75 * on } : { position: "absolute", right: -2, top: -7, width: 0, height: 0, borderLeft: `12px solid ${c}`, borderTop: "8px solid transparent", borderBottom: "8px solid transparent", opacity: 0.25 + 0.75 * on }} /></div> : null}
+            <div style={{ width: w, padding: "22px 10px", textAlign: "center", border: `2px solid ${c}`, borderRadius: 12, background: `rgba(8,14,26,${0.5 + 0.2 * on})`, color: INK, fontSize: vertical ? 36 : 30, fontWeight: 600, letterSpacing: "0.06em", opacity: 0.3 + 0.7 * on, transform: `scale(${0.94 + 0.06 * on})`, boxShadow: on > 0.5 ? `0 0 30px ${c}55` : "none" }}>{it}</div>
+          </React.Fragment>
+        );
+      })}
+    </div>
+  );
+
+/** Balance scale: two pans with labels; tilt −1 (left heavy) … 1 (right heavy). */
+export const Scale: React.FC<{ x: number; y: number; a: number; tilt: number; left: [string, string]; right: [string, string] }> = ({ x, y, a, tilt, left, right }) => {
+  if (a <= 0.001) return null;
+  const ang = tilt * 12;
+  const pan = (side: -1 | 1, lab: [string, string], col: string) => {
+    const dy = Math.sin((ang * Math.PI) / 180) * 300 * side;
+    return (
+      <div style={{ position: "absolute", left: 300 * side - 190, top: 60 + dy, width: 380, textAlign: "center" }}>
+        <div style={{ height: 3, background: INK, opacity: 0.8, margin: "0 40px" }} />
+        <div style={{ marginTop: 16, padding: "18px 14px", border: `2px solid ${col}`, borderRadius: 12, background: "rgba(8,14,26,0.62)" }}>
+          <div style={{ fontSize: 30, fontWeight: 700, color: col }}>{lab[0]}</div>
+          <div style={{ fontSize: 24, marginTop: 6 }}>{lab[1]}</div>
+        </div>
+      </div>
+    );
+  };
+  return (
+    <div style={{ ...abs(x, y), opacity: a, fontFamily: FONT, color: INK }}>
+      <div style={{ position: "absolute", left: -3, top: 0, width: 6, height: 360, background: INK, opacity: 0.7 }} />
+      <div style={{ position: "absolute", left: -320, top: 0, width: 640, height: 4, background: INK, transform: `rotate(${ang}deg)`, transformOrigin: "50% 50%" }} />
+      {pan(-1, left, AMBER)}
+      {pan(1, right, RED)}
+    </div>
+  );
+};
+
+/** Noisy waveform; `word` (0..1) carves a word-shaped burst out of the noise and prints `text`. */
+export const Wave: React.FC<{ x: number; y: number; w: number; a: number; t: number; word: number; text: string }> = ({ x, y, w, a, t, word, text }) => {
+  if (a <= 0.001) return null;
+  const n = 140;
+  const pts: string[] = [];
+  for (let i = 0; i < n; i++) {
+    const u = i / (n - 1);
+    const noise = Math.sin(i * 12.9898 + Math.floor(t * 24) * 78.233) * 43758.5453 % 1;
+    const env = Math.exp(-(((u - 0.5) / 0.14) ** 2));
+    const amp = 40 * Math.abs(noise) * (1 - 0.6 * word) + 120 * word * env * Math.abs(Math.sin(u * 60 + t * 3));
+    pts.push(`${(u * w).toFixed(1)},${(-amp).toFixed(1)} ${(u * w).toFixed(1)},${amp.toFixed(1)}`);
+  }
+  return (
+    <div style={{ ...abs(x, y), opacity: a, fontFamily: FONT }}>
+      <svg width={w} height={300} style={{ position: "absolute", left: 0, top: -150, overflow: "visible" }}>
+        <g transform="translate(0,150)">
+          {pts.map((p, i) => {
+            const [a1, b1] = p.split(" ");
+            const [x1, y1] = a1.split(",");
+            const [, y2] = b1.split(",");
+            const u = i / (n - 1);
+            const hot = word * Math.exp(-(((u - 0.5) / 0.14) ** 2));
+            return <line key={i} x1={x1} y1={y1} x2={x1} y2={y2} stroke={hot > 0.3 ? AMBER : CYAN} strokeWidth={4} strokeLinecap="round" opacity={0.5 + 0.5 * hot} />;
+          })}
+        </g>
+      </svg>
+      <div style={{ position: "absolute", left: w / 2, top: -230, transform: "translateX(-50%)", fontSize: 64, fontWeight: 300, letterSpacing: "0.2em", color: AMBER, opacity: word, whiteSpace: "nowrap", textShadow: `0 0 30px ${AMBER}88` }}>{text}</div>
+    </div>
+  );
+};
+
+/** Two horizontal bars on a timeline (e.g. awareness vs. muscle inhibition) with an overlap window. */
+export const Overlap: React.FC<{ x: number; y: number; a: number; k: number; top: [string, number, number]; bottom: [string, number, number]; win: string }> = ({ x, y, a, k, top, bottom, win }) => {
+  if (a <= 0.001) return null;
+  const W = 1100;
+  const bar = (lab: [string, number, number], c: string, yy: number) => (
+    <div style={{ position: "absolute", left: 0, top: yy }}>
+      <div style={{ fontSize: 26, fontWeight: 600, color: c, marginBottom: 10, letterSpacing: "0.06em" }}>{lab[0]}</div>
+      <div style={{ position: "relative", width: W, height: 26, background: "rgba(255,255,255,0.08)", borderRadius: 13 }}>
+        <div style={{ position: "absolute", left: lab[1] * W, width: Math.max(0, Math.min(lab[2], lab[1] + (lab[2] - lab[1]) * eo(k)) - lab[1]) * W, height: 26, background: c, borderRadius: 13, opacity: 0.9 }} />
+      </div>
+    </div>
+  );
+  const o0 = Math.max(top[1], bottom[1]), o1 = Math.min(top[2], bottom[2]);
+  const ow = clamp((k - 0.7) / 0.3);
+  return (
+    <div style={{ ...abs(x, y), opacity: a, fontFamily: FONT, color: INK }}>
+      {bar(top, CYAN, 0)}
+      {bar(bottom, RED, 110)}
+      <div style={{ position: "absolute", left: o0 * W, top: 30, width: (o1 - o0) * W, height: 150, border: `2px dashed ${AMBER}`, borderRadius: 10, opacity: ow, background: "rgba(255,191,115,0.10)" }} />
+      <div style={{ position: "absolute", left: ((o0 + o1) / 2) * W, top: 200, transform: "translateX(-50%)", fontSize: 28, fontWeight: 600, color: AMBER, opacity: ow, whiteSpace: "nowrap" }}>{win}</div>
+    </div>
+  );
+};
+
+/** Stylised sleep-stage strip (no data: a schematic of cycles with REM blocks highlighted). */
+export const SleepStrip: React.FC<{ x: number; y: number; a: number; k: number }> = ({ x, y, a, k }) => {
+  if (a <= 0.001) return null;
+  const W = 1200, H = 220;
+  const lv = [0, 1, 2, 3, 2, 1, -1, 1, 2, 3, 2, 1, -1, 1, 2, 1, -1, 0];
+  const pts = lv.map((l, i) => `${(i / (lv.length - 1)) * W},${l < 0 ? 10 : 30 + l * 55}`).join(" ");
+  return (
+    <div style={{ ...abs(x, y), opacity: a, fontFamily: FONT, color: INK }}>
+      <svg width={W} height={H + 40} style={{ overflow: "visible" }}>
+        <defs>
+          <clipPath id="sleepclip"><rect x={0} y={-20} width={W * eo(k)} height={H + 60} /></clipPath>
+        </defs>
+        {lv.map((l, i) => (l < 0 ? <rect key={i} x={((i - 0.5) / (lv.length - 1)) * W} y={-6} width={W / (lv.length - 1)} height={H} fill={AMBER} opacity={0.16 * eo(k * 1.2 - i / lv.length)} rx={6} /> : null))}
+        <polyline points={pts} fill="none" stroke={CYAN} strokeWidth={4} strokeLinejoin="round" clipPath="url(#sleepclip)" />
+        {["BANGUN", "TIDUR RINGAN", "", "TIDUR DALAM"].map((s, i) => (s ? <text key={s} x={-24} y={i === 0 ? 14 : 30 + i * 55 + 8} fill={INK} opacity={0.7} fontSize={20} textAnchor="end">{s}</text> : null))}
+        <text x={W * 0.36} y={-18} fill={AMBER} fontSize={24} fontWeight={700} opacity={eo(k * 2 - 0.6)}>REM</text>
+      </svg>
+    </div>
+  );
+};
+
+/** CCTV playback HUD: timestamp, REC, channel, scanlines, vignette. */
+export const CctvHud: React.FC<{ time: string; a?: number; speed?: string; zoom?: number }> = ({ time, a = 1, speed, zoom }) => (
+  <div style={{ position: "absolute", inset: 0, opacity: a, fontFamily: "Menlo, monospace", color: "#e8f0e8" }}>
+    <div style={{ position: "absolute", inset: 0, background: "repeating-linear-gradient(0deg, rgba(0,0,0,0.13) 0px, rgba(0,0,0,0.13) 2px, transparent 2px, transparent 4px)" }} />
+    <div style={{ position: "absolute", left: 70, top: 130, fontSize: 30, letterSpacing: "0.06em", textShadow: "0 0 6px #000" }}>CAM 01 · LORONG</div>
+    <div style={{ position: "absolute", right: 70, top: 130, fontSize: 30, letterSpacing: "0.04em", textShadow: "0 0 6px #000" }}>{time}</div>
+    <div style={{ position: "absolute", left: 70, bottom: 130, fontSize: 26, display: "flex", alignItems: "center", gap: 12, textShadow: "0 0 6px #000" }}>
+      <span style={{ width: 16, height: 16, borderRadius: 8, background: "#ff3a2a", display: "inline-block" }} /> PLAYBACK {speed ?? "1×"}
+    </div>
+    {zoom ? <div style={{ position: "absolute", right: 70, bottom: 130, fontSize: 26, textShadow: "0 0 6px #000" }}>ZOOM {zoom.toFixed(1)}×</div> : null}
+  </div>
+);
+
+/** Rolling clock digits (rewind). */
+export const Clock: React.FC<{ a: number; text: string; sub?: string; y?: number }> = ({ a, text, sub, y = 540 }) =>
+  a <= 0.001 ? null : (
+    <div style={{ position: "absolute", left: 0, right: 0, top: y, transform: "translateY(-50%)", textAlign: "center", fontFamily: FONT, color: INK, opacity: a }}>
+      <div style={{ fontSize: 150, fontWeight: 300, letterSpacing: "0.08em", textShadow: `${EDGE}, 0 0 40px rgba(143,220,255,0.35)` }}>{text}</div>
+      {sub ? <div style={{ fontSize: 28, letterSpacing: "0.4em", color: CYAN, marginTop: 6, paddingLeft: "0.4em", textShadow: EDGE }}>{sub}</div> : null}
+    </div>
+  );
+
+/** Dots that become a face, lines that become a body (pattern-recognition demo). */
+export const DotsFace: React.FC<{ x: number; y: number; a: number; k: number }> = ({ x, y, a, k }) => {
+  if (a <= 0.001) return null;
+  const f = eo(k), b = eo(k - 1);
+  return (
+    <svg width={900} height={500} style={{ ...abs(x, y), opacity: a, overflow: "visible" }}>
+      <g transform="translate(200,250)">
+        <circle cx={-55} cy={-40} r={18} fill={INK} />
+        <circle cx={55} cy={-40} r={18} fill={INK} />
+        <path d={`M -60 ${50 - 20 * f} Q 0 ${50 + 30 * f} 60 ${50 - 20 * f}`} stroke={INK} strokeWidth={10} fill="none" strokeLinecap="round" />
+        <circle cx={0} cy={0} r={150} fill="none" stroke={AMBER} strokeWidth={3} strokeDasharray="10 12" opacity={f} />
+      </g>
+      <g transform="translate(640,250)" stroke={INK} strokeWidth={10} strokeLinecap="round" fill="none">
+        <circle cx={0} cy={-150} r={34} />
+        <line x1={0} y1={-110} x2={0} y2={40} />
+        <line x1={0} y1={-70} x2={-80} y2={0} />
+        <line x1={0} y1={-70} x2={80} y2={0} />
+        <line x1={0} y1={40} x2={-55} y2={170} />
+        <line x1={0} y1={40} x2={55} y2={170} />
+        <rect x={-130} y={-210} width={260} height={410} rx={20} stroke={AMBER} strokeWidth={3} strokeDasharray="10 12" opacity={b} />
+      </g>
+    </svg>
+  );
+};
+
+/** Grid of noisy "stimulus" cards; some hide a faint face (schematic of the face-in-noise task). */
+export const NoiseCards: React.FC<{ x: number; y: number; a: number; k: number; t: number }> = ({ x, y, a, k, t }) => {
+  if (a <= 0.001) return null;
+  const cells = Array.from({ length: 8 }, (_, i) => i);
+  return (
+    <div style={{ ...abs(x, y), opacity: a, display: "grid", gridTemplateColumns: "repeat(4, 190px)", gap: 22 }}>
+      {cells.map((i) => {
+        const face = i % 3 === 1;
+        const on = clamp(k * 8 - i);
+        return (
+          <svg key={i} width={190} height={190} style={{ borderRadius: 10, border: `2px solid ${face && k > 1.2 ? AMBER : "rgba(238,243,251,0.35)"}`, background: "#2a2f37", opacity: 0.3 + 0.7 * on }}>
+            {Array.from({ length: 160 }, (_, j) => {
+              const h = Math.abs(Math.sin((i * 160 + j) * 12.9898 + Math.floor(t * 6) * 3.1) * 43758.5453) % 1;
+              const h2 = Math.abs(Math.sin((i * 160 + j) * 78.233) * 12345.678) % 1;
+              return <rect key={j} x={(j % 16) * 12} y={Math.floor(j / 16) * 19} width={12} height={19} fill={`rgba(220,226,235,${0.1 + 0.5 * h * h2})`} />;
+            })}
+            {face ? (
+              <g opacity={0.33} fill="#e9eef6">
+                <circle cx={70} cy={80} r={11} /><circle cx={120} cy={80} r={11} /><rect x={72} y={124} width={46} height={8} rx={4} />
+              </g>
+            ) : null}
+          </svg>
+        );
+      })}
+    </div>
+  );
+};
+
+==== 19801 project/src/director/preflight.ts
+// Geometry preflight: checks a compiled plan BEFORE anything is rendered. Pure data (no TSX), run by
+// scripts/make.mjs after "direct". Errors stop the render (--force overrides); warnings are listed in
+// out/<id>/qa/preflight.json for the visual review. What it checks:
+//   objects   floating (not on the floor, not resting on / hanging from anything), sunk into each other or a wall
+//   marks     standing marks inside an object / wall (nobody can stand there)
+//   people    body inside an object or wall, two people inside each other, feet off the ground
+//   cameras   lens inside a solid / under the ground, subject hidden behind something for most of a shot,
+//             subject outside the (9:16 or 16:9) frame, a near surface (a wall at the lens) covering the picture
+//   continuity small position jumps across a cut in the same place, held prop appearing / vanishing
+// Boxes are axis-aligned part boxes, so this catches the big mistakes, not millimetre contact.
+
+import type { Plan } from "./compile.ts";
+import type { Box, V3 } from "../worlds/types.ts";
+import { partBoxes, type Built } from "../gen/build.ts";
+import { frameOf, nearCover } from "./shots.ts";
+
+export type Issue = { check: string; level: "error" | "warn"; t?: number; msg: string };
+export type Preflight = { errors: Issue[]; warnings: Issue[]; stats: Record<string, number> };
+
+const depth = (a: Box, b: Box, m = 0) => {
+  let d = Infinity;
+  for (let k = 0; k < 3; k++) d = Math.min(d, Math.min(a.max[k], b.max[k]) - Math.max(a.min[k], b.min[k]) + m);
+  return d;
+};
+const grow = (b: Box, m: number): Box => ({ min: [b.min[0] - m, b.min[1] - m, b.min[2] - m], max: [b.max[0] + m, b.max[1] + m, b.max[2] + m] });
+const inside = (p: V3, b: Box, m = 0) => p[0] > b.min[0] + m && p[0] < b.max[0] - m && p[1] > b.min[1] + m && p[1] < b.max[1] - m && p[2] > b.min[2] + m && p[2] < b.max[2] - m;
+/** segment a→b crosses box (slab test), ignoring the first/last `trim` of the segment */
+const crosses = (a: V3, b: V3, box: Box, trim = 0.25) => {
+  const d: V3 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], L = Math.hypot(d[0], d[1], d[2]);
+  if (L < 2 * trim) return false;
+  let t0 = trim / L, t1 = 1 - trim / L;
+  for (let k = 0; k < 3; k++) {
+    if (Math.abs(d[k]) < 1e-9) { if (a[k] < box.min[k] || a[k] > box.max[k]) return false; continue; }
+    let u = (box.min[k] - a[k]) / d[k], v = (box.max[k] - a[k]) / d[k];
+    if (u > v) [u, v] = [v, u];
+    t0 = Math.max(t0, u); t1 = Math.min(t1, v);
+    if (t0 > t1) return false;
+  }
+  return true;
+};
+const trunks = (b: Built): Box[] => b.scatter.filter((s) => s.use.startsWith("tree")).flatMap((s) => s.items.map((it) => {
+  const r = 0.3 * it.scale;
+  return { min: [it.pos[0] - r, it.pos[1], it.pos[2] - r] as V3, max: [it.pos[0] + r, it.pos[1] + 4.5 * it.scale, it.pos[2] + r] as V3 };
+}));
+
+export function preflight(P: Plan): Preflight {
+  const out: Issue[] = [];
+  const add = (check: string, level: Issue["level"], msg: string, t?: number) => out.push({ check, level, msg, t: t === undefined ? undefined : Math.round(t * 100) / 100 });
+  const stats: Record<string, number> = {};
+  const b = P.built;
+  const walls: Box[] = b ? (Object.values(P.world.places)[0]?.occluders ?? []) : [];
+  const tr = b ? trunks(b) : [];
+  const fps = 10;
+
+  // ── objects (where the world puts them) ──────────────────────────────────
+  if (b) {
+    const insts = b.insts.filter((i) => !i.info.walkable);
+    stats.objects = insts.length;
+    // objects already in someone's hand (or moving) at the start are placed by the timeline, not the world
+    const dyn0 = P.objectsAt(0);
+    for (const i of insts) {
+      if (dyn0[i.id]) continue;
+      const floor = b.nav.floor(i.pos[0], i.pos[2]);
+      const gap = i.box.min[1] - floor;
+      if (i.box.max[1] < floor - 0.01) add("buried", "error", `"${i.id}" (${i.use}) is entirely under the floor`);
+      else if (gap > 0.05) {
+        const others = [...insts.filter((o) => o !== i).flatMap((o) => (o.parts.length ? o.parts : [o.box])), ...walls, ...tr];
+        if (!others.some((o) => depth(i.box, o, 0.04) > 0)) add("floating", "error", `"${i.id}" (${i.use}) floats ${gap.toFixed(2)} m above the floor and touches nothing — set "on": "<object>:top" or lower it`);
+      }
+    }
+    // part against part between different objects; resting contact (a few cm) is fine
+    for (let a = 0; a < insts.length; a++) for (let c = a + 1; c < insts.length; c++) {
+      const A = insts[a], C = insts[c];
+      if (depth(A.box, C.box) <= 0.04) continue;
+      let worst = 0;
+      for (const pa of A.parts.length ? A.parts : [A.box]) for (const pc of C.parts.length ? C.parts : [C.box]) worst = Math.max(worst, depth(pa, pc));
+      if (worst > 0.06) add("objects-overlap", worst > 0.15 ? "error" : "warn", `"${A.id}" and "${C.id}" sink ${worst.toFixed(2)} m into each other`);
+    }
+    for (const i of insts) for (const w of walls) {
+      let worst = 0;
+      for (const pa of i.parts.length ? i.parts : [i.box]) worst = Math.max(worst, depth(pa, w));
+      if (worst > 0.06) add("object-in-wall", worst > 0.15 ? "error" : "warn", `"${i.id}" sticks ${worst.toFixed(2)} m into a wall`);
+    }
+  }
+
+  // ── surroundings: an open side / exterior must look onto something, not bare ground to the horizon
+  if (b) {
+    const sp = b.spec;
+    // an open side counts only when no other room continues on that side (a nurse station open to its corridor is inside)
+    const rooms = sp.rooms ?? [];
+    const outward = (r: (typeof rooms)[number], side: string) => !rooms.some((o) => o !== r && (
+      side === "north" ? Math.abs(o.rect[3] - r.rect[1]) < 0.3 && o.rect[0] < r.rect[2] && o.rect[2] > r.rect[0]
+      : side === "south" ? Math.abs(o.rect[1] - r.rect[3]) < 0.3 && o.rect[0] < r.rect[2] && o.rect[2] > r.rect[0]
+      : side === "west" ? Math.abs(o.rect[2] - r.rect[0]) < 0.3 && o.rect[1] < r.rect[3] && o.rect[3] > r.rect[1]
+      : Math.abs(o.rect[0] - r.rect[2]) < 0.3 && o.rect[1] < r.rect[3] && o.rect[3] > r.rect[1]));
+    const opens = rooms.some((r) => (r.open ?? []).some((sd) => outward(r, sd))) || Object.values(sp.places).some((p) => p.kind === "exterior");
+    // per direction: is there a building, or a scatter reaching beyond the action, on that side?
+    const ax = Object.values(b.spec.places).map((p) => p.area).find(Boolean) ?? [b.bounds.min[0] + 3, b.bounds.min[2] + 3, b.bounds.max[0] - 3, b.bounds.max[2] - 3];
+    const rs = rooms.map((r) => r.rect);
+    const box = rs.length ? [Math.min(...rs.map((r) => r[0])), Math.min(...rs.map((r) => r[1])), Math.max(...rs.map((r) => r[2])), Math.max(...rs.map((r) => r[3]))] : ax;
+    const cx = (box[0] + box[2]) / 2, cz = (box[1] + box[3]) / 2;
+    const dirOf = (x: number, z: number) => (Math.abs(x - cx) > Math.abs(z - cz) ? (x > cx ? "east" : "west") : z > cz ? "south" : "north");
+    const covered = new Set<string>();
+    for (const bd of sp.buildings ?? []) covered.add(dirOf((bd.rect[0] + bd.rect[2]) / 2, (bd.rect[1] + bd.rect[3]) / 2));
+    for (const sc of (sp.scatter ?? []).filter((x) => !["grass-tuft", "fern"].includes(x.use) && x.count >= 8)) {
+      if (sc.area[0] < box[0] - 4) covered.add("west"); if (sc.area[2] > box[2] + 4) covered.add("east");
+      if (sc.area[1] < box[1] - 4) covered.add("north"); if (sc.area[3] > box[3] + 4) covered.add("south");
+    }
+    const empty = ["north", "south", "east", "west"].filter((d) => !covered.has(d));
+    if (opens && empty.length) add("empty-surroundings", "warn", `nothing stands to the ${empty.join(" / ")} of the action: shots looking that way show bare ground to the horizon — add "buildings" (a street, shops) or tree/bush "scatter" on ${empty.length > 1 ? "those sides" : "that side"}`);
+  }
+
+  // ── marks the story uses ─────────────────────────────────────────────────
+  if (b) {
+    const used = new Set<string>();
+    for (const sc of P.story.scenes) {
+      for (const c of Object.values(sc.cast ?? {})) used.add(`${sc.place}|${c.at}`);
+      for (const bt of sc.beats) if (bt.to && !bt.to.includes(":")) used.add(`${sc.place}|${bt.to}`);
+    }
+    const free = (x: number, z: number) => {
+      const i = Math.floor((x - b.nav.x0) / b.nav.cell), j = Math.floor((z - b.nav.z0) / b.nav.cell);
+      return i >= 0 && j >= 0 && i < b.nav.nx && j < b.nav.nz && b.nav.free[j * b.nav.nx + i] === 1;
+    };
+    for (const k of used) {
+      const [pid, name] = k.split("|");
+      const m = P.world.places[pid]?.marks[name];
+      if (!m || m.seat !== undefined || m.bed) continue;
+      // a standing spot needs some free floor around it (nav cells shrink solids by the body radius)
+      const ok = [[0, 0], [0.12, 0], [-0.12, 0], [0, 0.12], [0, -0.12]].some(([dx, dz]) => free(m.p[0] + dx, m.p[1] + dz));
+      if (!ok) add("mark-blocked", "error", `mark "${name}" in "${pid}" is inside an object or wall — move it to open floor`);
+    }
+    stats.marks = used.size;
+  }
+
+  // ── people over time ─────────────────────────────────────────────────────
+  const end = P.voEnd + 0.5;
+  const hits = new Map<string, { t0: number; n: number; d: number }>();
+  const note = (key: string, t: number, d: number) => { const h = hits.get(key); if (h) { h.n++; h.d = Math.max(h.d, d); } else hits.set(key, { t0: t, n: 1, d }); };
+  let samples = 0;
+  for (let t = 0; t < end; t += 1 / fps) {
+    const S = P.sceneAt(t);
+    const dyn = P.objectsAt(t);
+    const set = P.setAt(t) as Record<string, number>;
+    const people = S.cast.map((who) => ({ who, p: P.poseOf(who, t) })).filter((x): x is { who: string; p: NonNullable<typeof x.p> } => !!x.p);
+    samples++;
+    const solids: { id: string; box: Box }[] = [];
+    if (b) {
+      for (const i of b.insts) {
+        if (i.info.walkable) continue;
+        const d = dyn[i.id];
+        if (d?.hidden || (set[`${i.id}.visible`] ?? 1) < 0.5) continue;
+        const boxes = d ? partBoxes(i.use, b.objects, d.pos, d.yaw, i.scale) : i.parts;
+        for (const box of boxes.length ? boxes : [i.box]) solids.push({ id: i.id, box });
+      }
+      for (const w of walls) solids.push({ id: "wall", box: w });
+      for (const x of tr) solids.push({ id: "tree", box: x });
+    }
+    for (const { who, p } of people) {
+      // lying = hips pitched flat (in a bed); standing = upright with the feet at floor height
+      const lying = Math.abs(p.hips[0]) > 0.8;
+      const standing = !lying && p.hipY > -0.15 && Math.abs(p.y - (b ? b.nav.floor(p.x, p.z) : S.place.floor)) < 0.12;
+      // torso cylinder (standing) or chest only (sitting / kneeling)
+      const lo = standing ? 0.4 : 0.85 + p.hipY, hi = standing ? 1.45 : 1.25 + p.hipY;
+      const body: Box = { min: [p.x - 0.14, p.y + lo, p.z - 0.14], max: [p.x + 0.14, p.y + hi, p.z + 0.14] };
+      for (const s of solids) {
+        if (dyn[s.id]) {
+          // objects being handled (pushed, carried, given) sit right at the body
+          const d = dyn[s.id];
+          if (Math.hypot(d.pos[0] - p.x, d.pos[2] - p.z) < 1.0) continue;
+        }
+        if (!standing && s.box.min[0] < p.x && s.box.max[0] > p.x && s.box.min[2] < p.z && s.box.max[2] > p.z) continue;
+        if (lying) continue; // the bed holds the body; a lying body is checked by its bed mark, not by boxes
+        const dd = depth(body, s.box);
+        if (dd > 0.06) note(`body|${who}|${s.id}`, t, dd);
+      }
+      // feet on the ground while walking (terrain following); standing still is set by the mark height
+      const q = P.poseOf(who, t + 0.1);
+      if (b && q && Math.hypot(q.x - p.x, q.z - p.z) > 0.04 && p.hipY > -0.1) {
+        const gap = p.y - b.nav.floor(p.x, p.z);
+        if (Math.abs(gap) > 0.08) note(`feet|${who}`, t, Math.abs(gap));
+      }
+    }
+    for (let a = 0; a < people.length; a++) for (let c = a + 1; c < people.length; c++) {
+      const A = people[a].p, C = people[c].p, d = Math.hypot(A.x - C.x, A.z - C.z);
+      if (d < 0.4) note(`pair|${people[a].who}|${people[c].who}`, t, 0.4 - d);
+    }
+  }
+  stats.peopleSamples = samples;
+  for (const [k, h] of hits) {
+    const [kind, a, c] = k.split("|");
+    const dur = h.n / fps;
+    if (kind === "body") add("person-in-object", dur > 0.3 && h.d > 0.1 ? "error" : "warn", `${a}'s body is inside ${c === "wall" ? "a wall" : c === "tree" ? "a tree trunk" : `"${c}"`} (${h.d.toFixed(2)} m deep, ${dur.toFixed(1)} s from ${h.t0.toFixed(1)} s)`, h.t0);
+    if (kind === "feet") add("feet-off-ground", dur > 0.5 && h.d > 0.15 ? "error" : "warn", `${a}'s feet are ${h.d.toFixed(2)} m off the ground (${dur.toFixed(1)} s from ${h.t0.toFixed(1)} s)`, h.t0);
+    if (kind === "pair") add("people-overlap", dur > 0.3 ? "error" : "warn", `${a} and ${c} stand inside each other (${dur.toFixed(1)} s from ${h.t0.toFixed(1)} s)`, h.t0);
+  }
+
+  // ── cameras ──────────────────────────────────────────────────────────────
+  let camFrames = 0;
+  P.shots.forEach((sh, si) => {
+    const S = P.scenes[sh.scene];
+    const pl = S.place;
+    const blockers = [...pl.solids, ...(pl.occluders ?? [])];
+    // named copies for the messages (what is in the way)
+    const named: { id: string; box: Box }[] = b ? [...b.insts.filter((i) => !i.info.walkable).flatMap((i) => (i.parts.length ? i.parts : [i.box]).map((box) => ({ id: i.id, box }))), ...walls.map((box) => ({ id: "a wall", box })), ...tr.map((box) => ({ id: "a tree trunk", box }))] : blockers.map((box) => ({ id: "an object", box }));
+    const why = new Map<string, number>();
+    let inSolid = 0, under = 0, blocked = 0, n = 0, firstBad = -1;
+    let crowd = 0, crowdBad = 0, outF = 0, fn = 0, crowdMax = 0, firstCrowd = -1, lastFrameT = -1, away = 0, faceN = 0;
+    const faceShot = sh.who && sh.ctx.subj && ["cu", "ecu", "medium", "push"].includes(sh.kind), faceLim = sh.kind === "cu" || sh.kind === "ecu" ? 0.45 : 0.42;
+    for (let t = sh.t0 + 0.05; t < Math.min(sh.t1, P.duration) - 0.02; t += 1 / fps) {
+      n++; camFrames++;
+      const c = P.cam(t);
+      const g = pl.ground ? pl.ground(c.pos[0], c.pos[2]) : b ? b.nav.floor(c.pos[0], c.pos[2]) : pl.floor;
+      if (c.pos[1] < g + 0.08) { under++; if (firstBad < 0) firstBad = t; }
+      if ([...blockers, ...(pl.soft ?? []), ...(pl.swings ?? [])].some((x) => inside(c.pos, grow(x, 0.02)))) { inSolid++; if (firstBad < 0) firstBad = t; }
+      // framing on screen, sampled every 0.25 s: near surfaces over the picture, the subject outside the frame
+      if (t - lastFrameT >= 0.25) {
+        lastFrameT = t; fn++;
+        if (sh.kind !== "pov" && sh.kind !== "ecu") {
+          const focus = c.focus ?? Math.hypot(c.target[0] - c.pos[0], c.target[1] - c.pos[1], c.target[2] - c.pos[2]);
+          const cov = nearCover(pl, c.pos, c.target, c.fov, P.aspect, focus);
+          crowdMax = Math.max(crowdMax, cov);
+          if (cov > 0.3) { crowd++; if (firstCrowd < 0) firstCrowd = t; }
+          if (cov > 0.45) crowdBad++;
+        }
+        // a face shot shows the face: the lens within ~63° (close-up) / 65° (medium) of where the person looks
+        if (faceShot) {
+          const e = sh.ctx.subj!.eye(t).dir, h = sh.ctx.subj!.head(t), vx = c.pos[0] - h[0], vz = c.pos[2] - h[2];
+          faceN++;
+          if ((e[0] * vx + e[2] * vz) / ((Math.hypot(e[0], e[2]) * Math.hypot(vx, vz)) || 1) < faceLim) away++;
+        }
+        // only framings that are about the person (inserts frame the hands, reveals swing to the thing, OTS / long look past them)
+        if (sh.who && ["wide", "mediumWide", "medium", "cu", "push", "pull", "profile", "low", "high", "lead", "track", "orbit", "twoShot"].includes(sh.kind)) {
+          const p = P.poseOf(sh.who, t);
+          if (p) {
+            const pj = frameOf(c.pos, c.target, c.fov, P.aspect).project([p.x, p.y + 1.45 + p.hipY, p.z]);
+            if (pj.z <= 0 || Math.abs(pj.x) > 0.98 || Math.abs(pj.y) > 0.98) outF++;
+          }
+        }
+      }
+      if (sh.who && sh.kind !== "pov") {
+        const p = P.poseOf(sh.who, t);
+        if (p) {
+          const head: V3 = [p.x, p.y + 1.45 + p.hipY, p.z];
+          // the box the subject stands in / sits on never counts as a blocker
+          const hit = named.find((x) => !inside(head, grow(x.box, 0.3)) && !inside([p.x, p.y + 0.5 + p.hipY, p.z], grow(x.box, 0.2)) && crosses(c.pos, head, x.box));
+          if (hit) { blocked++; why.set(hit.id, (why.get(hit.id) ?? 0) + 1); }
+        }
+      }
+    }
+    const label = `shot ${si + 1} (${sh.kind}${sh.who ? " " + sh.who : ""}, ${sh.t0.toFixed(1)}–${sh.t1.toFixed(1)} s)`;
+    if (inSolid > 0) add("camera-in-solid", inSolid / Math.max(1, n) > 0.1 ? "error" : "warn", `${label}: lens inside an object / wall / foliage on ${inSolid}/${n} samples`, firstBad);
+    if (under > 0) add("camera-underground", "error", `${label}: lens below the ground on ${under}/${n} samples`, firstBad);
+    if (fn && crowd / fn > 0.3) add("camera-crowded", crowdBad / fn > 0.4 ? "error" : "warn", `${label}: a surface right at the lens covers up to ${Math.round(100 * crowdMax)}% of the picture on ${Math.round((100 * crowd) / fn)}% of the shot (a wall / furniture too close) — move the people / force another shot or side`, firstCrowd);
+    if (fn && outF / fn > 0.25) add("subject-out-of-frame", outF / fn > 0.6 ? "error" : "warn", `${label}: ${sh.who}'s head is outside the ${P.format} frame on ${Math.round((100 * outF) / fn)}% of the shot`, sh.t0);
+    if (faceN && away / faceN > 0.5) add("face-turned-away", away / faceN > 0.7 && (sh.kind === "cu" || sh.kind === "ecu") ? "error" : "warn", `${label}: ${sh.who}'s face is turned away from the camera on ${Math.round((100 * away) / faceN)}% of the shot (only the side / back of the head shows) — they face a wall, window or thing too close for a camera in front: give the mark ≥ 1.5 m in front of the face, turn them to the room, or show what they look at over the shoulder (ots)`, sh.t0);
+    if (n && blocked / n > 0.4) add("subject-hidden", blocked / n > 0.75 ? "error" : "warn", `${label}: ${sh.who} hidden behind ${[...why.entries()].sort((x, y) => y[1] - x[1]).slice(0, 2).map(([k]) => (k.startsWith("a ") ? k : `"${k}"`)).join(" / ")} on ${Math.round((100 * blocked) / n)}% of the shot`, sh.t0);
+  });
+  stats.cameraSamples = camFrames;
+  stats.shots = P.shots.length;
+
+  // ── continuity across scene cuts ─────────────────────────────────────────
+  for (let k = 1; k < P.scenes.length; k++) {
+    const A = P.scenes[k - 1], B = P.scenes[k];
+    if (A.place.id !== B.place.id || B.cut !== "cut") continue;
+    for (const who of B.cast) {
+      if (!A.cast.includes(who)) continue;
+      const pa = P.poseOf(who, B.t0 - 0.05), pb = P.poseOf(who, B.t0 + 0.05);
+      if (!pa || !pb) continue;
+      const jump = Math.hypot(pa.x - pb.x, pa.z - pb.z);
+      if (jump > 0.12 && jump < 1.2) add("jump-cut", "warn", `scene ${k + 1} at ${B.t0.toFixed(1)} s: ${who} jumps ${jump.toFixed(2)} m across a hard cut in the same place (reads as a glitch — start the scene where the last one ended, or move further)`, B.t0);
+      const ha = pa.hold?.kind, hb = pb.hold?.kind;
+      if (ha !== hb && (ha === "lantern" || ha === "flashlight" || hb === "lantern" || hb === "flashlight")) add("prop-continuity", "warn", `scene ${k + 1}: ${who}'s ${ha ?? hb} ${ha ? "vanishes" : "appears"} across the cut`, B.t0);
+    }
+  }
+
+  return { errors: out.filter((x) => x.level === "error"), warnings: out.filter((x) => x.level === "warn"), stats };
+}
+
+==== 18135 project/src/gen/GenSet.tsx
+// Renders a generated world (Built): rooms (floor, ceiling, walls with openings, wainscot, handrails),
+// doors that open with their prop, windows, signs, terrain + paths, buildings, objects (compound or
+// built-in, moved by the story when pushed/carried), scatter, light fixtures, sky and dust.
+
+import React, { useMemo } from "react";
+import { BufferAttribute, BufferGeometry, DoubleSide } from "three";
+import { box, cached, cyl, sphere } from "../kits/worldforge/geo.ts";
+import { canvasTex, phys } from "../cine/mats.ts";
+import { HoledWall, MAT, Slab, Window, type Hole } from "../cine/set/parts.tsx";
+import { SKIES, SkyDome } from "../cine/env/Sky.tsx";
+import { Dust, Glow } from "../cine/FX.tsx";
+import type { Cam } from "../cine/types.ts";
+import type { SetState } from "../worlds/types.ts";
+import { fixtureLevel, TIMES, type Built, type Inst, type Opening } from "./build.ts";
+import { Compound, matOf } from "./objects/Compound.tsx";
+import { Builtin, BuiltinScatter } from "./objects/builtin.tsx";
+import type { V3 } from "./spec.ts";
+
+import type { Dyn } from "./dyn.ts";
+import { Solid } from "../core/qa/scene-qa.tsx";
+export type { Dyn };
+const T = 0.15;
+
+const signTex = (text: string, bg = "#1d4f8a", ink = "#ffffff") =>
+  canvasTex(`sign${text}${bg}`, 512, 128, (g, w, h) => {
+    g.fillStyle = bg; g.fillRect(0, 0, w, h);
+    g.fillStyle = ink; g.textAlign = "center"; g.textBaseline = "middle";
+    let s = 74; g.font = `700 ${s}px Manrope, sans-serif`;
+    while (g.measureText(text).width > w * 0.88 && s > 20) { s -= 4; g.font = `700 ${s}px Manrope, sans-serif`; }
+    g.fillText(text, w / 2, h / 2 + 4);
+  });
+
+const windowTex = (key: string, lit: number) =>
+  canvasTex(`bwin${key}${lit}`, 256, 256, (g, w, h) => {
+    g.fillStyle = "#000"; g.fillRect(0, 0, w, h);
+    let seed = key.length * 7 + 3;
+    const r = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) { const on = r() < lit; g.fillStyle = on ? `rgba(255,${200 + r() * 40},${120 + r() * 60},1)` : "#20242c"; g.fillRect(x * 64 + 14, y * 64 + 12, 36, 40); }
+  }, [1, 1]);
+
+/** A door leaf (or two) in an opening, hinged at the jamb, opening `open` 0..1 into the room. */
+const DoorLeaves: React.FC<{ o: Opening; open: number; color: string }> = ({ o, open, color }) => {
+  const leafM = phys(`gdoor${color}`, { color, roughness: 0.45, clearcoat: 0.35 });
+  const frameM = phys("gdoorframe", { color: "#d8dcdc", roughness: 0.5 });
+  const rot = o.axis === "x" ? 0 : Math.PI / 2;
+  // inward direction (into the room) in the opening's local frame (local +z)
+  const into = o.wall === "north" || o.wall === "west" ? 1 : -1;
+  const sw = (o.swing ?? 1) * into;
+  const leaves = o.type === "double-door" ? [[-o.w / 2, 1], [o.w / 2, -1]] : [[-o.w / 2, 1]];
+  const lw = o.type === "double-door" ? o.w / 2 : o.w;
+  return (
+    <group position={[o.x, o.y, o.z]} rotation={[0, rot, 0]}>
+      <Slab min={[-o.w / 2 - 0.07, 0, -T / 2 - 0.02]} max={[-o.w / 2, o.h + 0.07, T / 2 + 0.02]} m={frameM} />
+      <Slab min={[o.w / 2, 0, -T / 2 - 0.02]} max={[o.w / 2 + 0.07, o.h + 0.07, T / 2 + 0.02]} m={frameM} />
+      <Slab min={[-o.w / 2 - 0.07, o.h, -T / 2 - 0.02]} max={[o.w / 2 + 0.07, o.h + 0.07, T / 2 + 0.02]} m={frameM} />
+      {leaves.map(([hx, dir], i) => (
+        <group key={i} position={[hx, 0, 0]} rotation={[0, -open * 1.6 * dir * sw, 0]}>
+          <group position={[(dir * lw) / 2, 0, 0]}>
+            <Slab min={[-lw / 2 + 0.005, 0.01, -0.022]} max={[lw / 2 - 0.005, o.h - 0.005, 0.022]} m={leafM} r={0.006} />
+            {o.glass ? <mesh geometry={box(lw * 0.45, 0.42, 0.05, 0.004)} material={matOf("glass")} position={[0, 1.45, 0]} /> : null}
+            {[1, -1].map((s) => <mesh key={s} geometry={box(0.12, 0.025, 0.025, 0.006)} material={matOf("chrome")} position={[(-dir * lw) / 2 + dir * 0.1, 1.02, s * 0.04]} castShadow />)}
+          </group>
+        </group>
+      ))}
+      {o.sign ? <mesh geometry={box(Math.min(1.4, o.w + 0.3), 0.28, 0.03, 0.006)} material={phys(`gsign${o.sign}`, { color: "#ffffff", map: signTex(o.sign), emissive: "#ffffff", emissiveMap: signTex(o.sign), emissiveIntensity: 0.35, roughness: 0.5 })} position={[0, o.h + 0.32, (into * (T / 2 + 0.03))]} /> : null}
+    </group>
+  );
+};
+
+const Room: React.FC<{ b: Built; ri: number; s: SetState }> = ({ b, ri, s }) => {
+  const r = b.rooms[ri];
+  const [x0, z0, x1, z1] = r.rect;
+  const wallM = matOf(r.walls ?? "paint:#dfe3e0");
+  const dado = r.wainscot ? phys(`gdado${r.wainscot}`, { color: r.wainscot, roughness: 0.5, clearcoat: 0.2 }) : null;
+  const sides: { side: "north" | "south" | "west" | "east"; axis: "x" | "z"; c: number; a0: number; a1: number }[] = [
+    { side: "north", axis: "x", c: z0 - T / 2, a0: x0 - T, a1: x1 + T },
+    { side: "south", axis: "x", c: z1 + T / 2, a0: x0 - T, a1: x1 + T },
+    { side: "west", axis: "z", c: x0 - T / 2, a0: z0, a1: z1 },
+    { side: "east", axis: "z", c: x1 + T / 2, a0: z0, a1: z1 },
+  ];
+  // a wall shared with an earlier room (same line, fully covered) is built once
+  const covered = (axis: "x" | "z", c: number, a0: number, a1: number) =>
+    b.rooms.slice(0, ri).some((q) => {
+      const [qx0, qz0, qx1, qz1] = q.rect;
+      if (axis === "x") return (Math.abs(qz0 - T / 2 - c) < T * 1.5 || Math.abs(qz1 + T / 2 - c) < T * 1.5) && qx0 - T <= a0 + 0.01 && qx1 + T >= a1 - 0.01;
+      return (Math.abs(qx0 - T / 2 - c) < T * 1.5 || Math.abs(qx1 + T / 2 - c) < T * 1.5) && qz0 <= a0 + 0.01 && qz1 >= a1 - 0.01;
+    });
+  return (
+    <group>
+      {/* floors of neighbouring rooms overlap under the shared wall: a hair of height per room so they never flicker */}
+      <Slab min={[x0 - T, r.y - 0.12, z0 - T]} max={[x1 + T, r.y + 0.0015 * (ri % 4), z1 + T]} m={matOf(r.floor ?? "vinyl:#d6dcd8")} cast={false} />
+      {r.ceiling !== "none" ? <Slab min={[x0 - T, r.y + r.height, z0 - T]} max={[x1 + T, r.y + r.height + 0.1, z1 + T]} m={matOf(r.ceiling ?? "paint:#eceeed")} /> : null}
+      {sides.map((w) => {
+        if (r.open?.includes(w.side) || covered(w.axis, w.c, w.a0, w.a1)) return null;
+        const holes: Hole[] = b.openings.filter((o) => o.axis === w.axis && Math.abs(o.wallC + (w.side === "north" || w.side === "west" ? -T / 2 : T / 2) - w.c) < T * 1.6 && (w.axis === "x" ? o.x : o.z) > w.a0 && (w.axis === "x" ? o.x : o.z) < w.a1)
+          .map((o) => { const a = w.axis === "x" ? o.x : o.z; return { a0: a - o.w / 2, a1: a + o.w / 2, y0: o.sill, y1: o.sill + o.h }; });
+        return <HoledWall key={w.side} axis={w.axis} c={w.c} a0={w.a0} a1={w.a1} holes={holes} t={T} y0={r.y} top={r.height} m={wallM} dado={dado} />;
+      })}
+      {r.handrail ? sides.map((w) => (r.open?.includes(w.side) ? null : (
+        <mesh key={`hr${w.side}`} geometry={cyl(0.025, 0.025, +(w.a1 - w.a0 - 2 * T).toFixed(3), 10)} material={phys(`ghr${r.handrail}`, { color: r.handrail!, roughness: 0.4, clearcoat: 0.4 })}
+          position={w.axis === "x" ? [(w.a0 + w.a1) / 2, r.y + 0.9, w.c + (w.side === "north" ? T / 2 + 0.07 : -T / 2 - 0.07)] : [w.c + (w.side === "west" ? T / 2 + 0.07 : -T / 2 - 0.07), r.y + 0.9, (w.a0 + w.a1) / 2]}
+          rotation={w.axis === "x" ? [0, 0, Math.PI / 2] : [Math.PI / 2, 0, 0]} castShadow />
+      ))) : null}
+      {void s}
+    </group>
+  );
+};
+
+const Ground: React.FC<{ b: Built }> = ({ b }) => {
+  const g = b.spec.ground!;
+  const geo = useMemo(() => cached(`gground${b.spec.id}`, () => {
+    const n = Math.min(220, Math.round(g.size / 0.8)), half = g.size / 2;
+    const pos = new Float32Array((n + 1) * (n + 1) * 3), uv = new Float32Array((n + 1) * (n + 1) * 2);
+    for (let j = 0; j <= n; j++) for (let i = 0; i <= n; i++) {
+      const x = -half + (g.size * i) / n, z = -half + (g.size * j) / n, k = j * (n + 1) + i;
+      pos[k * 3] = x; pos[k * 3 + 1] = b.ground!(x, z); pos[k * 3 + 2] = z;
+      uv[k * 2] = x / 6; uv[k * 2 + 1] = z / 6;
+    }
+    const idx: number[] = [];
+    for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) { const a = j * (n + 1) + i, c = a + n + 1; idx.push(a, c, a + 1, a + 1, c, c + 1); }
+    const geom = new BufferGeometry();
+    geom.setAttribute("position", new BufferAttribute(pos, 3));
+    geom.setAttribute("uv", new BufferAttribute(uv, 2));
+    geom.setIndex(idx);
+    geom.computeVertexNormals();
+    return geom;
+  }), [b, g]);
+  const m = matOf(g.material ?? "grass");
+  const mm = m as unknown as { map?: { repeat: { set: (a: number, b: number) => void } } };
+  if (mm.map) mm.map.repeat.set(1, 1);
+  return <mesh geometry={geo} material={m} receiveShadow />;
+};
+
+const Paths: React.FC<{ b: Built }> = ({ b }) => {
+  const geos = useMemo(() => (b.spec.paths ?? []).map((p, pi) => cached(`gpath${b.spec.id}${pi}`, () => {
+    const w = (p.width ?? 1.2) / 2, pts = p.points;
+    // densify
+    const dense: [number, number][] = [];
+    for (let i = 1; i < pts.length; i++) { const [ax, az] = pts[i - 1], [bx, bz] = pts[i], L = Math.hypot(bx - ax, bz - az), n = Math.max(1, Math.ceil(L / 0.5)); for (let k = 0; k < n; k++) dense.push([ax + ((bx - ax) * k) / n, az + ((bz - az) * k) / n]); }
+    dense.push(pts[pts.length - 1]);
+    const pos: number[] = [], idx: number[] = [], uv: number[] = [];
+    dense.forEach(([x, z], i) => {
+      const [nx, nz] = dense[Math.min(dense.length - 1, i + 1)], [px, pz] = dense[Math.max(0, i - 1)];
+      const dx = nx - px, dz = nz - pz, L = Math.hypot(dx, dz) || 1, ox = -dz / L, oz = dx / L;
+      const wob = w * (1 + 0.15 * Math.sin(i * 0.9));
+      for (const s of [-1, 1]) { const X = x + ox * wob * s, Z = z + oz * wob * s; pos.push(X, (b.ground ? b.ground(X, Z) : b.nav.floor(X, Z)) + 0.025, Z); uv.push((s + 1) / 2, i * 0.3); }
+      if (i) { const a = (i - 1) * 2; idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); }
+    });
+    const geom = new BufferGeometry();
+    geom.setAttribute("position", new BufferAttribute(new Float32Array(pos), 3));
+    geom.setAttribute("uv", new BufferAttribute(new Float32Array(uv), 2));
+    geom.setIndex(idx);
+    geom.computeVertexNormals();
+    return geom;
+  })), [b]);
+  return <group>{geos.map((g, i) => <mesh key={i} geometry={g} material={matOf(b.spec.paths![i].material ?? "dirt")} receiveShadow />)}</group>;
+};
+
+const Buildings: React.FC<{ b: Built; dark: number }> = ({ b, dark }) => (
+  <group>
+    {(b.spec.buildings ?? []).map((bd, i) => {
+      const [x0, z0, x1, z1] = bd.rect, y = bd.y ?? 0, w = x1 - x0;
+      const winM = phys(`gbwin${i}${Math.round(dark * 4)}`, { color: "#ffffff", map: windowTex(`${i}`, dark > 0.5 ? 0.35 : 0), emissive: "#ffffff", emissiveMap: windowTex(`${i}`, dark > 0.5 ? 0.35 : 0), emissiveIntensity: dark > 0.5 ? 1.4 : 0, roughness: 0.5 });
+      return (
+        <group key={i}>
+          <Slab min={[x0, y, z0]} max={[x1, y + bd.height, z1]} m={matOf(`paint:${bd.color ?? "#cfc6b8"}`)} />
+          <Slab min={[x0 - 0.2, y + bd.height, z0 - 0.2]} max={[x1 + 0.2, y + bd.height + 0.25, z1 + 0.2]} m={matOf(bd.roof ?? "#7a4a36")} />
+          {bd.windows !== false ? [z0 - 0.01, z1 + 0.01].map((z, k) => <mesh key={k} geometry={cached(`gbw${w},${bd.height}`, () => { const g = new BufferGeometry(); const hw = w * 0.42, hh = bd.height * 0.36; g.setAttribute("position", new BufferAttribute(new Float32Array([-hw, -hh, 0, hw, -hh, 0, hw, hh, 0, -hw, hh, 0]), 3)); g.setAttribute("uv", new BufferAttribute(new Float32Array([0, 0, Math.max(1, w / 3), 0, Math.max(1, w / 3), Math.max(1, bd.height / 3), 0, Math.max(1, bd.height / 3)]), 2)); g.setIndex([0, 1, 2, 0, 2, 3]); g.computeVertexNormals(); return g; })} material={winM} position={[(x0 + x1) / 2, y + bd.height * 0.55, z]} rotation={[0, k ? 0 : Math.PI, 0]} />) : null}
+          {bd.sign ? <mesh geometry={box(Math.min(w * 0.8, 4), 0.6, 0.06, 0.01)} material={phys(`gbsign${bd.sign}`, { color: "#ffffff", map: signTex(bd.sign, "#b0302a"), emissive: "#ffffff", emissiveMap: signTex(bd.sign, "#b0302a"), emissiveIntensity: dark > 0.5 ? 0.9 : 0.1 })} position={[(x0 + x1) / 2, y + Math.min(3.4, bd.height - 0.5), z1 + 0.08]} /> : null}
+        </group>
+      );
+    })}
+  </group>
+);
+
+const Fixture: React.FC<{ f: Built["fixtures"][number]; lv: number; cam: Cam; dark: number }> = ({ f, lv, cam, dark }) => {
+  const k = Math.max(0, lv);
+  const em = (c: string, i: number) => phys(`gfx${c}${Math.round(i * 20)}`, { color: "#ffffff", emissive: c, emissiveIntensity: i, roughness: 0.4 });
+  const dist = Math.hypot(cam.pos[0] - f.at[0], cam.pos[1] - f.at[1], cam.pos[2] - f.at[2]);
+  const glowK = Math.min(1, Math.max(0, (dist - 2) / 8));
+  switch (f.type) {
+    case "panel": return <mesh geometry={box(0.6, 0.05, 1.2, 0.01)} material={em(f.color ?? "#eef4ff", 0.3 + 1.6 * k)} position={f.at} />;
+    case "tube": return <group position={f.at}><mesh geometry={box(0.12, 0.05, 1.24, 0.01)} material={MAT.plastic("#e6e6e1")} /><mesh geometry={cyl(0.015, 0.015, 1.18, 10)} material={em("#eaf4ff", 0.2 + 1.3 * k)} position={[0, -0.035, 0]} rotation={[Math.PI / 2, 0, 0]} /></group>;
+    case "bulb": return <group position={f.at}><mesh geometry={cyl(0.004, 0.004, 0.4, 5)} material={MAT.steel()} position={[0, 0.22, 0]} /><mesh geometry={sphere(0.05, 14, 10)} material={em(f.color ?? "#ffcf8a", 0.4 + 2.5 * k)} /><Glow pos={[0, 0, 0]} size={0.9 * glowK + 0.2} color={f.color ?? "#ffcf8a"} i={0.35 * k * dark} /></group>;
+    case "lamp-post": return (
+      <group position={[f.at[0], f.at[1] - 4.2, f.at[2]]}>
+        <mesh geometry={cyl(0.06, 0.09, 4.4, 10)} material={MAT.steel()} position={[0, 2.2, 0]} castShadow />
+        <mesh geometry={box(0.5, 0.12, 0.25, 0.03)} material={MAT.steel()} position={[0.2, 4.4, 0]} />
+        <mesh geometry={box(0.36, 0.04, 0.18, 0.01)} material={em(f.color ?? "#ffb05c", 0.3 + 2.4 * k)} position={[0.2, 4.33, 0]} />
+        <Glow pos={[0.2, 4.2, 0]} size={2.6 * glowK + 0.3} color={f.color ?? "#ffb05c"} i={0.4 * k * dark} />
+      </group>
+    );
+    case "string": {
+      const to = f.to ?? f.at, n = Math.max(4, Math.round(Math.hypot(to[0] - f.at[0], to[2] - f.at[2]) / 0.6));
+      return <group>{Array.from({ length: n + 1 }, (_, i) => { const u = i / n, sag = Math.sin(u * Math.PI) * 0.35; const p: V3 = [f.at[0] + (to[0] - f.at[0]) * u, f.at[1] + (to[1] - f.at[1]) * u - sag, f.at[2] + (to[2] - f.at[2]) * u]; return <group key={i} position={p}><mesh geometry={sphere(0.035, 10, 8)} material={em(f.color ?? "#ffd08a", 0.5 + 2.5 * k)} /><Glow pos={[0, 0, 0]} size={0.5 * glowK + 0.1} color={f.color ?? "#ffd08a"} i={0.3 * k * dark} /></group>; })}</group>;
+    }
+    case "exit-sign": return <mesh geometry={box(0.4, 0.16, 0.05, 0.01)} material={phys(`gexit${Math.round(k * 10)}`, { color: "#ffffff", map: signTex("KELUAR", "#0e9a52"), emissive: "#ffffff", emissiveMap: signTex("KELUAR", "#0e9a52"), emissiveIntensity: 0.4 + 1.2 * k })} position={f.at} />;
+    case "lantern": return <group position={f.at}><mesh geometry={cyl(0.07, 0.08, 0.18, 12)} material={em("#ffb45e", 0.4 + 2.4 * k)} /><Glow pos={[0, 0, 0]} size={1.2 * glowK + 0.3} color="#ffb45e" i={0.4 * k} /></group>;
+    // the fire's glow shrinks near the lens like the bulb's and lantern's (full size it filled the frame as a blur)
+    case "fire": return <group position={f.at}><mesh geometry={cyl(0.03, 0.05, 0.5, 6)} material={matOf("bark")} rotation={[0, 0, 1.2]} /><mesh geometry={cyl(0.03, 0.05, 0.5, 6)} material={matOf("bark")} rotation={[0, 1.6, 1.2]} /><Glow pos={[0, 0.25, 0]} size={0.5 + 0.9 * Math.min(1, Math.max(0, (dist - 1.5) / 4.5))} color="#ff8a3a" i={0.7 * k} /></group>;
+    case "screen": return <mesh geometry={box(0.5, 0.32, 0.03, 0.005)} material={em(f.color ?? "#8fb8ff", 0.3 + 1.2 * k)} position={f.at} />;
+    case "spot": return <mesh geometry={cyl(0.08, 0.12, 0.2, 12)} material={MAT.steel()} position={f.at} />;
+  }
+  return null;
+};
+
+const ObjectAt: React.FC<{ inst: Inst; b: Built; s: SetState; dyn?: Dyn[string] }> = ({ inst, b, s, dyn }) => {
+  if (dyn?.hidden || (s[`${inst.id}.visible`] ?? inst.states.visible ?? 1) < 0.5) return null;
+  const pos = dyn?.pos ?? inst.pos, yaw = dyn?.yaw ?? inst.yaw;
+  const states: Record<string, number> = { ...inst.states };
+  for (const k of Object.keys(states)) if (s[`${inst.id}.${k}`] !== undefined) states[k] = s[`${inst.id}.${k}`];
+  return (
+    // tagged for the scene QA: people may touch / sit on it (touch "*"), nobody may walk through it
+    <Solid id={inst.id} kind={dyn ? "prop" : "set"} touch={["*"]} position={pos} rotation={[0, yaw, 0]} scale={inst.scale}>
+      {inst.info.builtin ? <Builtin id={inst.use} color={inst.color} /> : <Compound spec={b.objects[inst.use]} states={states} />}
+    </Solid>
+  );
+};
+
+export const GenSet: React.FC<{ b: Built; place: string; time: string; s: SetState; t: number; cam: Cam; dyn: Dyn; area?: [number, number, number, number] }> = ({ b, time, s, t, cam, dyn, area }) => {
+  const Tl = TIMES[time] ?? TIMES.night;
+  const skyLook = SKIES[time] ?? SKIES.night;
+  return (
+    <group>
+      <SkyDome look={skyLook} dir={b.spec.sky?.sun ?? Tl.dir} cam={cam.pos} t={t} />
+      {b.spec.ground ? <Ground b={b} /> : null}
+      <Paths b={b} />
+      {b.rooms.map((_, i) => <Room key={i} b={b} ri={i} s={s} />)}
+      {b.openings.map((o) => (o.type === "window" ? (
+        <Window key={o.id} at={[o.x, o.y + o.sill, o.z]} axis={o.axis} w={o.w} h={o.h} />
+      ) : o.type === "arch" ? null : (
+        <DoorLeaves key={o.id} o={o} open={s[o.id] ?? 0} color={o.glass ? "#e9ecea" : "#c9d6d2"} />
+      )))}
+      <Buildings b={b} dark={Tl.dark} />
+      {b.insts.map((i) => <ObjectAt key={i.id} inst={i} b={b} s={s} dyn={dyn[i.id]} />)}
+      {b.scatter.map((sc, i) => (sc.info.builtin ? <BuiltinScatter key={i} id={sc.use} items={sc.items} seed={i} /> : (
+        <group key={i}>{sc.items.map((it, k) => <group key={k} position={it.pos} rotation={[0, it.yaw, 0]} scale={it.scale}><Compound spec={b.objects[sc.use]} /></group>)}</group>
+      )))}
+      {b.fixtures.map((f) => <Fixture key={f.id} f={f} lv={fixtureLevel(f, s, t)} cam={cam} dark={Tl.dark} />)}
+      {area ? <Dust min={[area[0], 0.2, area[1]]} max={[area[2], 2.6, area[3]]} n={220} t={t} i={0.22} size={0.01} /> : null}
+      {void DoubleSide}
+    </group>
+  );
+};
+
+==== 19633 project/worlds/kantor.world.json
+{
+ "id": "kantor",
+ "doc": "an open-plan office on the 11th floor of a city tower: four rows of workstations, one main desk with a monitor and a laptop near the east end, a printer/copier corner with a wall clock and a CCTV monitor, a CCTV camera high on the north wall, big north windows onto the city, a meeting room with a whiteboard behind a glass door on the east wall, the lift door in the south wall",
+ "times": [
+  "night",
+  "day",
+  "dusk"
+ ],
+ "ground": {
+  "size": 260,
+  "material": "asphalt",
+  "y": -33
+ },
+ "buildings": [
+  {
+   "rect": [
+    -30,
+    -42,
+    -18,
+    -30
+   ],
+   "height": 72,
+   "y": -33,
+   "color": "#3a404b",
+   "roof": "#262a30"
+  },
+  {
+   "rect": [
+    -14,
+    -36,
+    -4,
+    -26
+   ],
+   "height": 54,
+   "y": -33,
+   "color": "#454b55",
+   "roof": "#262a30"
+  },
+  {
+   "rect": [
+    0,
+    -48,
+    12,
+    -36
+   ],
+   "height": 88,
+   "y": -33,
+   "color": "#30353e",
+   "roof": "#262a30"
+  },
+  {
+   "rect": [
+    14,
+    -32,
+    24,
+    -22
+   ],
+   "height": 46,
+   "y": -33,
+   "color": "#4a4f57",
+   "roof": "#262a30"
+  },
+  {
+   "rect": [
+    28,
+    -46,
+    40,
+    -34
+   ],
+   "height": 66,
+   "y": -33,
+   "color": "#3a404b",
+   "roof": "#262a30"
+  },
+  {
+   "rect": [
+    -48,
+    -26,
+    -38,
+    -16
+   ],
+   "height": 42,
+   "y": -33,
+   "color": "#454b55",
+   "roof": "#262a30"
+  },
+  {
+   "rect": [
+    46,
+    -28,
+    56,
+    -18
+   ],
+   "height": 52,
+   "y": -33,
+   "color": "#30353e",
+   "roof": "#262a30"
+  },
+  {
+   "rect": [
+    -8,
+    -19,
+    4,
+    -12
+   ],
+   "height": 27,
+   "y": -33,
+   "color": "#4a4f57",
+   "roof": "#262a30"
+  },
+  {
+   "rect": [
+    8,
+    -18,
+    18,
+    -12
+   ],
+   "height": 24,
+   "y": -33,
+   "color": "#3a404b",
+   "roof": "#262a30"
+  },
+  {
+   "rect": [
+    -24,
+    -20,
+    -14,
+    -13
+   ],
+   "height": 30,
+   "y": -33,
+   "color": "#454b55",
+   "roof": "#262a30"
+  },
+  {
+   "rect": [
+    -60,
+    -60,
+    -44,
+    -46
+   ],
+   "height": 95,
+   "y": -33,
+   "color": "#30353e",
+   "roof": "#262a30"
+  },
+  {
+   "rect": [
+    60,
+    -64,
+    76,
+    -50
+   ],
+   "height": 80,
+   "y": -33,
+   "color": "#4a4f57",
+   "roof": "#262a30"
+  }
+ ],
+ "rooms": [
+  {
+   "id": "kantor",
+   "rect": [
+    -6,
+    -5,
+    6,
+    5
+   ],
+   "height": 3,
+   "floor": "tiles:#5a5f64",
+   "walls": "paint:#c4c8c7",
+   "ceiling": "paint:#cfd2d0",
+   "openings": [
+    {
+     "wall": "north",
+     "at": -4.3,
+     "type": "window",
+     "w": 2,
+     "h": 1.7,
+     "sill": 0.7
+    },
+    {
+     "wall": "north",
+     "at": -1.7,
+     "type": "window",
+     "w": 2,
+     "h": 1.7,
+     "sill": 0.7
+    },
+    {
+     "wall": "north",
+     "at": 0.2,
+     "type": "window",
+     "w": 1.8,
+     "h": 1.7,
+     "sill": 0.7
+    },
+    {
+     "wall": "south",
+     "at": 4.9,
+     "type": "double-door",
+     "id": "pintu-lift",
+     "sign": "LIFT · LANTAI 11"
+    },
+    {
+     "wall": "east",
+     "at": -3,
+     "type": "door",
+     "id": "pintu-rapat",
+     "glass": true,
+     "swing": -1,
+     "sign": "RUANG RAPAT"
+    },
+    {
+     "wall": "east",
+     "at": 1,
+     "type": "window",
+     "w": 1.4,
+     "h": 1.2,
+     "sill": 0.9
+    }
+   ]
+  },
+  {
+   "id": "ruang-rapat",
+   "rect": [
+    6,
+    -4.5,
+    10.5,
+    2.5
+   ],
+   "height": 3,
+   "floor": "vinyl:#4b5055",
+   "walls": "paint:#aeb3b3",
+   "ceiling": "paint:#c3c6c4",
+   "openings": [
+    {
+     "wall": "north",
+     "at": 8.2,
+     "type": "window",
+     "w": 2.4,
+     "h": 1.7,
+     "sill": 0.7
+    }
+   ]
+  }
+ ],
+ "objects": [
+  {
+   "use": "office-printer",
+   "at": [
+    4.6,
+    -4.63
+   ],
+   "id": "printer",
+   "yaw": 0
+  },
+  {
+   "use": "filing-cabinet",
+   "at": [
+    5.5,
+    -4.66
+   ],
+   "id": "lemari-printer",
+   "yaw": 0
+  },
+  {
+   "use": "cctv-monitor",
+   "at": [
+    3.2,
+    1.72,
+    -4.995
+   ],
+   "id": "monitor-cctv",
+   "yaw": 0
+  },
+  {
+   "use": "wall-clock",
+   "at": [
+    3.2,
+    2.45,
+    -4.988
+   ],
+   "id": "jam-dinding",
+   "yaw": 0
+  },
+  {
+   "use": "cctv-camera",
+   "at": [
+    1.7,
+    2.72,
+    -4.995
+   ],
+   "id": "kamera-cctv",
+   "yaw": 0
+  },
+  {
+   "use": "office-desk",
+   "at": [
+    3,
+    -1.05
+   ],
+   "id": "meja-utama",
+   "yaw": 3.141592653589793
+  },
+  {
+   "use": "desk-monitor-kerja",
+   "at": [
+    0,
+    0
+   ],
+   "id": "monitor-utama",
+   "on": "meja-utama:monitor",
+   "yaw": 3.141592653589793
+  },
+  {
+   "use": "laptop",
+   "at": [
+    0,
+    0
+   ],
+   "id": "laptop-utama",
+   "on": "meja-utama:laptop",
+   "yaw": 3.141592653589793
+  },
+  {
+   "use": "office-chair",
+   "at": [
+    3,
+    -1.95
+   ],
+   "id": "kursi-utama",
+   "yaw": 0
+  },
+  {
+   "use": "office-desk",
+   "at": [
+    1.55,
+    -1.05
+   ],
+   "id": "meja-1",
+   "yaw": 3.141592653589793
+  },
+  {
+   "use": "desk-monitor",
+   "at": [
+    0,
+    0
+   ],
+   "id": "monitor-1",
+   "on": "meja-1:monitor",
+   "yaw": 3.141592653589793
+  },
+  {
+   "use": "office-chair",
+   "at": [
+    1.639,
+    -2.051
+   ],
+   "id": "kursi-1",
+   "yaw": 0.347
+  },
+  {
+   "use": "office-desk",
+   "at": [
+    0.1,
+    -1.05
+   ],
+   "id": "meja-2",
+   "yaw": 3.141592653589793
+  },
+  {
+   "use": "desk-monitor",
+   "at": [
+    0,
+    0
+   ],
+   "id": "monitor-2",
+   "on": "meja-2:monitor",
+   "yaw": 3.141592653589793
+  },
+  {
+   "use": "office-chair",
+   "at": [
+    -0.019,
+    -2.059
+   ],
+   "id": "kursi-2",
+   "yaw": -0.089
+  },
+  {
+   "use": "office-desk",
+   "at": [
+    -1.35,
+    -1.05
+   ],
+   "id": "meja-3",
+   "yaw": 3.141592653589793
+  },
+  {
+   "use": "desk-monitor",
+   "at": [
+    0,
+    0
+   ],
+   "id": "monitor-3",
+   "on": "meja-3:monitor",
+   "yaw": 3.141592653589793
+  },
+  {
+   "use": "office-chair",
+   "at": [
+    -1.281,
+    -1.967
+   ],
+   "id": "kursi-3",
+   "yaw": -0.324
+  },
+  {
+   "use": "office-desk",
+   "at": [
+    -2.8,
+    -1.05
+   ],
+   "id": "meja-4",
+   "yaw": 3.141592653589793
+  },
+  {
+   "use": "desk-monitor",
+   "at": [
+    0,
+    0
+   ],
+   "id": "monitor-4",
+   "on": "meja-4:monitor",
+   "yaw": 3.141592653589793
+  },
+  {
+   "use": "office-chair",
+   "at": [
+    -2.773,
+    -2.041
+   ],
+   "id": "kursi-4",
+   "yaw": 0.173
+  },
+  {
+   "use": "office-desk",
+   "at": [
+    -4.25,
+    -1.05
+   ],
+   "id": "meja-5",
+   "yaw": 3.141592653589793
+  },
+  {
+   "use": "desk-monitor",
+   "at": [
+    0,
+    0
+   ],
+   "id": "monitor-5",
+   "on": "meja-5:monitor",
+   "yaw": 3.141592653589793
+  },
+  {
+   "use": "office-chair",
+   "at": [
+    -4.355,
+    -2.065
+   ],
+   "id": "kursi-5",
+   "yaw": 0.279
+  },
+  {
+   "use": "office-desk",
+   "at": [
+    3,
+    -0.29
+   ],
+   "id": "meja-6",
+   "yaw": 0
+  },
+  {
+   "use": "desk-monitor",
+   "at": [
+    0,
+    0
+   ],
+   "id": "monitor-6",
+   "on": "meja-6:monitor",
+   "yaw": 0
+  },
+  {
+   "use": "office-chair",
+   "at": [
+    3.113,
+    0.644
+   ],
+   "id": "kursi-6",
+   "yaw": 2.897
+  },
+  {
+   "use": "office-desk",
+   "at": [
+    1.55,
+    -0.29
+   ],
+   "id": "meja-7",
+   "yaw": 0
+  },
+  {
+   "use": "desk-monitor",
+   "at": [
+    0,
+    0
+   ],
+   "id": "monitor-7",
+   "on": "meja-7:monitor",
+   "yaw": 0
+  },
+  {
+   "use": "office-chair",
+   "at": [
+    1.504,
+    0.689
+   ],
+   "id": "kursi-7",
+   "yaw": 2.925
+  },
+  {
+   "use": "office-desk",
+   "at": [
+    0.1,
+    -0.29
+   ],
+   "id": "meja-8",
+   "yaw": 0
+  },
+  {
+   "use": "desk-monitor",
+   "at": [
+    0,
+    0
+   ],
+   "id": "monitor-8",
+   "on": "meja-8:monitor",
+   "yaw": 0
+  },
+  {
+   "use": "office-chair",
+   "at": [
+    0.048,
+    0.729
+   ],
+   "id": "kursi-8",
+   "yaw": 3.442
+  },
+  {
+   "use": "office-desk",
+   "at": [
+    -1.35,
+    -0.29
+   ],
+   "id": "meja-9",
+   "yaw": 0
+  },
+  {
+   "use": "desk-monitor",
+   "at": [
+    0,
+    0
+   ],
+   "id": "monitor-9",
+   "on": "meja-9:monitor",
+   "yaw": 0
+  },
+  {
+   "use": "office-chair",
+   "at": [
+    -1.235,
+    0.659
+   ],
+   "id": "kursi-9",
+   "yaw": 3.28
+  },
+  {
+   "use": "office-desk",
+   "at": [
+    -2.8,
+    -0.29
+   ],
+   "id": "meja-10",
+   "yaw": 0
+  },
+  {
+   "use": "desk-monitor",
+   "at": [
+    0,
+    0
+   ],
+   "id": "monitor-10",
+   "on": "meja-10:monitor",
+   "yaw": 0
+  },
+  {
+   "use": "office-chair",
+   "at": [
+    -2.902,
+    0.675
+   ],
+   "id": "kursi-10",
+   "yaw": 2.805
+  },
+  {
+   "use": "office-desk",
+   "at": [
+    -4.25,
+    -0.29
+   ],
+   "id": "meja-11",
+   "yaw": 0
+  },
+  {
+   "use": "desk-monitor",
+   "at": [
+    0,
+    0
+   ],
+   "id": "monitor-11",
+   "on": "meja-11:monitor",
+   "yaw": 0
+  },
+  {
+   "use": "office-chair",
+   "at": [
+    -4.23,
+    0.73
+   ],
+   "id": "kursi-11",
+   "yaw": 3.089
+  },
+  {
+   "use": "office-desk",
+   "at": [
+    3,
+    2.6
+   ],
+   "id": "meja-12",
+   "yaw": 3.141592653589793
+  },
+  {
+   "use": "desk-monitor",
+   "at": [
+    0,
+    0
+   ],
+   "id": "monitor-12",
+   "on": "meja-12:monitor",
+   "yaw": 3.141592653589793
+  },
+  {
+   "use": "office-chair",
+   "at": [
+    3.075,
+    1.636
+   ],
+   "id": "kursi-12",
+   "yaw": 0.35
+  },
+  {
+   "use": "office-desk",
+   "at": [
+    1.55,
+    2.6
+   ],
+   "id": "meja-13",
+   "yaw": 3.141592653589793
+  },
+  {
+   "use": "desk-monitor",
+   "at": [
+    0,
+    0
+   ],
+   "id": "monitor-13",
+   "on": "meja-13:monitor",
+   "yaw": 3.141592653589793
+  },
+  {
+   "use": "office-chair",
+   "at": [
+    1.43,
+    1.65
+   ],
+   "id": "kursi-13",
+   "yaw": -0.038
+  },
+  {
+   "use": "office-desk",
+   "at": [
+    0.1,
+    2.6
+   ],
+   "id": "meja-14",
+   "yaw": 3.141592653589793
+  },
+  {
+   "use": "desk-monitor",
+   "at": [
+    0,
+    0
+   ],
+   "id": "monitor-14",
+   "on": "meja-14:monitor",
+   "yaw": 3.141592653589793
+  },
+  {
+   "use": "office-chair",
+   "at": [
+    0.185,
+    1.581
+   ],
+   "id": "kursi-14",
+   "yaw": -0.34
+  },
+  {
+   "use": "office-desk",
+   "at": [
+    -1.35,
+    2.6
+   ],
+   "id": "meja-15",
+   "yaw": 3.141592653589793
+  },
+  {
+   "use": "desk-monitor",
+   "at": [
+    0,
+    0
+   ],
+   "id": "monitor-15",
+   "on": "meja-15:monitor",
+   "yaw": 3.141592653589793
+  },
+  {
+   "use": "office-chair",
+   "at": [
+    -1.343,
+    1.622
+   ],
+   "id": "kursi-15",
+   "yaw": 0.126
+  },
+  {
+   "use": "office-desk",
+   "at": [
+    -2.8,
+    2.6
+   ],
+   "id": "meja-16",
+   "yaw": 3.141592653589793
+  },
+  {
+   "use": "desk-monitor",
+   "at": [
+    0,
+    0
+   ],
+   "id": "monitor-16",
+   "on": "meja-16:monitor",
+   "yaw": 3.141592653589793
+  },
+  {
+   "use": "office-chair",
+   "at": [
+    -2.894,
+    1.665
+   ],
+   "id": "kursi-16",
+   "yaw": 0.308
+  },
+  {
+   "use": "office-desk",
+   "at": [
+    -4.25,
+    2.6
+   ],
+   "id": "meja-17",
+   "yaw": 3.141592653589793
+  },
+  {
+   "use": "desk-monitor",
+   "at": [
+    0,
+    0
+   ],
+   "id": "monitor-17",
+   "on": "meja-17:monitor",
+   "yaw": 3.141592653589793
+  },
+  {
+   "use": "office-chair",
+   "at": [
+    -4.132,
+    1.585
+   ],
+   "id": "kursi-17",
+   "yaw": -0.205
+  },
+  {
+   "use": "office-desk",
+   "at": [
+    3,
+    3.36
+   ],
+   "id": "meja-18",
+   "yaw": 0
+  },
+  {
+   "use": "desk-monitor",
+   "at": [
+    0,
+    0
+   ],
+   "id": "monitor-18",
+   "on": "meja-18:monitor",
+   "yaw": 0
+  },
+  {
+   "use": "office-chair",
+   "at": [
+    2.936,
+    4.35
+   ],
+   "id": "kursi-18",
+   "yaw": 2.887
+  },
+  {
+   "use": "office-desk",
+   "at": [
+    1.55,
+    3.36
+   ],
+   "id": "meja-19",
+   "yaw": 0
+  },
+  {
+   "use": "desk-monitor",
+   "at": [
+    0,
+    0
+   ],
+   "id": "monitor-19",
+   "on": "meja-19:monitor",
+   "yaw": 0
+  },
+  {
+   "use": "office-chair",
+   "at": [
+    1.517,
+    4.278
+   ],
+   "id": "kursi-19",
+   "yaw": 3.412
+  },
+  {
+   "use": "office-desk",
+   "at": [
+    0.1,
+    3.36
+   ],
+   "id": "meja-20",
+   "yaw": 0
+  },
+  {
+   "use": "desk-monitor",
+   "at": [
+    0,
+    0
+   ],
+   "id": "monitor-20",
+   "on": "meja-20:monitor",
+   "yaw": 0
+  },
+  {
+   "use": "office-chair",
+   "at": [
+    0.208,
+    4.37
+   ],
+   "id": "kursi-20",
+   "yaw": 3.327
+  },
+  {
+   "use": "office-desk",
+   "at": [
+    -1.35,
+    3.36
+   ],
+   "id": "meja-21",
+   "yaw": 0
+  },
+  {
+   "use": "desk-monitor",
+   "at": [
+    0,
+    0
+   ],
+   "id": "monitor-21",
+   "on": "meja-21:monitor",
+   "yaw": 0
+  },
+  {
+   "use": "office-chair",
+   "at": [
+    -1.461,
+    4.36
+   ],
+   "id": "kursi-21",
+   "yaw": 2.823
+  },
+  {
+   "use": "office-desk",
+   "at": [
+    -2.8,
+    3.36
+   ],
+   "id": "meja-22",
+   "yaw": 0
+  },
+  {
+   "use": "desk-monitor",
+   "at": [
+    0,
+    0
+   ],
+   "id": "monitor-22",
+   "on": "meja-22:monitor",
+   "yaw": 0
+  },
+  {
+   "use": "office-chair",
+   "at": [
+    -2.761,
+    4.261
+   ],
+   "id": "kursi-22",
+   "yaw": 3.038
+  },
+  {
+   "use": "office-desk",
+   "at": [
+    -4.25,
+    3.36
+   ],
+   "id": "meja-23",
+   "yaw": 0
+  },
+  {
+   "use": "desk-monitor",
+   "at": [
+    0,
+    0
+   ],
+   "id": "monitor-23",
+   "on": "meja-23:monitor",
+   "yaw": 0
+  },
+  {
+   "use": "office-chair",
+   "at": [
+    -4.192,
+    4.362
+   ],
+   "id": "kursi-23",
+   "yaw": 3.487
+  },
+  {
+   "use": "filing-cabinet",
+   "at": [
+    -5.66,
+    -3.2
+   ],
+   "id": "lemari-1",
+   "yaw": 1.5707963267948966
+  },
+  {
+   "use": "filing-cabinet",
+   "at": [
+    -5.66,
+    -2.7
+   ],
+   "id": "lemari-2",
+   "yaw": 1.5707963267948966
+  },
+  {
+   "use": "filing-cabinet",
+   "at": [
+    -5.66,
+    1.2
+   ],
+   "id": "lemari-3",
+   "yaw": 1.5707963267948966
+  },
+  {
+   "use": "potted-plant",
+   "at": [
+    -5.45,
+    -4.5
+   ],
+   "id": "tanaman-1"
+  },
+  {
+   "use": "potted-plant",
+   "at": [
+    -5.45,
+    4.5
+   ],
+   "id": "tanaman-2"
+  },
+  {
+   "use": "potted-plant",
+   "at": [
+    5.5,
+    1.9
+   ],
+   "id": "tanaman-3"
+  },
+  {
+   "use": "potted-plant",
+   "at": [
+    6.6,
+    2
+   ],
+   "id": "tanaman-4"
+  },
+  {
+   "use": "meeting-table",
+   "at": [
+    8.4,
+    -1
+   ],
+   "id": "meja-rapat",
+   "yaw": 1.5707963267948966
+  },
+  {
+   "use": "office-chair",
+   "at": [
+    7.5,
+    -1.55
+   ],
+   "id": "kursi-rapat-1",
+   "yaw": 1.5707963267948966
+  },
+  {
+   "use": "office-chair",
+   "at": [
+    7.5,
+    -0.2
+   ],
+   "id": "kursi-rapat-2",
+   "yaw": 1.8707963267948966
+  },
+  {
+   "use": "office-chair",
+   "at": [
+    9.3,
+    -1.8
+   ],
+   "id": "kursi-rapat-3",
+   "yaw": -1.5707963267948966
+  },
+  {
+   "use": "office-chair",
+   "at": [
+    9.3,
+    -1
+   ],
+   "id": "kursi-rapat-4",
+   "yaw": -1.5707963267948966
+  },
+  {
+   "use": "office-chair",
+   "at": [
+    9.3,
+    -0.2
+   ],
+   "id": "kursi-rapat-5",
+   "yaw": -1.7707963267948965
+  },
+  {
+   "use": "whiteboard",
+   "at": [
+    10.495,
+    1.45,
+    -1
+   ],
+   "id": "papan-tulis",
+   "yaw": -1.5707963267948966
+  }
+ ],
+ "lights": [
+  {
+   "type": "panel",
+   "at": [
+    3,
+    2.95,
+    -1.6
+   ],
+   "prop": "lampu-meja",
+   "i": 0.55,
+   "id": "lampu-meja-utama"
+  },
+  {
+   "type": "screen",
+   "id": "cahaya-monitor-meja",
+   "at": [
+    3,
+    1.08,
+    -0.815
+   ],
+   "prop": "layar-meja",
+   "color": "#a8c4ff",
+   "i": 1.6
+  },
+  {
+   "type": "tube",
+   "id": "lampu-tl-printer",
+   "at": [
+    4.4,
+    2.95,
+    -3.2
+   ],
+   "prop": "lampu-tl",
+   "flicker": true,
+   "i": 0.5
+  },
+  {
+   "type": "screen",
+   "id": "cahaya-printer",
+   "at": [
+    4.6,
+    0.9,
+    -4.63
+   ],
+   "prop": "printer-nyala",
+   "color": "#bff5e0",
+   "i": 0.9
+  },
+  {
+   "type": "screen",
+   "id": "cahaya-cctv",
+   "at": [
+    3.2,
+    1.72,
+    -4.905
+   ],
+   "prop": "layar-cctv",
+   "color": "#c4ecd4",
+   "i": 2
+  },
+  {
+   "type": "exit-sign",
+   "id": "tanda-keluar",
+   "at": [
+    3.9,
+    2.4,
+    4.93
+   ]
+  },
+  {
+   "type": "panel",
+   "at": [
+    -4.5,
+    2.95,
+    -2.4
+   ],
+   "prop": "lampu-kantor"
+  },
+  {
+   "type": "panel",
+   "at": [
+    -4.5,
+    2.95,
+    2.6
+   ],
+   "prop": "lampu-kantor"
+  },
+  {
+   "type": "panel",
+   "at": [
+    -1.5,
+    2.95,
+    -3.5
+   ],
+   "prop": "lampu-kantor"
+  },
+  {
+   "type": "panel",
+   "at": [
+    -1.5,
+    2.95,
+    3.5
+   ],
+   "prop": "lampu-kantor"
+  },
+  {
+   "type": "panel",
+   "at": [
+    1.5,
+    2.95,
+    -3.5
+   ],
+   "prop": "lampu-kantor"
+  },
+  {
+   "type": "panel",
+   "at": [
+    1.5,
+    2.95,
+    3.5
+   ],
+   "prop": "lampu-kantor"
+  },
+  {
+   "type": "panel",
+   "at": [
+    4.5,
+    2.95,
+    3
+   ],
+   "prop": "lampu-kantor"
+  }
+ ],
+ "props": {
+  "lampu-meja": {
+   "default": 1,
+   "doc": "the ceiling panel above the main desk (on by default: someone works late)",
+   "sfx": {
+    "up": "click",
+    "down": "click"
+   }
+  },
+  "lampu-kantor": {
+   "default": 0,
+   "doc": "all other ceiling panels (0 = switched off for the night, 1 = office hours)",
+   "sfx": {
+    "up": "click",
+    "down": "click"
+   }
+  },
+  "layar-meja": {
+   "default": 1,
+   "doc": "light of the main desk's monitor (0 = standby)"
+  },
+  "lampu-tl": {
+   "default": 1,
+   "doc": "the old tube above the printer corner (it flickers)"
+  },
+  "printer-nyala": {
+   "default": 0,
+   "doc": "printer wakes up: light from its panel",
+   "sfx": {
+    "up": "machine"
+   }
+  },
+  "layar-cctv": {
+   "default": 0,
+   "doc": "CCTV monitor light",
+   "sfx": {
+    "up": "static"
+   }
+  }
+ },
+ "places": {
+  "kantor": {
+   "doc": "the whole open-plan floor seen from the west end: rows of desks, the main desk island, the printer at the far east end",
+   "kind": "interior",
+   "rooms": [
+    "kantor"
+   ],
+   "view": "printer",
+   "ambience": "room",
+   "surface": "tile",
+   "pois": {
+    "kantor-gelap": [
+     -3.2,
+     1,
+     0.8
+    ]
+   },
+   "establish": [
+    0,
+    0.6,
+    -1.5,
+    5.87,
+    1.67,
+    -1.973
+   ],
+   "marks": {
+    "lorong": {
+     "at": [
+      4.7,
+      1.15
+     ],
+     "yaw": 3.1416,
+     "doc": "at the east end of the floor between the desk rows, facing the printer corner"
+    },
+    "jendela": {
+     "at": [
+      -2.9,
+      -4.1
+     ],
+     "yaw": 3.1416,
+     "doc": "at the north windows, looking out at the city"
+    }
+   }
+  },
+  "cctv": {
+   "doc": "the printer corner as the wall CCTV camera sees it (fixed high wide angle from the north-west) — for 'caught on camera' moments",
+   "kind": "interior",
+   "rooms": [
+    "kantor"
+   ],
+   "area": [
+    1,
+    -5,
+    6,
+    1.2
+   ],
+   "view": "printer",
+   "ambience": "room",
+   "surface": "tile",
+   "marks": {
+    "belakang-printer": {
+     "at": [
+      4.9,
+      -2.55
+     ],
+     "yaw": -2.876,
+     "doc": "a step behind someone at the printer, facing their back"
+    },
+    "dekat-printer": {
+     "at": [
+      4.8,
+      -3.05
+     ],
+     "yaw": -2.82,
+     "doc": "right behind someone at the printer, facing their back"
+    }
+   },
+   "pois": {
+    "cctv-fokus": [
+     4.2,
+     1,
+     -3.3
+    ]
+   },
+   "establish": [
+    4,
+    1,
+    -3.2,
+    2.693,
+    3.24,
+    -2.268
+   ]
+  },
+  "pojok-printer": {
+   "doc": "the east end of the floor: the main desk, the printer corner (printer, CCTV monitor, wall clock), the glass door of the meeting room",
+   "kind": "interior",
+   "rooms": [
+    "kantor",
+    "ruang-rapat"
+   ],
+   "area": [
+    1,
+    -5,
+    10.5,
+    1.2
+   ],
+   "view": "printer",
+   "ambience": "room",
+   "surface": "tile",
+   "marks": {
+    "ambang-rapat": {
+     "at": [
+      7,
+      -2.85
+     ],
+     "yaw": -1.89,
+     "doc": "just inside the dark meeting room, behind the open door, facing the printer corner"
+    },
+    "printer-baca": {
+     "at": [
+      4.6,
+      -3.65
+     ],
+     "yaw": -1.9,
+     "doc": "in front of the printer, turned toward the room to read"
+    },
+    "printer-hadap-rapat": {
+     "at": [
+      4.6,
+      -3.65
+     ],
+     "yaw": 1.136,
+     "doc": "in front of the printer, turned toward the meeting-room door"
+    }
+   },
+   "establish": [
+    4.6,
+    1,
+    -4.3,
+    3.16,
+    1.1,
+    -1.399
+   ],
+   "pois": {
+    "kantor-gelap": [
+     -2.5,
+     1,
+     0
+    ],
+    "belakang-meja": [
+     4.95,
+     1.45,
+     -1.9
+    ],
+    "dalam-rapat": [
+     7.4,
+     1.4,
+     -2.9
+    ]
+   }
+  }
+ },
+ "fog": 0.12,
+ "ambient": "#7c8aa6"
+}

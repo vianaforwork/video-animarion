@@ -1,0 +1,2906 @@
+VOYNANN Motion - packed source files of this folder. Do not edit by hand.
+The skill upload in the Claude app accepts at most 200 files, so the source files are packed here.
+`node <skill folder>/new-project.mjs <project folder> --kit=<style>` unpacks them into the project.
+Format: per file one line with four '=' signs, the byte length and the path, then exactly that many bytes.
+
+==== 664 project/remotion.config.ts
+// See all configuration options: https://remotion.dev/docs/config
+import fs from "node:fs";
+import { Config } from "@remotion/cli/config";
+
+Config.setVideoImageFormat("jpeg");
+Config.setJpegQuality(95);
+Config.setOverwriteOutput(true);
+// WebGL film: GPU-backed ANGLE path in headless Chrome, or software "swangle" when scripts/gl.mjs found
+// no usable GPU on this computer (remembered in .gl-mode). The GL env var overrides both.
+type GL = Parameters<typeof Config.setChromiumOpenGlRenderer>[0];
+const gl = (process.env.GL || (fs.existsSync(".gl-mode") ? fs.readFileSync(".gl-mode", "utf8").trim() : "") || "angle") as GL;
+Config.setChromiumOpenGlRenderer(gl);
+
+==== 8349 project/scripts/lib/sound.mjs
+// Sound from a Plan — original synth, no samples. Music: a light marimba-and-pad bed (D major pentatonic, 92 bpm).
+// SFX follow the plan: soft rain while it rains, knocks when timber lands, clay ticks when tiles land, a breath of
+// fire, a quiet chime when a term is pinned, a faint air move on each cut. Mix −14 LUFS / −1.5 dBTP; the music ducks
+// under the voice when there is one.
+import fs from "node:fs";
+import path from "node:path";
+import { execFileSync, spawnSync } from "node:child_process";
+
+export const buildSound = (plan, D, { voice, outDir, mixFile, music = true }) => {
+  const DUR = plan.duration, SR = 48000, N = Math.ceil(DUR * SR);
+  const mk = () => [new Float32Array(N), new Float32Array(N)];
+  let seed = 12345;
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const add = (buf, t, pan, len, fn) => {
+    const i0 = Math.max(0, Math.round(t * SR)), n = Math.min(N - i0, Math.round(len * SR));
+    const gl = Math.cos((pan + 1) * Math.PI / 4), gr = Math.sin((pan + 1) * Math.PI / 4);
+    for (let i = 0; i < n; i++) { const v = fn(i / SR, i); buf[0][i0 + i] += v * gl; buf[1][i0 + i] += v * gr; }
+  };
+  const hz = (m) => 440 * Math.pow(2, (m - 69) / 12);
+
+  // ---------------------------------------------------------------- music
+  const mus = mk();
+  if (music) {
+    const beat = 60 / 92, bar = beat * 4;
+    const CH = [[50, 57, 62, 66], [47, 54, 59, 62], [43, 50, 55, 59], [45, 52, 57, 61]];
+    const PENTA = [62, 64, 66, 69, 71, 74, 76, 78];
+    const fade = (t) => Math.min(1, Math.max(0, (DUR - 0.15 - t) / 2.2));
+    for (let b = 0; b < Math.ceil(DUR / bar); b++) {
+      const c = CH[b % 4], t0 = b * bar;
+      for (const [k, m] of c.entries())
+        for (const det of [-0.06, 0.07]) {
+          const f = hz(m + 12 + det);
+          add(mus, t0, det * 6, bar + 0.6, (t) => Math.sin(2 * Math.PI * f * t) * 0.016 * (k === 0 ? 0.8 : 1) * Math.min(1, t / 0.9) * Math.min(1, (bar + 0.6 - t) / 0.7) * fade(t0 + t));
+        }
+      for (const bt of [0, 2]) {
+        const f = hz(c[0] - 12);
+        add(mus, t0 + bt * beat, 0, 1.1, (t) => (Math.sin(2 * Math.PI * f * t) + 0.25 * Math.sin(4 * Math.PI * f * t)) * 0.05 * Math.min(1, t / 0.012) * Math.exp(-t * 2.6) * fade(t0 + t));
+      }
+      for (let e = 0; e < 8; e++) {
+        const r = rnd();
+        if (r < 0.26 && e % 2) continue;
+        const pool = PENTA.filter((p) => c.some((x) => (p - x) % 12 === 0) || rnd() < 0.3);
+        const m = pool[Math.floor(rnd() * pool.length)] ?? 69;
+        const f = hz(m), vel = (e % 4 === 0 ? 0.075 : 0.05) * (0.75 + rnd() * 0.4), pan = (rnd() - 0.5) * 0.7;
+        add(mus, t0 + e * beat / 2 + (rnd() - 0.5) * 0.008, pan, 0.9, (t) => (Math.sin(2 * Math.PI * f * t) * Math.exp(-t * 7) + 0.3 * Math.sin(2 * Math.PI * f * 3.93 * t) * Math.exp(-t * 26)) * vel * Math.min(1, t / 0.003) * fade(t0 + t));
+      }
+      for (let e = 1; e < 8; e += 2) {
+        let lp = 0;
+        add(mus, t0 + e * beat / 2, 0.25, 0.07, (t) => { const n = rnd() * 2 - 1; lp += (n - lp) * 0.6; return (n - lp) * 0.02 * Math.exp(-t * 60) * fade(t0 + t); });
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------- SFX
+  const sfx = mk();
+  const bed = (a, d, gain, lpK, hpK, fin = 0.8, fout = 0.5) => {
+    for (const pan of [-0.6, 0.6]) {
+      let lp = 0, hp = 0;
+      add(sfx, a, pan, d, (t) => { const n = rnd() * 2 - 1; lp += (n - lp) * lpK; hp += (lp - hp) * hpK; return (lp - hp) * gain * Math.min(1, t / fin) * Math.min(1, (d - t) / fout); });
+    }
+  };
+  const knock = (t, f = 190, g = 0.14, pan = 0) => add(sfx, t, pan, 0.35, (x) => (Math.sin(2 * Math.PI * f * x * (1 + 0.6 * Math.exp(-x * 60))) * Math.exp(-x * 22) + (rnd() * 2 - 1) * 0.25 * Math.exp(-x * 140)) * g * Math.min(1, x / 0.002));
+  const tick = (t, f = 2100, g = 0.075, pan = 0) => add(sfx, t, pan, 0.18, (x) => (Math.sin(2 * Math.PI * f * x) * Math.exp(-x * 55) + 0.5 * Math.sin(2 * Math.PI * f * 2.7 * x) * Math.exp(-x * 90)) * g * Math.min(1, x / 0.001));
+  const chime = (t, m = 81) => { for (const [k, mm] of [m, m + 7].entries()) add(sfx, t + k * 0.07, 0.2, 0.9, (x) => Math.sin(2 * Math.PI * hz(mm) * x) * 0.03 * Math.min(1, x / 0.004) * Math.exp(-x * 5.5)); };
+  const air = (t) => { let lp = 0; add(sfx, t - 0.14, 0, 0.36, (x) => { const n = rnd() * 2 - 1; lp += (n - lp) * 0.05; return lp * 0.11 * Math.sin(Math.PI * Math.min(1, x / 0.36)) ** 2; }); };
+
+  const events = [];
+  plan.shots.forEach((S, i) => {
+    const d = S.t1 - S.t0;
+    if (i) air(S.t0);
+    // rain: on while this shot rains; it tails off over the start of the shot that clears it
+    if (S.rain[1] > 0) { bed(S.t0 + (S.rain[0] > 0 ? 0 : 0.2), d + (plan.shots[i + 1] && plan.shots[i + 1].rain[1] === 0 ? Math.min(1.1, (plan.shots[i + 1].t1 - plan.shots[i + 1].t0) * 0.3) : 0), 0.09, 0.35, 0.02, S.rain[0] > 0 ? 0.3 : 1.2, S.rain[0] > 0 && plan.shots[i + 1]?.rain[1] > 0 ? 0.25 : 1.0); events.push(`${S.t0.toFixed(2)} rain`); }
+    for (const p of S.parts) {
+      if (!p.build) continue;
+      const kind = D.parts[p.name]?.sound ?? "none", a = S.t0 + p.build.a, len = p.build.b - p.build.a;
+      if (kind === "wood") { const n = Math.max(1, Math.min(4, Math.round(len / 0.6))); for (let k = 0; k < n; k++) knock(a + len * (0.42 + (0.55 * k) / n), 160 + k * 24 + rnd() * 20, 0.13, 0.25 - k * 0.15); }
+      else if (kind === "clay") { const n = Math.max(6, Math.min(27, Math.round(len * 7))); for (let k = 0; k < n; k++) tick(a + len * (0.14 + (0.84 * k) / n), 1400 + rnd() * 900, 0.075, -0.3 + (k % 3) * 0.25); }
+      else if (kind === "soft") { for (let k = 0; k < 2; k++) knock(a + len * (0.4 + k * 0.35), 110, 0.05, 0.2); }
+      if (kind !== "none") events.push(`${a.toFixed(2)} ${kind} ${p.name}`);
+    }
+    for (const an of S.anims) {
+      const ps = D.paramSound?.[an.what] ?? D.paramSound?.[`${an.what.split(".")[0].split("#")[0]}.${an.what.split(".")[1]}`];
+      if (ps === "fire") bed(S.t0, d, 0.5, 0.012, 0.002, 0.4, 0.4);
+      if (ps === "thud") knock(S.t0 + (an.a + an.b) / 2, 85, 0.13, 0);
+      if (ps) events.push(`${S.t0.toFixed(2)} ${ps}`);
+    }
+    if (S.worker?.do === "cetak") for (let k = 0; k * 1.5 + 0.75 < d; k++) knock(S.t0 + 0.75 + k * 1.5, 120, 0.07, 0.3);
+    S.pins.forEach((p, k) => chime(S.t0 + p.a + 0.2, 79 + ((i + k) % 3) * 2));
+  });
+  if (plan.shots.length > 2) chime(plan.shots[plan.shots.length - 1].t0 + 0.25, 74);
+
+  // ---------------------------------------------------------------- write + mix
+  const wav = (file, buf) => {
+    const data = Buffer.alloc(N * 4);
+    for (let i = 0; i < N; i++) for (let c = 0; c < 2; c++) data.writeInt16LE(Math.round(Math.max(-1, Math.min(1, buf[c][i])) * 32767), i * 4 + c * 2);
+    const h = Buffer.alloc(44);
+    h.write("RIFF", 0); h.writeUInt32LE(36 + data.length, 4); h.write("WAVEfmt ", 8); h.writeUInt32LE(16, 16); h.writeUInt16LE(1, 20); h.writeUInt16LE(2, 22);
+    h.writeUInt32LE(SR, 24); h.writeUInt32LE(SR * 4, 28); h.writeUInt16LE(4, 32); h.writeUInt16LE(16, 34); h.write("data", 36); h.writeUInt32LE(data.length, 40);
+    fs.writeFileSync(file, Buffer.concat([h, data]));
+  };
+  fs.mkdirSync(outDir, { recursive: true });
+  fs.mkdirSync(path.dirname(mixFile), { recursive: true });
+  const mf = path.join(outDir, "music.wav"), sf = path.join(outDir, "sfx.wav");
+  wav(mf, mus);
+  wav(sf, sfx);
+  const tail = `apad=whole_dur=${DUR},atrim=0:${DUR},loudnorm=I=-14:TP=-1.5:LRA=11,aresample=48000[out]`;
+  const filter = voice
+    ? ["[0:a]highpass=f=70,acompressor=threshold=-20dB:ratio=2.5:attack=8:release=140:makeup=3,asplit=2[v][vk]", "[1:a]volume=1.3[m]", "[m][vk]sidechaincompress=threshold=0.03:ratio=6:attack=25:release=420[md]", "[2:a]volume=0.9[s]", `[v][md][s]amix=inputs=3:normalize=0:duration=longest,${tail}`].join(";")
+    : ["[0:a]volume=1.6[m]", "[1:a]volume=1.0[s]", `[m][s]amix=inputs=2:normalize=0:duration=longest,${tail}`].join(";");
+  execFileSync("ffmpeg", ["-y", "-v", "error", ...(voice ? ["-i", voice] : []), "-i", mf, "-i", sf, "-filter_complex", filter, "-map", "[out]", "-ac", "2", mixFile]);
+  const m = spawnSync("ffmpeg", ["-hide_banner", "-i", mixFile, "-af", "loudnorm=print_format=summary", "-f", "null", "-"], { encoding: "utf8" }).stderr;
+  return { lufs: (m.match(/Input Integrated:\s+(-?[\d.]+)/) ?? [])[1], peak: (m.match(/Input True Peak:\s+(-?[\d.]+)/) ?? [])[1], events };
+};
+
+==== 8267 project/scripts/lib/vo.mjs
+// Voice-over → word timings for a list of sentences (whisper.cpp), plus the timed voice track.
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { execFileSync, spawnSync } from "node:child_process";
+
+const exists = (f) => !!f && fs.existsSync(f);
+export const findWhisper = () => {
+  const home = os.homedir();
+  const onPath = spawnSync("sh", ["-c", "command -v whisper-cli"], { encoding: "utf8" }).stdout?.trim();
+  if (process.env.NO_WHISPER) return null; // test switch: force the speech-run alignment
+  const cli = [process.env.WHISPER_CLI, onPath, "/opt/homebrew/bin/whisper-cli", "/usr/local/bin/whisper-cli", path.join(home, "whisper.cpp/build/bin/whisper-cli")].find(exists);
+  const dirs = [path.join(home, ".cache/whisper.cpp"), "models", "/opt/homebrew/share/whisper-cpp", path.join(home, "whisper.cpp/models")];
+  const models = dirs.flatMap((d) => (fs.existsSync(d) ? fs.readdirSync(d).filter((f) => /^ggml-.*\.bin$/.test(f)).map((f) => path.join(d, f)) : []));
+  const model = [process.env.WHISPER_MODEL].find(exists) ?? ["large-v3-turbo", "large-v3", "medium", "small"].map((p) => models.find((m) => m.includes(p))).find(Boolean) ?? models[0];
+  return cli && model ? { cli, model } : null;
+};
+const norm = (w) => w.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]/g, "");
+
+const silences = (vo) => {
+  const sd = spawnSync("ffmpeg", ["-hide_banner", "-i", vo, "-af", "silencedetect=noise=-38dB:d=0.2", "-f", "null", "-"], { encoding: "utf8" }).stderr;
+  const ss = [...sd.matchAll(/silence_start: ([\d.]+)/g)].map((m) => +m[1]), se = [...sd.matchAll(/silence_end: ([\d.]+)/g)].map((m) => +m[1]);
+  return ss.map((a, i) => [a, se[i] ?? a + 0.3]);
+};
+const weight = (w) => 0.55 + w.replace(/[,.?!]/g, "").length * 0.085;
+
+/**
+ * Without whisper: the sentences are laid onto the recording's speech runs. Every sentence gets its share of the
+ * spoken time (by word length); a sentence start that falls near a pause is moved to where the voice comes back
+ * (sentences are normally separated by the longest pauses). Words are paced inside their sentence.
+ */
+const ontoRuns = (vo, texts, dur) => {
+  const sil = silences(vo).filter(([a, b]) => b - a >= 0.2);
+  const runs = [];
+  let at = 0;
+  for (const [a, b] of sil) { if (a - at > 0.05) runs.push([at, a]); at = b; }
+  if (dur - at > 0.05) runs.push([at, dur]);
+  const spoken = runs.reduce((n, [a, b]) => n + (b - a), 0);
+  const real = (sp) => { let acc = 0; for (const [a, b] of runs) { if (sp <= acc + (b - a)) return a + (sp - acc); acc += b - a; } return runs.at(-1)[1]; };
+  const W = texts.map((t) => t.split(/\s+/).filter(Boolean).map(weight));
+  const tot = W.flat().reduce((x, y) => x + y, 0);
+  // candidate sentence starts = run starts; pick, in order, the one nearest to each sentence's share of speech
+  const starts = runs.map((r) => r[0]);
+  let acc = 0, minIdx = 0;
+  const t0 = texts.map((_, i) => {
+    const guess = real((acc / tot) * spoken);
+    acc += W[i].reduce((x, y) => x + y, 0);
+    if (i === 0) return starts[0];
+    let best = -1;
+    // nearness to the sentence's share of speech, with a bonus for a long pause in front (sentences end on the long ones)
+    const cost = (k) => Math.abs(starts[k] - guess) - 1.5 * Math.min(0.6, starts[k] - runs[k - 1][1]);
+    for (let k = minIdx + 1; k < starts.length - (texts.length - 1 - i); k++) if (Math.abs(starts[k] - guess) < 1.2 && (best < 0 || cost(k) < cost(best))) best = k;
+    if (best >= 0) { minIdx = best; return starts[best]; }
+    return guess;
+  });
+  return texts.map((text, i) => {
+    const a = t0[i], endRun = runs.filter((r) => r[1] <= (t0[i + 1] ?? dur) + 0.01).at(-1), b = Math.max(a + 0.3, Math.min(t0[i + 1] ?? dur, endRun ? endRun[1] : dur));
+    const ws = text.split(/\s+/).filter(Boolean), sum = W[i].reduce((x, y) => x + y, 0);
+    let c = 0;
+    // pace the words over the speech inside [a, b] (pauses inside the sentence are skipped)
+    const inside = runs.map(([x, y]) => [Math.max(x, a), Math.min(y, b)]).filter(([x, y]) => y > x);
+    const span = inside.reduce((n, [x, y]) => n + (y - x), 0) || b - a;
+    const at2 = (sp) => { let q = 0; for (const [x, y] of inside) { if (sp <= q + (y - x)) return x + (sp - q); q += y - x; } return b; };
+    return { a, b, e0: a, words: ws.map((w, k) => { const t = inside.length ? at2((c / sum) * span) : a + ((b - a) * c) / sum; c += W[i][k]; return { w, t, e: t + 0.2 }; }) };
+  });
+};
+
+/**
+ * @returns {{ lines: {text, t0, t1, words: {w, t}[]}[], duration: number, voice: string, heard: string, missed: number }}
+ * Times include `lead` seconds of silence before the first word; `voice` is the track to mix (lead + recording).
+ */
+export const syncVo = (vo, texts, out, lead = 0.35) => {
+  fs.mkdirSync(out, { recursive: true });
+  const dur = Number(execFileSync("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", vo]).toString());
+  const W = findWhisper();
+  let lines, missed = 0, heardText = "", method = "whisper";
+  if (!W) {
+    lines = ontoRuns(vo, texts, dur);
+    method = "runs";
+  } else {
+    const wav = path.join(out, "vo16k.wav");
+    execFileSync("ffmpeg", ["-y", "-v", "error", "-i", vo, "-ar", "16000", "-ac", "1", wav]);
+    execFileSync(W.cli, ["-m", W.model, "-f", wav, "-l", "id", "-ml", "1", "-sow", "-ojf", "-of", path.join(out, "vo_words")], { stdio: ["ignore", "ignore", "ignore"] });
+    const j = JSON.parse(fs.readFileSync(path.join(out, "vo_words.json"), "utf8"));
+    heardText = j.transcription.map((x) => x.text.trim()).filter(Boolean).join(" ");
+    const heard = j.transcription.map((x) => ({ w: norm(x.text), a: x.offsets.from / 1000, b: x.offsets.to / 1000 })).filter((x) => x.w);
+    let h = 0;
+    lines = texts.map((text) => {
+      const ws = text.split(/\s+/).filter(Boolean).map((w) => {
+        const n = norm(w);
+        for (let k = h; k < Math.min(heard.length, h + 10); k++) {
+          if (heard[k].w === n || (n.length > 3 && heard[k].w.startsWith(n.slice(0, 4)))) { h = k + 1; return { w, t: heard[k].a, e: heard[k].b }; }
+          for (let m = 2; m <= 3 && k + m <= heard.length; m++) {
+            const joined = heard.slice(k, k + m).map((x) => x.w).join("");
+            if (joined === n || (n.length > 5 && joined.startsWith(n.slice(0, 6)))) { const r = { w, t: heard[k].a, e: heard[k + m - 1].b }; h = k + m; return r; }
+          }
+        }
+        missed++;
+        return { w, t: null, e: null };
+      });
+      for (let i = 0; i < ws.length; i++) if (ws[i].t === null) {
+        const prev = ws.slice(0, i).reverse().find((x) => x.t !== null), next = ws.slice(i + 1).find((x) => x.t !== null);
+        ws[i].t = prev && next ? (prev.e + next.t) / 2 : prev ? prev.e + 0.05 : next ? next.t - 0.25 : heard[Math.min(h, heard.length - 1)]?.a ?? 0;
+        ws[i].e = ws[i].t + 0.25;
+      }
+      return { a: ws[0].t, b: ws[ws.length - 1].e, e0: ws[0].e, words: ws };
+    });
+    // whisper word starts run early: a line whisper started inside a pause starts where the voice comes back
+    const sil = silences(vo);
+    for (const T of lines) {
+      const o = sil.find(([a, b]) => T.a >= a - 0.15 && T.a < b && b - T.a < 2.5 && !(T.e0 <= a + 0.05 && T.e0 - T.a > 0.15))?.[1];
+      if (o !== undefined && o > T.a) {
+        const d = o - T.a;
+        T.a += d;
+        T.words = T.words.map((w, k) => ({ ...w, t: Math.max(w.t + d * Math.max(0, 1 - k / Math.max(3, T.words.length)), o + k * 0.05) }));
+      }
+    }
+  }
+  let last = -1;
+  for (const T of lines) for (const w of T.words) { if (w.t < last + 0.04) w.t = last + 0.04; last = w.t; }
+  lines.forEach((T, i) => { T.a = Math.min(T.a, T.words[0].t); T.b = Math.min(Math.max(T.b, T.words[T.words.length - 1].t + 0.2), (lines[i + 1]?.words[0].t ?? dur) - 0.02, dur); });
+  const r3 = (x) => Math.round((x + lead) * 1000) / 1000;
+  const voice = path.join(out, "voice.wav");
+  execFileSync("ffmpeg", ["-y", "-v", "error", "-i", vo, "-af", `adelay=${Math.round(lead * 1000)}:all=1`, "-ar", "48000", "-ac", "2", voice]);
+  return {
+    lines: lines.map((T, i) => ({ text: texts[i], t0: r3(T.a), t1: r3(T.b), words: T.words.map((w) => ({ w: w.w, t: r3(w.t) })) })),
+    duration: dur + lead, voice, missed, heard: heardText, method,
+  };
+};
+
+==== 8897 project/scripts/make.mjs
+// BEDAH — story → film.
+//   node scripts/make.mjs --parts [domain]          what can be built (parts, parameters, anchors, marks, worker acts)
+//   node scripts/make.mjs <id> --plan               compile stories/<id>/story.json, print the shot list + warnings
+//   node scripts/make.mjs <id> --stills 2s,9.5s     plan + stills (out/<id>/stills/_sheet.jpg)
+//   node scripts/make.mjs <id> --preview            plan + sound + 540×960 preview (rendered at 2×, downscaled) + QA
+//   node scripts/make.mjs <id> --final              plan + sound + 1080×1920 @ 60 + QA
+// Voice: stories/<id>/vo.(mp3|wav|m4a) → word timings with whisper.cpp; without a voice the sentences are paced.
+// Flags: --silent (no sound at all), --no-music (voice + SFX only), --wide (16:9 landscape, only when asked: 960×540 stills + preview, 1920×1080 @ 60 final).
+// QA gate (scripts/qa-gate.mjs): tembus / loncat / kedip of the tagged worker and parts, camera snaps, a scan of the 3D
+// alone for flicker — after --preview as a report, before --final as a stop (--force-qa goes on, --no-qa skips).
+import fs from "node:fs";
+import path from "node:path";
+import { execFileSync, spawnSync } from "node:child_process";
+import { buildPlan, paceLines, stateAt } from "../src/director/plan.ts";
+import { DOMAINS } from "../src/domains/index.ts";
+import { syncVo } from "./lib/vo.mjs";
+import { buildSound } from "./lib/sound.mjs";
+import { deliveryScan, sceneGate } from "./qa-gate.mjs";
+
+const args = process.argv.slice(2);
+const flag = (f) => args.includes(f);
+const val = (f) => (args.includes(f) ? args[args.indexOf(f) + 1] : undefined);
+
+if (flag("--parts")) {
+  const D = DOMAINS[val("--parts") && !val("--parts").startsWith("--") ? val("--parts") : "rumah"];
+  console.log(`domain "${D.id}" — ${D.about}\nglobals (set as "g.<name>"): ${Object.entries(D.globals).map(([k, v]) => `${k}=${v}`).join(", ")}\nworker acts: ${D.acts.join(", ")}\n`);
+  for (const [name, M] of Object.entries(D.parts)) {
+    const p = M.params ?? {};
+    console.log(`${name}${M.slot ? `  [slot ${M.slot}]` : ""}${M.scenery ? "  [scenery]" : ""}${M.build ? `  [build ${M.build}s, ${M.sound ?? "none"}]` : ""}\n    ${M.about}`);
+    if (Object.keys(p).length) console.log(`    params: ${Object.entries(p).map(([k, v]) => `${k}=${v}`).join(", ")}`);
+    const a = Object.keys(M.anchors?.(p, D.globals) ?? {}), m = Object.keys(M.marks?.(p, { ...D.globals, sag: 0.3 }) ?? {});
+    if (a.length) console.log(`    anchors: ${a.join(", ")}`);
+    if (m.length) console.log(`    marks: ${m.join(", ")}`);
+    if (M.work) console.log(`    worker: ${M.work(p, D.globals).do}`);
+  }
+  process.exit(0);
+}
+
+const id = args.find((a) => !a.startsWith("--") && a !== val("--stills"));
+if (!id) { console.error("usage: node scripts/make.mjs <id> --plan | --stills 2s,9s | --preview | --final   (or --parts)"); process.exit(1); }
+const dir = path.join("stories", id), out = path.join("out", id);
+const storyFile = path.join(dir, "story.json");
+if (!fs.existsSync(storyFile)) { console.error(`missing ${storyFile}`); process.exit(1); }
+fs.mkdirSync(out, { recursive: true });
+const story = JSON.parse(fs.readFileSync(storyFile, "utf8"));
+const D = DOMAINS[story.domain];
+if (!D) { console.error(`unknown domain "${story.domain}" (have: ${Object.keys(DOMAINS).join(", ")})`); process.exit(1); }
+const texts = story.lines.map((l) => l.text);
+
+// ---------------------------------------------------------------- timing
+const vo = ["vo.wav", "vo.mp3", "vo.m4a"].map((f) => path.join(dir, f)).find((f) => fs.existsSync(f));
+let lines, voice;
+if (vo) {
+  const cache = path.join(out, "timing.json");
+  const stamp = `${fs.statSync(vo).mtimeMs}|${texts.join("|")}`;
+  const c = fs.existsSync(cache) ? JSON.parse(fs.readFileSync(cache, "utf8")) : null;
+  if (c?.stamp === stamp && fs.existsSync(c.voice)) { lines = c.lines; voice = c.voice; console.log(`voice: ${vo} (timings cached)`); }
+  else {
+    const r = syncVo(vo, texts, path.join(out, "vo"));
+    lines = r.lines; voice = r.voice;
+    fs.writeFileSync(cache, JSON.stringify({ stamp, lines, voice }));
+    console.log(r.method === "whisper" ? `voice: ${vo} — whisper matched all but ${r.missed} word(s)` : `voice: ${vo} — whisper.cpp not found: sentences laid onto the speech runs (sentence starts ≈ exact, words paced)`);
+    if (r.missed > texts.join(" ").split(/\s+/).length * 0.15) console.log(`! many words not matched: is the recording this script?\n  heard: ${r.heard}`);
+  }
+} else {
+  lines = paceLines(texts);
+  console.log("voice: none yet — sentences paced at 2.75 words/s (put the recording at " + path.join(dir, "vo.mp3") + ")");
+}
+
+// ---------------------------------------------------------------- plan
+const silent = flag("--silent");
+const wide = flag("--wide");
+const wantSound = !silent && (flag("--preview") || flag("--final"));
+const audio = wantSound ? `stories/${id}/mix.wav` : undefined;
+const plan = buildPlan(story, lines, D, { audio, aspect: wide ? 16 / 9 : 9 / 16 });
+const cuts = plan.shots.slice(1).map((s) => s.t0.toFixed(3)).join(",");
+console.log(`\n"${plan.title}" — ${plan.shots.length} shots, ${plan.duration}s`);
+plan.shots.forEach((S, i) => {
+  const st = stateAt(S, S.t1 - S.t0);
+  const built = S.parts.filter((p) => p.build).map((p) => `+${p.key}`), anim = S.anims.map((a) => `${a.what}→${a.to}`);
+  console.log(`${String(i + 1).padStart(2)}  ${S.t0.toFixed(2).padStart(6)}–${S.t1.toFixed(2).padEnd(6)} ${S.kind.padEnd(8)} ${S.rain[1] ? "rain " : ""}${[...built, ...anim].join(" ") || "·"}${S.worker ? `  worker:${S.worker.do}` : ""}${S.pins.length ? `  pins:${S.pins.map((p) => p.text).join("/")}` : ""}${S.marks.length ? `  marks:${S.marks.map((m) => m.use.split(".")[1]).join("/")}` : ""}\n      ${lines[S.line0].text.slice(0, 86)}   [${st.parts.map((p) => p.key).join(" ")}]`);
+});
+if (plan.warnings.length) console.log(`\n! ${plan.warnings.length} warning(s):\n  ` + plan.warnings.join("\n  "));
+else console.log("\nno warnings");
+
+if (wantSound) {
+  const r = buildSound(plan, D, { voice, outDir: path.join(out, "sound"), mixFile: path.join("public", audio), music: !flag("--no-music") });
+  console.log(`sound: public/${audio}  ${r.lufs} LUFS  ${r.peak} dBTP  (${r.events.length} cues)`);
+}
+const planFile = path.join(out, wide ? "plan-wide.json" : "plan.json"), propsFile = path.join(out, wide ? "props-wide.json" : "props.json");
+fs.writeFileSync(planFile, JSON.stringify(plan));
+fs.writeFileSync(propsFile, JSON.stringify({ plan }));
+if (flag("--plan")) process.exit(plan.warnings.length ? 2 : 0);
+
+const run = (cmd, a) => { const r = spawnSync(cmd, a, { stdio: "inherit" }); if (r.status) process.exit(r.status); };
+const qa = (file) => {
+  for (const s of ["qa-blink.mjs", "qa-flicker.mjs"]) {
+    const r = spawnSync("node", [path.join("scripts", s), file, cuts, ...(s === "qa-flicker.mjs" ? [path.join(out, wide ? "flicker-wide" : "flicker")] : [])], { encoding: "utf8" });
+    console.log(r.stdout.trim().split("\n").map((l) => l.slice(0, 110)).join("\n"));
+  }
+};
+const gateDir = path.join(out, wide ? "qa-gate-wide" : "qa-gate");
+const gate = { comp: wide ? "BedahPreviewWide" : "BedahPreview", cuts: plan.shots.slice(1).map((s) => s.t0), out: gateDir, props: propsFile };
+if (flag("--stills")) run("node", ["scripts/stills.mjs", path.join(out, wide ? "stills-wide" : "stills"), val("--stills"), wide ? "BedahPreviewWide" : "BedahPreview", "1", planFile]);
+if (flag("--preview")) {
+  const big = path.join(out, "_ss.mp4"), file = path.join(out, wide ? `${id}_preview_960x540.mp4` : `${id}_preview_540x960.mp4`);
+  run("npx", ["remotion", "render", "src/index.ts", wide ? "BedahPreviewSSWide" : "BedahPreviewSS", big, `--props=${propsFile}`, "--concurrency=3", "--crf=12", "--log=error"]);
+  execFileSync("ffmpeg", ["-v", "error", "-y", "-i", big, "-vf", wide ? "scale=960:540:flags=lanczos" : "scale=540:960:flags=lanczos", "-c:v", "libx264", "-crf", "17", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", file]);
+  fs.rmSync(big);
+  console.log(`\npreview: ${file}`);
+  qa(file);
+  if (!flag("--no-qa")) sceneGate({ ...gate, force: true }); // a report: fix every FAIL before the preview is shown
+}
+if (flag("--final")) {
+  if (!flag("--no-qa")) sceneGate({ ...gate, force: flag("--force-qa") });
+  const file = path.join(out, wide ? `${id}_1920x1080_60fps.mp4` : `${id}_1080x1920_60fps.mp4`);
+  run("npx", ["remotion", "render", "src/index.ts", wide ? "BedahFinalWide" : "BedahFinal", file, `--props=${propsFile}`, "--concurrency=3", "--crf=16", "--log=error"]);
+  console.log(`\nfinal: ${file}`);
+  qa(file);
+  if (!flag("--no-qa") && deliveryScan({ file, cuts: gate.cuts, out: path.join(gateDir, "delivered") }) === "FAIL") {
+    console.error(`✗ the delivered film has a hard glitch (see ${path.join(gateDir, "delivered")}) — fix it before delivery`);
+    process.exitCode = 1;
+  }
+}
+
+==== 13698 project/src/director/plan.ts
+// BEDAH director — compiles a Story into a Plan: cut times from the sentence timing, the state of the build at
+// every cut, arrivals and parameter changes inside each shot, a camera per shot, worker, pins, marks, weather.
+// Pure TypeScript: runs in node (scripts/make.mjs) and in the browser (Film.tsx reads the same helpers).
+
+import { boxAround, frame, unionBox } from "./camera.ts";
+import type { Box, DomainMeta, MarkGeo, PAnim, PPart, PShot, Params, Plan, ShotKind, ShotSpec, Story, Timed, V3, When, Word } from "./types.ts";
+
+/** a cut lands just before its sentence starts */
+export const LEAD = 0.16;
+const c01 = (x: number) => (x < 0 ? 0 : x > 1 ? 1 : x);
+const sm = (x: number) => { const t = c01(x); return t * t * (3 - 2 * t); };
+const norm = (w: string) => w.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9-]/g, "");
+
+// ------------------------------------------------------------------ timing without a voice
+/** Evenly paced words for a sentence (longer words and punctuation take longer). */
+export const paceWords = (text: string, t0: number, t1: number): Word[] => {
+  const raw = text.split(/\s+/).filter(Boolean);
+  const weights = raw.map((w) => 0.55 + w.replace(/[,.?!]/g, "").length * 0.085 + (/[,.?!]$/.test(w) ? 0.5 : 0));
+  const tot = weights.reduce((x, y) => x + y, 0);
+  let acc = 0;
+  return raw.map((w, i) => { const t = t0 + ((t1 - t0) * acc) / tot; acc += weights[i]; return { w, t }; });
+};
+/** Sentence timing at a natural speaking rate, for previews before the voice-over exists. */
+export const paceLines = (texts: string[], wps = 2.75, gap = 0.42, start = 0.3): Timed[] => {
+  let t = start;
+  return texts.map((text) => {
+    const n = text.split(/\s+/).length;
+    const commas = (text.match(/,/g) ?? []).length, stops = (text.slice(0, -1).match(/[.?!]/g) ?? []).length;
+    const d = n / wps + commas * 0.16 + stops * 0.3;
+    const line = { text, t0: t, t1: t + d, words: paceWords(text, t, t + d) };
+    t += d + gap;
+    return line;
+  });
+};
+
+// ------------------------------------------------------------------ references
+/** "name", "name#2", "name:param=1,other=0.5" → key (name#id), part name, parameter overrides */
+export const parseRef = (ref: string): { key: string; name: string; params: Params } => {
+  const [key, rest = ""] = ref.split(":");
+  const params: Params = {};
+  for (const kv of rest.split(",").filter(Boolean)) { const [k, v] = kv.split("="); params[k.trim()] = Number(v); }
+  return { key: key.trim(), name: key.split("#")[0].trim(), params };
+};
+
+type Live = { key: string; name: string; params: Params };
+const find = (parts: { key: string; name: string }[], id: string) => parts.findIndex((p) => p.key === id) >= 0 ? parts.findIndex((p) => p.key === id) : parts.findIndex((p) => p.name === id);
+
+/** Parameters and arrival of every part, and the globals, at `s` seconds into a shot. */
+export const stateAt = (shot: PShot, s: number) => {
+  const globals: Params = { ...shot.globals };
+  const parts = shot.parts.map((p) => ({ key: p.key, name: p.name, params: { ...p.params }, e: p.build ? p.build.from + (1 - p.build.from) * c01((s - p.build.a) / Math.max(1e-3, p.build.b - p.build.a)) : p.e0 }));
+  for (const an of shot.anims) {
+    const k = sm((s - an.a) / Math.max(1e-3, an.b - an.a));
+    const v = an.from + (an.to - an.from) * k;
+    const [who, what] = an.what.split(".");
+    if (who === "g") globals[what] = v;
+    else { const i = find(parts, who); if (i >= 0) parts[i].params[what] = v; }
+  }
+  return { parts, globals };
+};
+
+/** World position of "part.anchor" in a resolved state (null when the part or anchor is not there). */
+export const anchorAt = (D: DomainMeta, st: ReturnType<typeof stateAt>, ref: string): V3 | null => {
+  const [who, name] = ref.split(".");
+  const i = find(st.parts, who);
+  if (i < 0) return null;
+  const M = D.parts[st.parts[i].name];
+  return M?.anchors?.({ ...M.params, ...st.parts[i].params }, st.globals)[name] ?? null;
+};
+/** Annotation geometry of "part.mark" in a resolved state. */
+export const markAt = (D: DomainMeta, st: ReturnType<typeof stateAt>, ref: string): MarkGeo | null => {
+  const [who, name] = ref.split(".");
+  const i = find(st.parts, who);
+  if (i < 0) return null;
+  const M = D.parts[st.parts[i].name];
+  return M?.marks?.({ ...M.params, ...st.parts[i].params }, st.globals)[name] ?? null;
+};
+
+// ------------------------------------------------------------------ compile
+export const buildPlan = (story: Story, lines: Timed[], D: DomainMeta, opts: { audio?: string; aspect?: number } = {}): Plan => {
+  const warnings: string[] = [];
+  const warn = (i: number, m: string) => warnings.push(`shot ${i + 1}: ${m}`);
+  const duration = Math.ceil((lines[lines.length - 1].t1 + 1.3) * 10) / 10;
+
+  // ---- pass 1: which shots, when
+  type Raw = { spec: ShotSpec; line0: number; line1: number; t0: number };
+  const raws: Raw[] = [];
+  const wordIn = (l0: number, l1: number, prefix: string, after = -1): number | null => {
+    const n = norm(prefix);
+    for (let l = l0; l <= l1; l++) for (const w of lines[l].words) if (w.t >= after && norm(w.w).startsWith(n)) return w.t;
+    return null;
+  };
+  story.lines.forEach((L, i) => {
+    if (L.same && raws.length) {
+      const prev = raws[raws.length - 1];
+      prev.line1 = i;
+      for (const k of ["pin", "mark", "tag", "build", "set"] as const) if (L[k]) (prev.spec as Record<string, unknown[]>)[k] = [...((prev.spec[k] as unknown[]) ?? []), ...(L[k] as unknown[])];
+      return;
+    }
+    raws.push({ spec: L, line0: i, line1: i, t0: raws.length ? lines[i].t0 - LEAD : 0 });
+    for (const T of L.then ?? []) {
+      const w = wordIn(i, i, T.at);
+      if (w === null) warnings.push(`line ${i + 1}: "then" word "${T.at}" is not in the sentence`);
+      raws.push({ spec: T, line0: i, line1: i, t0: (w ?? (lines[i].t0 + lines[i].t1) / 2) - LEAD });
+    }
+  });
+
+  // ---- pass 2: state, arrivals, camera
+  let live: Live[] = [];
+  let globals: Params = { ...D.globals };
+  let rain = 0;
+  const put = (ref: string, i: number): Live | null => {
+    const r = parseRef(ref);
+    const M = D.parts[r.name];
+    if (!M) { warn(i, `unknown part "${r.name}" (see --parts)`); return null; }
+    for (const k of Object.keys(r.params)) if (!(k in (M.params ?? {}))) warn(i, `part "${r.name}" has no parameter "${k}"`);
+    if (M.slot) live = live.filter((p) => p.key === r.key || D.parts[p.name]?.slot !== M.slot);
+    const at = live.findIndex((p) => p.key === r.key);
+    const item = { key: r.key, name: r.name, params: { ...(at >= 0 ? live[at].params : {}), ...r.params } };
+    if (at >= 0) live[at] = item;
+    else live.push(item);
+    return item;
+  };
+  for (const ref of story.start ?? []) put(ref, -1);
+
+  const shots: PShot[] = raws.map((R, i) => {
+    const S = R.spec;
+    const t0 = R.t0, t1 = raws[i + 1]?.t0 ?? duration, d = t1 - t0;
+    const when = (w: When | undefined, def: number) => {
+      if (w === undefined) return def;
+      if (typeof w === "number") return c01(w) * d;
+      const t = wordIn(R.line0, R.line1, w, t0 - 0.05);
+      if (t === null) { warn(i, `word "${w}" is not spoken in this shot`); return def; }
+      return Math.max(0, t - t0);
+    };
+    // state changes at the cut
+    if (S.only) { live = []; for (const r of S.only) put(r, i); }
+    for (const r of S.remove ?? []) { const k = find(live, parseRef(r).key); if (k >= 0) live.splice(k, 1); else warn(i, `remove: "${r}" is not there`); }
+    for (const r of S.add ?? []) put(r, i);
+    // arrivals
+    const builds = (S.build ?? []).map((b) => (typeof b === "string" ? { part: b } : b));
+    const built: PPart["build"][] = [];
+    const builtKeys: string[] = [];
+    builds.forEach((b, k) => {
+      const item = put(b.part, i);
+      if (!item) return;
+      const M = D.parts[item.name];
+      let a = when(b.at, d * (0.08 + (0.55 * k) / Math.max(1, builds.length)));
+      const natural = M.build ?? 1.2;
+      const len = b.over !== undefined ? b.over * d : Math.min(natural, Math.max(0.35, d - a - 0.3));
+      // "at" a word: the part is landing as the word is said, so it sets off a little earlier
+      if (typeof b.at === "string") a = Math.max(0, a - Math.min(0.45, len * 0.6));
+      built.push({ a, b: Math.min(d - 0.05, a + len), from: b.from ?? 0 });
+      builtKeys.push(item.key);
+    });
+    // parameter changes
+    const anims: PAnim[] = [];
+    const setNow = (what: string, v: number) => {
+      const [who, name] = what.split(".");
+      if (who === "g") { if (!(name in D.globals)) warn(i, `no global "${name}"`); globals = { ...globals, [name]: v }; return; }
+      const k = find(live, who);
+      if (k < 0) { warn(i, `set: part "${who}" is not there`); return; }
+      if (!(name in (D.parts[live[k].name].params ?? {}))) warn(i, `part "${live[k].name}" has no parameter "${name}"`);
+      live[k] = { ...live[k], params: { ...live[k].params, [name]: v } };
+    };
+    const getNow = (what: string) => {
+      const [who, name] = what.split(".");
+      if (who === "g") return globals[name] ?? 0;
+      const k = find(live, who);
+      return k < 0 ? 0 : live[k].params[name] ?? D.parts[live[k].name].params?.[name] ?? 0;
+    };
+    const after: [string, number][] = [];
+    for (const st of S.set ?? []) {
+      if (st.over === undefined && st.at === undefined) { setNow(st.what, st.to); continue; }
+      const from = st.from ?? getNow(st.what);
+      const a = when(st.at, d * 0.14), b = Math.min(d - 0.05, a + (st.over ?? 0.5) * d);
+      setNow(st.what, from);
+      anims.push({ what: st.what, from, to: st.to, a, b });
+      after.push([st.what, st.to]);
+    }
+    globals = { ...globals, ...(D.derive?.(live.map((p) => p.name), globals) ?? {}) };
+    const parts: PPart[] = live.map((p) => {
+      const bi = builtKeys.indexOf(p.key);
+      return { key: p.key, name: p.name, params: { ...D.parts[p.name].params, ...p.params }, e0: 1, ...(bi >= 0 ? { e0: built[bi]!.from, build: built[bi] } : {}) };
+    });
+    const shotGlobals = { ...globals };
+    for (const [what, v] of after) setNow(what, v);
+    globals = { ...globals, ...(D.derive?.(live.map((p) => p.name), globals) ?? {}) };
+
+    // what the camera frames (measured on the state at the end of the shot)
+    const endParams = (key: string) => { const k = find(live, key); return k < 0 ? null : { M: D.parts[live[k].name], p: { ...D.parts[live[k].name].params, ...live[k].params } }; };
+    const kind: ShotKind = S.shot ?? (i === 0 || i === raws.length - 1 ? "wide" : builds.length ? "close" : "front");
+    const boxOf = (ref: string): Box | null => {
+      const [who, name] = ref.split(".");
+      const e = endParams(who);
+      if (!e) { warn(i, `focus: "${who}" is not there`); return null; }
+      if (!name) return e.M.box(e.p, globals);
+      const a = e.M.anchors?.(e.p, globals)[name];
+      if (!a) { warn(i, `focus: part "${who}" has no anchor "${name}"`); return null; }
+      return boxAround(a, kind === "detail" ? 0.6 : 1.15);
+    };
+    const refs = S.focus ? (Array.isArray(S.focus) ? S.focus : [S.focus]) : kind !== "wide" && kind !== "front" && builtKeys.length ? builtKeys : [];
+    const boxes = refs.map(boxOf).filter((b): b is Box => !!b);
+    const box = boxes.length ? unionBox(boxes) : D.subject(live.map((p) => p.name), globals);
+    const side: 1 | -1 = S.side ? (S.side === "right" ? 1 : -1) : i % 2 ? 1 : -1;
+    const move = S.move ?? (i === raws.length - 1 ? "pull" : "push");
+    const SC = (opts.aspect ?? 9 / 16) > 1 && S.camWide ? S.camWide : S.cam;
+    const cam = SC ? { a: SC.from, b: SC.to ?? SC.from, move } : { ...frame(kind, box, side, move, D.cutZ, i, opts.aspect ?? 9 / 16), move };
+
+    // worker
+    let worker: PShot["worker"];
+    if (S.worker) {
+      const W = typeof S.worker === "string" ? { do: S.worker } : S.worker;
+      if (!D.acts.includes(W.do)) warn(i, `worker cannot "${W.do}" (acts: ${D.acts.join(", ")})`);
+      const onKey = W.on ?? (refs[0] ? refs[0].split(".")[0] : builtKeys[0]);
+      const e = onKey ? endParams(onKey) : null;
+      const spot = e?.M.work?.(e.p, globals);
+      if (W.at) worker = { pos: W.at, face: W.face ?? spot?.face ?? 0, do: W.do, reach: spot?.reach, y: spot?.y };
+      else if (spot) worker = { ...spot, do: W.do, face: W.face ?? spot.face };
+      else warn(i, `worker: give "at": [x, z] (no work spot known for "${onKey ?? "this shot"}")`);
+    }
+
+    const target = S.weather === "rain" ? 1 : 0;
+    const shot: PShot = {
+      t0, t1, line0: R.line0, line1: R.line1, kind, parts, globals: shotGlobals, anims, cam, rain: [rain, target], worker,
+      pins: (S.pin ?? []).map((p) => ({ text: p.text, on: p.on, a: when(p.at ?? p.text.split(/[\s-]/)[0], d * 0.5), dx: p.dx, dy: p.dy })),
+      marks: (S.mark ?? []).map((m) => ({ use: m.use, a: when(m.at, d * 0.42) })),
+      tags: (S.tag ?? []).map((g) => ({ text: g.text, on: g.on, a: when(g.at, d * 0.5) })),
+    };
+    rain = target;
+    // references must resolve at the end of the shot
+    const end = stateAt(shot, d);
+    for (const p of shot.pins) { if (!anchorAt(D, end, p.on)) warn(i, `pin "${p.text}": nothing at "${p.on}"`); p.a = Math.min(p.a, Math.max(0, d - 0.9)); }
+    for (const g of shot.tags) { if (!anchorAt(D, end, g.on)) warn(i, `tag "${g.text}": nothing at "${g.on}"`); g.a = Math.min(g.a, Math.max(0, d - 0.9)); }
+    for (const m of shot.marks) { if (!markAt(D, end, m.use)) warn(i, `mark: nothing called "${m.use}"`); m.a = Math.min(m.a, Math.max(0, d - 1.0)); }
+    if (d < 1.2) warn(i, `only ${d.toFixed(2)} s long`);
+    return shot;
+  });
+
+  return { id: story.id, title: story.title ?? story.id, domain: story.domain, duration, audio: opts.audio, aspect: opts.aspect, lines, shots, warnings };
+};
+
+==== 11405 project/src/domains/rumah/meta.ts
+// Domain "rumah" — a small house on the BEDAH slab and everything that can be built on it so far (roof topic):
+// bodies, roof frames, coverings, the tile maker's corner. Pure data + maths; the pictures are in view.tsx.
+
+import { HUT, PITCH, TILE, ridgeForWalls, roofForSlope, roofFrame, trussJoints, type RoofDims } from "../../kits/bedah/roofmath.ts";
+import type { Box, DomainMeta, MarkGeo, Params, PartMeta, V3 } from "../../director/types.ts";
+import { PONDASI } from "./pondasi.ts";
+
+export const CUT_Z = 6.2;
+export const TRUSS_XS = [-2.1, 0, 2.1];
+
+/** The roof every roof part sits on: the light bamboo roof, or (timber house) the raised truss roof. */
+export const roofOf = (g: Params): RoofDims =>
+  g.kayu
+    ? { hw: 2.5, ridgeY: ridgeForWalls(HUT.hz, HUT.plate, 2.0, 2.0 * g.slope), run: 2.0, drop: 2.0 * g.slope }
+    : { ...roofForSlope(g.slope), ...(g.sag ? { sag: g.sag } : {}) };
+
+const houseBox = (g: Params): Box => ({ min: [-2.55, 0, -2.05], max: [2.55, roofOf(g).ridgeY + 0.2, 2.05] });
+const roofBox = (g: Params): Box => { const r = roofOf(g); return { min: [-2.55, r.ridgeY - r.drop - 0.1, -2.05], max: [2.55, r.ridgeY + 0.25, 2.05] }; };
+const frontSlope = (g: Params): Box => { const r = roofOf(g); return { min: [-2.55, r.ridgeY - r.drop - 0.1, 0], max: [2.55, r.ridgeY + 0.2, 2.05] }; };
+const around = (x: number, z: number, r: number, h: number): Box => ({ min: [x - r, 0, z - r], max: [x + r, h, z + r] });
+
+// the roof angle, drawn at the right gable end
+const angle = (g: Params) => {
+  const th = Math.atan(g.slope), x = 2.62, R = 1.0;
+  const C: V3 = [x, HUT.plate + (g.kayu ? roofOf(g).ridgeY - HUT.hz * g.slope - HUT.plate : 0), HUT.hz];
+  const arc: V3[] = Array.from({ length: 13 }, (_, i) => { const a = (th * i) / 12; return [x, C[1] + R * Math.sin(a), C[2] - R * Math.cos(a)] as V3; });
+  return { C, arc, base: [C, [x, C[1], C[2] - 1.45] as V3], label: [x, C[1] + 1.42 * Math.sin(th * 0.5), C[2] - 1.42 * Math.cos(th * 0.5)] as V3 };
+};
+const bodyAnchors = (_p: Params, g: Params): Record<string, V3> => ({
+  pintu: [0.975, 1.0, HUT.hz], jendela: [-1.025, 1.3, HUT.hz], dinding: [-0.4, 1.2, HUT.hz], puncak: [0, roofOf(g).ridgeY, 0],
+  "sudut-label": angle(g).label, ruang: [0, 1.2, 0],
+});
+const bodyMarks = (_p: Params, g: Params): Record<string, MarkGeo> => ({
+  "sudut-dasar": [{ pts: angle(g).base, style: "dash" }],
+  sudut: [{ pts: angle(g).arc, style: "line" }],
+});
+
+const PARTS: Record<string, PartMeta> = {
+  ...PONDASI,
+  // ---------------------------------------------------------------- bodies
+  gubuk: {
+    about: "rumah kecil tiang bambu, dinding gedek (anyaman bambu), pintu + jendela",
+    slot: "badan", params: { depan: 1, segitiga: 1 },
+    box: (_p, g) => houseBox(g), anchors: bodyAnchors, marks: bodyMarks,
+  },
+  "rumah-kayu": {
+    about: "rumah yang sama dengan tiang kayu; atapnya otomatis jadi atap kuda-kuda yang lebih tinggi. depan=0 → dinding depan dibuka (potongan), buka=1 → dalamnya terlihat",
+    slot: "badan", params: { depan: 1, segitiga: 0, buka: 1 },
+    box: (_p, g) => houseBox(g), anchors: bodyAnchors, marks: bodyMarks,
+  },
+  // ---------------------------------------------------------------- roof frames
+  "rangka-bambu": {
+    about: "rangka atap bambu (bubungan, usuk, reng belah); g.sag membuatnya melendut. reng=0 → tanpa reng (untuk rumbia)",
+    slot: "rangka", params: { reng: 1 }, build: 1.4, sound: "wood",
+    box: (_p, g) => roofBox(g),
+    marks: (_p, g) => {
+      const top = roofForSlope(g.slope).ridgeY + 0.2;
+      return {
+        "lendut-garis": [{ pts: [[-2.5, top, 0], [2.5, top, 0]], style: "dash" }],
+        "lendut-panah": [{ pts: [[0, top - 0.03, 0], [0, top - Math.max(0.16, g.sag) - 0.03, 0]], style: "arrow" }],
+      };
+    },
+  },
+  "kuda-kuda": {
+    about: "tiga kuda-kuda kayu (balok tarik, kaki kuda-kuda, tiang raja, skor); perlu rumah-kayu",
+    slot: "rangka", build: 2.6, sound: "wood",
+    box: (_p, g) => roofBox(g),
+    anchors: (_p, g) => { const J = trussJoints(roofOf(g), HUT.plate); return { puncak: [TRUSS_XS[2] + 0.04, J.apexY + 0.05, 0], tengah: [TRUSS_XS[2], (J.apexY + J.seatY) / 2, 0] }; },
+    marks: (_p, g) => {
+      const J = trussJoints(roofOf(g), HUT.plate), x = TRUSS_XS[2] + 0.06;
+      const ry = (z: number) => J.apexY - Math.abs(z) * g.slope;
+      return {
+        segitiga: [{ pts: [[x, J.seatY - 0.075, J.footZ + 0.1], [x, J.apexY + 0.05, 0], [x, J.seatY - 0.075, -J.footZ - 0.1]], style: "outline" }],
+        "beban-atas": [-1.15, -0.7, -0.25, 0.25, 0.7, 1.15].map((z) => ({ pts: [[x, ry(z) + 0.95, z], [x, ry(z) + 0.3, z]] as V3[], style: "arrow" as const })),
+        "beban-miring": [1, -1].map((s) => ({ pts: [[x, J.apexY + 0.16, s * 0.12], [x, J.seatY + 0.2, s * (J.footZ - 0.02)]] as V3[], style: "arrow" as const })),
+        "beban-tiang": [1, -1].map((s) => ({ pts: [[x + 0.1, J.seatY - 0.2, s * (HUT.hz + 0.22)], [x + 0.1, 0.35, s * (HUT.hz + 0.22)]] as V3[], style: "arrow" as const })),
+        "bukan-tengah": [
+          { pts: [[x, J.seatY - 0.25, 0], [x, 1.55, 0]], style: "dash" },
+          { pts: [[x, 1.42, -0.16], [x, 1.1, 0.16]], style: "line" },
+          { pts: [[x, 1.42, 0.16], [x, 1.1, -0.16]], style: "line" },
+        ],
+      };
+    },
+  },
+  gording: {
+    about: "balok memanjang di atas kuda-kuda (termasuk papan bubungan). sisi=-1 → hanya lereng belakang",
+    params: { sisi: 0 }, build: 0.75, sound: "wood", box: (_p, g) => roofBox(g),
+    anchors: (_p, g) => { const f = roofFrame(roofOf(g)); return { tengah: f.pt(1, 1.75, f.sl * 0.34, -0.1) }; },
+  },
+  usuk: {
+    about: "kasau kecil dari bubungan ke tepi atap, di atas gording",
+    params: { sisi: 0 }, build: 0.7, sound: "wood", box: (_p, g) => roofBox(g),
+    anchors: (_p, g) => { const f = roofFrame(roofOf(g)); return { tengah: f.pt(1, 0.783, f.sl * 0.52, -0.01) }; },
+  },
+  reng: {
+    about: "bilah kecil melintang di atas usuk, tempat genteng mencantol",
+    params: { sisi: 0 }, build: 0.8, sound: "wood", box: (_p, g) => roofBox(g),
+    anchors: (_p, g) => { const f = roofFrame(roofOf(g)); return { tengah: f.pt(1, -0.5, f.sl - 0.27, 0.03), ujung: f.pt(1, 0.62, f.sl - 0.02 - 2 * TILE.gauge, 0.012) }; },
+  },
+  // ---------------------------------------------------------------- coverings
+  rumbia: {
+    about: "atap daun rumbia berlapis; rot 0…1 = busuk dan berlubang, basah 0…1 = kehujanan",
+    slot: "penutup", params: { rot: 0, basah: 0 }, build: 2.8, sound: "soft",
+    box: (_p, g) => roofBox(g),
+    anchors: (_p, g) => { const f = roofFrame(roofOf(g)); return { lereng: f.pt(1, 0.2, 1.0, 0.1), tepi: f.pt(1, 0, f.sl, 0.05) }; },
+    work: () => ({ pos: [-2.3, 4.75], face: 0.5, do: "ikat" }),
+  },
+  genteng: {
+    about: "genteng tanah liat tumpang-tindih di kedua lereng. sampai=x → hanya sampai x (sisanya terbuka, rangka kelihatan); sisi=-1 → lereng belakang saja",
+    slot: "penutup", params: { sampai: 2.5, sisi: 0 }, build: 3.4, sound: "clay",
+    box: (_p, g) => frontSlope(g),
+    anchors: (p, g) => {
+      const f = roofFrame(roofOf(g));
+      return { lereng: f.pt(1, 0.9, 0.7, 0.06), atas: f.pt(1, 1.2, f.sl * 0.36, 0.1), tepi: f.pt(1, 0, f.sl, 0.1), puncak: [0.2, roofOf(g).ridgeY - 0.05, 0], potongan: f.pt(1, p.sampai, f.sl * 0.58, 0.05), celah: f.pt(-1, 0.3, 0.15, 0.1) };
+    },
+    marks: (_p, g) => {
+      const f = roofFrame(roofOf(g));
+      return {
+        alir: [-1.5, -0.7, 0.1].map((x) => ({ pts: [0.4, 0.85, 1.3, 1.75, f.sl + 0.02].filter((d) => d <= f.sl + 0.02).map((d) => f.pt(1, x, d, 0.1)), style: "arrow" as const })),
+        balik: [1.9, 1.2, 0.5].map((x) => ({ pts: [0.92, 0.72, 0.52].map((k) => f.pt(1, x, f.sl * k, 0.1)), style: "arrow" as const })),
+        celah: [{ pts: [f.pt(1, -1.3, 0.15, 0.1), f.pt(1, 2.2, 0.15, 0.1), f.pt(-1, 2.2, 0.15, 0.1), f.pt(-1, -1.3, 0.15, 0.1)], style: "dashloop" }],
+      };
+    },
+    work: (_p, g) => { const r = roofOf(g); return { pos: [-0.9, 2.56], face: Math.PI, do: "pasang", reach: [0, r.ridgeY - r.drop - 0.17, 0] }; },
+  },
+  kerpus: {
+    about: "genteng bubungan yang menutup celah di puncak",
+    params: { sampai: 2.5 }, build: 1.7, sound: "clay",
+    box: (_p, g) => { const r = roofOf(g); return { min: [-2.5, r.ridgeY - 0.5, -0.9], max: [2.5, r.ridgeY + 0.3, 0.9] }; },
+    anchors: (_p, g) => ({ tengah: [-0.9, roofOf(g).ridgeY + 0.17, 0] }),
+  },
+  plafon: {
+    about: "papan langit-langit di bawah balok tarik",
+    build: 1.6, sound: "wood",
+    box: (_p, g) => ({ min: [-2.1, 0, -1.5], max: [2.1, roofOf(g).ridgeY + 0.15, 1.5] }),
+    anchors: (_p, g) => { const y = trussJoints(roofOf(g), HUT.plate).seatY - 0.15; return { tepi: [-1.75, y - 0.03, 1.3], tengah: [0, y, 0] }; },
+    marks: (_p, g) => {
+      const y = trussJoints(roofOf(g), HUT.plate).seatY - 0.15;
+      return { panas: [-1.3, -0.3, 0.7].map((x) => ({ pts: [0, 1, 2, 3, 4].map((k) => [x + (k % 2 ? 0.09 : -0.09) * (k > 0 && k < 4 ? 1 : 0), y + 0.82 - k * 0.17, 0.4] as V3), style: "arrow" as const })) };
+    },
+    work: () => ({ pos: [1.0, 0.2], face: -0.35, do: "lihat-atas", y: 0.045 }),
+  },
+  // ---------------------------------------------------------------- the tile maker's corner
+  cetakan: {
+    about: "cetakan kayu berisi tanah liat + gundukan tanah liat (pojok kanan halaman)",
+    box: () => ({ min: [4.4, 0, 2.3], max: [6.9, 1.3, 4.3] }),
+    anchors: () => ({ cetakan: [5.3, 0.1, 3.3] }),
+    work: () => ({ pos: [5.6, 3.0], face: -0.75, do: "cetak" }),
+  },
+  jemuran: {
+    about: "genteng mentah dijemur berjajar di tanah; matang 0…1 = warna setelah dibakar",
+    params: { matang: 0 }, build: 3.0, sound: "clay",
+    box: () => ({ min: [2.4, 0, 3.8], max: [4.7, 0.2, 5.4] }),
+  },
+  tungku: {
+    about: "tungku bata: api 0…1 menyalakan lubang api, matang 0…1 mengubah tumpukan genteng dari abu-abu ke merah bata",
+    params: { api: 0, matang: 0 },
+    box: () => ({ min: [7.05, 0, 0.1], max: [9.55, 2.25, 2.3] }),
+    anchors: () => ({ mulut: [8.1, 1.25, 2.0] }),
+  },
+  tumpukan: {
+    about: "tumpukan genteng jadi di tanah (x, z, ry = letak dan arah; n per baris, baris)",
+    params: { x: 5.6, z: 3.4, ry: -0.5, n: 20, baris: 2 }, scenery: true,
+    box: (p) => around(p.x, p.z, 0.8, 0.4),
+  },
+  "panel-rumbia": {
+    about: "anyaman daun rumbia di tanah (x, z, ry; n = jumlah yang ditumpuk)",
+    params: { x: 0.9, z: 4.3, ry: -0.25, n: 1 }, scenery: true,
+    box: (p) => around(p.x, p.z, 0.9, 0.2),
+  },
+};
+
+export const RUMAH: DomainMeta = {
+  id: "rumah",
+  about: "Rumah kecil di halaman desa, tanah dipotong di depan. Topik sejauh ini: atap (rumbia → genteng → kuda-kuda → plafon) dan pondasi (tembok → galian → batu kali → sloof).",
+  globals: { slope: PITCH, sag: 0, kayu: 0 },
+  derive: (present) => ({ kayu: present.includes("rumah-kayu") ? 1 : 0 }),
+  subject: (present, g) => {
+    if (present.some((n) => PARTS[n]?.slot === "badan")) return houseBox(g);
+    const bs = present.filter((n) => !PARTS[n].scenery).map((n) => PARTS[n].box(PARTS[n].params ?? {}, g));
+    return bs.length ? { min: [Math.min(...bs.map((b) => b.min[0])), 0, Math.min(...bs.map((b) => b.min[2]))], max: [Math.max(...bs.map((b) => b.max[0])), Math.max(...bs.map((b) => b.max[1])), Math.max(...bs.map((b) => b.max[2]))] } : houseBox(g);
+  },
+  cutZ: CUT_Z,
+  parts: PARTS,
+  acts: ["ikat", "cetak", "pasang", "lihat", "lihat-atas", "berdiri"],
+  paramSound: { "tungku.api": "fire", "g.sag": "thud" },
+};
+
+==== 13950 project/src/domains/rumah/props.tsx
+// Props of the "rumah" domain that are not part of the generic kit: rain, eave drips, thatch panels on the ground,
+// the tile maker's corner (mould, clay, drying rows) and the brick kiln.
+
+import React, { useLayoutEffect, useMemo, useRef } from "react";
+import { BackSide, BoxGeometry, Color, ExtrudeGeometry, Float32BufferAttribute, InstancedMesh, MeshBasicMaterial, Object3D, Path, PlaneGeometry, Shape, SphereGeometry } from "three";
+import { FX_LAYER } from "../../kits/bedah/Stage.tsx";
+import { Beam, boxUV, Culm, planeUV } from "../../kits/bedah/geo.tsx";
+import { flat, mat } from "../../kits/bedah/mats.ts";
+import { bamboo, brick, hash2, plaster, thatch, wood } from "../../kits/bedah/tex.ts";
+import { TILE, tileColor, tileGeometry, tileMaterial } from "../../kits/bedah/roofing.tsx";
+import type { V3 } from "../../kits/bedah/cam.ts";
+
+const c01 = (x: number) => (x < 0 ? 0 : x > 1 ? 1 : x);
+const smooth = (x: number) => { const t = c01(x); return t * t * (3 - 2 * t); };
+
+// ------------------------------------------------------------------ rain
+/** Slanted streaks falling through a box around `center`. `amount` 0…1 thins them in without a pop. */
+export const Rain: React.FC<{ t: number; amount: number; center: V3; size?: V3; count?: number }> = ({ t, amount, center, size = [18, 11, 16], count = 800 }) => {
+  const ref = useRef<InstancedMesh>(null);
+  const G = useMemo(() => ({ geo: new BoxGeometry(0.007, 1.9, 0.007), m: new MeshBasicMaterial({ color: "#dfe6f0", transparent: true, opacity: 0.3, depthWrite: false, fog: false }) }), []);
+  useLayoutEffect(() => {
+    const im = ref.current!;
+    im.layers.set(FX_LAYER);
+    const o = new Object3D();
+    const speed = 7.5;
+    for (let i = 0; i < count; i++) {
+      const fall = (hash2(i, 1, 3) * size[1] + t * speed * (0.85 + 0.3 * hash2(i, 2, 3))) % size[1];
+      const y = center[1] + size[1] / 2 - fall;
+      o.position.set(center[0] + (hash2(i, 3, 3) - 0.5) * size[0] + (size[1] / 2 - fall) * -0.1, y, center[2] + (hash2(i, 4, 3) - 0.5) * size[2]);
+      o.rotation.set(0, 0, -0.1);
+      const on = smooth((amount - hash2(i, 5, 3)) / 0.08); // streaks fade in one by one as the rain builds
+      o.scale.set(on, on * (0.7 + 0.6 * hash2(i, 6, 3)), on);
+      o.updateMatrix();
+      im.setMatrixAt(i, o.matrix);
+    }
+    im.instanceMatrix.needsUpdate = true;
+    G.m.opacity = 0.13 * Math.min(1, amount * 1.5);
+  });
+  return <instancedMesh ref={ref} args={[G.geo, G.m, count]} frustumCulled={false} />;
+};
+
+/** Drops running off an eave edge (a line from a to b), falling to the ground. */
+export const EaveDrips: React.FC<{ t: number; amount: number; a: V3; b: V3; count?: number }> = ({ t, amount, a, b, count = 70 }) => {
+  const ref = useRef<InstancedMesh>(null);
+  const G = useMemo(() => ({ geo: new SphereGeometry(0.006, 6, 5), m: new MeshBasicMaterial({ color: "#e6edf5", transparent: true, opacity: 0.22, depthWrite: false, fog: false }) }), []);
+  useLayoutEffect(() => {
+    const im = ref.current!;
+    im.layers.set(FX_LAYER);
+    const o = new Object3D();
+    const T = Math.sqrt((2 * a[1]) / 9.8);
+    for (let i = 0; i < count; i++) {
+      const k = (i + hash2(i, 1, 9) * 0.8) / count;
+      const tau = (t * 1.0 + hash2(i, 2, 9) * T) % T;
+      const on = smooth((amount - hash2(i, 3, 9)) / 0.1);
+      o.position.set(a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k - 0.5 * 9.8 * tau * tau, a[2] + (b[2] - a[2]) * k);
+      o.scale.set(on, on * (10 + tau * 26), on);
+      o.updateMatrix();
+      im.setMatrixAt(i, o.matrix);
+    }
+    im.instanceMatrix.needsUpdate = true;
+  });
+  return <instancedMesh ref={ref} args={[G.geo, G.m, count]} frustumCulled={false} />;
+};
+
+// ------------------------------------------------------------------ thatch panels (welit) on the ground
+/** A strip of folded palm leaves tied to a bamboo slat, lying flat: slat along local x at the origin, leaves toward +z. */
+export const ThatchPanel: React.FC<{ pos: V3; rotY?: number; w?: number; seed?: number }> = ({ pos, rotY = 0, w = 1.5, seed = 0 }) => {
+  const g = useMemo(() => {
+    const p = planeUV(w, 0.58, seed * 0.43, 0);
+    p.rotateX(-Math.PI / 2);
+    p.translate(0, 0, 0.29);
+    return p;
+  }, [w, seed]);
+  const mTh = mat("thatchFlat", thatch(), { repeat: [1 / 1.15, 1 / 0.58], roughness: 0.95, alphaTest: 0.5, double: true });
+  const mBam = mat("bambooSplit", bamboo({ base: "#d6c08a", dark: "#a98f58" }), { roughness: 0.6 });
+  return (
+    <group position={pos} rotation={[0, rotY, 0]}>
+      <mesh geometry={g} material={mTh} position={[0, 0.034, 0]} castShadow receiveShadow />
+      <Culm a={[-w / 2 - 0.06, 0.05, 0.01]} b={[w / 2 + 0.06, 0.05, 0.01]} r={0.013} material={mBam} seed={seed} />
+    </group>
+  );
+};
+
+// ------------------------------------------------------------------ the tile maker's corner
+/** Wooden mould with a pressed slab of clay in it, and the heap of clay it comes from. */
+export const Mould: React.FC<{ pos: V3; rotY?: number; press?: number }> = ({ pos, rotY = 0, press = 0 }) => {
+  const mWood = mat("mould", wood({ base: "#9c6b3c", dark: "#5a3a20" }), { repeat: [2, 4], roughness: 0.8 });
+  const mClay = mat("clayWet", plaster({ seed: 33, rough: 1.4 }), { repeat: [2, 2], color: "#8a7a66", roughness: 0.7 });
+  const w = 0.3, l = 0.4, hgt = 0.05;
+  return (
+    <group position={pos} rotation={[0, rotY, 0]}>
+      <mesh position={[0, 0.012, 0]} material={mWood} castShadow receiveShadow><boxGeometry args={[w + 0.16, 0.024, l + 0.16]} /></mesh>
+      <Beam a={[-w / 2 - 0.015, 0.024 + hgt / 2, -l / 2 - 0.03]} b={[-w / 2 - 0.015, 0.024 + hgt / 2, l / 2 + 0.03]} w={0.03} h={hgt} material={mWood} seed={1} />
+      <Beam a={[w / 2 + 0.015, 0.024 + hgt / 2, -l / 2 - 0.03]} b={[w / 2 + 0.015, 0.024 + hgt / 2, l / 2 + 0.03]} w={0.03} h={hgt} material={mWood} seed={2} />
+      <Beam a={[-w / 2, 0.024 + hgt / 2, -l / 2 - 0.015]} b={[w / 2, 0.024 + hgt / 2, -l / 2 - 0.015]} w={0.03} h={hgt} material={mWood} seed={3} />
+      <Beam a={[-w / 2, 0.024 + hgt / 2, l / 2 + 0.015]} b={[w / 2, 0.024 + hgt / 2, l / 2 + 0.015]} w={0.03} h={hgt} material={mWood} seed={4} />
+      {/* the slab gets thinner as it is pressed */}
+      <mesh position={[0, 0.024 + (0.034 - press * 0.012) / 2, 0]} material={mClay} receiveShadow><boxGeometry args={[w, 0.034 - press * 0.012, l]} /></mesh>
+    </group>
+  );
+};
+
+export const ClayHeap: React.FC<{ pos: V3; s?: number }> = ({ pos, s = 1 }) => {
+  const mClay = mat("clayHeap", plaster({ seed: 35, rough: 1.6 }), { repeat: [1.5, 1.5], color: "#75675a", roughness: 0.75, bump: 2 });
+  return (
+    <group position={pos} scale={s}>
+      <mesh position={[0, 0.1, 0]} scale={[0.42, 0.24, 0.36]} material={mClay} castShadow receiveShadow><sphereGeometry args={[1, 24, 16]} /></mesh>
+      <mesh position={[0.3, 0.05, 0.16]} scale={[0.2, 0.13, 0.18]} material={mClay} castShadow receiveShadow><sphereGeometry args={[1, 20, 12]} /></mesh>
+    </group>
+  );
+};
+
+/** Freshly pressed tiles laid out to dry in rows on the yard. `count` (fractional) = how many are out. */
+export const DryingTiles: React.FC<{ origin: V3; rotY?: number; cols: number; rows: number; count: number; fired?: number }> = ({ origin, rotY = 0, cols, rows, count, fired = 0 }) => {
+  const ref = useRef<InstancedMesh>(null);
+  const n = cols * rows;
+  useLayoutEffect(() => {
+    const im = ref.current!;
+    const o = new Object3D();
+    const c = new Color();
+    for (let i = 0; i < n; i++) {
+      const cx = i % cols, rz = Math.floor(i / cols);
+      const e = smooth(count - i);
+      o.position.set(cx * 0.32 + (hash2(i, 1, 21) - 0.5) * 0.02, 0.042 + (1 - e) * 0.25, rz * 0.42 + (hash2(i, 2, 21) - 0.5) * 0.02);
+      o.rotation.set(0, (hash2(i, 3, 21) - 0.5) * 0.08, 0);
+      o.scale.setScalar(Math.max(1e-4, e));
+      o.updateMatrix();
+      im.setMatrixAt(i, o.matrix);
+      // the newest ones are still dark and wet
+      tileColor(i + 900, 1 - fired, c);
+      c.multiplyScalar(0.72 + 0.28 * smooth((count - i) / 6));
+      im.setColorAt(i, c);
+    }
+    im.instanceMatrix.needsUpdate = true;
+    im.instanceColor!.needsUpdate = true;
+  });
+  return (
+    <group position={origin} rotation={[0, rotY, 0]}>
+      <instancedMesh ref={ref} args={[tileGeometry(), tileMaterial(), n]} castShadow receiveShadow frustumCulled={false} />
+    </group>
+  );
+};
+
+// ------------------------------------------------------------------ kiln
+/**
+ * Small brick kiln: two fire arches at the bottom, an open loading bay above them stacked with tiles on edge.
+ * `fire` 0…1 lights the arches; `fired` 0…1 sweeps the stack from raw grey clay to terracotta, bottom row first.
+ */
+export const Kiln: React.FC<{ pos: V3; rotY?: number; fire: number; fired: number; t: number }> = ({ pos, rotY = 0, fire, fired, t }) => {
+  const W = 2.5, H = 2.0, D = 1.7, TH = 0.24;
+  const G = useMemo(() => {
+    const s = new Shape();
+    s.moveTo(-W / 2, 0); s.lineTo(W / 2, 0); s.lineTo(W / 2, H); s.lineTo(-W / 2, H); s.closePath();
+    for (const cx of [-0.62, 0.62]) {
+      const a = new Path();
+      a.moveTo(cx - 0.24, 0.0); a.lineTo(cx - 0.24, 0.3); a.absarc(cx, 0.3, 0.24, Math.PI, 0, true); a.lineTo(cx + 0.24, 0.0); a.closePath();
+      s.holes.push(a);
+    }
+    const bay = new Path();
+    bay.moveTo(-0.95, 0.82); bay.lineTo(-0.95, 1.72); bay.lineTo(0.95, 1.72); bay.lineTo(0.95, 0.82); bay.closePath();
+    s.holes.push(bay);
+    const front = new ExtrudeGeometry(s, { depth: TH, bevelEnabled: false, curveSegments: 10 });
+    front.translate(0, 0, D / 2 - TH);
+    // embers: bright at the bed, fading to dark red above (vertex colours × the animated fire colour)
+    const fire = new PlaneGeometry(0.5, 0.4, 1, 4);
+    const col: number[] = [];
+    const fp = fire.getAttribute("position");
+    for (let i = 0; i < fp.count; i++) { const k = 1 - (fp.getY(i) + 0.2) / 0.4; col.push(0.12 + 0.88 * k * k, 0.05 + 0.95 * k * k * k, k * k * k); }
+    fire.setAttribute("color", new Float32BufferAttribute(col, 3));
+    return { front, fire, back: boxUV(W, H, TH), sideW: boxUV(TH, H, D - 2 * TH), cap: boxUV(W + 0.14, 0.134, D + 0.14), shelf: boxUV(W - 2 * TH, 0.12, D - 2 * TH) };
+  }, []);
+  const mBrick = mat("kilnBrick", brick({ seed: 8, base: "#a8512f", dark: "#5d2a1e" }), { repeat: [1 / 1.45, 1 / 1.62], roughness: 0.92, bump: 1.3 });
+  const mSoot = flat("#17120f", 1);
+  const mInside = useMemo(() => new MeshBasicMaterial({ color: "#120d0a", side: BackSide }), []);
+  const glow = 0.95 + 0.05 * Math.sin(t * 1.1);
+  const mFire = useMemo(() => new MeshBasicMaterial({ color: "#ff7a1c", fog: false, vertexColors: true }), []);
+  mFire.color.setRGB(3.4 * fire * glow, 1.5 * fire * glow, 0.5 * fire * glow);
+  const ref = useRef<InstancedMesh>(null);
+  const colsN = 7, per = 26;
+  useLayoutEffect(() => {
+    const im = ref.current!;
+    const o = new Object3D();
+    const c = new Color(), hot = new Color("#ff8a3a");
+    let i = 0;
+    for (let col = 0; col < colsN; col++)
+      for (let k = 0; k < per; k++, i++) {
+        o.position.set(-0.78 + col * 0.26 + (hash2(i, 1, 5) - 0.5) * 0.012, 0.85 + k * 0.031, D / 2 - TH - 0.3 + (hash2(i, 2, 5) - 0.5) * 0.03);
+        o.rotation.set(0, (hash2(i, 3, 5) - 0.5) * 0.05, 0);
+        o.updateMatrix();
+        im.setMatrixAt(i, o.matrix);
+        const f = smooth((fired * 1.5 - (k / per) * 0.5 - hash2(col, 4, 5) * 0.08) / 0.55);
+        tileColor(i + 300, 1 - f, c);
+        // glowing while the heat passes through
+        c.lerp(hot, 0.4 * fire * Math.sin(Math.PI * c01(f)));
+        im.setColorAt(i, c);
+      }
+    im.instanceMatrix.needsUpdate = true;
+    im.instanceColor!.needsUpdate = true;
+  });
+  return (
+    <group position={pos} rotation={[0, rotY, 0]}>
+      <mesh geometry={G.front} material={mBrick} castShadow receiveShadow />
+      <mesh position={[0, H / 2, -D / 2 + TH / 2]} geometry={G.back} material={mBrick} castShadow receiveShadow />
+      {[1, -1].map((s) => (
+        <mesh key={s} position={[s * (W / 2 - TH / 2), H / 2, 0]} geometry={G.sideW} material={mBrick} castShadow receiveShadow />
+      ))}
+      <mesh position={[0, H + 0.06, 0]} geometry={G.cap} material={mBrick} castShadow receiveShadow />
+      {/* shelf between the fire box and the loading bay, dark interior, soot above the arches */}
+      <mesh position={[0, 0.76, 0]} geometry={G.shelf} material={mBrick} receiveShadow />
+      <mesh position={[0, H / 2, 0]} material={mInside}><boxGeometry args={[W - 2 * TH - 0.01, H - 0.02, D - 2 * TH - 0.01]} /></mesh>
+      {[-0.62, 0.62].map((x) => (
+        <group key={x}>
+          <mesh position={[x, 0.27, D / 2 - TH - 0.2]} material={mSoot}><planeGeometry args={[0.6, 0.6]} /></mesh>
+          <mesh position={[x, 0.2, D / 2 - TH - 0.18]} geometry={G.fire} material={mFire} />
+        </group>
+      ))}
+      <instancedMesh ref={ref} args={[tileGeometry(), tileMaterial(), colsN * per]} castShadow receiveShadow frustumCulled={false} />
+    </group>
+  );
+};
+
+/** A neat stack of fired tiles on the ground (rows on edge). */
+export const TileStack: React.FC<{ pos: V3; rotY?: number; n?: number; rows?: number }> = ({ pos, rotY = 0, n = 22, rows = 2 }) => {
+  const ref = useRef<InstancedMesh>(null);
+  useLayoutEffect(() => {
+    const im = ref.current!;
+    const o = new Object3D();
+    const c = new Color();
+    let i = 0;
+    for (let r = 0; r < rows; r++)
+      for (let k = 0; k < n; k++, i++) {
+        o.position.set(k * 0.05, 0.02 + TILE.W / 2 + 0.01, r * (TILE.L + 0.03));
+        o.rotation.set(0, 0, Math.PI / 2 + (hash2(i, 1, 15) - 0.5) * 0.07);
+        o.updateMatrix();
+        im.setMatrixAt(i, o.matrix);
+        im.setColorAt(i, tileColor(i + 2000, 0, c));
+      }
+    im.instanceMatrix.needsUpdate = true;
+    im.instanceColor!.needsUpdate = true;
+  }, [n, rows]);
+  return (
+    <group position={pos} rotation={[0, rotY, 0]}>
+      <instancedMesh ref={ref} args={[tileGeometry(), tileMaterial(), n * rows]} castShadow receiveShadow frustumCulled={false} />
+    </group>
+  );
+};
+
+
+==== 113 project/src/index.ts
+import { registerRoot } from "remotion";
+import { RemotionRoot } from "./Root.tsx";
+
+registerRoot(RemotionRoot);
+
+==== 9192 project/src/kits/bedah/Overlay.tsx
+// BEDAH 2D layer, laid out on a 1080 × 1920 frame and scaled to the render size.
+//   <Captions>  the voice-over, a short phrase at a time; words light up as they are spoken (layout never jumps)
+//   <Pin>       a term pinned to a thing in the scene: dot on the object, leader line, label
+//   <Stroke>    white marker line drawn on over time (straight, polyline, dashed, with an arrow head)
+// Points for Pin / Stroke come from `project()` so the marks stick to the 3D scene while the camera drifts.
+
+import React from "react";
+import { F_CAPTION } from "./fonts.ts";
+
+const c01 = (x: number) => (x < 0 ? 0 : x > 1 ? 1 : x);
+const lin = (s: number, a: number, b: number) => c01((s - a) / (b - a));
+const out3 = (x: number) => 1 - Math.pow(1 - c01(x), 3);
+const SHADOW = "0 2px 10px rgba(0,0,0,0.5), 0 1px 3px rgba(0,0,0,0.65)";
+
+/** Layout size of the 2D layer: 1080 × 1920 (portrait) or 1920 × 1080 (landscape), scaled to the render size. */
+export const LayoutCtx = React.createContext({ w: 1080, h: 1920 });
+export const Frame: React.FC<{ scale: number; w?: number; h?: number; children: React.ReactNode }> = ({ scale, w = 1080, h = 1920, children }) => (
+  <LayoutCtx.Provider value={{ w, h }}>
+    <div style={{ position: "absolute", left: 0, top: 0, width: w, height: h, transform: `scale(${scale})`, transformOrigin: "0 0", pointerEvents: "none" }}>{children}</div>
+  </LayoutCtx.Provider>
+);
+
+// ------------------------------------------------------------------ captions
+export type Word = { w: string; t: number };
+export type Line = { text: string; t0: number; t1: number };
+
+/** Evenly paced words for a line (until real VO word timings replace them). */
+export const pace = (text: string, t0: number, t1: number): Word[] => {
+  const raw = text.split(/\s+/).filter(Boolean);
+  const weights = raw.map((w) => 0.55 + w.replace(/[,.?!]/g, "").length * 0.085 + (/[,.?!]$/.test(w) ? 0.5 : 0));
+  const tot = weights.reduce((a, b) => a + b, 0);
+  let acc = 0;
+  return raw.map((w, i) => {
+    const t = t0 + ((t1 - t0) * acc) / tot;
+    acc += weights[i];
+    return { w, t };
+  });
+};
+
+/** Split words into phrases of ≤ `max` words and ≤ `maxChars` characters, breaking after punctuation. */
+export const chunk = (words: Word[], max = 3, maxChars = 21): Word[][] => {
+  const chunks: Word[][] = [];
+  let cur: Word[] = [];
+  const chars = (c: Word[]) => c.reduce((n, w) => n + w.w.length + 1, -1);
+  for (const w of words) {
+    if (cur.length && (cur.length >= max || chars(cur) + 1 + w.w.length > maxChars)) { chunks.push(cur); cur = []; }
+    cur.push(w);
+    if (/[,.?!]$/.test(w.w)) { chunks.push(cur); cur = []; }
+  }
+  if (cur.length) chunks.push(cur);
+  // avoid a lone orphan word when it still fits on the previous phrase
+  for (let i = chunks.length - 1; i > 0; i--) {
+    const prev = chunks[i - 1];
+    if (chunks[i].length === 1 && !/[,.?!]$/.test(prev[prev.length - 1].w) && chars(prev) + 1 + chunks[i][0].w.length <= maxChars + 3) { prev.push(...chunks[i]); chunks.splice(i, 1); }
+  }
+  return chunks;
+};
+
+/** `ends[i]` = when phrase i must be gone (end of its sentence): a caption never hangs over the next shot. */
+export const Captions: React.FC<{ s: number; chunks: Word[][]; ends?: number[]; y?: number; hold?: number }> = ({ s, chunks, ends, y, hold = 0.9 }) => {
+  const L = React.useContext(LayoutCtx);
+  const top = y ?? (L.w > L.h ? Math.round(L.h * 0.8) : 1196);
+  let ci = -1;
+  for (let i = 0; i < chunks.length; i++) if (s >= chunks[i][0].t - 0.02) ci = i;
+  if (ci < 0) return null;
+  const ch = chunks[ci];
+  const last = ch[ch.length - 1].t;
+  const end = ends?.[ci] ?? last + hold;
+  if (s > end) return null;
+  return (
+    <div style={{ position: "absolute", left: 40, right: 40, top: top, textAlign: "center", fontFamily: F_CAPTION, fontWeight: 700, fontSize: 56, lineHeight: 1.2, letterSpacing: -0.4, color: "#fff", textShadow: SHADOW, whiteSpace: "nowrap", opacity: 1 - lin(s, end - 0.12, end) }}>
+      {ch.map((w, i) => (
+        <span key={i} style={{ opacity: lin(s, w.t - 0.03, w.t + 0.07) }}>{w.w.replace(/[,.]$/, "")}{i < ch.length - 1 ? " " : ""}</span>
+      ))}
+    </div>
+  );
+};
+
+// ------------------------------------------------------------------ pin label
+/** `at` = projected anchor (0..1, y down). The label sits `dx, dy` px away at the end of a thin leader. */
+export const Pin: React.FC<{ s: number; t0: number; t1: number; at: { x: number; y: number }; text: string; dx?: number; dy?: number }> = ({ s, t0, t1, at, text, dx = 90, dy = -150 }) => {
+  const L = React.useContext(LayoutCtx);
+  if (s < t0 || s > t1) return null;
+  const e = out3(lin(s, t0, t0 + 0.45)), o = Math.min(lin(s, t0, t0 + 0.2), 1 - lin(s, t1 - 0.25, t1));
+  const x = at.x * L.w, y = at.y * L.h;
+  // keep the label inside the frame: flip it to the other side of the anchor when it would run off the edge
+  const wText = text.length * 23 + 50;
+  let ddx = dx;
+  if (dx >= 0 && x + dx + wText > L.w - 30) ddx = -Math.max(40, Math.abs(dx));
+  else if (dx < 0 && x + dx - wText < 30) ddx = Math.max(40, Math.abs(dx));
+  let ddy = dy;
+  if (y + dy < 110) ddy = Math.abs(dy);
+  else if (y + dy > L.h - 70) ddy = -Math.abs(dy);
+  const lx = x + ddx * e, ly = y + ddy * e;
+  const right = ddx >= 0;
+  return (
+    <div style={{ position: "absolute", inset: 0, opacity: o }}>
+      <svg width={L.w} height={L.h} style={{ position: "absolute", inset: 0, overflow: "visible", filter: "drop-shadow(0 1px 3px rgba(0,0,0,0.5))" }}>
+        <line x1={x} y1={y} x2={lx} y2={ly} stroke="#fff" strokeWidth={3} strokeLinecap="round" />
+        <circle cx={x} cy={y} r={8 * e} fill="#fff" />
+        <line x1={lx} y1={ly} x2={lx + (right ? 1 : -1) * 26 * e} y2={ly} stroke="#fff" strokeWidth={3} strokeLinecap="round" />
+      </svg>
+      <div style={{ position: "absolute", left: right ? lx + 38 : undefined, right: right ? undefined : L.w - lx + 38, top: ly - 27, fontFamily: F_CAPTION, fontWeight: 800, fontSize: 40, letterSpacing: -0.2, color: "#fff", textShadow: SHADOW, whiteSpace: "nowrap", opacity: lin(s, t0 + 0.25, t0 + 0.5), transform: `translateX(${(right ? -1 : 1) * (1 - out3(lin(s, t0 + 0.2, t0 + 0.6))) * 14}px)` }}>{text}</div>
+    </div>
+  );
+};
+
+// ------------------------------------------------------------------ marker strokes
+export type P2 = { x: number; y: number };
+/** White marker polyline through projected points, drawn on over [t0, t0 + dur], fading out at t1. */
+export const Stroke: React.FC<{ s: number; t0: number; t1: number; pts: P2[]; dur?: number; width?: number; dash?: string; arrow?: boolean; close?: boolean; color?: string }> = ({ s, t0, t1, pts, dur = 0.5, width = 7, dash, arrow, close, color = "#fff" }) => {
+  const LY = React.useContext(LayoutCtx);
+  if (s < t0 || s > t1 || pts.length < 2) return null;
+  const P = pts.map((p) => [p.x * LY.w, p.y * LY.h] as const);
+  if (close) P.push(P[0]);
+  let L = 0;
+  const segs = P.slice(1).map((p, i) => { const l = Math.hypot(p[0] - P[i][0], p[1] - P[i][1]); L += l; return l; });
+  const e = out3(lin(s, t0, t0 + dur)), o = 1 - lin(s, t1 - 0.25, t1);
+  // partial path up to e·L
+  let left = e * L;
+  const d: string[] = [`M${P[0][0].toFixed(1)} ${P[0][1].toFixed(1)}`];
+  let tip = P[0], dirx = 1, diry = 0;
+  for (let i = 0; i < segs.length && left > 0; i++) {
+    const k = Math.min(1, left / Math.max(segs[i], 1e-3));
+    const x = P[i][0] + (P[i + 1][0] - P[i][0]) * k, y = P[i][1] + (P[i + 1][1] - P[i][1]) * k;
+    d.push(`L${x.toFixed(1)} ${y.toFixed(1)}`);
+    tip = [x, y];
+    dirx = (P[i + 1][0] - P[i][0]) / Math.max(segs[i], 1e-3);
+    diry = (P[i + 1][1] - P[i][1]) / Math.max(segs[i], 1e-3);
+    left -= segs[i];
+  }
+  const ah = width * 3.4;
+  return (
+    <svg width={LY.w} height={LY.h} style={{ position: "absolute", inset: 0, overflow: "visible", opacity: o, filter: "drop-shadow(0 1px 4px rgba(0,0,0,0.45))" }}>
+      <path d={d.join(" ")} fill="none" stroke={color} strokeWidth={width} strokeLinecap="round" strokeLinejoin="round" strokeDasharray={dash} />
+      {arrow && e > 0.08 ? (
+        <path d={`M${tip[0] - dirx * ah - diry * ah * 0.62} ${tip[1] - diry * ah + dirx * ah * 0.62} L${tip[0]} ${tip[1]} L${tip[0] - dirx * ah + diry * ah * 0.62} ${tip[1] - diry * ah - dirx * ah * 0.62}`} fill="none" stroke={color} strokeWidth={width} strokeLinecap="round" strokeLinejoin="round" />
+      ) : null}
+    </svg>
+  );
+};
+
+// ------------------------------------------------------------------ free tag (a short word or number at a point)
+export const Tag: React.FC<{ s: number; t0: number; t1: number; at: P2; text: string; size?: number; dx?: number; dy?: number }> = ({ s, t0, t1, at, text, size = 46, dx = 0, dy = 0 }) => {
+  const L = React.useContext(LayoutCtx);
+  if (s < t0 || s > t1) return null;
+  const o = Math.min(lin(s, t0, t0 + 0.25), 1 - lin(s, t1 - 0.25, t1));
+  const rise = (1 - out3(lin(s, t0, t0 + 0.4))) * 12;
+  return (
+    <div style={{ position: "absolute", left: at.x * L.w + dx, top: at.y * L.h + dy + rise, transform: "translate(-50%, -50%)", fontFamily: F_CAPTION, fontWeight: 800, fontSize: size, letterSpacing: -0.3, color: "#fff", textShadow: SHADOW, whiteSpace: "nowrap", opacity: o }}>{text}</div>
+  );
+};
+
+==== 16076 project/src/kits/bedah/props.tsx
+// Village dressing for BEDAH sets: neighbour houses, leafy trees, coconut palms, banana clumps, power poles with
+// sagging wires and a far tree line that hides the horizon. Everything is static and built once (memoised).
+
+import React, { useMemo } from "react";
+import {
+  BufferAttribute, BufferGeometry, CatmullRomCurve3, Color, CylinderGeometry, DoubleSide, Float32BufferAttribute, IcosahedronGeometry,
+  InstancedMesh, Matrix4, MeshStandardMaterial, Object3D, PlaneGeometry, Quaternion, TubeGeometry, Vector3,
+} from "three";
+import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import { boxUV } from "./geo.tsx";
+import { flat, mat } from "./mats.ts";
+import { hash2, leafCard, plaster, prng, tileSheet, wood } from "./tex.ts";
+import type { V3 } from "./cam.ts";
+
+// ------------------------------------------------------------------ house
+export type HouseSpec = { pos: V3; rotY?: number; w?: number; d?: number; h?: number; wall?: string; pitch?: number };
+
+/** Simple village house: plastered box, tiled gable roof with overhang, dark door and shuttered windows. */
+export const House: React.FC<HouseSpec> = ({ pos, rotY = 0, w = 7, d = 5.5, h = 3, wall = "#e4d2ad", pitch = 0.62 }) => {
+  const G = useMemo(() => {
+    const rise = (d / 2) * Math.tan(pitch);
+    const run = d / 2 + 0.7, drop = 0.7 * Math.tan(pitch);
+    const body = boxUV(w, h, d);
+    // both roof slopes as one mesh: ridge at y = rise, eaves at y = -drop, z = ±run (metre UVs: u along the ridge, v down the slope)
+    const sl = Math.hypot(run, rise + drop);
+    const hw = w / 2 + 0.5;
+    const pos: number[] = [], uv: number[] = [], nor: number[] = [], idx: number[] = [];
+    [1, -1].forEach((sd, k) => {
+      const ny = run / sl, nz = (sd * (rise + drop)) / sl;
+      pos.push(-hw, rise, 0, hw, rise, 0, hw, -drop, sd * run, -hw, -drop, sd * run);
+      uv.push(0, sl, 2 * hw, sl, 2 * hw, 0, 0, 0);
+      for (let i = 0; i < 4; i++) nor.push(0, ny, nz);
+      const o = k * 4;
+      if (sd > 0) idx.push(o, o + 3, o + 2, o, o + 2, o + 1);
+      else idx.push(o, o + 2, o + 3, o, o + 1, o + 2);
+    });
+    const roof = new BufferGeometry();
+    roof.setAttribute("position", new Float32BufferAttribute(pos, 3));
+    roof.setAttribute("normal", new Float32BufferAttribute(nor, 3));
+    roof.setAttribute("uv", new Float32BufferAttribute(uv, 2));
+    roof.setIndex(idx);
+    // gable triangles
+    const tri = new BufferGeometry();
+    tri.setAttribute("position", new Float32BufferAttribute([
+      -w / 2, 0, d / 2, -w / 2, 0, -d / 2, -w / 2, rise, 0,
+      w / 2, 0, -d / 2, w / 2, 0, d / 2, w / 2, rise, 0,
+    ], 3));
+    tri.setAttribute("uv", new Float32BufferAttribute([0, 0, d, 0, d / 2, rise, 0, 0, d, 0, d / 2, rise], 2));
+    tri.computeVertexNormals();
+    return { body, roof, tri, rise };
+  }, [w, d, h, pitch]);
+  const mWall = mat("houseWall", plaster({ rough: 1.3 }), { repeat: [1 / 3, 1 / 3], color: wall, roughness: 0.95 });
+  const mRoof = mat("houseRoof", tileSheet(), { repeat: [1 / 2.4, 1 / 2.5], roughness: 0.88, bump: 1.4, double: true });
+  const mDark = flat("#3a2a20", 0.8);
+  const mFrame = mat("houseWood", wood({ base: "#7a5232", dark: "#4a2f1c" }), { repeat: [1, 2], roughness: 0.8 });
+  return (
+    <group position={pos} rotation={[0, rotY, 0]}>
+      <mesh geometry={G.body} material={mWall} position={[0, h / 2, 0]} castShadow receiveShadow />
+      <mesh geometry={G.tri} material={mWall} position={[0, h, 0]} castShadow receiveShadow />
+      <mesh geometry={G.roof} material={mRoof} position={[0, h + 0.05, 0]} castShadow receiveShadow />
+      {/* door + two windows on the front (+z) */}
+      <mesh position={[-w * 0.18, 1.05, d / 2 + 0.02]} material={mDark}><planeGeometry args={[0.95, 2.1]} /></mesh>
+      {[w * 0.2, -w * 0.38].map((x, i) => (
+        <group key={i} position={[x, 1.55, d / 2 + 0.02]}>
+          <mesh material={mFrame}><planeGeometry args={[1.0, 1.15]} /></mesh>
+          <mesh position={[0, 0, 0.005]} material={mDark}><planeGeometry args={[0.84, 0.99]} /></mesh>
+        </group>
+      ))}
+    </group>
+  );
+};
+
+// ------------------------------------------------------------------ leafy tree
+const blobGeo = (() => {
+  let g: BufferGeometry | null = null;
+  return () => {
+    if (g) return g;
+    const ico = new IcosahedronGeometry(1, 3);
+    ico.deleteAttribute("normal");
+    ico.deleteAttribute("uv");
+    g = mergeVertices(ico, 1e-4);
+    const p = g.getAttribute("position") as BufferAttribute;
+    for (let i = 0; i < p.count; i++) {
+      const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+      const n = 1 + 0.16 * Math.sin(x * 5.1 + y * 3.3) * Math.sin(z * 4.7 + x * 2.1) + 0.08 * Math.sin(y * 11 + z * 9);
+      p.setXYZ(i, x * n, y * n * 0.82, z * n);
+    }
+    g.computeVertexNormals();
+    return g;
+  };
+})();
+
+export type TreeSpec = { pos: V3; h?: number; r?: number; seed?: number };
+
+/** All leafy trees of a set in three draw calls (trunks, canopy masses, leaf cards). */
+export const Trees: React.FC<{ trees: TreeSpec[] }> = ({ trees }) => {
+  const objs = useMemo(() => {
+    const mLeafBlob = new MeshStandardMaterial({ color: "#ffffff", roughness: 0.95 });
+    const lc = leafCard("canopy");
+    const mCard = new MeshStandardMaterial({ map: lc.map, alphaTest: 0.4, alphaToCoverage: true, side: DoubleSide, roughness: 0.9 });
+    const mTrunk = mat("trunk", wood({ base: "#6b5038", dark: "#3d2c1e", rings: 22 }), { repeat: [2, 1], roughness: 0.95 });
+    const NC = 120;
+    const nBlob = trees.length * 7, nCard = trees.length * NC;
+    const blobs = new InstancedMesh(blobGeo(), mLeafBlob, nBlob);
+    const cards = new InstancedMesh(new PlaneGeometry(1, 1), mCard, nCard);
+    const trunk = new InstancedMesh((() => { const c = new CylinderGeometry(0.72, 1, 1, 9); c.translate(0, 0.5, 0); return c; })(), mTrunk, trees.length * 3);
+    const o = new Object3D();
+    const col = new Color();
+    let bi = 0, ci = 0, ti = 0;
+    trees.forEach((t, k) => {
+      const rnd = prng((t.seed ?? k + 1) * 7919 + 13);
+      const h = t.h ?? 6, r = t.r ?? 2.6;
+      const [x, y, z] = t.pos;
+      // trunk + two boughs
+      o.position.set(x, y, z); o.rotation.set((rnd() - 0.5) * 0.12, rnd() * 6, (rnd() - 0.5) * 0.12); o.scale.set(0.2 * (h / 6), h * 0.62, 0.2 * (h / 6)); o.updateMatrix();
+      trunk.setMatrixAt(ti++, o.matrix);
+      for (let b = 0; b < 2; b++) {
+        o.position.set(x, y + h * 0.42, z); o.rotation.set(0.5 + rnd() * 0.3, rnd() * 6, 0.5 * (b ? 1 : -1)); o.scale.set(0.09 * (h / 6), h * 0.36, 0.09 * (h / 6)); o.updateMatrix();
+        trunk.setMatrixAt(ti++, o.matrix);
+      }
+      const centers: V3[] = [];
+      for (let b = 0; b < 7; b++) {
+        const a = rnd() * Math.PI * 2, rr = b === 0 ? 0 : r * (0.35 + rnd() * 0.4);
+        const c: V3 = [x + Math.cos(a) * rr, y + h * (0.66 + rnd() * 0.3) + (b === 0 ? h * 0.08 : 0), z + Math.sin(a) * rr];
+        const s = r * (b === 0 ? 0.62 : 0.36 + rnd() * 0.22);
+        centers.push([c[0], c[1], c[2]]);
+        o.position.set(...c); o.rotation.set(rnd() * 3, rnd() * 6, rnd() * 3); o.scale.setScalar(s); o.updateMatrix();
+        blobs.setMatrixAt(bi, o.matrix);
+        col.setHSL(0.26 + rnd() * 0.05, 0.4 + rnd() * 0.1, 0.11 + rnd() * 0.05);
+        blobs.setColorAt(bi++, col);
+      }
+      for (let c = 0; c < NC; c++) {
+        const cc = centers[c % centers.length];
+        const a = rnd() * Math.PI * 2, e = Math.acos(rnd() * 1.7 - 0.7), rr = r * (0.4 + rnd() * 0.2);
+        o.position.set(cc[0] + Math.sin(e) * Math.cos(a) * rr, cc[1] + Math.cos(e) * rr * 0.8, cc[2] + Math.sin(e) * Math.sin(a) * rr);
+        o.rotation.set(rnd() * 6, rnd() * 6, rnd() * 6);
+        o.scale.setScalar(r * (0.42 + rnd() * 0.3));
+        o.updateMatrix();
+        cards.setMatrixAt(ci, o.matrix);
+        col.setHSL(0.24 + rnd() * 0.07, 0.42 + rnd() * 0.14, 0.34 + rnd() * 0.2);
+        cards.setColorAt(ci++, col);
+      }
+    });
+    for (const m of [blobs, cards, trunk]) { m.castShadow = true; m.receiveShadow = true; m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true; m.frustumCulled = false; }
+    return { blobs, cards, trunk };
+  }, [JSON.stringify(trees)]); // eslint-disable-line react-hooks/exhaustive-deps
+  return (
+    <>
+      <primitive object={objs.trunk} />
+      <primitive object={objs.blobs} />
+      <primitive object={objs.cards} />
+    </>
+  );
+};
+
+// ------------------------------------------------------------------ bent leaf strips (palm fronds, banana leaves)
+/** A leaf blade along +Z from the origin, length L, width W, arching down by `droop` and folded along its midrib. */
+const bladeGeo = (L: number, W: number, droop: number, fold = 0.25, seg = 8) => {
+  const g = new PlaneGeometry(W, L, 2, seg);
+  const p = g.getAttribute("position") as BufferAttribute;
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i), t = p.getY(i) / L + 0.5; // 0 at the base … 1 at the tip
+    const y = Math.sin(t * Math.PI * 0.5) * L * 0.25 - t * t * L * droop - Math.abs(x) * fold;
+    const z = t * L * (1 - 0.18 * droop * t);
+    p.setXYZ(i, x, y, z);
+  }
+  g.computeVertexNormals();
+  return g;
+};
+
+export type PalmSpec = { pos: V3; h?: number; lean?: number; yaw?: number; seed?: number };
+
+/** Coconut palm: bowed ringed trunk and a crown of arching fronds. */
+export const Palm: React.FC<PalmSpec> = ({ pos, h = 9, lean = 0.9, yaw = 0, seed = 1 }) => {
+  const G = useMemo(() => {
+    const curve = new CatmullRomCurve3([new Vector3(0, 0, 0), new Vector3(lean * 0.25, h * 0.35, 0), new Vector3(lean * 0.7, h * 0.72, 0), new Vector3(lean, h, 0)]);
+    const trunk = new TubeGeometry(curve, 14, 0.16, 8);
+    const rnd = prng(seed * 977 + 5);
+    const fronds: { g: BufferGeometry; m: Matrix4 }[] = [];
+    const n = 15;
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2 + rnd() * 0.3;
+      const elev = 0.75 - (i % 3) * 0.42 - rnd() * 0.2; // some fronds up, some hanging
+      const L = 3.3 + rnd() * 0.9;
+      const g = bladeGeo(L, 1.25, 0.34 + (0.75 - elev) * 0.22, 0.18);
+      const q = new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), a).multiply(new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), -elev));
+      fronds.push({ g, m: new Matrix4().compose(new Vector3(lean, h - 0.05, 0), q, new Vector3(1, 1, 1)) });
+    }
+    return { trunk, fronds };
+  }, [h, lean, seed]);
+  const mTrunk = mat("palmTrunk", wood({ base: "#8a7a66", dark: "#5c5044", rings: 30 }), { repeat: [3, 10], roughness: 0.95 });
+  const lf = leafCard("frond");
+  const mFrond = useMemo(() => new MeshStandardMaterial({ map: lf.map, alphaTest: 0.25, alphaToCoverage: true, side: DoubleSide, roughness: 0.75 }), [lf]);
+  return (
+    <group position={pos} rotation={[0, yaw, 0]}>
+      <mesh geometry={G.trunk} material={mTrunk} castShadow receiveShadow />
+      <mesh position={[lean, h, 0]} material={flat("#5a6b2c", 0.9)} castShadow><sphereGeometry args={[0.3, 10, 8]} /></mesh>
+      {G.fronds.map((f, i) => (
+        <mesh key={i} geometry={f.g} material={mFrond} matrix={f.m} matrixAutoUpdate={false} castShadow receiveShadow />
+      ))}
+    </group>
+  );
+};
+
+export type BananaSpec = { pos: V3; s?: number; yaw?: number; seed?: number };
+
+/** Banana plant: thick pseudostem and a fan of big torn leaves. */
+export const Banana: React.FC<BananaSpec> = ({ pos, s = 1, yaw = 0, seed = 1 }) => {
+  const G = useMemo(() => {
+    const rnd = prng(seed * 613 + 3);
+    const leaves: { g: BufferGeometry; m: Matrix4 }[] = [];
+    const n = 7;
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2 + rnd() * 0.5;
+      const elev = 1.15 - i * 0.14 - rnd() * 0.1;
+      const L = 1.7 + rnd() * 0.5;
+      const g = bladeGeo(L, 0.62, 0.42 + rnd() * 0.2, 0.1);
+      const q = new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), a).multiply(new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), -elev));
+      leaves.push({ g, m: new Matrix4().compose(new Vector3(0, 1.55, 0), q, new Vector3(1, 1, 1)) });
+    }
+    const stem = new CylinderGeometry(0.075, 0.13, 1.6, 10);
+    stem.translate(0, 0.8, 0);
+    return { leaves, stem };
+  }, [seed]);
+  const lf = leafCard("banana");
+  const mLeaf = useMemo(() => new MeshStandardMaterial({ map: lf.map, alphaTest: 0.3, alphaToCoverage: true, side: DoubleSide, roughness: 0.55, color: "#e9f2d6" }), [lf]);
+  return (
+    <group position={pos} rotation={[0, yaw, 0]} scale={s}>
+      <mesh geometry={G.stem} material={flat("#8f9a4e", 0.7)} castShadow receiveShadow />
+      {G.leaves.map((f, i) => (
+        <mesh key={i} geometry={f.g} material={mLeaf} matrix={f.m} matrixAutoUpdate={false} castShadow receiveShadow />
+      ))}
+    </group>
+  );
+};
+
+// ------------------------------------------------------------------ power poles + wires
+/** Concrete poles in a row with a crossarm and three sagging wires between neighbours. */
+export const PowerLine: React.FC<{ poles: V3[]; h?: number }> = ({ poles, h = 7.5 }) => {
+  const G = useMemo(() => {
+    const wires: BufferGeometry[] = [];
+    for (let i = 0; i < poles.length - 1; i++) {
+      const a = new Vector3(...poles[i]), b = new Vector3(...poles[i + 1]);
+      const along = b.clone().sub(a).normalize();
+      const side = new Vector3(-along.z, 0, along.x);
+      for (const off of [-0.55, 0, 0.55]) {
+        const p0 = a.clone().addScaledVector(side, off).setY(a.y + h - 0.25), p1 = b.clone().addScaledVector(side, off).setY(b.y + h - 0.25);
+        const mid = p0.clone().add(p1).multiplyScalar(0.5);
+        mid.y -= p0.distanceTo(p1) * 0.035;
+        wires.push(new TubeGeometry(new CatmullRomCurve3([p0, mid, p1]), 16, 0.022, 5));
+      }
+    }
+    return { wires };
+  }, [JSON.stringify(poles), h]); // eslint-disable-line react-hooks/exhaustive-deps
+  const mPole = mat("pole", plaster({ seed: 5 }), { repeat: [2, 1], color: "#d9d6cf", roughness: 0.9 });
+  const mWire = flat("#1c1c1e", 0.6);
+  return (
+    <group>
+      {poles.map((p, i) => {
+        const next = poles[Math.min(i + 1, poles.length - 1)], prev = poles[Math.max(i - 1, 0)];
+        const yaw = Math.atan2(next[0] - prev[0], next[2] - prev[2]);
+        return (
+          <group key={i} position={p} rotation={[0, yaw, 0]}>
+            <mesh position={[0, h / 2, 0]} material={mPole} castShadow receiveShadow><cylinderGeometry args={[0.09, 0.13, h, 10]} /></mesh>
+            <mesh position={[0, h - 0.3, 0]} material={flat("#6a6a6c", 0.7)} castShadow><boxGeometry args={[1.3, 0.07, 0.07]} /></mesh>
+          </group>
+        );
+      })}
+      {G.wires.map((g, i) => <mesh key={i} geometry={g} material={mWire} />)}
+    </group>
+  );
+};
+
+// ------------------------------------------------------------------ far tree line
+/** A ring of dark canopy masses far away: the horizon never shows as a bare line between grass and sky. */
+export const TreeLine: React.FC<{ r0?: number; r1?: number; count?: number; seed?: number; arc?: [number, number] }> = ({ r0 = 90, r1 = 170, count = 150, seed = 3, arc = [Math.PI * 0.95, Math.PI * 2.05] }) => {
+  const obj = useMemo(() => {
+    const m = new InstancedMesh(blobGeo(), new MeshStandardMaterial({ color: "#fff", roughness: 1 }), count);
+    const o = new Object3D();
+    const col = new Color();
+    for (let i = 0; i < count; i++) {
+      const a = arc[0] + (arc[1] - arc[0]) * ((i + hash2(i, 1, seed)) / count);
+      const r = r0 + (r1 - r0) * hash2(i, 2, seed);
+      const s = 5 + hash2(i, 3, seed) * 6;
+      o.position.set(Math.cos(a) * r, s * 0.6, Math.sin(a) * r);
+      o.rotation.set(0, hash2(i, 4, seed) * 6, 0);
+      o.scale.set(s * 1.4, s * (0.9 + hash2(i, 5, seed) * 0.6), s * 1.4);
+      o.updateMatrix();
+      m.setMatrixAt(i, o.matrix);
+      col.setHSL(0.28 + hash2(i, 6, seed) * 0.05, 0.34, 0.13 + hash2(i, 7, seed) * 0.07);
+      m.setColorAt(i, col);
+    }
+    m.instanceMatrix.needsUpdate = true;
+    if (m.instanceColor) m.instanceColor.needsUpdate = true;
+    m.frustumCulled = false;
+    return m;
+  }, [r0, r1, count, seed, arc[0], arc[1]]); // eslint-disable-line react-hooks/exhaustive-deps
+  return <primitive object={obj} />;
+};
+
+==== 28489 project/src/kits/bedah/roofing.tsx
+// Roofing kit: the maths of a gable roof, thatch rows that unroll and rot, real clay tiles (instanced, laid with
+// proper overlap), a bamboo frame that can sag, a timber truss roof that assembles member by member, and the
+// little woven-bamboo house they sit on.
+
+import React, { useLayoutEffect, useMemo, useRef } from "react";
+import {
+  BackSide, BufferGeometry, Color, CylinderGeometry, DoubleSide, Float32BufferAttribute, InstancedMesh, Matrix4, MeshBasicMaterial, MeshStandardMaterial, Object3D, Shape, ShapeGeometry,
+  Vector3, type Material,
+} from "three";
+import { Beam, Culm } from "./geo.tsx";
+import { flat, mat } from "./mats.ts";
+import { bamboo, clay, hash2, noiseTex, thatch, weave, wood } from "./tex.ts";
+import type { V3 } from "./cam.ts";
+import { HUT, HUT_ROOF, TILE, roofFrame, trussJoints, type RoofDims } from "./roofmath.ts";
+
+export { HUT, HUT_ROOF, PITCH, TILE, ridgeForWalls, roofForSlope, roofFrame, thatchRows, trussJoints, type RoofDims } from "./roofmath.ts";
+
+// ------------------------------------------------------------------ thatch
+export type ThatchState = { rot: { value: number }; wet: { value: number } };
+
+/** Thatch material with weathering: `rot` darkens the leaves and eats holes through them, `wet` soaks them. */
+export const thatchMaterial = (state: ThatchState) => {
+  const t = thatch();
+  const m = new MeshStandardMaterial({ map: t.map.clone(), normalMap: t.normalMap.clone(), alphaTest: 0.5, alphaToCoverage: true, side: DoubleSide, roughness: 0.95 });
+  m.map!.repeat.set(1 / 1.15, 1);
+  m.normalMap!.repeat.set(1 / 1.15, 1);
+  m.map!.needsUpdate = true;
+  m.normalMap!.needsUpdate = true;
+  m.onBeforeCompile = (sh) => {
+    sh.uniforms.uRot = state.rot;
+    sh.uniforms.uWet = state.wet;
+    sh.uniforms.uNoise = { value: noiseTex() };
+    sh.vertexShader = sh.vertexShader.replace("#include <common>", "#include <common>\nattribute vec2 aRoof;\nvarying vec2 vRoof;").replace("#include <begin_vertex>", "#include <begin_vertex>\nvRoof = aRoof;");
+    sh.fragmentShader = sh.fragmentShader
+      .replace("#include <common>", "#include <common>\nuniform float uRot; uniform float uWet; uniform sampler2D uNoise; varying vec2 vRoof;")
+      .replace(
+        "#include <map_fragment>",
+        `#include <map_fragment>
+        {
+          vec3 nz = texture2D(uNoise, vRoof * vec2(0.11, 0.17)).rgb;
+          float blotch = nz.r * 0.75 + nz.g * 0.25;
+          float fine = texture2D(uNoise, vRoof * 0.9).b;
+          // rot spreads from the damp patches outward
+          float r = smoothstep(0.0, 0.5, uRot * 1.5 - blotch * 0.9 + 0.06 * fine);
+          diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.30, 0.27, 0.24) + vec3(0.012, 0.016, 0.01), r * 0.88);
+          diffuseColor.rgb *= mix(1.0, 0.62, uWet);
+          float hole = uRot * 0.47 - 0.1;
+          float edge = blotch + (fine - 0.5) * 0.09;
+          if (edge < hole) diffuseColor.a = 0.0;
+          diffuseColor.rgb *= mix(1.0, 0.45, smoothstep(hole + 0.05, hole, edge) * step(0.001, uRot));
+        }`,
+      );
+  };
+  m.customProgramCacheKey = () => "bedah-thatch";
+  return m;
+};
+
+const stripGeo = (f: ReturnType<typeof roofFrame>, s: number, hw: number, dt: number, db: number, e: number, uOff: number, lt = 0.015, lb = 0.06) => {
+  const bot = dt + (db - dt) * e, lbot = lt + (lb - lt) * e;
+  const a = f.pt(s, -hw, dt, lt), b = f.pt(s, hw, dt, lt), c = f.pt(s, hw, bot, lbot), d0 = f.pt(s, -hw, bot, lbot);
+  const g = new BufferGeometry();
+  g.setAttribute("position", new Float32BufferAttribute([...a, ...b, ...c, ...d0], 3));
+  const n = f.normal(s);
+  g.setAttribute("normal", new Float32BufferAttribute([...n, ...n, ...n, ...n], 3));
+  g.setAttribute("uv", new Float32BufferAttribute([-hw + uOff, 1, hw + uOff, 1, hw + uOff, 1 - e, -hw + uOff, 1 - e], 2));
+  g.setAttribute("aRoof", new Float32BufferAttribute([-hw, dt * s + 9, hw, dt * s + 9, hw, bot * s + 9, -hw, bot * s + 9], 2));
+  g.setIndex(s > 0 ? [0, 3, 2, 0, 2, 1] : [0, 2, 3, 0, 1, 2]);
+  return g;
+};
+
+/**
+ * Thatch on both slopes: overlapping strips from the eave up, each a double layer. `rows` = how many rows are laid
+ * (fractional → the next row is unrolling from its top edge).
+ */
+export const ThatchRoof: React.FC<{ dims: RoofDims; rows?: number; material: Material; gauge?: number }> = ({ dims, rows = 99, material, gauge = 0.2 }) => {
+  const f = useMemo(() => roofFrame(dims), [dims.hw, dims.ridgeY, dims.run, dims.drop, dims.sag]); // eslint-disable-line react-hooks/exhaustive-deps
+  const H = 0.58;
+  const total = Math.ceil((f.sl + 0.06 - 0.3) / gauge) + 1;
+  const strips: React.ReactNode[] = [];
+  for (let k = 0; k < total; k++) {
+    const e = Math.min(1, Math.max(0, rows - k));
+    if (e <= 0) continue;
+    const db = f.sl + 0.07 - k * gauge;
+    const dt = Math.max(0.03, db - H);
+    for (const s of [1, -1])
+      for (let layer = 0; layer < 2; layer++)
+        strips.push(<ThatchStrip key={`${k}_${s}_${layer}`} f={f} s={s} hw={dims.hw} dt={dt + layer * 0.05} db={db - layer * 0.07} e={e} uOff={k * 0.37 + layer * 0.61 + (s > 0 ? 0 : 0.2)} lift={layer * 0.022} material={material} />);
+  }
+  const mBam = mat("bamboo", bamboo(), { roughness: 0.55 });
+  // after the last row the ridge cap unrolls (rows total … total + 1) and the ridge pole lands on it
+  const cap = Math.min(1, Math.max(0, rows - total));
+  const pole = Math.min(1, Math.max(0, (rows - total - 0.6) / 0.7));
+  const ra = f.pt(1, -dims.hw - 0.08, 0, 0.13), rb = f.pt(1, dims.hw + 0.08, 0, 0.13);
+  return (
+    <group>
+      {strips}
+      {cap > 0 ? [1, -1].map((s) => <ThatchStrip key={s} f={f} s={s} hw={dims.hw} dt={-0.02} db={0.36} e={cap} uOff={s * 0.4} lift={0.07} material={material} />) : null}
+      <Arrive e={pole} at={[0, ra[1], 0]} from={[0, 0.8, 0]}>
+        <Culm a={ra} b={rb} r={0.03} material={mBam} seed={5} />
+      </Arrive>
+    </group>
+  );
+};
+const ThatchStrip: React.FC<{ f: ReturnType<typeof roofFrame>; s: number; hw: number; dt: number; db: number; e: number; uOff: number; lift: number; material: Material }> = ({ f, s, hw, dt, db, e, uOff, lift, material }) => {
+  const g = useMemo(() => stripGeo(f, s, hw, dt, db, e, uOff, 0.015 + lift, 0.06 + lift), [f, s, hw, dt, db, e, uOff, lift]);
+  useLayoutEffect(() => () => g.dispose(), [g]);
+  return <mesh geometry={g} material={material} castShadow receiveShadow />;
+};
+
+// ------------------------------------------------------------------ clay tiles
+/** One pressed clay pan-tile: an S-wave across (water channel + side roll), straight along its length. Origin at the head, +z = tail. */
+export const tileGeometry = (() => {
+  let g: BufferGeometry | null = null;
+  return () => {
+    if (g) return g;
+    const { W, L, A, T } = TILE;
+    const n = 14;
+    const pos: number[] = [], nor: number[] = [], uv: number[] = [], idx: number[] = [];
+    const prof = (i: number) => {
+      const t = i / n, ph = 2 * Math.PI * t - 2.2;
+      const x = (t - 0.5) * W, y = A * Math.sin(ph), dy = (A * 2 * Math.PI * Math.cos(ph)) / W;
+      const il = 1 / Math.hypot(dy, 1);
+      return { x, y, nx: -dy * il, ny: il };
+    };
+    const quad = (a: number, b: number, c: number, d: number) => idx.push(a, b, c, a, c, d);
+    // top and bottom skins
+    for (let i = 0; i <= n; i++) {
+      const p = prof(i);
+      for (const z of [0, L]) { pos.push(p.x, p.y, z); nor.push(p.nx, p.ny, 0); uv.push(p.x + 0.5, z); }
+    }
+    for (let i = 0; i <= n; i++) {
+      const p = prof(i);
+      for (const z of [0, L]) { pos.push(p.x - p.nx * T, p.y - p.ny * T, z); nor.push(-p.nx, -p.ny, 0); uv.push(p.x + 0.2, z + 0.4); }
+    }
+    const top = (i: number, k: number) => i * 2 + k, bot = (i: number, k: number) => (n + 1) * 2 + i * 2 + k;
+    for (let i = 0; i < n; i++) {
+      quad(top(i, 0), top(i, 1), top(i + 1, 1), top(i + 1, 0));
+      quad(bot(i, 0), bot(i + 1, 0), bot(i + 1, 1), bot(i, 1));
+    }
+    // head / tail edges
+    for (const [z, nz] of [[0, -1], [L, 1]] as const) {
+      const base = pos.length / 3;
+      for (let i = 0; i <= n; i++) {
+        const p = prof(i);
+        pos.push(p.x, p.y, z, p.x - p.nx * T, p.y - p.ny * T, z);
+        nor.push(0, 0, nz, 0, 0, nz);
+        uv.push(p.x, 0, p.x, T);
+      }
+      for (let i = 0; i < n; i++) {
+        const a = base + i * 2, b = a + 1, c = a + 3, d = a + 2;
+        if (nz > 0) quad(a, b, c, d);
+        else quad(a, d, c, b);
+      }
+    }
+    // side edges
+    for (const [i, sx] of [[0, -1], [n, 1]] as const) {
+      const p = prof(i);
+      const base = pos.length / 3;
+      pos.push(p.x, p.y, 0, p.x, p.y, L, p.x - p.nx * T, p.y - p.ny * T, L, p.x - p.nx * T, p.y - p.ny * T, 0);
+      for (let k = 0; k < 4; k++) nor.push(sx, 0, 0);
+      uv.push(0, 0, L, 0, L, T, 0, T);
+      if (sx > 0) quad(base, base + 1, base + 2, base + 3);
+      else quad(base, base + 3, base + 2, base + 1);
+    }
+    // nib: a small lug under the head that hooks behind the batten
+    {
+      const x0 = -0.032, x1 = 0.032, y0 = -0.034, y1 = 0.004, z0 = 0.0, z1 = 0.011;
+      const c: [number, number, number][] = [[x0, y0, z0], [x1, y0, z0], [x1, y1, z0], [x0, y1, z0], [x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1]];
+      const faces: [number[], [number, number, number]][] = [[[1, 0, 3, 2], [0, 0, -1]], [[4, 5, 6, 7], [0, 0, 1]], [[0, 4, 7, 3], [-1, 0, 0]], [[5, 1, 2, 6], [1, 0, 0]], [[0, 1, 5, 4], [0, -1, 0]]];
+      for (const [f, nn] of faces) {
+        const base = pos.length / 3;
+        f.forEach((k, j) => { pos.push(...c[k]); nor.push(...nn); uv.push(j % 2 ? 0.1 : 0, j > 1 ? 0.1 : 0); });
+        quad(base, base + 1, base + 2, base + 3);
+      }
+    }
+    g = new BufferGeometry();
+    g.setAttribute("position", new Float32BufferAttribute(pos, 3));
+    g.setAttribute("normal", new Float32BufferAttribute(nor, 3));
+    g.setAttribute("uv", new Float32BufferAttribute(uv, 2));
+    g.setIndex(idx);
+    return g;
+  };
+})();
+
+export const tileMaterial = () => mat("tileClay", clay(), { repeat: [3, 3], roughness: 0.82, bump: 0.8 });
+/** Terracotta colour of tile #id (most orange-red, some darker, a few pale); `raw` 1 = unfired grey clay. */
+export const tileColor = (id: number, raw = 0, out = new Color()) => {
+  const r = hash2(id, 3, 11), r2 = hash2(id, 5, 11);
+  out.setHSL(0.03 + r * 0.02, 0.6 + r2 * 0.12, r < 0.14 ? 0.27 + r2 * 0.05 : 0.36 + r2 * 0.09);
+  if (raw > 0) out.lerp(new Color().setHSL(0.09, 0.14, 0.5 + r * 0.06), raw);
+  return out;
+};
+
+const smooth = (x: number) => {
+  const t = x < 0 ? 0 : x > 1 ? 1 : x;
+  return t * t * (3 - 2 * t);
+};
+const outC = (x: number) => 1 - Math.pow(1 - (x < 0 ? 0 : x > 1 ? 1 : x), 3);
+
+/**
+ * Tiles on one slope, laid from the eave up with head-lap and side-lap. `progress(col, row, index)` → 0…1 lets a
+ * film land them one by one (a tile slides down onto its batten); 1 everywhere = finished roof.
+ */
+export const TileField: React.FC<{ dims: RoofDims; side: 1 | -1; x0?: number; x1?: number; progress?: (col: number, row: number, i: number) => number; lift?: number }> = ({ dims, side, x0 = -dims.hw, x1 = dims.hw, progress, lift = 0.055 }) => {
+  const f = useMemo(() => roofFrame(dims), [dims.hw, dims.ridgeY, dims.run, dims.drop, dims.sag]); // eslint-disable-line react-hooks/exhaustive-deps
+  const cols = Math.max(1, Math.round((x1 - x0) / TILE.cover)), rows = Math.floor((f.sl + 0.04 - TILE.L) / TILE.gauge) + 1;
+  const ref = useRef<InstancedMesh>(null);
+  const material = tileMaterial();
+  const geo = tileGeometry();
+  useLayoutEffect(() => {
+    const im = ref.current!;
+    const c = new Color();
+    for (let i = 0; i < cols * rows; i++) im.setColorAt(i, tileColor(i + (side > 0 ? 0 : 5000), 0, c));
+    im.instanceColor!.needsUpdate = true;
+  }, [cols, rows, side]);
+  useLayoutEffect(() => {
+    const im = ref.current!;
+    const m = new Matrix4(), xv = new Vector3(), yv = new Vector3(), zv = new Vector3(), p = new Vector3(), n = new Vector3(...f.normal(side)), dn = new Vector3(...f.down(side));
+    let i = 0;
+    for (let r = 0; r < rows; r++)
+      for (let c = 0; c < cols; c++, i++) {
+        const e = progress ? progress(c, r, i) : 1;
+        const x = side > 0 ? x0 + (c + 0.5) * TILE.cover : x1 - (c + 0.5) * TILE.cover;
+        const tail = f.sl + 0.04 - r * TILE.gauge, head = tail - TILE.L;
+        const ph = f.pt(side, x, head, lift), pt = f.pt(side, x, tail, lift + 0.03);
+        zv.set(pt[0] - ph[0], pt[1] - ph[1], pt[2] - ph[2]).normalize();
+        xv.set(side, 0, 0);
+        yv.crossVectors(zv, xv).normalize();
+        const k = outC(e);
+        const sc = e <= 0 ? 1e-4 : smooth(e / 0.3);
+        p.set(...ph).addScaledVector(n, (1 - k) * 0.42).addScaledVector(dn, -(1 - k) * 0.3);
+        m.makeBasis(xv, yv, zv).scale(new Vector3(sc, sc, sc)).setPosition(p);
+        im.setMatrixAt(i, m);
+      }
+    im.instanceMatrix.needsUpdate = true;
+  });
+  return <instancedMesh ref={ref} args={[geo, material, cols * rows]} castShadow receiveShadow frustumCulled={false} />;
+};
+
+/** Ridge tiles (kerpus): tapered half-round caps along the ridge, each lapping over the next. */
+export const RidgeCap: React.FC<{ dims: RoofDims; x0?: number; x1?: number; progress?: (i: number, n: number) => number; lift?: number }> = ({ dims, x0 = -dims.hw, x1 = dims.hw, progress, lift = 0.05 }) => {
+  const f = useMemo(() => roofFrame(dims), [dims.hw, dims.ridgeY, dims.run, dims.drop, dims.sag]); // eslint-disable-line react-hooks/exhaustive-deps
+  const step = 0.3, len = 0.37;
+  const n = Math.max(1, Math.round((x1 - x0) / step));
+  const ref = useRef<InstancedMesh>(null);
+  const geo = useMemo(() => {
+    const g = new CylinderGeometry(0.112, 0.097, len, 16, 1, true, -Math.PI / 2, Math.PI);
+    g.rotateZ(-Math.PI / 2);
+    g.rotateX(-Math.PI / 2);
+    return g;
+  }, []);
+  const material = mat("ridgeClay", clay(), { repeat: [3, 3], roughness: 0.82, bump: 0.8, double: true });
+  useLayoutEffect(() => {
+    const im = ref.current!;
+    const c = new Color();
+    for (let i = 0; i < n; i++) im.setColorAt(i, tileColor(i + 7000, 0, c));
+    im.instanceColor!.needsUpdate = true;
+  }, [n]);
+  useLayoutEffect(() => {
+    const im = ref.current!;
+    const o = new Object3D();
+    for (let i = 0; i < n; i++) {
+      const e = progress ? progress(i, n) : 1;
+      const x = x0 + (i + 0.5) * ((x1 - x0) / n);
+      const p = f.pt(1, x, 0, 0);
+      // follow the ridge line when it sags
+      const slope = (f.pt(1, x + 0.15, 0, 0)[1] - f.pt(1, x - 0.15, 0, 0)[1]) / 0.3;
+      o.position.set(x, p[1] + lift + (1 - outC(e)) * 0.4, 0);
+      o.rotation.set(0, 0, Math.atan(slope));
+      o.scale.setScalar(e <= 0 ? 1e-4 : smooth(e / 0.3));
+      o.updateMatrix();
+      im.setMatrixAt(i, o.matrix);
+    }
+    im.instanceMatrix.needsUpdate = true;
+  });
+  return <instancedMesh ref={ref} args={[geo, material, n]} castShadow receiveShadow frustumCulled={false} />;
+};
+
+// ------------------------------------------------------------------ bamboo roof frame (can sag)
+/** Ridge pole, rafters and split-bamboo battens. With dims.sag the members bow between the gables. */
+export const BambooFrame: React.FC<{ dims: RoofDims; rafters?: number; battens?: boolean; gauge?: number }> = ({ dims, rafters = 9, battens = true, gauge = 0.25 }) => {
+  const f = useMemo(() => roofFrame(dims), [dims.hw, dims.ridgeY, dims.run, dims.drop, dims.sag]); // eslint-disable-line react-hooks/exhaustive-deps
+  const mBam = mat("bamboo", bamboo(), { roughness: 0.55 });
+  const mSplit = mat("bambooSplit", bamboo({ base: "#d6c08a", dark: "#a98f58" }), { roughness: 0.6 });
+  const xs = Array.from({ length: rafters }, (_, i) => -dims.hw + 0.2 + ((2 * dims.hw - 0.4) * i) / (rafters - 1));
+  const segs = dims.sag ? 6 : 1;
+  const out: React.ReactNode[] = [];
+  // ridge
+  for (let k = 0; k < segs; k++) {
+    const xa = -dims.hw + (2 * dims.hw * k) / segs, xb = -dims.hw + (2 * dims.hw * (k + 1)) / segs;
+    out.push(<Culm key={`rg${k}`} a={f.pt(1, xa, 0, -0.05)} b={f.pt(1, xb, 0, -0.05)} r={0.045} material={mBam} seed={k} />);
+  }
+  xs.forEach((x, i) => {
+    for (const s of [1, -1])
+      for (let k = 0; k < segs; k++) {
+        const da = 0.02 + ((f.sl - 0.04) * k) / segs, db = 0.02 + ((f.sl - 0.04) * (k + 1)) / segs;
+        out.push(<Culm key={`rf${i}_${s}_${k}`} a={f.pt(s, x, da, -0.032)} b={f.pt(s, x, db, -0.032)} r={0.03} material={mBam} seed={i + (s > 0 ? 0 : 20)} />);
+      }
+  });
+  if (battens) {
+    const nb = Math.floor((f.sl - 0.1) / gauge) + 1;
+    for (const s of [1, -1])
+      for (let b = 0; b < nb; b++) {
+        const dist = f.sl - 0.02 - b * gauge;
+        for (let k = 0; k < segs; k++) {
+          const xa = -dims.hw + (2 * dims.hw * k) / segs, xb = -dims.hw + (2 * dims.hw * (k + 1)) / segs;
+          out.push(<Culm key={`bt${s}_${b}_${k}`} a={f.pt(s, xa, dist, 0.014)} b={f.pt(s, xb, dist, 0.014)} r={0.016} material={mSplit} seed={b} />);
+        }
+      }
+  }
+  return <group>{out}</group>;
+};
+
+// ------------------------------------------------------------------ the little house (woven bamboo walls)
+const wallShape = (w: number, h: number, holes: [number, number, number, number][]) => {
+  const s = new Shape();
+  s.moveTo(-w / 2, 0); s.lineTo(w / 2, 0); s.lineTo(w / 2, h); s.lineTo(-w / 2, h); s.closePath();
+  for (const [x0, y0, x1, y1] of holes) {
+    const hsh = new Shape();
+    hsh.moveTo(x0, y0); hsh.lineTo(x0, y1); hsh.lineTo(x1, y1); hsh.lineTo(x1, y0); hsh.closePath();
+    s.holes.push(hsh);
+  }
+  return new ShapeGeometry(s);
+};
+
+/**
+ * Posts on stone pads, woven-bamboo (gedek) walls with a door and a window, top plates and tie beams.
+ * `roof` shapes the gable ends (and the strip above the long walls when the roof sits higher than the walls);
+ * `front` false removes the front wall for a section view; `open` drops the dark interior lining (roof cut away).
+ */
+export const HutBody: React.FC<{ posts?: "bamboo" | "timber"; ties?: boolean; gables?: boolean; open?: boolean; front?: boolean; roof?: RoofDims }> = ({ posts = "bamboo", ties = true, gables = true, open = false, front = true, roof = HUT_ROOF }) => {
+  const { hx, hz, plate } = HUT;
+  const bam = posts === "bamboo";
+  const wallH = bam ? plate - 0.1 : plate + 0.03, railY = bam ? plate - 0.19 : plate + 0.06, tieY = bam ? plate - 0.1 : plate + 0.14, postTop = bam ? plate - 0.15 : plate;
+  const slope = roof.drop / roof.run;
+  const roofAtWall = roof.ridgeY - hz * slope;
+  const gBase = wallH + 0.03;
+  const h1 = Math.max(0, roofAtWall - 0.13 - gBase), h2 = Math.max(0.05, roof.ridgeY - 0.14 - gBase);
+  const fill0 = railY + 0.06, fill1 = roofAtWall - 0.13;
+  const G = useMemo(() => {
+    const zz = hz - 0.06;
+    const gs = new Shape();
+    gs.moveTo(-zz, 0); gs.lineTo(zz, 0); gs.lineTo(zz, h1); gs.lineTo(0, h2); gs.lineTo(-zz, h1); gs.closePath();
+    const gable = new ShapeGeometry(gs);
+    gable.rotateY(Math.PI / 2);
+    return {
+      front: wallShape(2 * hx, wallH, [[0.55, 0, 1.4, 1.86], [-1.45, 0.95, -0.6, 1.7]]),
+      back: wallShape(2 * hx, wallH, []),
+      side: wallShape(2 * hz, wallH, []),
+      gable,
+      fill: fill1 - fill0 > 0.06 ? wallShape(2 * hx, fill1 - fill0, []) : null,
+    };
+  }, [hx, hz, wallH, h1, h2, fill0, fill1]);
+  useLayoutEffect(() => () => { G.gable.dispose(); G.fill?.dispose(); }, [G]);
+  const mWeave = mat("gedek", weave(), { repeat: [1 / 1.15, 1 / 1.15], roughness: 0.78, bump: 1.4, double: true });
+  const mBam = mat("bamboo", bamboo(), { roughness: 0.55 });
+  const mWood = mat("hutWood", wood({ base: "#8f6238", dark: "#553820" }), { repeat: [1 / 1.4, 1 / 0.4], roughness: 0.8 });
+  const mStone = flat("#8d8a84", 0.95);
+  const mFloor = flat("#3a2c22", 1);
+  const mFloorLit = flat("#8a6a4c", 1);
+  const mInside = useMemo(() => new MeshBasicMaterial({ color: "#1a1410", side: BackSide }), []);
+  const postXs = [-hx, 0, hx];
+  const Post = bam
+    ? ({ x, z, i }: { x: number; z: number; i: number }) => <Culm a={[x, 0.1, z]} b={[x, postTop, z]} r={0.055} material={mBam} seed={i} />
+    : ({ x, z, i }: { x: number; z: number; i: number }) => <Beam a={[x, 0.1, z]} b={[x, postTop, z]} w={0.11} h={0.11} material={mWood} seed={i} />;
+  const Rail = bam
+    ? ({ a, b, i }: { a: V3; b: V3; i: number }) => <Culm a={a} b={b} r={0.045} material={mBam} seed={i + 30} />
+    : ({ a, b, i }: { a: V3; b: V3; i: number }) => <Beam a={a} b={b} w={0.09} h={0.12} material={mWood} seed={i + 30} />;
+  const sides = front ? [1, -1] : [-1];
+  return (
+    <group>
+      {/* unlit lining just inside the walls: the door and the window open onto a dark room, as in daylight */}
+      {open || !front ? null : <mesh position={[0, wallH / 2 + 0.02, 0]} material={mInside}><boxGeometry args={[2 * hx - 0.16, wallH, 2 * hz - 0.16]} /></mesh>}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.045, 0]} material={open || !front ? mFloorLit : mFloor} receiveShadow><planeGeometry args={[2 * hx - 0.1, 2 * hz - 0.1]} /></mesh>
+      {postXs.flatMap((x, i) => sides.map((s) => (
+        <group key={`${i}_${s}`}>
+          <mesh position={[x, 0.05, s * hz]} scale={[0.17, 0.07, 0.17]} material={mStone} castShadow receiveShadow><sphereGeometry args={[1, 12, 8]} /></mesh>
+          <Post x={x} z={s * hz} i={i * 2 + (s > 0 ? 0 : 1)} />
+        </group>
+      )))}
+      {/* walls sit just inside the posts */}
+      {front ? <mesh geometry={G.front} material={mWeave} position={[0, 0.03, hz - 0.05]} castShadow receiveShadow /> : null}
+      <mesh geometry={G.back} material={mWeave} position={[0, 0.03, -hz + 0.05]} castShadow receiveShadow />
+      {G.fill ? sides.map((s) => <mesh key={s} geometry={G.fill!} material={mWeave} position={[0, fill0, s * (hz - 0.05)]} castShadow receiveShadow />) : null}
+      {[1, -1].map((s) => (
+        <group key={s}>
+          <mesh geometry={G.side} material={mWeave} position={[s * (hx - 0.05), 0.03, 0]} rotation={[0, Math.PI / 2, 0]} castShadow receiveShadow />
+          {gables ? <mesh geometry={G.gable} material={mWeave} position={[s * (hx - 0.05), gBase, 0]} castShadow receiveShadow /> : null}
+        </group>
+      ))}
+      {/* split-bamboo rails clamp the weave: bottom, middle, top */}
+      {[0.12, 1.1, wallH - 0.06].flatMap((y, k) => [
+        front ? <Culm key={`f${k}a`} a={[-hx, y, hz + 0.012]} b={[k < 2 ? 0.55 : hx, y, hz + 0.012]} r={0.017} material={mBam} seed={k} /> : null,
+        front && k < 2 ? <Culm key={`f${k}b`} a={[1.4, y, hz + 0.012]} b={[hx, y, hz + 0.012]} r={0.017} material={mBam} seed={k + 3} /> : null,
+        <Culm key={`b${k}`} a={[-hx, y, -hz - 0.012]} b={[hx, y, -hz - 0.012]} r={0.017} material={mBam} seed={k + 6} />,
+        <Culm key={`l${k}`} a={[-hx - 0.012, y, -hz]} b={[-hx - 0.012, y, hz]} r={0.017} material={mBam} seed={k + 9} />,
+        <Culm key={`r${k}`} a={[hx + 0.012, y, -hz]} b={[hx + 0.012, y, hz]} r={0.017} material={mBam} seed={k + 12} />,
+      ])}
+      {/* door and window frames */}
+      {front ? ([[0.55, 0, 0.55, 1.9], [1.4, 0, 1.4, 1.9], [0.5, 1.9, 1.45, 1.9], [-1.45, 0.95, -1.45, 1.7], [-0.6, 0.95, -0.6, 1.7], [-1.5, 0.95, -0.55, 0.95], [-1.5, 1.7, -0.55, 1.7], [-1.025, 0.95, -1.025, 1.7]] as const).map(([x0, y0, x1, y1], i) => (
+        <Beam key={i} a={[x0, y0, hz - 0.02]} b={[x1, y1, hz - 0.02]} w={0.07} h={0.05} material={mWood} seed={i} />
+      )) : null}
+      {/* top plates and tie beams */}
+      {sides.map((s, i) => <Rail key={`p${s}`} a={[-hx - 0.2, railY, s * hz]} b={[hx + 0.2, railY, s * hz]} i={i} />)}
+      {ties && postXs.map((x, i) => <Rail key={`t${i}`} a={[x, tieY, -hz + 0.08]} b={[x, tieY, hz - 0.08]} i={i + 4} />)}
+    </group>
+  );
+};
+
+// ------------------------------------------------------------------ assembly helper
+/**
+ * A part that arrives: it flies in from `from` (offset in metres) while growing from nothing about its own centre
+ * `at`, landing at e = 1. Nothing pops: at e → 0 the part has zero size.
+ */
+export const Arrive: React.FC<{ e: number; at: V3; from?: V3; children: React.ReactNode }> = ({ e, at, from = [0, 1.2, 0], children }) => {
+  if (e <= 0) return null;
+  const k = 1 - outC(e), sc = smooth(e / 0.3);
+  return (
+    <group position={[at[0] + from[0] * k, at[1] + from[1] * k, at[2] + from[2] * k]} scale={[sc, sc, sc]}>
+      <group position={[-at[0], -at[1], -at[2]]}>{children}</group>
+    </group>
+  );
+};
+const mid = (a: V3, b: V3): V3 => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2];
+/** A timber member that arrives. */
+export const Member: React.FC<{ e: number; a: V3; b: V3; w: number; h: number; material: Material; from?: V3; seed?: number }> = ({ e, a, b, w, h, material, from, seed }) => (
+  <Arrive e={e} at={mid(a, b)} from={from}>
+    <Beam a={a} b={b} w={w} h={h} material={material} seed={seed} />
+  </Arrive>
+);
+
+// ------------------------------------------------------------------ timber truss roof
+export type TrussStage = {
+  /** 0…1 per member group: bottom chord, principal rafters, king post, struts */
+  chord: number; rafters: number; king: number; struts: number;
+  /** purlins (gording), common rafters (usuk), battens (reng) */
+  purlins: number; usuk: number; reng: number;
+};
+export const TRUSS_DONE: TrussStage = { chord: 1, rafters: 1, king: 1, struts: 1, purlins: 1, usuk: 1, reng: 1 };
+
+/** Kuda-kuda: bottom chord, two principal rafters, king post, two struts — then purlins, usuk and reng over them. */
+export const TrussRoof: React.FC<{ dims: RoofDims; xs: number[]; plate: number; stage: TrussStage; stagger?: number; slopes?: number[] }> = ({ dims, xs, plate, stage, stagger = 0.22, slopes = [1, -1] }) => {
+  const f = useMemo(() => roofFrame(dims), [dims.hw, dims.ridgeY, dims.run, dims.drop]); // eslint-disable-line react-hooks/exhaustive-deps
+  const J = trussJoints(dims, plate);
+  const mTim = mat("timber", wood({ base: "#b07a44", dark: "#6e4526", seed: 19 }), { repeat: [1 / 1.6, 1 / 0.35], roughness: 0.78 });
+  const mTim2 = mat("timber2", wood({ base: "#c08c52", dark: "#7c5230", seed: 23 }), { repeat: [1 / 1.2, 1 / 0.3], roughness: 0.8 });
+  const c01 = (x: number) => Math.min(1, Math.max(0, x));
+  const st = (e: number, i: number) => c01(e * (1 + stagger * (xs.length - 1)) - i * stagger);
+  const out: React.ReactNode[] = [];
+  xs.forEach((x, i) => {
+    out.push(<Member key={`c${i}`} e={st(stage.chord, i)} from={[0, 1.6, 0]} a={[x, J.seatY - 0.075, -J.footZ - 0.25]} b={[x, J.seatY - 0.075, J.footZ + 0.25]} w={0.08} h={0.15} material={mTim} seed={i} />);
+    for (const s of [1, -1])
+      out.push(<Member key={`r${i}_${s}`} e={st(stage.rafters, i)} from={[0, 1.0, s * 1.0]} a={[x, J.seatY + 0.05, s * J.footZ]} b={[x, J.apexY - 0.01, s * 0.05]} w={0.08} h={0.14} material={mTim} seed={i + 3 + s} />);
+    out.push(<Member key={`k${i}`} e={st(stage.king, i)} from={[0, 1.5, 0]} a={[x + 0.0, J.seatY, 0]} b={[x, J.apexY + 0.1, 0]} w={0.082} h={0.1} material={mTim} seed={i + 7} />);
+    for (const s of [1, -1]) {
+      const t = 0.5;
+      const top: V3 = [x, J.seatY + (J.apexY - J.seatY) * (1 - t) - 0.1, s * J.footZ * t];
+      out.push(<Member key={`s${i}_${s}`} e={st(stage.struts, i)} from={[0, 0.9, s * 0.6]} a={[x, J.seatY + 0.07, s * 0.09]} b={top} w={0.07} h={0.09} material={mTim} seed={i + 11 + s} />);
+    }
+  });
+  // purlins: ridge board, two per slope
+  [0.05, f.sl * 0.34, f.sl * 0.63].forEach((dist, k) => {
+    for (const s of k === 0 ? [1] : slopes)
+      out.push(<Member key={`p${k}_${s}`} e={c01(stage.purlins * 1.6 - k * 0.3)} from={[0, 1.5, 0]} a={f.pt(s, -dims.hw + 0.12, dist, -0.145)} b={f.pt(s, dims.hw - 0.12, dist, -0.145)} w={0.08} h={0.12} material={mTim2} seed={k * 2 + s} />);
+  });
+  // usuk every ~0.5 m
+  const nu = Math.round((2 * dims.hw - 0.3) / 0.5) + 1;
+  for (let u = 0; u < nu; u++) {
+    const x = -dims.hw + 0.15 + ((2 * dims.hw - 0.3) * u) / (nu - 1);
+    const e = c01(stage.usuk * (1 + 0.06 * nu) - u * 0.06);
+    for (const s of slopes)
+      out.push(<Member key={`u${u}_${s}`} e={e} from={[0, 0.9, s * 0.4]} a={f.pt(s, x, 0.04, -0.045)} b={f.pt(s, x, f.sl - 0.02, -0.045)} w={0.05} h={0.07} material={mTim2} seed={u + (s > 0 ? 0 : 40)} />);
+  }
+  // reng at the tile gauge
+  const nr = Math.floor((f.sl - 0.1) / TILE.gauge) + 1;
+  for (let r = 0; r < nr; r++) {
+    const dist = f.sl - 0.02 - r * TILE.gauge;
+    const e = c01(stage.reng * (1 + 0.07 * nr) - r * 0.07);
+    for (const s of slopes)
+      out.push(<Member key={`g${r}_${s}`} e={e} from={[0, 0.6, s * 0.3]} a={f.pt(s, -dims.hw, dist, 0.0125)} b={f.pt(s, dims.hw, dist, 0.0125)} w={0.035} h={0.025} material={mTim2} seed={r + (s > 0 ? 0 : 60)} />);
+  }
+  return <group>{out}</group>;
+};
+
+==== 14555 project/src/kits/bedah/Stage.tsx
+// Stage — daylight, sky and the finishing chain of a BEDAH shot.
+//
+// The look is "real building site on a clear day": one hard sun with crisp shadows, a blue sky bounce, a deep blue
+// sky dome with drifting cumulus, light aerial haze, contact shadows from ambient occlusion and a punchy grade.
+// Chain: MSAA scene → NaN guard → GTAO → (depth of field for inserts) → faint bloom → neutral tone map → grade.
+
+import React, { useLayoutEffect, useMemo } from "react";
+import { useFrame, useThree } from "@react-three/fiber";
+import {
+  BackSide, Color, DirectionalLight, FogExp2, HalfFloatType, HemisphereLight, Mesh, NeutralToneMapping, Object3D,
+  PerspectiveCamera, ShaderMaterial, SphereGeometry, Vector2, Vector3, WebGLRenderTarget,
+} from "three";
+import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
+import { GTAOPass } from "three/examples/jsm/postprocessing/GTAOPass.js";
+import { BokehPass } from "three/examples/jsm/postprocessing/BokehPass.js";
+import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
+import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
+import { ShaderPass } from "three/examples/jsm/postprocessing/ShaderPass.js";
+import type { Shot, V3 } from "./cam.ts";
+
+/** Render layer for rain and other see-through effects: the camera draws it, the depth-based passes (AO, DOF) skip it. */
+export const FX_LAYER = 1;
+
+export type Look = {
+  /** direction TOWARD the sun */
+  sun: { dir: V3; color: string; intensity: number };
+  hemi: { sky: string; ground: string; intensity: number };
+  fog: { color: string; density: number };
+  sky: { zenith: string; horizon: string; cover: number; cloud: string; shade: string; drift: number };
+  exposure: number;
+  bloom: number;
+  ao: number;
+  grade: { contrast: number; sat: number; vignette: number; grain: number; tint: string };
+};
+
+const C = (x: string) => new Color(x);
+const mixC = (a: string, b: string, t: number) => "#" + C(a).lerp(C(b), t).getHexString();
+const m = (a: number, b: number, t: number) => a + (b - a) * t;
+const m3 = (a: V3, b: V3, t: number): V3 => [m(a[0], b[0], t), m(a[1], b[1], t), m(a[2], b[2], t)];
+
+/** Blend two looks (weather changing inside a shot). */
+export const mixLook = (a: Look, b: Look, t: number): Look => {
+  if (t <= 0) return a;
+  if (t >= 1) return b;
+  return {
+    sun: { dir: m3(a.sun.dir, b.sun.dir, t), color: mixC(a.sun.color, b.sun.color, t), intensity: m(a.sun.intensity, b.sun.intensity, t) },
+    hemi: { sky: mixC(a.hemi.sky, b.hemi.sky, t), ground: mixC(a.hemi.ground, b.hemi.ground, t), intensity: m(a.hemi.intensity, b.hemi.intensity, t) },
+    fog: { color: mixC(a.fog.color, b.fog.color, t), density: m(a.fog.density, b.fog.density, t) },
+    sky: {
+      zenith: mixC(a.sky.zenith, b.sky.zenith, t), horizon: mixC(a.sky.horizon, b.sky.horizon, t), cover: m(a.sky.cover, b.sky.cover, t),
+      cloud: mixC(a.sky.cloud, b.sky.cloud, t), shade: mixC(a.sky.shade, b.sky.shade, t), drift: m(a.sky.drift, b.sky.drift, t),
+    },
+    exposure: m(a.exposure, b.exposure, t),
+    bloom: m(a.bloom, b.bloom, t),
+    ao: m(a.ao, b.ao, t),
+    grade: {
+      contrast: m(a.grade.contrast, b.grade.contrast, t), sat: m(a.grade.sat, b.grade.sat, t), vignette: m(a.grade.vignette, b.grade.vignette, t),
+      grain: m(a.grade.grain, b.grade.grain, t), tint: mixC(a.grade.tint, b.grade.tint, t),
+    },
+  };
+};
+
+/** Clear tropical late morning: the house look. */
+export const DAY: Look = {
+  sun: { dir: [-0.5, 0.78, 0.42], color: "#fff2dc", intensity: 3.1 },
+  hemi: { sky: "#e3e9f6", ground: "#b59877", intensity: 1.55 },
+  fog: { color: "#a9c8ee", density: 0.0045 },
+  sky: { zenith: "#05287e", horizon: "#6ea4e4", cover: 0.43, cloud: "#ffffff", shade: "#a3b4d0", drift: 1 },
+  exposure: 0.95,
+  bloom: 0.1,
+  ao: 1,
+  grade: { contrast: 0.24, sat: 1.04, vignette: 0.1, grain: 0.005, tint: "#ffffff" },
+};
+
+/** Rain: sun gone, grey ceiling, cool flat light. */
+export const RAIN: Look = {
+  sun: { dir: [-0.5, 0.78, 0.42], color: "#dfe6f0", intensity: 0.9 },
+  hemi: { sky: "#cfd8e4", ground: "#8d867c", intensity: 2.7 },
+  fog: { color: "#a3aebb", density: 0.012 },
+  sky: { zenith: "#66758a", horizon: "#a3afbe", cover: 0.98, cloud: "#b4bdc9", shade: "#6c7684", drift: 2.4 },
+  exposure: 1.0,
+  bloom: 0.05,
+  ao: 1,
+  grade: { contrast: 0.2, sat: 0.86, vignette: 0.2, grain: 0.005, tint: "#eef3ff" },
+};
+
+// ---------------------------------------------------------------- sky dome with cumulus
+const SkyShader = {
+  uniforms: {
+    uZenith: { value: new Color() }, uHorizon: { value: new Color() }, uSunDir: { value: new Vector3(0, 1, 0) },
+    uCover: { value: 0.5 }, uCloud: { value: new Color() }, uShade: { value: new Color() }, uTime: { value: 0 },
+  },
+  vertexShader: /* glsl */ `varying vec3 vDir; void main(){ vDir = normalize(position); vec4 p = projectionMatrix * modelViewMatrix * vec4(position, 1.0); gl_Position = p.xyww; }`,
+  fragmentShader: /* glsl */ `
+    precision highp float;
+    uniform vec3 uZenith; uniform vec3 uHorizon; uniform vec3 uSunDir; uniform float uCover; uniform vec3 uCloud; uniform vec3 uShade; uniform float uTime;
+    varying vec3 vDir;
+    float hash(vec2 p){ vec3 q = fract(vec3(p.xyx) * vec3(0.1031, 0.1030, 0.0973)); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
+    float vn(vec2 p){ vec2 i = floor(p), f = fract(p); vec2 u = f * f * (3.0 - 2.0 * f);
+      return mix(mix(hash(i), hash(i + vec2(1, 0)), u.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), u.x), u.y); }
+    float fbm(vec2 p){ float a = 0.5, s = 0.0; for (int i = 0; i < 5; i++){ s += a * vn(p); p = p * 2.03 + vec2(17.1, 9.2); a *= 0.5; } return s; }
+    // puffy: big soft masses with rounded billows carved on their edges
+    float dens(vec2 p){
+      float base = 0.58 * vn(p * vec2(0.5, 0.62)) + 0.30 * vn(p * 1.05 + 7.3) + 0.12 * vn(p * 2.3 + 3.1);
+      float bil = 0.0, a = 0.5; vec2 q = p * 2.6;
+      for (int i = 0; i < 4; i++){ bil += a * abs(2.0 * vn(q) - 1.0); q = q * 2.07 + vec2(3.7, 1.3); a *= 0.5; }
+      return base - bil * 0.24 + 0.07;
+    }
+    void main(){
+      vec3 d = normalize(vDir);
+      float h = max(d.y, 0.0);
+      vec3 c = mix(uHorizon, uZenith, 1.0 - exp(-h * 4.2));
+      // warm, bright haze band right at the horizon
+      c = mix(c, uHorizon * 1.08 + vec3(0.04, 0.03, 0.0), exp(-h * 14.0) * 0.7);
+      vec3 s = normalize(uSunDir);
+      float cs = max(dot(d, s), 0.0);
+      c += vec3(1.0, 0.96, 0.88) * (0.10 * pow(cs, 8.0) + 0.5 * pow(cs, 200.0));
+      if (d.y > 0.0) {
+        vec2 p = d.xz / (d.y + 0.34) * 2.5 + vec2(uTime * 0.012, uTime * 0.004);
+        float n = dens(p);
+        float cov = 1.0 - uCover;
+        float a = smoothstep(cov, cov + 0.09, n);
+        if (a > 0.0) {
+          vec2 toSun = normalize(s.xz + vec2(1e-4)) * 0.3;
+          float lit = n - dens(p + toSun);
+          float light = clamp(0.7 + lit * 3.2, 0.0, 1.0);
+          // thick cores go grey underneath
+          float core = smoothstep(cov + 0.1, cov + 0.3, n);
+          vec3 cc = mix(uShade, uCloud, light) * mix(1.0, 0.8, core);
+          a *= smoothstep(0.015, 0.16, d.y);
+          c = mix(c, cc, a * 0.97);
+        }
+      }
+      gl_FragColor = vec4(c, 1.0);
+    }`,
+};
+
+// ---------------------------------------------------------------- grade
+const GradeShader = {
+  uniforms: {
+    tDiffuse: { value: null }, uTime: { value: 0 }, uRes: { value: new Vector2(1080, 1920) }, uTint: { value: new Color("#fff") },
+    uContrast: { value: 0.2 }, uSat: { value: 1.1 }, uVignette: { value: 0.15 }, uGrain: { value: 0.01 },
+  },
+  vertexShader: /* glsl */ `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+  fragmentShader: /* glsl */ `
+    uniform sampler2D tDiffuse; uniform float uTime; uniform vec2 uRes; uniform vec3 uTint;
+    uniform float uContrast; uniform float uSat; uniform float uVignette; uniform float uGrain; varying vec2 vUv;
+    float hash(vec2 p){ p = fract(p * vec2(443.897, 441.423)); p += dot(p, p.yx + 19.19); return fract((p.x + p.y) * p.x); }
+    void main(){
+      vec4 c = texture2D(tDiffuse, vUv);
+      c.rgb *= uTint;
+      c.rgb = mix(c.rgb, c.rgb * c.rgb * (3.0 - 2.0 * c.rgb), uContrast);
+      float l = dot(c.rgb, vec3(0.2126, 0.7152, 0.0722));
+      c.rgb = mix(vec3(l), c.rgb, uSat);
+      vec2 d = (vUv - 0.5) * vec2(1.0, 0.8);
+      c.rgb *= 1.0 - uVignette * smoothstep(0.3, 0.9, length(d));
+      c.rgb += (hash(vUv * uRes + uTime * 17.0) - 0.5) * uGrain;
+      gl_FragColor = vec4(clamp(c.rgb, 0.0, 1.0), 1.0);
+    }`,
+};
+
+const SanitizeShader = {
+  uniforms: { tDiffuse: { value: null } },
+  vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: `uniform sampler2D tDiffuse; varying vec2 vUv;
+    void main() { vec4 c = texture2D(tDiffuse, vUv); if (any(isnan(c)) || any(isinf(c))) c = vec4(0.0, 0.0, 0.0, 1.0); gl_FragColor = vec4(clamp(c.rgb, 0.0, 32.0), 1.0); }`,
+};
+
+export const Stage: React.FC<{ shot: Shot; look: Look; frame: number; t: number; children: React.ReactNode }> = ({ shot, look, frame, t, children }) => {
+  const { gl, scene, camera, size } = useThree();
+
+  const rig = useMemo(() => {
+    const target = new Object3D();
+    const sun = new DirectionalLight("#fff", 3);
+    sun.target = target;
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(4096, 4096);
+    sun.shadow.radius = 2.2;
+    sun.shadow.bias = -0.0003;
+    sun.shadow.normalBias = 0.03;
+    const hemi = new HemisphereLight("#fff", "#444", 1);
+    const sky = new Mesh(new SphereGeometry(1, 48, 24), new ShaderMaterial({ ...SkyShader, uniforms: Object.fromEntries(Object.entries(SkyShader.uniforms).map(([k, v]) => [k, { value: (v.value as { clone?: () => unknown }).clone ? (v.value as { clone: () => unknown }).clone() : v.value }])), side: BackSide, depthWrite: false, fog: false }));
+    sky.frustumCulled = false;
+    sky.renderOrder = -10;
+    return { target, sun, hemi, sky };
+  }, []);
+
+  const chain = useMemo(() => {
+    const w = size.width, h = size.height;
+    const rt = new WebGLRenderTarget(w, h, { type: HalfFloatType, samples: 8 });
+    const composer = new EffectComposer(gl, rt);
+    composer.setPixelRatio(1);
+    composer.setSize(w, h);
+    composer.addPass(new RenderPass(scene, camera));
+    composer.addPass(new ShaderPass(SanitizeShader));
+    const gtao = new GTAOPass(scene, camera, w, h);
+    gtao.updateGtaoMaterial({ radius: 0.55, distanceExponent: 1.4, thickness: 1.0, scale: 1.15, samples: 16, distanceFallOff: 1.0, screenSpaceRadius: false });
+    gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, rings: 2, samples: 16 });
+    const skipFx = <P extends { render: (...a: never[]) => void }>(pass: P) => {
+      const r = pass.render.bind(pass) as (...a: unknown[]) => void;
+      (pass as unknown as { render: (...a: unknown[]) => void }).render = (...a: unknown[]) => { camera.layers.disable(FX_LAYER); try { r(...a); } finally { camera.layers.enable(FX_LAYER); } };
+      return pass;
+    };
+    composer.addPass(skipFx(gtao));
+    const dof = new BokehPass(scene, camera, { focus: 10, aperture: 0.002, maxblur: 0.008 });
+    composer.addPass(skipFx(dof));
+    const bloom = new UnrealBloomPass(new Vector2(w, h), 0.1, 0.5, 1.0);
+    composer.addPass(bloom);
+    composer.addPass(new OutputPass());
+    const grade = new ShaderPass(GradeShader);
+    (grade.uniforms.uRes.value as Vector2).set(w, h);
+    composer.addPass(grade);
+    return { composer, gtao, dof, bloom, grade };
+  }, [gl, scene, camera, size.width, size.height]);
+
+  useLayoutEffect(() => {
+    const cam = camera as PerspectiveCamera;
+    cam.position.set(...shot.pos);
+    cam.up.set(Math.sin(shot.roll ?? 0), Math.cos(shot.roll ?? 0), 0);
+    cam.lookAt(...shot.target);
+    cam.fov = shot.fov;
+    cam.near = 0.08;
+    cam.far = 1500;
+    cam.updateProjectionMatrix();
+    cam.updateMatrixWorld();
+    cam.layers.enable(FX_LAYER);
+    gl.toneMapping = NeutralToneMapping;
+    gl.shadowMap.autoUpdate = false;
+  }, [shot, camera, gl]);
+
+  useFrame(() => {
+    const L = look;
+    const at = shot.shadowAt ?? shot.target;
+    const box = shot.shadowBox ?? 12;
+    const dir = new Vector3(...L.sun.dir).normalize();
+    rig.target.position.set(...at);
+    rig.target.updateMatrixWorld();
+    rig.sun.position.set(at[0] + dir.x * 60, at[1] + dir.y * 60, at[2] + dir.z * 60);
+    rig.sun.color.set(L.sun.color);
+    rig.sun.intensity = L.sun.intensity;
+    const sc = rig.sun.shadow.camera;
+    sc.left = -box; sc.right = box; sc.top = box; sc.bottom = -box;
+    sc.near = 1;
+    sc.far = 140;
+    sc.updateProjectionMatrix();
+    rig.sun.updateMatrixWorld();
+    rig.hemi.color.set(L.hemi.sky);
+    rig.hemi.groundColor.set(L.hemi.ground);
+    rig.hemi.intensity = L.hemi.intensity;
+
+    const fog = scene.fog as FogExp2 | null;
+    if (!fog) scene.fog = new FogExp2(L.fog.color, L.fog.density);
+    else { fog.color.set(L.fog.color); fog.density = L.fog.density; }
+
+    const cam = camera as PerspectiveCamera;
+    rig.sky.position.copy(cam.position);
+    rig.sky.scale.setScalar(cam.far * 0.9);
+    rig.sky.updateMatrixWorld();
+    const su = (rig.sky.material as ShaderMaterial).uniforms;
+    su.uZenith.value.set(L.sky.zenith);
+    su.uHorizon.value.set(L.sky.horizon);
+    su.uSunDir.value.copy(dir);
+    su.uCover.value = L.sky.cover;
+    su.uCloud.value.set(L.sky.cloud);
+    su.uShade.value.set(L.sky.shade);
+    su.uTime.value = t * L.sky.drift;
+
+    gl.toneMappingExposure = L.exposure;
+    chain.bloom.strength = L.bloom;
+    chain.gtao.blendIntensity = L.ao;
+    const du = chain.dof.uniforms as unknown as Record<string, { value: number }>;
+    const blur = shot.blur ?? 0;
+    chain.dof.enabled = blur > 0;
+    du.focus.value = shot.focus ?? 8;
+    du.aperture.value = blur * 0.0009;
+    du.maxblur.value = 0.012;
+    const g = chain.grade.uniforms;
+    g.uTime.value = frame % 997;
+    g.uTint.value.set(L.grade.tint);
+    g.uContrast.value = L.grade.contrast;
+    g.uSat.value = L.grade.sat;
+    g.uVignette.value = L.grade.vignette;
+    g.uGrain.value = L.grade.grain;
+    gl.shadowMap.needsUpdate = true;
+    chain.composer.render();
+  }, 1);
+
+  return (
+    <>
+      <primitive object={rig.target} />
+      <primitive object={rig.sun} />
+      <primitive object={rig.hemi} />
+      <primitive object={rig.sky} />
+      {children}
+    </>
+  );
+};
+
+==== 23101 project/src/kits/bedah/tex.ts
+// Procedural PBR textures for BEDAH — no image assets, fully deterministic.
+// Every generator fills an albedo + height field per pixel; the normal map is derived from the height field.
+// Texture row 0 is v = 0 (DataTexture is not flipped), so "y up" in the generators is "v up" on the mesh.
+
+import { ClampToEdgeWrapping, DataTexture, LinearFilter, LinearMipmapLinearFilter, NoColorSpace, RepeatWrapping, RGBAFormat, SRGBColorSpace, type Texture } from "three";
+
+export type Maps = { map: Texture; normalMap: Texture };
+type Rgb = [number, number, number];
+
+export const hex = (h: string): Rgb => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
+export const prng = (seed: number) => {
+  let s = seed % 2147483647;
+  if (s <= 0) s += 2147483646;
+  return () => (s = (s * 16807) % 2147483647) / 2147483647;
+};
+
+// ------------------------------------------------------------------ noise (tileable)
+export const hash2 = (x: number, y: number, seed = 0) => {
+  let h = Math.imul(x | 0, 374761393) ^ Math.imul(y | 0, 668265263) ^ Math.imul(seed | 0, 1442695041);
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  h ^= h >>> 16;
+  return (h >>> 0) / 4294967295;
+};
+const wrap = (i: number, p: number) => ((i % p) + p) % p;
+/** Value noise, periodic with integer periods (px, py) in lattice units. */
+export const vnoise = (x: number, y: number, px: number, py: number, seed = 0) => {
+  const xi = Math.floor(x), yi = Math.floor(y);
+  const fx = x - xi, fy = y - yi;
+  const ux = fx * fx * (3 - 2 * fx), uy = fy * fy * (3 - 2 * fy);
+  const x0 = wrap(xi, px), x1 = wrap(xi + 1, px), y0 = wrap(yi, py), y1 = wrap(yi + 1, py);
+  const a = hash2(x0, y0, seed), b = hash2(x1, y0, seed), c = hash2(x0, y1, seed), d = hash2(x1, y1, seed);
+  return a + (b - a) * ux + (c - a) * uy + (a - b - c + d) * ux * uy;
+};
+/** Fractal noise 0..1; (u, v) in 0..1, `f` = base lattice cells across (integer → tileable). */
+export const fbm = (u: number, v: number, f: number, oct: number, seed = 0, fy = f) => {
+  let a = 0.5, s = 0, n = 0, px = f, py = fy;
+  for (let i = 0; i < oct; i++) {
+    s += a * vnoise(u * px, v * py, px, py, seed + i * 31);
+    n += a;
+    a *= 0.5;
+    px *= 2;
+    py *= 2;
+  }
+  return s / n;
+};
+
+const c01 = (x: number) => (x < 0 ? 0 : x > 1 ? 1 : x);
+const ss = (a: number, b: number, x: number) => {
+  const t = c01((x - a) / (b - a));
+  return t * t * (3 - 2 * t);
+};
+const lerp3 = (out: Float32Array, a: Rgb, b: Rgb, t: number) => {
+  out[0] = a[0] + (b[0] - a[0]) * t;
+  out[1] = a[1] + (b[1] - a[1]) * t;
+  out[2] = a[2] + (b[2] - a[2]) * t;
+};
+
+// ------------------------------------------------------------------ builder
+/** px[0..2] = colour 0..255, px[3] = height (arbitrary units), px[4] = alpha 0..1 */
+type Fill = (u: number, v: number, px: Float32Array) => void;
+
+const finish = (t: DataTexture, srgb: boolean, repeat: boolean) => {
+  t.colorSpace = srgb ? SRGBColorSpace : NoColorSpace;
+  t.generateMipmaps = true;
+  t.minFilter = LinearMipmapLinearFilter;
+  t.magFilter = LinearFilter;
+  t.wrapS = RepeatWrapping;
+  t.wrapT = repeat ? RepeatWrapping : ClampToEdgeWrapping;
+  t.anisotropy = 16;
+  t.needsUpdate = true;
+  return t;
+};
+
+/**
+ * Build albedo (+alpha) and a normal map. `bump` scales the height gradient (height units × pixels);
+ * `tileV` false keeps the texture clamped vertically (a section that is drawn once).
+ */
+export const build = (w: number, h: number, fill: Fill, bump = 1, tileV = true): Maps => {
+  const col = new Uint8Array(w * h * 4);
+  const H = new Float32Array(w * h);
+  const px = new Float32Array(5);
+  for (let y = 0; y < h; y++)
+    for (let x = 0; x < w; x++) {
+      px[3] = 0;
+      px[4] = 1;
+      fill((x + 0.5) / w, (y + 0.5) / h, px);
+      const k = (y * w + x) * 4;
+      col[k] = px[0] < 0 ? 0 : px[0] > 255 ? 255 : px[0];
+      col[k + 1] = px[1] < 0 ? 0 : px[1] > 255 ? 255 : px[1];
+      col[k + 2] = px[2] < 0 ? 0 : px[2] > 255 ? 255 : px[2];
+      col[k + 3] = c01(px[4]) * 255;
+      H[y * w + x] = px[3];
+    }
+  const nrm = new Uint8Array(w * h * 4);
+  for (let y = 0; y < h; y++) {
+    const yu = tileV ? (y + 1) % h : Math.min(h - 1, y + 1), yd = tileV ? (y + h - 1) % h : Math.max(0, y - 1);
+    for (let x = 0; x < w; x++) {
+      const xr = (x + 1) % w, xl = (x + w - 1) % w;
+      const dx = (H[y * w + xr] - H[y * w + xl]) * bump, dy = (H[yu * w + x] - H[yd * w + x]) * bump;
+      const il = 1 / Math.hypot(dx, dy, 1);
+      const k = (y * w + x) * 4;
+      nrm[k] = (-dx * il * 0.5 + 0.5) * 255;
+      nrm[k + 1] = (-dy * il * 0.5 + 0.5) * 255;
+      nrm[k + 2] = (il * 0.5 + 0.5) * 255;
+      nrm[k + 3] = 255;
+    }
+  }
+  return { map: finish(new DataTexture(col, w, h, RGBAFormat), true, tileV), normalMap: finish(new DataTexture(nrm, w, h, RGBAFormat), false, tileV) };
+};
+
+const cache = new Map<string, Maps>();
+const memo = (key: string, make: () => Maps) => {
+  let m = cache.get(key);
+  if (!m) cache.set(key, (m = make()));
+  return m;
+};
+
+// ------------------------------------------------------------------ brick (running bond)
+/** One repeat = `across` bricks × `courses` courses. Height: brick faces proud of recessed mortar. */
+export const brick = (o: { across?: number; courses?: number; seed?: number; base?: string; dark?: string; light?: string; mortar?: string } = {}) =>
+  memo("brick" + JSON.stringify(o), () => {
+    const { across = 6, courses = 24, seed = 3 } = o;
+    const B = hex(o.base ?? "#b4522e"), D = hex(o.dark ?? "#6b2d20"), L = hex(o.light ?? "#cc7648"), M = hex(o.mortar ?? "#b3aa9b");
+    const jx = 0.045, jy = 0.17; // joint width as a fraction of a brick cell (≈ 10 mm)
+    return build(1024, 1024, (u, v, px) => {
+      const row = Math.floor(v * courses);
+      const fy = v * courses - row;
+      const xo = u * across + (row % 2) * 0.5;
+      const bi = wrap(Math.floor(xo), across);
+      const fx = xo - Math.floor(xo);
+      const r = hash2(bi, row, seed), r2 = hash2(bi, row, seed + 7), r3 = hash2(bi, row, seed + 13);
+      // rounded-rectangle mask with slightly ragged arrises
+      const rag = (fbm(u, v, 96, 2, seed + 40) - 0.5) * 0.03;
+      const ex = Math.min(fx, 1 - fx) - jx / 2 + rag * 0.6, ey = Math.min(fy, 1 - fy) - jy / 2 + rag * 2;
+      const face = ss(0, 0.012, ex) * ss(0, 0.045, ey);
+      const grain = fbm(u, v, 128, 4, seed + 3) - 0.5, blot = fbm(u, v, 24, 3, seed + 5) - 0.5;
+      // most bricks orange-red, a fifth burnt dark, a few pale
+      const t = r < 0.2 ? 0.75 + r2 * 0.25 : r2 * 0.28;
+      lerp3(px, B, D, t);
+      if (r > 0.9) lerp3(px, [px[0], px[1], px[2]], L, 0.6);
+      const sh = 1 + grain * 0.22 + blot * 0.18 + (r3 - 0.5) * 0.14;
+      px[0] *= sh; px[1] *= sh; px[2] *= sh;
+      const mo = 1 + (fbm(u, v, 160, 3, seed + 9) - 0.5) * 0.3;
+      px[0] = M[0] * mo + (px[0] - M[0] * mo) * face;
+      px[1] = M[1] * mo + (px[1] - M[1] * mo) * face;
+      px[2] = M[2] * mo + (px[2] - M[2] * mo) * face;
+      px[3] = face * (1 + grain * 0.35) + (1 - face) * 0.25 * mo;
+    }, 5);
+  });
+
+// ------------------------------------------------------------------ woven bamboo (gedek, 2/2 twill herringbone)
+export const weave = (o: { strips?: number; seed?: number; a?: string; b?: string } = {}) =>
+  memo("weave" + JSON.stringify(o), () => {
+    const { strips = 32, seed = 5 } = o;
+    const A = hex(o.a ?? "#cdb47c"), Bc = hex(o.b ?? "#b99d64");
+    const band = 8; // twill direction flips every `band` strips → zigzag
+    return build(1024, 1024, (u, v, px) => {
+      const x = u * strips, y = v * strips;
+      const i = Math.floor(x), j = Math.floor(y);
+      const fx = x - i, fy = y - j;
+      const dir = Math.floor(i / band) % 2 ? 1 : -1;
+      const over = wrap(i + dir * j, 4) < 2; // true → the vertical strip is on top
+      const along = over ? fy : fx, across = over ? fx : fy;
+      const id = over ? i : j;
+      const tone = hash2(id, over ? 1 : 2, seed), fib = fbm(over ? u : v, over ? v : u, 256, 2, seed + (over ? 3 : 4), 8);
+      lerp3(px, over ? A : Bc, over ? Bc : A, tone * 0.3);
+      // strip arches across its width and dips where it passes under its neighbours
+      const arch = Math.sin(Math.PI * across), dip = 0.55 + 0.45 * Math.sin(Math.PI * along);
+      const edge = ss(0, 0.1, across) * ss(0, 0.1, 1 - across);
+      const sh = (0.85 + 0.15 * arch * dip) * (0.94 + fib * 0.12) * (0.9 + 0.1 * edge);
+      px[0] *= sh; px[1] *= sh; px[2] *= sh;
+      px[3] = arch * dip * 0.9 + edge * 0.2;
+    }, 5);
+  });
+
+// ------------------------------------------------------------------ thatch (rumbia / welit strips) with alpha fringe
+/** One strip of folded palm leaves: blades hang from the top edge (v = 1) and end raggedly near v = 0. */
+export const thatch = (o: { blades?: number; seed?: number } = {}) =>
+  memo("thatch" + JSON.stringify(o), () => {
+    const { blades = 90, seed = 7 } = o;
+    const C1 = hex("#c2a465"), C2 = hex("#8f7440"), C3 = hex("#6f6248"), C4 = hex("#d8c088");
+    return build(1024, 512, (u, v, px) => {
+      // two interleaved blade layers; the nearer one wins where it exists
+      let best = -1, bh = 0;
+      for (let layer = 0; layer < 2; layer++) {
+        const x = u * blades * (layer ? 0.83 : 1) + layer * 0.37 + (fbm(u, v, 6, 2, seed + layer) - 0.5) * 0.9 * (1 - v);
+        const i = Math.floor(x), f = x - i;
+        const n = Math.round(blades * (layer ? 0.83 : 1));
+        const id = wrap(i, n);
+        const len = 0.72 + hash2(id, layer, seed) * 0.28; // blade length (fraction of strip height)
+        const wdt = 0.55 + hash2(id, layer + 5, seed) * 0.4;
+        const tip = c01((v - (1 - len)) / 0.22); // taper toward the tip
+        const half = (wdt * (0.25 + 0.75 * Math.sqrt(tip))) / 2;
+        const d = Math.abs(f - 0.5);
+        if (v > 1 - len && d < half) {
+          const hgt = (1 - d / half) * 0.6 + layer * 0.5 + 0.2;
+          if (hgt > bh) { bh = hgt; best = id * 2 + layer; }
+        }
+      }
+      if (best < 0) { px[0] = 60; px[1] = 48; px[2] = 30; px[4] = 0; return; }
+      const r = hash2(best, 11, seed), r2 = hash2(best, 12, seed);
+      lerp3(px, C1, C2, r);
+      if (r2 > 0.82) lerp3(px, [px[0], px[1], px[2]], C3, 0.7);
+      else if (r2 < 0.12) lerp3(px, [px[0], px[1], px[2]], C4, 0.7);
+      const streak = fbm(u, v, 512, 2, seed + 20, 6);
+      const sh = (0.72 + 0.28 * c01(bh)) * (0.86 + streak * 0.28) * (0.8 + 0.2 * v);
+      px[0] *= sh; px[1] *= sh; px[2] *= sh;
+      px[3] = bh;
+      px[4] = 1;
+    }, 3, false);
+  });
+
+// ------------------------------------------------------------------ wood (grain along u)
+export const wood = (o: { seed?: number; base?: string; dark?: string; rings?: number } = {}) =>
+  memo("wood" + JSON.stringify(o), () => {
+    const { seed = 9, rings = 14 } = o;
+    const B = hex(o.base ?? "#a9743f"), D = hex(o.dark ?? "#6d4424");
+    return build(1024, 512, (u, v, px) => {
+      const warp = fbm(u, v, 3, 3, seed, 4) * 2.2;
+      const g = Math.sin((v * rings + warp) * Math.PI * 2) * 0.5 + 0.5;
+      const fine = fbm(u, v, 12, 3, seed + 2, 256);
+      const t = c01(g * 0.6 + fine * 0.55 - 0.1);
+      lerp3(px, B, D, t);
+      const sh = 0.9 + fbm(u, v, 8, 2, seed + 5) * 0.2;
+      px[0] *= sh; px[1] *= sh; px[2] *= sh;
+      px[3] = 1 - t * 0.7 + fine * 0.3;
+    }, 2.2);
+  });
+
+// ------------------------------------------------------------------ bamboo culm (u around, v along; nodes drawn by geometry)
+export const bamboo = (o: { seed?: number; base?: string; dark?: string } = {}) =>
+  memo("bamboo" + JSON.stringify(o), () => {
+    const { seed = 13 } = o;
+    const B = hex(o.base ?? "#c8ad6a"), D = hex(o.dark ?? "#927840");
+    return build(256, 1024, (u, v, px) => {
+      const fib = fbm(u, v, 64, 3, seed, 4), blot = fbm(u, v, 4, 3, seed + 3, 10);
+      lerp3(px, B, D, c01(fib * 0.5 + blot * 0.7 - 0.2));
+      // a darker ring every node (4 nodes per repeat)
+      const n = Math.abs(((v * 4) % 1) - 0.5) * 2;
+      const ring = 1 - ss(0.94, 1, n) * 0.45;
+      px[0] *= ring; px[1] *= ring; px[2] *= ring;
+      px[3] = fib * 0.5;
+    }, 1.5);
+  });
+
+// ------------------------------------------------------------------ fired clay (roof tiles, pots)
+export const clay = (o: { seed?: number } = {}) =>
+  memo("clay" + JSON.stringify(o), () => {
+    const { seed = 17 } = o;
+    return build(512, 512, (u, v, px) => {
+      const a = fbm(u, v, 6, 4, seed), b = fbm(u, v, 96, 3, seed + 4);
+      const sh = 205 + (a - 0.5) * 70 + (b - 0.5) * 50;
+      px[0] = sh; px[1] = sh; px[2] = sh; // neutral: the colour comes from the material / instance colour
+      px[3] = a * 0.6 + b * 0.6;
+    }, 2.5);
+  });
+
+// ------------------------------------------------------------------ plaster / concrete (neutral, tinted by material colour)
+export const plaster = (o: { seed?: number; rough?: number } = {}) =>
+  memo("plaster" + JSON.stringify(o), () => {
+    const { seed = 21, rough = 1 } = o;
+    return build(1024, 1024, (u, v, px) => {
+      const a = fbm(u, v, 5, 5, seed), b = fbm(u, v, 160, 3, seed + 4), s = fbm(u, v, 3, 3, seed + 8, 40);
+      const sh = 222 + (a - 0.5) * 46 * rough + (b - 0.5) * 30 * rough + (s - 0.5) * 16;
+      px[0] = sh; px[1] = sh; px[2] = sh;
+      px[3] = b * 0.7 + a * 0.3;
+    }, 1.6 * rough);
+  });
+
+// ------------------------------------------------------------------ packed earth yard
+export const dirt = (o: { seed?: number; base?: string; dark?: string } = {}) =>
+  memo("dirt" + JSON.stringify(o), () => {
+    const { seed = 23 } = o;
+    const B = hex(o.base ?? "#cf9f74"), D = hex(o.dark ?? "#a97a52"), P = hex("#e6c7a0");
+    return build(1024, 1024, (u, v, px) => {
+      const big = fbm(u, v, 4, 4, seed), mid = fbm(u, v, 24, 4, seed + 3), fine = fbm(u, v, 200, 2, seed + 6);
+      lerp3(px, B, D, c01(big * 0.9 + mid * 0.5 - 0.35));
+      // pale pebbles and dark specks
+      const peb = ss(0.74, 0.8, fbm(u, v, 90, 2, seed + 9));
+      lerp3(px, [px[0], px[1], px[2]], P, peb * 0.32);
+      const sh = 0.93 + fine * 0.14;
+      px[0] *= sh; px[1] *= sh; px[2] *= sh;
+      px[3] = mid * 0.5 + fine * 0.3 + peb * 0.5;
+    }, 2.0);
+  });
+
+// ------------------------------------------------------------------ grass
+export const grass = (o: { seed?: number } = {}) =>
+  memo("grass" + JSON.stringify(o), () => {
+    const { seed = 27 } = o;
+    const A = hex("#73904a"), B = hex("#58773a"), Y = hex("#a3ab62");
+    return build(1024, 1024, (u, v, px) => {
+      const big = fbm(u, v, 5, 4, seed), blade = fbm(u, v, 220, 2, seed + 3, 70), mid = fbm(u, v, 40, 3, seed + 5);
+      lerp3(px, A, B, c01(big * 0.8 + mid * 0.6 - 0.3));
+      lerp3(px, [px[0], px[1], px[2]], Y, ss(0.55, 0.8, blade) * 0.5);
+      const sh = 0.8 + blade * 0.4;
+      px[0] *= sh; px[1] *= sh; px[2] *= sh;
+      px[3] = blade + mid * 0.5;
+    }, 2.6);
+  });
+
+// ------------------------------------------------------------------ soil section (the cut face of the ground slab)
+/**
+ * Drawn once top-to-bottom (v = 1 is the ground surface), tiling sideways. Bands, as fractions of the face height:
+ * a thin fill/yard layer, dark topsoil with roots and stones, subsoil, then cracked rock.
+ */
+export const soilSection = (o: { seed?: number; top?: string } = {}) =>
+  memo("soil" + JSON.stringify(o), () => {
+    const { seed = 31 } = o;
+    const FILL = hex(o.top ?? "#c58c5c"), TOP = hex("#4a3320"), SUB = hex("#7a4f2e"), ROCK = hex("#77726a"), ROCKD = hex("#4f4b45"), STONE = hex("#8f867a");
+    return build(2048, 1024, (u, v, px) => {
+      const d = 1 - v; // depth 0 (surface) … 1 (bottom)
+      const wob = (fbm(u, 0.5, 6, 3, seed, 1) - 0.5) * 0.05;
+      const big = fbm(u, v, 8, 5, seed + 2, 4), mid = fbm(u, v, 48, 4, seed + 4, 24), fine = fbm(u, v, 320, 2, seed + 6, 160);
+      const t1 = ss(0.035 + wob * 0.2, 0.05 + wob * 0.2, d); // fill → topsoil
+      const t2 = ss(0.3 + wob, 0.42 + wob, d + (big - 0.5) * 0.12); // topsoil → subsoil
+      const t3 = ss(0.58 + wob, 0.66 + wob, d + (big - 0.5) * 0.1); // subsoil → rock
+      lerp3(px, FILL, TOP, t1);
+      lerp3(px, [px[0], px[1], px[2]], SUB, t2);
+      lerp3(px, [px[0], px[1], px[2]], ROCK, t3);
+      // mottling: dark clods in the soil, pale stones, cracks in the rock
+      const clod = ss(0.5, 0.72, mid) * (1 - t3) * t1;
+      lerp3(px, [px[0], px[1], px[2]], TOP, clod * 0.55 * (0.3 + t2));
+      const st = ss(0.72, 0.75, fbm(u, v, 110, 2, seed + 9, 55)) * t1 * (1 - t3 * 0.5);
+      lerp3(px, [px[0], px[1], px[2]], STONE, st * 0.55);
+      const crack = 1 - ss(0.0, 0.035, Math.abs(fbm(u, v, 10, 4, seed + 12, 5) - 0.5));
+      lerp3(px, [px[0], px[1], px[2]], ROCKD, crack * t3 * 0.85);
+      const sh = (0.8 + mid * 0.3 + fine * 0.1) * (1 - 0.1 * d);
+      px[0] *= sh; px[1] *= sh; px[2] *= sh;
+      px[3] = mid * 0.7 + fine * 0.5 + st * 1.2 - crack * t3 * 1.5 + big * 0.4;
+    }, 3, false);
+  });
+
+// ------------------------------------------------------------------ rubble stone masonry (batu kali)
+/** River stones packed in mortar: jittered cells, each a stone with its own tone, pale recessed joints. */
+export const rubble = (o: { seed?: number; cells?: number } = {}) =>
+  memo("rubble" + JSON.stringify(o), () => {
+    const { seed = 43, cells = 7 } = o;
+    const S1 = hex("#8f8b84"), S2 = hex("#5f5c58"), S3 = hex("#a79f90"), M = hex("#b8b1a4");
+    return build(512, 512, (u, v, px) => {
+      const x = u * cells, y = v * cells;
+      const xi = Math.floor(x), yi = Math.floor(y);
+      let d1 = 9, d2 = 9, id = 0;
+      for (let dy = -1; dy <= 1; dy++)
+        for (let dx = -1; dx <= 1; dx++) {
+          const cx = wrap(xi + dx, cells), cy = wrap(yi + dy, cells);
+          const fx = xi + dx + 0.5 + (hash2(cx, cy, seed) - 0.5) * 0.8, fy = yi + dy + 0.5 + (hash2(cx, cy, seed + 1) - 0.5) * 0.8;
+          const dd = Math.hypot(x - fx, y - fy);
+          if (dd < d1) { d2 = d1; d1 = dd; id = cx * 31 + cy; } else if (dd < d2) d2 = dd;
+        }
+      const edge = d2 - d1; // 0 on the joint between two stones
+      const stone = ss(0.05, 0.14, edge);
+      const r = hash2(id, 3, seed), r2 = hash2(id, 5, seed);
+      lerp3(px, S1, S2, r * 0.8);
+      if (r2 > 0.75) lerp3(px, [px[0], px[1], px[2]], S3, 0.6);
+      const grain = fbm(u, v, 90, 3, seed + 7);
+      const sh = (0.82 + grain * 0.3) * (0.78 + 0.22 * ss(0.05, 0.4, edge));
+      px[0] = M[0] + (px[0] * sh - M[0]) * stone;
+      px[1] = M[1] + (px[1] * sh - M[1]) * stone;
+      px[2] = M[2] + (px[2] * sh - M[2]) * stone;
+      px[3] = stone * (0.7 + 0.5 * ss(0.05, 0.5, edge)) + grain * 0.2;
+    }, 4);
+  });
+
+// ------------------------------------------------------------------ roof-tile sheet (distant houses: rows of pan tiles in one texture)
+export const tileSheet = (o: { seed?: number; cols?: number; rows?: number } = {}) =>
+  memo("tileSheet" + JSON.stringify(o), () => {
+    const { seed = 37, cols = 12, rows = 10 } = o;
+    const A = hex("#c2582e"), B = hex("#8e3c22"), L = hex("#d98050");
+    return build(1024, 1024, (u, v, px) => {
+      const c = Math.floor(u * cols), r = Math.floor(v * rows);
+      const fx = u * cols - c, fy = v * rows - r;
+      const t = hash2(c, r, seed), t2 = hash2(c, r, seed + 3);
+      lerp3(px, A, B, t * 0.42);
+      if (t2 > 0.86) lerp3(px, [px[0], px[1], px[2]], L, 0.35);
+      // pan with a raised side roll; each course steps down over the one below it
+      const roll = Math.exp(-Math.pow((fx - 0.86) / 0.1, 2));
+      const pan = Math.sin(Math.PI * Math.min(1, fx / 0.74)) * -0.35;
+      const lap = fy; // 0 at the bottom edge of the visible course
+      const hgt = roll * 0.9 + pan + lap * 0.7;
+      const edge = ss(0, 0.06, fy);
+      const sh = (0.86 + 0.14 * edge) * (0.92 + 0.12 * roll + 0.08 * fbm(u, v, 128, 2, seed + 6));
+      px[0] *= sh; px[1] *= sh; px[2] *= sh;
+      px[3] = hgt;
+    }, 6);
+  });
+
+// ------------------------------------------------------------------ leaf card (palm / banana / tree foliage) with alpha
+export const leafCard = (kind: "frond" | "banana" | "canopy", seed = 41) =>
+  memo("leaf" + kind + seed, () => {
+    const G1 = hex("#4f8a2c"), G2 = hex("#2f5f1e"), G3 = hex("#86b244");
+    const rnd = prng(seed * 31 + 7);
+    const leaves = Array.from({ length: 64 }, (_, i) => {
+      const a = rnd() * Math.PI * 2, r = Math.sqrt(rnd()) * 0.4;
+      return { x: 0.5 + Math.cos(a) * r, y: 0.5 + Math.sin(a) * r, c: Math.cos(i * 2.4), s: Math.sin(i * 2.4), l: 0.075 + rnd() * 0.05, w: 0.032 + rnd() * 0.018, tone: rnd() };
+    });
+    return build(512, 512, (u, v, px) => {
+      const x = u - 0.5;
+      let a = 0, hgt = 0, tone = 0.4;
+      if (kind === "frond") {
+        // one solid blade with a saw-toothed edge; the leaflets are drawn as tone, not as see-through gaps
+        // (a comb of alpha stripes shimmered against the sky whenever the camera moved)
+        const n = 20, s = v * n + Math.abs(x) * 6;
+        const f = s - Math.floor(s);
+        const reach = 0.47 * Math.sin(Math.PI * Math.pow(v, 0.8)) + 0.02;
+        a = Math.abs(x) < reach * (0.8 + 0.2 * (1 - Math.abs(f - 0.5) * 2)) ? 1 : 0;
+        const rachis = Math.abs(x) < 0.012;
+        hgt = 1 - Math.abs(f - 0.5) * 2;
+        tone = 0.25 + (1 - hgt) * 0.5 + hash2(Math.floor(s), x > 0 ? 1 : 2, seed) * 0.25 + (rachis ? 0.3 : 0);
+      } else if (kind === "banana") {
+        const half = 0.4 * Math.pow(Math.sin(Math.PI * Math.pow(c01(v), 0.75)), 0.7);
+        const tear = fbm(u, v, 40, 2, seed, 90);
+        a = Math.abs(x) < half * (tear > 0.74 && Math.abs(x) > half * 0.35 ? 0 : 1) ? 1 : 0;
+        const vein = Math.abs(((v * 46 + Math.abs(x) * 30) % 1) - 0.5);
+        hgt = vein + (Math.abs(x) < 0.02 ? 1.5 : 0);
+        tone = 0.25 + vein * 0.5 + (Math.abs(x) < 0.018 ? -0.6 : 0);
+      } else {
+        // a spray of small leaves (later leaves overlap earlier ones)
+        for (const L of leaves) {
+          const dx = u - L.x, dy = v - L.y;
+          const lx = (dx * L.c + dy * L.s) / L.l, ly = (-dx * L.s + dy * L.c) / L.w;
+          const q = lx * lx + ly * ly;
+          if (q < 1) { a = 1; hgt = 1.6 - Math.abs(ly) * 1.2; tone = L.tone * 0.9 + Math.abs(ly) * 0.15; }
+        }
+      }
+      lerp3(px, G1, G2, c01(tone));
+      lerp3(px, [px[0], px[1], px[2]], G3, c01(hgt * 0.35 - 0.1));
+      px[3] = hgt;
+      px[4] = a;
+    }, 1.5, false);
+  });
+
+// ------------------------------------------------------------------ single-channel fbm (shader lookups: rot, damp, stains)
+let _noise: Texture | null = null;
+export const noiseTex = () => {
+  if (_noise) return _noise;
+  const N = 512;
+  const data = new Uint8Array(N * N * 4);
+  for (let y = 0; y < N; y++)
+    for (let x = 0; x < N; x++) {
+      const u = (x + 0.5) / N, v = (y + 0.5) / N;
+      const k = (y * N + x) * 4;
+      data[k] = fbm(u, v, 6, 5, 51) * 255;
+      data[k + 1] = fbm(u, v, 24, 4, 53) * 255;
+      data[k + 2] = fbm(u, v, 96, 3, 55) * 255;
+      data[k + 3] = 255;
+    }
+  const t = new DataTexture(data, N, N, RGBAFormat);
+  t.colorSpace = NoColorSpace;
+  t.wrapS = t.wrapT = RepeatWrapping;
+  t.minFilter = LinearMipmapLinearFilter;
+  t.magFilter = LinearFilter;
+  t.generateMipmaps = true;
+  t.needsUpdate = true;
+  return (_noise = t);
+};
+
+==== 6483 project/src/kits/bedah/Worker.tsx
+// Worker — the BEDAH builder: a jointed mannequin in a caping (woven cone hat), teal shirt and dark shorts.
+// Posed by src/kits/bedah/rig.ts (pelvis + hand/ankle targets → IK). Every part is placed from the solved joints
+// each frame, so the figure is a pure function of its pose.
+
+import React, { useMemo } from "react";
+import { ConeGeometry, CylinderGeometry, Matrix4, Quaternion, SphereGeometry, Vector3, type BufferGeometry, type Material } from "three";
+import { flat, mat } from "./mats.ts";
+import { weave } from "./tex.ts";
+import { DIM, solve, type Pose, type V3 } from "./rig.ts";
+
+const UNIT = { cyl: new Map<string, BufferGeometry>(), sph: new SphereGeometry(1, 36, 24) };
+/** Tapered limb along +Y from y=0 to y=1 (scaled to length by the matrix). */
+const limb = (r0: number, r1: number) => {
+  const k = `${r0}|${r1}`;
+  let g = UNIT.cyl.get(k);
+  if (!g) {
+    g = new CylinderGeometry(r1, r0, 1, 32, 1);
+    g.translate(0, 0.5, 0);
+    UNIT.cyl.set(k, g);
+  }
+  return g;
+};
+
+const Yv = new Vector3(0, 1, 0);
+/** Matrix: unit +Y limb from a toward b, covering fractions [f0, f1] of the span. */
+const seg = (a: V3, b: V3, f0 = 0, f1 = 1) => {
+  const A = new Vector3(...a), B = new Vector3(...b);
+  const d = B.clone().sub(A);
+  const L = d.length();
+  const q = new Quaternion().setFromUnitVectors(Yv, d.clone().normalize());
+  return new Matrix4().compose(A.clone().add(d.clone().multiplyScalar(f0)), q, new Vector3(1, L * (f1 - f0), 1));
+};
+/** Matrix from a basis (x, y, z) at p with scale s. */
+const basis = (p: V3, x: V3, y: V3, z: V3, s: V3) => {
+  const m = new Matrix4().makeBasis(new Vector3(...x), new Vector3(...y), new Vector3(...z));
+  m.scale(new Vector3(...s));
+  m.setPosition(...p);
+  return m;
+};
+const cross = (a: V3, b: V3): V3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const nrm = (a: V3): V3 => {
+  const l = Math.hypot(a[0], a[1], a[2]) || 1;
+  return [a[0] / l, a[1] / l, a[2] / l];
+};
+const add = (a: V3, b: V3, s = 1): V3 => [a[0] + b[0] * s, a[1] + b[1] * s, a[2] + b[2] * s];
+
+const Part: React.FC<{ g: BufferGeometry; m: Matrix4; material: Material }> = ({ g, m, material }) => (
+  <mesh geometry={g} material={material} matrix={m} matrixAutoUpdate={false} castShadow receiveShadow />
+);
+const Ball: React.FC<{ p: V3; r: number; material: Material; s?: V3 }> = ({ p, r, material, s = [1, 1, 1] }) => (
+  <mesh geometry={UNIT.sph} material={material} position={p} scale={[r * s[0], r * s[1], r * s[2]]} castShadow receiveShadow />
+);
+
+export type WorkerLook = { skin?: string; shirt?: string; shorts?: string; hat?: "caping" | "none" };
+
+export const Worker: React.FC<{ pos?: V3; rotY?: number; pose: Pose; look?: WorkerLook }> = ({ pos = [0, 0, 0], rotY = 0, pose, look = {} }) => {
+  const j = solve(pose);
+  const mSkin = flat(look.skin ?? "#c9a47e", 0.62);
+  const mJoint = flat("#ad8660", 0.6);
+  const mShirt = flat(look.shirt ?? "#2f8f8c", 0.86);
+  const mShorts = flat(look.shorts ?? "#4a4d55", 0.9);
+  const mSole = flat("#2b2622", 0.9);
+  const mHat = mat("caping", weave({ strips: 40, a: "#dcc48e", b: "#b99a5c" }), { repeat: [3, 1], roughness: 0.75, double: true });
+  const g = useMemo(() => {
+    const hat = new ConeGeometry(0.27, 0.15, 28, 1, true);
+    hat.translate(0, 0.075, 0);
+    const foot = new SphereGeometry(1, 16, 10);
+    return { hat, foot };
+  }, []);
+
+  const D = DIM;
+  // torso: an elliptical trunk from pelvis to neck, in the torso frame
+  const trunk = basis(add(j.pelvis, j.up, -0.05), j.right, j.up, j.fwd, [0.158, D.spine + 0.05, 0.108]);
+  const chestM = basis(add(j.chest, j.up, -0.07), j.right, j.up, j.fwd, [0.2, 0.15, 0.125]);
+  const hipM = basis(add(j.pelvis, [0, -0.02, 0]), [1, 0, 0], [0, 1, 0], [0, 0, 1], [0.165, 0.13, 0.125]);
+  const headM = basis(j.head, cross(j.headUp, j.headFwd), j.headUp, j.headFwd, [0.098, 0.118, 0.108]);
+  const hatM = basis(add(j.head, j.headUp, 0.045), cross(j.headUp, j.headFwd), j.headUp, j.headFwd, [1, 1, 1]);
+  const foot = (ankle: V3, side: 1 | -1, toe = 0) => {
+    const yaw = (pose.splay ?? 0.18) * side;
+    const f: V3 = [Math.sin(yaw), 0, Math.cos(yaw)];
+    const fw: V3 = nrm([f[0] * Math.cos(toe), -Math.sin(toe), f[2] * Math.cos(toe)]);
+    const up: V3 = nrm(cross(fw, cross([0, 1, 0], fw)));
+    const rt = cross(up, fw);
+    const c = add(add(ankle, fw, 0.07), up, -0.04);
+    return { top: basis(c, rt, up, fw, [0.048, 0.034, 0.118]), sole: basis(add(c, up, -0.026), rt, up, fw, [0.052, 0.014, 0.128]) };
+  };
+  const fL = foot(j.ankleL, 1, pose.toeL ?? 0), fR = foot(j.ankleR, -1, pose.toeR ?? 0);
+
+  const arm = (sh: V3, el: V3, wr: V3, key: string) => {
+    const dir = nrm([wr[0] - el[0], wr[1] - el[1], wr[2] - el[2]]);
+    return (
+      <group key={key}>
+        <Ball p={sh} r={0.066} material={mShirt} />
+        <Part g={limb(0.046, 0.04)} m={seg(sh, el)} material={mSkin} />
+        <Part g={limb(0.058, 0.053)} m={seg(sh, el, 0, 0.62)} material={mShirt} />
+        <Ball p={el} r={0.041} material={mJoint} />
+        <Part g={limb(0.039, 0.03)} m={seg(el, wr)} material={mSkin} />
+        <Ball p={wr} r={0.031} material={mJoint} />
+        <Ball p={add(wr, dir, 0.05)} r={0.043} s={[0.85, 1.15, 0.75]} material={mSkin} />
+      </group>
+    );
+  };
+  const leg = (hip: V3, kn: V3, an: V3, f: { top: Matrix4; sole: Matrix4 }, key: string) => (
+    <group key={key}>
+      <Part g={limb(0.066, 0.052)} m={seg(hip, kn)} material={mSkin} />
+      <Part g={limb(0.084, 0.074)} m={seg(hip, kn, 0, 0.6)} material={mShorts} />
+      <Ball p={kn} r={0.055} material={mJoint} />
+      <Part g={limb(0.05, 0.037)} m={seg(kn, an)} material={mSkin} />
+      <Ball p={an} r={0.04} material={mJoint} />
+      <Part g={g.foot} m={f.top} material={mSkin} />
+      <Part g={g.foot} m={f.sole} material={mSole} />
+    </group>
+  );
+
+  return (
+    <group position={pos} rotation={[0, rotY, 0]}>
+      <Part g={limb(1, 0.92)} m={trunk} material={mShirt} />
+      <Part g={UNIT.sph} m={chestM} material={mShirt} />
+      <Part g={UNIT.sph} m={hipM} material={mShorts} />
+      <Part g={limb(0.042, 0.04)} m={seg(j.neck, j.head)} material={mSkin} />
+      <Part g={UNIT.sph} m={headM} material={mSkin} />
+      {look.hat === "none" ? null : <Part g={g.hat} m={hatM} material={mHat} />}
+      {arm(j.shL, j.elbowL, j.wristL, "aL")}
+      {arm(j.shR, j.elbowR, j.wristR, "aR")}
+      {leg(j.hipL, j.kneeL, j.ankleL, fL, "lL")}
+      {leg(j.hipR, j.kneeR, j.ankleR, fR, "lR")}
+    </group>
+  );
+};

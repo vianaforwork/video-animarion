@@ -1,0 +1,5599 @@
+VOYNANN Motion - packed source files of this folder. Do not edit by hand.
+The skill upload in the Claude app accepts at most 200 files, so the source files are packed here.
+`node <skill folder>/new-project.mjs <project folder> --kit=<style>` unpacks them into the project.
+Format: per file one line with four '=' signs, the byte length and the path, then exactly that many bytes.
+
+==== 164 project/assets/objects/README.md
+Your own objects (`<id>.json`, see the skill's references/objects.md). They override library objects with the same id and are reused by every film in this project.
+
+==== 1116 project/library/objects/bed.json
+{
+ "id": "bed",
+ "doc": "single bed with a pillow and a folded blanket, headboard at −z; lie on it with <id>:bed",
+ "anchors": {
+  "bed": [
+   0,
+   0.52,
+   0.1
+  ],
+  "head": [
+   0,
+   0.52,
+   -0.75
+  ],
+  "front": [
+   0.75,
+   0,
+   0.2
+  ],
+  "seat": [
+   0.35,
+   0.5,
+   0.25
+  ]
+ },
+ "parts": [
+  {
+   "shape": "box",
+   "size": [
+    1.0,
+    0.3,
+    2.0
+   ],
+   "at": [
+    0,
+    0.2,
+    0
+   ],
+   "mat": "wood:#a57a55",
+   "round": 0.03
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.94,
+    0.18,
+    1.92
+   ],
+   "at": [
+    0,
+    0.42,
+    0
+   ],
+   "mat": "fabric:#d9d3c6",
+   "round": 0.06
+  },
+  {
+   "shape": "box",
+   "size": [
+    1.06,
+    0.9,
+    0.08
+   ],
+   "at": [
+    0,
+    0.45,
+    -1.02
+   ],
+   "mat": "wood:#8a6243",
+   "round": 0.03
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.62,
+    0.12,
+    0.36
+   ],
+   "at": [
+    0,
+    0.56,
+    -0.74
+   ],
+   "mat": "fabric:#e0dacd",
+   "round": 0.05
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.96,
+    0.08,
+    0.7
+   ],
+   "at": [
+    0,
+    0.54,
+    0.55
+   ],
+   "mat": "fabric:#7fa7d6",
+   "round": 0.04
+  }
+ ]
+}
+==== 1309 project/library/objects/blackboard.json
+{
+ "id": "blackboard",
+ "doc": "green chalkboard 3.0 × 1.2 m on a wall with a chalk tray, the lesson written on it",
+ "anchors": {
+  "front": [
+   0,
+   0,
+   0.9
+  ],
+  "tulisan": [
+   0,
+   1.6,
+   0.03
+  ]
+ },
+ "parts": [
+  {
+   "shape": "box",
+   "size": [
+    3.1,
+    1.3,
+    0.04
+   ],
+   "at": [
+    0,
+    1.55,
+    0
+   ],
+   "mat": "wood:#6a4a2e",
+   "round": 0.01
+  },
+  {
+   "shape": "box",
+   "size": [
+    3.0,
+    1.2,
+    0.02
+   ],
+   "at": [
+    0,
+    1.55,
+    0.02
+   ],
+   "mat": {
+    "color": "#2f4a3a",
+    "roughness": 0.9
+   }
+  },
+  {
+   "shape": "text",
+   "size": [
+    1.6,
+    0.22
+   ],
+   "text": "PELAJARAN HARI INI",
+   "ink": "#e6e2d6",
+   "at": [
+    -0.5,
+    1.95,
+    0.035
+   ],
+   "bg": "#2f4a3a"
+  },
+  {
+   "shape": "box",
+   "size": [
+    1.1,
+    0.012,
+    0.004
+   ],
+   "at": [
+    -0.7,
+    1.7,
+    0.035
+   ],
+   "mat": "paint:#e8e4d8",
+   "repeat": {
+    "n": 3,
+    "step": [
+     0.15,
+     -0.16,
+     0
+    ]
+   }
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.8,
+    0.5,
+    0.004
+   ],
+   "at": [
+    0.9,
+    1.45,
+    0.034
+   ],
+   "mat": {
+    "color": "#3d5a48",
+    "roughness": 0.9
+   }
+  },
+  {
+   "shape": "box",
+   "size": [
+    2.2,
+    0.03,
+    0.07
+   ],
+   "at": [
+    0,
+    0.88,
+    0.05
+   ],
+   "mat": "wood:#6a4a2e"
+  }
+ ]
+}
+==== 1876 project/library/objects/bookshelf.json
+{
+  "id": "bookshelf",
+  "doc": "wooden bookshelf 1.0 × 1.9 m, five shelves of books; back against a wall, books face +z",
+  "anchors": { "front": [0, 0, 0.75], "books": [0, 1.3, 0.12] },
+  "parts": [
+    { "shape": "box", "size": [0.03, 1.9, 0.34], "at": [0.485, 0.95, 0], "mat": "wood:#7a5534", "mirror": "x" },
+    { "shape": "box", "size": [1.0, 1.9, 0.02], "at": [0, 0.95, -0.16], "mat": "wood:#6a4a2e" },
+    { "shape": "box", "size": [0.94, 0.03, 0.32], "at": [0, 0.04, 0], "mat": "wood:#7a5534", "repeat": { "n": 6, "step": [0, 0.37, 0] } },
+    { "shape": "box", "size": [0.06, 0.27, 0.22], "at": [-0.41, 0.2, 0.01], "mat": "paint:#8a2f2a", "repeat": { "n": 5, "step": [0.15, 0, 0] } },
+    { "shape": "box", "size": [0.05, 0.24, 0.22], "at": [-0.34, 0.185, 0.01], "mat": "paint:#2f4f6a", "repeat": { "n": 5, "step": [0.15, 0, 0] } },
+    { "shape": "box", "size": [0.06, 0.27, 0.22], "at": [-0.4, 0.57, 0.01], "mat": "paint:#3d5a34", "repeat": { "n": 5, "step": [0.15, 0, 0] } },
+    { "shape": "box", "size": [0.05, 0.25, 0.22], "at": [-0.33, 0.56, 0.01], "mat": "paint:#c9a24a", "repeat": { "n": 5, "step": [0.15, 0, 0] } },
+    { "shape": "box", "size": [0.06, 0.27, 0.22], "at": [-0.41, 0.94, 0.01], "mat": "paint:#5a3a6a", "repeat": { "n": 5, "step": [0.15, 0, 0] } },
+    { "shape": "box", "size": [0.05, 0.23, 0.22], "at": [-0.34, 0.92, 0.01], "mat": "paint:#d8d0c0", "repeat": { "n": 5, "step": [0.15, 0, 0] } },
+    { "shape": "box", "size": [0.06, 0.27, 0.22], "at": [-0.4, 1.31, 0.01], "mat": "paint:#2f4f6a", "repeat": { "n": 5, "step": [0.15, 0, 0] } },
+    { "shape": "box", "size": [0.05, 0.26, 0.22], "at": [-0.33, 1.3, 0.01], "mat": "paint:#8a2f2a", "repeat": { "n": 4, "step": [0.15, 0, 0] } },
+    { "shape": "box", "size": [0.06, 0.27, 0.22], "at": [-0.41, 1.68, 0.01], "mat": "paint:#3d5a34", "repeat": { "n": 3, "step": [0.15, 0, 0] } }
+  ]
+}
+
+==== 675 project/library/objects/cash.json
+{
+  "id": "cash",
+  "doc": "a small fan of Indonesian banknotes (cash), held in one hand",
+  "hand": true,
+  "anchors": { "grab": [0, 0.02, 0] },
+  "parts": [
+    { "shape": "box", "size": [0.15, 0.012, 0.072], "at": [0, 0.006, 0], "rot": [0, -8, 0], "mat": "paper:#5a8fb0" },
+    { "shape": "box", "size": [0.15, 0.012, 0.072], "at": [0.004, 0.018, 0.004], "rot": [0, 0, 0], "mat": "paper:#c76a5a" },
+    { "shape": "box", "size": [0.15, 0.012, 0.072], "at": [0.008, 0.03, 0.008], "rot": [0, 8, 0], "mat": "paper:#7aa36a" },
+    { "shape": "text", "size": [0.05, 0.03], "text": "Rp", "ink": "#2f4433", "bg": "#7aa36a", "at": [0.03, 0.037, 0.008], "rot": [-90, 8, 0] }
+  ]
+}
+
+==== 1249 project/library/objects/cctv-camera.json
+{
+ "id": "cctv-camera",
+ "doc": "white bullet security camera on a wall bracket, looking down into the room (+z), red REC light",
+ "anchors": {
+  "lens": [
+   0.06,
+   -0.12,
+   0.3
+  ]
+ },
+ "states": {
+  "rec": 1
+ },
+ "parts": [
+  {
+   "shape": "box",
+   "size": [
+    0.1,
+    0.14,
+    0.015
+   ],
+   "at": [
+    0,
+    0,
+    0.0075
+   ],
+   "mat": "plastic:#cfd0cb"
+  },
+  {
+   "shape": "rod",
+   "from": [
+    0,
+    0,
+    0.015
+   ],
+   "to": [
+    0,
+    -0.03,
+    0.13
+   ],
+   "r": 0.014,
+   "mat": "plastic:#cfd0cb"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.085,
+    0.08,
+    0.22
+   ],
+   "at": [
+    0.03,
+    -0.07,
+    0.2
+   ],
+   "rot": [
+    -28,
+    25,
+    0
+   ],
+   "mat": "plastic:#d6d7d2",
+   "round": 0.02
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.1,
+    0.012,
+    0.24
+   ],
+   "at": [
+    0.03,
+    -0.025,
+    0.21
+   ],
+   "rot": [
+    -28,
+    25,
+    0
+   ],
+   "mat": "plastic:#d6d7d2"
+  },
+  {
+   "shape": "cyl",
+   "r": 0.03,
+   "h": 0.012,
+   "at": [
+    0.077,
+    -0.135,
+    0.3
+   ],
+   "rot": [
+    62,
+    25,
+    0
+   ],
+   "mat": "glass"
+  },
+  {
+   "shape": "sphere",
+   "r": 0.007,
+   "at": [
+    0.005,
+    -0.04,
+    0.27
+   ],
+   "mat": "emissive:#ff2a20",
+   "glowState": "rec"
+  }
+ ]
+}
+==== 1283 project/library/objects/cctv-monitor.json
+{
+ "id": "cctv-monitor",
+ "doc": "wall-mounted security (CCTV) monitor 0.58 × 0.36 m on a bracket, screen toward +z; dark when off, shows the camera channel while on",
+ "anchors": {
+  "screen": [
+   0,
+   0,
+   0.11
+  ],
+  "front": [
+   0,
+   -1.7,
+   1
+  ]
+ },
+ "states": {
+  "on": 0
+ },
+ "parts": [
+  {
+   "shape": "box",
+   "size": [
+    0.22,
+    0.22,
+    0.03
+   ],
+   "at": [
+    0,
+    0,
+    0.015
+   ],
+   "mat": "metal:#2f3236"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.08,
+    0.08,
+    0.03
+   ],
+   "at": [
+    0,
+    0,
+    0.045
+   ],
+   "mat": "metal:#2f3236"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.58,
+    0.36,
+    0.06
+   ],
+   "at": [
+    0,
+    0,
+    0.09
+   ],
+   "mat": "plastic:#141619",
+   "round": 0.01
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.54,
+    0.31,
+    0.003
+   ],
+   "at": [
+    0,
+    0.005,
+    0.1205
+   ],
+   "mat": "plastic:#07090a"
+  },
+  {
+   "shape": "text",
+   "size": [
+    0.54,
+    0.31
+   ],
+   "at": [
+    0,
+    0.005,
+    0.1225
+   ],
+   "text": "CAM 03 · LT 11 · ● REC",
+   "ink": "#e4f2e2",
+   "bg": "#1c2620",
+   "glowState": "on",
+   "when": "on"
+  },
+  {
+   "shape": "sphere",
+   "r": 0.006,
+   "at": [
+    0.25,
+    -0.165,
+    0.121
+   ],
+   "mat": "emissive:#3aff7a",
+   "glowState": "on"
+  }
+ ]
+}
+==== 1386 project/library/objects/coffee-table.json
+{
+ "id": "coffee-table",
+ "doc": "low wooden coffee table 1.1 × 0.55 m, 0.42 m high, a mug and books on it",
+ "anchors": {
+  "top": [
+   0,
+   0.44,
+   0
+  ],
+  "front": [
+   0,
+   0,
+   0.7
+  ]
+ },
+ "parts": [
+  {
+   "shape": "box",
+   "size": [
+    1.1,
+    0.05,
+    0.55
+   ],
+   "at": [
+    0,
+    0.415,
+    0
+   ],
+   "mat": "wood:#a0784f",
+   "round": 0.012
+  },
+  {
+   "shape": "box",
+   "size": [
+    1.0,
+    0.03,
+    0.45
+   ],
+   "at": [
+    0,
+    0.13,
+    0
+   ],
+   "mat": "wood:#7a5a3a",
+   "round": 0.008
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.05,
+    0.4,
+    0.05
+   ],
+   "at": [
+    0.5,
+    0.2,
+    0.22
+   ],
+   "mat": "wood:#7a5a3a",
+   "mirror": "x"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.05,
+    0.4,
+    0.05
+   ],
+   "at": [
+    0.5,
+    0.2,
+    -0.22
+   ],
+   "mat": "wood:#7a5a3a",
+   "mirror": "x"
+  },
+  {
+   "shape": "cyl",
+   "r": 0.04,
+   "r2": 0.036,
+   "h": 0.095,
+   "at": [
+    0.25,
+    0.488,
+    0.06
+   ],
+   "mat": "ceramic:#2a9d8f"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.24,
+    0.05,
+    0.17
+   ],
+   "at": [
+    -0.26,
+    0.465,
+    -0.03
+   ],
+   "rot": [
+    0,
+    14,
+    0
+   ],
+   "mat": "paint:#c0392b"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.22,
+    0.04,
+    0.16
+   ],
+   "at": [
+    -0.25,
+    0.51,
+    -0.04
+   ],
+   "rot": [
+    0,
+    -6,
+    0
+   ],
+   "mat": "paint:#f0ad4e"
+  }
+ ]
+}
+==== 769 project/library/objects/counter.json
+{
+  "id": "counter",
+  "doc": "minimarket checkout counter 1.3 x 0.9 m, customer side faces +z, cashier stands behind at -z",
+  "anchors": {
+    "top": [0, 0.95, 0],
+    "front": [0, 0, 0.8],
+    "behind": [0, 0, -0.6]
+  },
+  "parts": [
+    { "shape": "box", "size": [1.3, 0.9, 0.6], "at": [0, 0.45, 0], "mat": "paint:#dfe3e6", "round": 0.02 },
+    { "shape": "box", "size": [1.4, 0.05, 0.68], "at": [0, 0.925, 0], "mat": "wood:#9a7a54", "round": 0.01 },
+    { "shape": "box", "size": [1.3, 0.14, 0.02], "at": [0, 0.12, 0.3], "mat": "paint:#2f6f8a" },
+    { "shape": "box", "size": [1.3, 0.04, 0.02], "at": [0, 0.66, 0.3], "mat": "paint:#2f6f8a" },
+    { "shape": "box", "size": [0.26, 0.16, 0.2], "at": [0.42, 1.04, 0], "mat": "plastic:#4a4f55", "round": 0.02 }
+  ]
+}
+
+==== 1330 project/library/objects/desk-monitor-kerja.json
+{
+ "id": "desk-monitor-kerja",
+ "doc": "24-inch monitor showing a report document (glows while state on = 1), screen facing +z",
+ "anchors": {
+  "screen": [
+   0,
+   0.33,
+   0
+  ],
+  "top": [
+   0,
+   0.5,
+   -0.03
+  ]
+ },
+ "states": {
+  "on": 1
+ },
+ "parts": [
+  {
+   "shape": "box",
+   "size": [
+    0.24,
+    0.015,
+    0.18
+   ],
+   "at": [
+    0,
+    0.0075,
+    -0.02
+   ],
+   "mat": "plastic:#202226",
+   "round": 0.005
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.05,
+    0.26,
+    0.03
+   ],
+   "at": [
+    0,
+    0.14,
+    -0.07
+   ],
+   "mat": "plastic:#202226"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.56,
+    0.35,
+    0.05
+   ],
+   "at": [
+    0,
+    0.33,
+    -0.035
+   ],
+   "mat": "plastic:#16181b",
+   "round": 0.008
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.53,
+    0.3,
+    0.002
+   ],
+   "at": [
+    0,
+    0.335,
+    -0.008
+   ],
+   "mat": "plastic:#0b0c0e"
+  },
+  {
+   "shape": "text",
+   "size": [
+    0.5,
+    0.05
+   ],
+   "at": [
+    0,
+    0.455,
+    -0.0055
+   ],
+   "text": "LAPORAN.docx",
+   "ink": "#e8eef8",
+   "bg": "#2b4a78",
+   "glowState": "on"
+  },
+  {
+   "shape": "text",
+   "size": [
+    0.5,
+    0.25
+   ],
+   "at": [
+    0,
+    0.305,
+    -0.0055
+   ],
+   "text": "━━━━━━━━━━━━",
+   "ink": "#8d9db4",
+   "bg": "#5d6f88",
+   "glowState": "on"
+  }
+ ]
+}
+==== 999 project/library/objects/desk-monitor.json
+{
+ "id": "desk-monitor",
+ "doc": "24-inch desktop computer monitor on a stand, screen facing +z, switched off",
+ "anchors": {
+  "screen": [
+   0,
+   0.33,
+   0
+  ],
+  "top": [
+   0,
+   0.5,
+   -0.03
+  ]
+ },
+ "parts": [
+  {
+   "shape": "box",
+   "size": [
+    0.24,
+    0.015,
+    0.18
+   ],
+   "at": [
+    0,
+    0.0075,
+    -0.02
+   ],
+   "mat": "plastic:#202226",
+   "round": 0.005
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.05,
+    0.26,
+    0.03
+   ],
+   "at": [
+    0,
+    0.14,
+    -0.07
+   ],
+   "mat": "plastic:#202226"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.56,
+    0.35,
+    0.05
+   ],
+   "at": [
+    0,
+    0.33,
+    -0.035
+   ],
+   "mat": "plastic:#16181b",
+   "round": 0.008
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.53,
+    0.3,
+    0.002
+   ],
+   "at": [
+    0,
+    0.335,
+    -0.008
+   ],
+   "mat": "plastic:#0b0c0e"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.53,
+    0.3,
+    0.003
+   ],
+   "at": [
+    0,
+    0.335,
+    -0.0055
+   ],
+   "mat": "glass"
+  }
+ ]
+}
+==== 1089 project/library/objects/dining-table.json
+{
+ "id": "dining-table",
+ "doc": "wooden dining table 1.4 × 0.8 m with a fruit plate; chairs go around it",
+ "anchors": {
+  "top": [
+   0,
+   0.76,
+   0
+  ],
+  "front": [
+   0,
+   0,
+   0.9
+  ],
+  "plate": [
+   0,
+   0.77,
+   0
+  ]
+ },
+ "parts": [
+  {
+   "shape": "box",
+   "size": [
+    1.4,
+    0.05,
+    0.8
+   ],
+   "at": [
+    0,
+    0.74,
+    0
+   ],
+   "mat": "wood:#9a6b43",
+   "round": 0.01
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.06,
+    0.72,
+    0.06
+   ],
+   "at": [
+    0.63,
+    0.36,
+    0.33
+   ],
+   "mat": "wood:#6e4a2c",
+   "mirror": "x"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.06,
+    0.72,
+    0.06
+   ],
+   "at": [
+    0.63,
+    0.36,
+    -0.33
+   ],
+   "mat": "wood:#6e4a2c",
+   "mirror": "x"
+  },
+  {
+   "shape": "cyl",
+   "r": 0.16,
+   "r2": 0.12,
+   "h": 0.03,
+   "at": [
+    0,
+    0.78,
+    0
+   ],
+   "mat": "ceramic:#e8e2d6"
+  },
+  {
+   "shape": "pile",
+   "size": [
+    0.22,
+    0.08,
+    0.22
+   ],
+   "count": 7,
+   "r": 0.04,
+   "colors": [
+    "#e63946",
+    "#f4a261",
+    "#e9c46a"
+   ],
+   "at": [
+    0,
+    0.83,
+    0
+   ]
+  }
+ ]
+}
+==== 907 project/library/objects/flagpole.json
+{
+ "id": "flagpole",
+ "doc": "school flagpole 7 m with the red-and-white flag, on a small concrete base",
+ "anchors": {
+  "front": [
+   0,
+   0,
+   1.6
+  ],
+  "flag": [
+   0.45,
+   6.4,
+   0
+  ]
+ },
+ "parts": [
+  {
+   "shape": "box",
+   "size": [
+    1.2,
+    0.3,
+    1.2
+   ],
+   "at": [
+    0,
+    0.15,
+    0
+   ],
+   "mat": "concrete:#b9b4aa",
+   "round": 0.02
+  },
+  {
+   "shape": "cyl",
+   "r": 0.045,
+   "r2": 0.06,
+   "h": 7.0,
+   "at": [
+    0,
+    3.8,
+    0
+   ],
+   "mat": "paint:#e8e6e0"
+  },
+  {
+   "shape": "sphere",
+   "r": 0.08,
+   "at": [
+    0,
+    7.35,
+    0
+   ],
+   "mat": "metal:#c9a45a"
+  },
+  {
+   "shape": "box",
+   "size": [
+    1.2,
+    0.4,
+    0.01
+   ],
+   "at": [
+    0.62,
+    6.75,
+    0
+   ],
+   "mat": "cloth:#c0392b"
+  },
+  {
+   "shape": "box",
+   "size": [
+    1.2,
+    0.4,
+    0.01
+   ],
+   "at": [
+    0.62,
+    6.35,
+    0
+   ],
+   "mat": "cloth:#e8e4dc"
+  }
+ ]
+}
+==== 992 project/library/objects/fridge.json
+{
+ "id": "fridge",
+ "doc": "two-door fridge 0.7 × 1.7 m, front faces +z",
+ "anchors": {
+  "front": [
+   0,
+   0,
+   0.7
+  ],
+  "door": [
+   0.28,
+   1.1,
+   0.36
+  ]
+ },
+ "parts": [
+  {
+   "shape": "box",
+   "size": [
+    0.7,
+    1.7,
+    0.68
+   ],
+   "at": [
+    0,
+    0.85,
+    0
+   ],
+   "mat": "plastic:#c4c9cd",
+   "round": 0.04
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.68,
+    0.012,
+    0.01
+   ],
+   "at": [
+    0,
+    1.2,
+    0.342
+   ],
+   "mat": "plastic:#9aa0a6"
+  },
+  {
+   "shape": "rod",
+   "from": [
+    0.27,
+    1.28,
+    0.37
+   ],
+   "to": [
+    0.27,
+    1.55,
+    0.37
+   ],
+   "r": 0.012,
+   "mat": "chrome"
+  },
+  {
+   "shape": "rod",
+   "from": [
+    0.27,
+    0.7,
+    0.37
+   ],
+   "to": [
+    0.27,
+    1.1,
+    0.37
+   ],
+   "r": 0.012,
+   "mat": "chrome"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.12,
+    0.16,
+    0.01
+   ],
+   "at": [
+    -0.15,
+    1.45,
+    0.346
+   ],
+   "rot": [
+    0,
+    0,
+    6
+   ],
+   "mat": "paper:#e9c46a"
+  }
+ ]
+}
+==== 2083 project/library/objects/kitchen-counter.json
+{
+ "id": "kitchen-counter",
+ "doc": "kitchen counter 2.4 m along a wall: cabinets, a sink and a two-burner gas stove on top, a kettle; front faces +z",
+ "anchors": {
+  "top": [
+   0,
+   0.9,
+   0
+  ],
+  "front": [
+   0,
+   0,
+   0.75
+  ],
+  "sink": [
+   -0.55,
+   0.9,
+   0.05
+  ],
+  "stove": [
+   0.55,
+   0.9,
+   0.05
+  ]
+ },
+ "parts": [
+  {
+   "shape": "box",
+   "size": [
+    2.4,
+    0.86,
+    0.6
+   ],
+   "at": [
+    0,
+    0.43,
+    0
+   ],
+   "mat": "paint:#e8e1d3",
+   "round": 0.015
+  },
+  {
+   "shape": "box",
+   "size": [
+    2.46,
+    0.04,
+    0.64
+   ],
+   "at": [
+    0,
+    0.88,
+    0.01
+   ],
+   "mat": "stone:#5f6b73",
+   "round": 0.01
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.56,
+    0.7,
+    0.01
+   ],
+   "at": [
+    -0.9,
+    0.42,
+    0.302
+   ],
+   "mat": "paint:#d6cdbd",
+   "repeat": {
+    "n": 4,
+    "step": [
+     0.6,
+     0,
+     0
+    ]
+   }
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.5,
+    0.06,
+    0.38
+   ],
+   "at": [
+    -0.55,
+    0.875,
+    0.03
+   ],
+   "mat": "chrome"
+  },
+  {
+   "shape": "rod",
+   "from": [
+    -0.55,
+    0.9,
+    -0.22
+   ],
+   "to": [
+    -0.55,
+    1.12,
+    -0.1
+   ],
+   "r": 0.012,
+   "mat": "chrome"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.62,
+    0.06,
+    0.4
+   ],
+   "at": [
+    0.55,
+    0.93,
+    0.02
+   ],
+   "mat": "metal:#2b2d33",
+   "round": 0.01
+  },
+  {
+   "shape": "torus",
+   "R": 0.08,
+   "r": 0.012,
+   "at": [
+    0.4,
+    0.965,
+    0.02
+   ],
+   "rot": [
+    90,
+    0,
+    0
+   ],
+   "mat": "metal:#555a60",
+   "repeat": {
+    "n": 2,
+    "step": [
+     0.3,
+     0,
+     0
+    ]
+   }
+  },
+  {
+   "shape": "lathe",
+   "profile": [
+    [
+     0.0,
+     0
+    ],
+    [
+     0.09,
+     0
+    ],
+    [
+     0.1,
+     0.06
+    ],
+    [
+     0.09,
+     0.16
+    ],
+    [
+     0.04,
+     0.2
+    ],
+    [
+     0.0,
+     0.2
+    ]
+   ],
+   "at": [
+    0.4,
+    0.965,
+    0.02
+   ],
+   "mat": "metal:#c0392b"
+  },
+  {
+   "shape": "box",
+   "size": [
+    2.4,
+    0.6,
+    0.32
+   ],
+   "at": [
+    0,
+    1.85,
+    -0.14
+   ],
+   "mat": "paint:#e8e1d3",
+   "round": 0.015
+  }
+ ]
+}
+==== 1642 project/library/objects/laptop.json
+{
+ "id": "laptop",
+ "doc": "silver laptop, keyboard toward +z; states: open (lid up, screen glows while on) / closed (lid shut)",
+ "anchors": {
+  "top": [
+   0,
+   0.03,
+   0
+  ],
+  "lid": [
+   0,
+   0.2043,
+   -0.1435
+  ],
+  "keys": [
+   0,
+   0.025,
+   0.03
+  ],
+  "screen": [
+   0,
+   0.1243,
+   -0.1335
+  ]
+ },
+ "states": {
+  "open": 1,
+  "closed": 0,
+  "on": 1
+ },
+ "parts": [
+  {
+   "shape": "box",
+   "size": [
+    0.34,
+    0.018,
+    0.23
+   ],
+   "at": [
+    0,
+    0.009,
+    0
+   ],
+   "mat": "aluminium",
+   "round": 0.004
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.3,
+    0.002,
+    0.11
+   ],
+   "at": [
+    0,
+    0.0185,
+    -0.03
+   ],
+   "mat": "plastic:#1d1f23"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.1,
+    0.002,
+    0.06
+   ],
+   "at": [
+    0,
+    0.0185,
+    0.075
+   ],
+   "mat": "plastic:#2c2f34"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.34,
+    0.008,
+    0.23
+   ],
+   "at": [
+    0,
+    0.1243,
+    -0.1435
+   ],
+   "rot": [
+    -105,
+    0,
+    0
+   ],
+   "mat": "aluminium",
+   "when": "open",
+   "round": 0.003
+  },
+  {
+   "shape": "text",
+   "size": [
+    0.31,
+    0.19
+   ],
+   "at": [
+    0,
+    0.1254,
+    -0.1391
+   ],
+   "rot": [
+    -15,
+    0,
+    0
+   ],
+   "text": "LAPORAN — FINAL",
+   "ink": "#e6edf8",
+   "bg": "#36527c",
+   "glowState": "on",
+   "when": "open"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.34,
+    0.008,
+    0.23
+   ],
+   "at": [
+    0,
+    0.022,
+    0
+   ],
+   "mat": "aluminium",
+   "when": "closed",
+   "round": 0.003
+  },
+  {
+   "shape": "sphere",
+   "r": 0.003,
+   "at": [
+    0.15,
+    0.0185,
+    0.105
+   ],
+   "mat": "emissive:#7fe0ff"
+  }
+ ]
+}
+==== 997 project/library/objects/locker-row.json
+{
+ "id": "locker-row",
+ "doc": "a row of four grey school lockers 1.6 × 1.8 m, front faces +z",
+ "anchors": {
+  "front": [
+   0,
+   0,
+   0.6
+  ]
+ },
+ "parts": [
+  {
+   "shape": "box",
+   "size": [
+    1.6,
+    1.8,
+    0.45
+   ],
+   "at": [
+    0,
+    0.9,
+    0
+   ],
+   "mat": "metal:#8a939c",
+   "round": 0.01
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.37,
+    1.72,
+    0.01
+   ],
+   "at": [
+    -0.6,
+    0.9,
+    0.226
+   ],
+   "mat": "metal:#9aa3ac",
+   "repeat": {
+    "n": 4,
+    "step": [
+     0.4,
+     0,
+     0
+    ]
+   }
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.2,
+    0.012,
+    0.004
+   ],
+   "at": [
+    -0.6,
+    1.55,
+    0.232
+   ],
+   "mat": "metal:#5f6870",
+   "repeat": {
+    "n": 4,
+    "step": [
+     0.4,
+     0,
+     0
+    ]
+   }
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.02,
+    0.08,
+    0.02
+   ],
+   "at": [
+    -0.47,
+    1.0,
+    0.235
+   ],
+   "mat": "chrome",
+   "repeat": {
+    "n": 4,
+    "step": [
+     0.4,
+     0,
+     0
+    ]
+   }
+  }
+ ]
+}
+==== 834 project/library/objects/meeting-table.json
+{
+ "id": "meeting-table",
+ "doc": "long meeting-room table 2.4 × 1.1 m, top 0.75 m, two pedestal legs",
+ "anchors": {
+  "top": [
+   0,
+   0.75,
+   0
+  ],
+  "front": [
+   0,
+   0,
+   1.1
+  ]
+ },
+ "parts": [
+  {
+   "shape": "box",
+   "size": [
+    2.4,
+    0.04,
+    1.1
+   ],
+   "at": [
+    0,
+    0.73,
+    0
+   ],
+   "mat": "wood:#4e3b2c",
+   "round": 0.01
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.12,
+    0.7,
+    0.6
+   ],
+   "at": [
+    0.75,
+    0.36,
+    0
+   ],
+   "mat": "metal:#3a3d42",
+   "mirror": "x"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.5,
+    0.03,
+    0.8
+   ],
+   "at": [
+    0.75,
+    0.015,
+    0
+   ],
+   "mat": "metal:#3a3d42",
+   "mirror": "x"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.3,
+    0.01,
+    0.12
+   ],
+   "at": [
+    0,
+    0.755,
+    0
+   ],
+   "mat": "plastic:#202226"
+  }
+ ]
+}
+==== 1316 project/library/objects/notice-board.json
+{
+ "id": "notice-board",
+ "doc": "cork notice board (mading) 1.4 × 0.9 m with pinned papers, on a wall",
+ "anchors": {
+  "front": [
+   0,
+   0,
+   0.8
+  ],
+  "poster": [
+   0.2,
+   1.55,
+   0.03
+  ]
+ },
+ "parts": [
+  {
+   "shape": "box",
+   "size": [
+    1.44,
+    0.94,
+    0.04
+   ],
+   "at": [
+    0,
+    1.5,
+    0
+   ],
+   "mat": "wood:#6a4a2e",
+   "round": 0.01
+  },
+  {
+   "shape": "box",
+   "size": [
+    1.36,
+    0.86,
+    0.02
+   ],
+   "at": [
+    0,
+    1.5,
+    0.015
+   ],
+   "mat": {
+    "color": "#b98a5a",
+    "roughness": 0.95,
+    "texture": "noise"
+   }
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.3,
+    0.4,
+    0.004
+   ],
+   "at": [
+    -0.45,
+    1.55,
+    0.03
+   ],
+   "rot": [
+    0,
+    0,
+    -4
+   ],
+   "mat": "paper:#ddd6c6"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.34,
+    0.26,
+    0.004
+   ],
+   "at": [
+    0.05,
+    1.68,
+    0.03
+   ],
+   "rot": [
+    0,
+    0,
+    3
+   ],
+   "mat": "paper:#e9c46a"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.28,
+    0.36,
+    0.004
+   ],
+   "at": [
+    0.45,
+    1.42,
+    0.03
+   ],
+   "rot": [
+    0,
+    0,
+    -2
+   ],
+   "mat": "paper:#a8dadc"
+  },
+  {
+   "shape": "text",
+   "size": [
+    0.5,
+    0.12
+   ],
+   "text": "MADING",
+   "ink": "#1d3557",
+   "bg": "#f1faee",
+   "at": [
+    0,
+    1.88,
+    0.034
+   ]
+  }
+ ]
+}
+==== 1818 project/library/objects/office-chair.json
+{
+ "id": "office-chair",
+ "doc": "black swivel office chair on a five-star base with castors; sits facing +z, backrest at −z",
+ "anchors": {
+  "seat": [
+   0,
+   0.5,
+   0.03
+  ],
+  "front": [
+   0,
+   0,
+   0.6
+  ]
+ },
+ "parts": [
+  {
+   "shape": "rod",
+   "from": [
+    0,
+    0.07,
+    0
+   ],
+   "to": [
+    0,
+    0.07,
+    0.3
+   ],
+   "r": 0.02,
+   "mat": "plastic:#26282c",
+   "repeat": {
+    "n": 5,
+    "stepRot": [
+     0,
+     72,
+     0
+    ],
+    "around": true
+   }
+  },
+  {
+   "shape": "sphere",
+   "r": 0.03,
+   "at": [
+    0,
+    0.03,
+    0.3
+   ],
+   "mat": "rubber",
+   "repeat": {
+    "n": 5,
+    "stepRot": [
+     0,
+     72,
+     0
+    ],
+    "around": true
+   }
+  },
+  {
+   "shape": "cyl",
+   "r": 0.03,
+   "h": 0.36,
+   "at": [
+    0,
+    0.25,
+    0
+   ],
+   "mat": "chrome"
+  },
+  {
+   "shape": "cyl",
+   "r": 0.045,
+   "h": 0.1,
+   "at": [
+    0,
+    0.12,
+    0
+   ],
+   "mat": "plastic:#26282c"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.5,
+    0.08,
+    0.48
+   ],
+   "at": [
+    0,
+    0.47,
+    0.02
+   ],
+   "mat": "cloth:#2b2f36",
+   "round": 0.03
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.06,
+    0.32,
+    0.04
+   ],
+   "at": [
+    0,
+    0.6,
+    -0.24
+   ],
+   "mat": "plastic:#26282c"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.46,
+    0.52,
+    0.07
+   ],
+   "at": [
+    0,
+    0.88,
+    -0.27
+   ],
+   "rot": [
+    -8,
+    0,
+    0
+   ],
+   "mat": "cloth:#2b2f36",
+   "round": 0.03
+  },
+  {
+   "shape": "rod",
+   "from": [
+    0.23,
+    0.5,
+    -0.12
+   ],
+   "to": [
+    0.25,
+    0.68,
+    -0.06
+   ],
+   "r": 0.014,
+   "mat": "plastic:#26282c",
+   "mirror": "x"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.06,
+    0.03,
+    0.26
+   ],
+   "at": [
+    0.25,
+    0.69,
+    0.02
+   ],
+   "mat": "plastic:#26282c",
+   "mirror": "x",
+   "round": 0.01
+  }
+ ]
+}
+==== 2597 project/library/objects/office-desk.json
+{
+ "id": "office-desk",
+ "doc": "office workstation desk 1.4 × 0.7 m, top 0.75 m, metal side panels, fabric privacy screen at the back (−z); the user sits on the +z side",
+ "anchors": {
+  "top": [
+   0,
+   0.75,
+   0
+  ],
+  "front": [
+   0,
+   0,
+   0.95
+  ],
+  "monitor": [
+   0,
+   0.75,
+   -0.2
+  ],
+  "laptop": [
+   0.3,
+   0.75,
+   0.17
+  ],
+  "papers": [
+   -0.4,
+   0.752,
+   0.12
+  ]
+ },
+ "parts": [
+  {
+   "shape": "box",
+   "size": [
+    1.4,
+    0.03,
+    0.7
+   ],
+   "at": [
+    0,
+    0.735,
+    0
+   ],
+   "mat": "wood:#b9a68a",
+   "round": 0.006
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.03,
+    0.72,
+    0.62
+   ],
+   "at": [
+    0.66,
+    0.36,
+    0
+   ],
+   "mat": "metal:#5c6066",
+   "mirror": "x"
+  },
+  {
+   "shape": "box",
+   "size": [
+    1.3,
+    0.36,
+    0.02
+   ],
+   "at": [
+    0,
+    0.5,
+    -0.31
+   ],
+   "mat": "metal:#5c6066"
+  },
+  {
+   "shape": "box",
+   "size": [
+    1.4,
+    0.4,
+    0.03
+   ],
+   "at": [
+    0,
+    0.95,
+    -0.335
+   ],
+   "mat": "cloth:#5d6b73",
+   "round": 0.01
+  },
+  {
+   "shape": "box",
+   "size": [
+    1.42,
+    0.02,
+    0.04
+   ],
+   "at": [
+    0,
+    1.16,
+    -0.335
+   ],
+   "mat": "aluminium"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.4,
+    0.55,
+    0.5
+   ],
+   "at": [
+    0.42,
+    0.3,
+    -0.02
+   ],
+   "mat": "metal:#6a6f75",
+   "round": 0.01
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.38,
+    0.003,
+    0.005
+   ],
+   "at": [
+    0.42,
+    0.42,
+    0.231
+   ],
+   "mat": "metal:#3a3d41",
+   "repeat": {
+    "n": 2,
+    "step": [
+     0,
+     -0.18,
+     0
+    ]
+   }
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.12,
+    0.015,
+    0.015
+   ],
+   "at": [
+    0.42,
+    0.47,
+    0.235
+   ],
+   "mat": "chrome",
+   "repeat": {
+    "n": 2,
+    "step": [
+     0,
+     -0.18,
+     0
+    ]
+   }
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.22,
+    0.03,
+    0.3
+   ],
+   "at": [
+    -0.42,
+    0.765,
+    0.1
+   ],
+   "rot": [
+    0,
+    8,
+    0
+   ],
+   "mat": "paper:#d6d0c2"
+  },
+  {
+   "shape": "cyl",
+   "r": 0.04,
+   "r2": 0.035,
+   "h": 0.1,
+   "at": [
+    -0.6,
+    0.8,
+    -0.14
+   ],
+   "mat": "ceramic:#7c3b32"
+  },
+  {
+   "shape": "cyl",
+   "r": 0.035,
+   "h": 0.11,
+   "at": [
+    0.6,
+    0.805,
+    -0.2
+   ],
+   "mat": "plastic:#2b2e33"
+  },
+  {
+   "shape": "rod",
+   "from": [
+    0.6,
+    0.8,
+    -0.2
+   ],
+   "to": [
+    0.58,
+    0.93,
+    -0.19
+   ],
+   "r": 0.004,
+   "mat": "plastic:#2a59a8"
+  },
+  {
+   "shape": "rod",
+   "from": [
+    0.61,
+    0.8,
+    -0.21
+   ],
+   "to": [
+    0.63,
+    0.92,
+    -0.22
+   ],
+   "r": 0.004,
+   "mat": "plastic:#a83a2a"
+  }
+ ]
+}
+==== 4175 project/library/objects/office-printer.json
+{
+ "id": "office-printer",
+ "doc": "floor-standing multifunction office printer/copier 0.6 × 1.07 m, paper drawers below, scanner lid on top, output slot and tray at the front (+z); paper emerging in steps k1..k6; panel + LED glow while 'aktif'",
+ "anchors": {
+  "front": [
+   0,
+   0,
+   0.98
+  ],
+  "tray": [
+   0,
+   0.742,
+   0.44
+  ],
+  "panel": [
+   0.16,
+   1.08,
+   0.24
+  ],
+  "top": [
+   0,
+   1.07,
+   0
+  ]
+ },
+ "states": {
+  "aktif": 0,
+  "k1": 0,
+  "k2": 0,
+  "k3": 0,
+  "k4": 0,
+  "k5": 0,
+  "k6": 0
+ },
+ "parts": [
+  {
+   "shape": "box",
+   "size": [
+    0.6,
+    0.44,
+    0.58
+   ],
+   "at": [
+    0,
+    0.24,
+    0
+   ],
+   "mat": "plastic:#c8c9c3",
+   "round": 0.012
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.62,
+    0.03,
+    0.6
+   ],
+   "at": [
+    0,
+    0.015,
+    0
+   ],
+   "mat": "plastic:#3a3c40"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.56,
+    0.004,
+    0.006
+   ],
+   "at": [
+    0,
+    0.32,
+    0.291
+   ],
+   "mat": "plastic:#55575b",
+   "repeat": {
+    "n": 2,
+    "step": [
+     0,
+     -0.14,
+     0
+    ]
+   }
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.22,
+    0.02,
+    0.02
+   ],
+   "at": [
+    0,
+    0.39,
+    0.295
+   ],
+   "mat": "plastic:#55575b",
+   "repeat": {
+    "n": 2,
+    "step": [
+     0,
+     -0.14,
+     0
+    ]
+   }
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.6,
+    0.48,
+    0.58
+   ],
+   "at": [
+    0,
+    0.7,
+    0
+   ],
+   "mat": "plastic:#d3d4ce",
+   "round": 0.012
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.26,
+    0.012,
+    0.006
+   ],
+   "at": [
+    0,
+    0.742,
+    0.291
+   ],
+   "mat": "plastic:#141517"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.27,
+    0.008,
+    0.3
+   ],
+   "at": [
+    0,
+    0.736,
+    0.44
+   ],
+   "mat": "plastic:#a9aba6",
+   "round": 0.003
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.012,
+    0.03,
+    0.3
+   ],
+   "at": [
+    0.14,
+    0.75,
+    0.44
+   ],
+   "mat": "plastic:#a9aba6",
+   "mirror": "x"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.6,
+    0.13,
+    0.58
+   ],
+   "at": [
+    0,
+    1.005,
+    0
+   ],
+   "mat": "plastic:#c3c4be",
+   "round": 0.012
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.62,
+    0.012,
+    0.6
+   ],
+   "at": [
+    0,
+    1.076,
+    0
+   ],
+   "mat": "plastic:#4a4c50",
+   "round": 0.004
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.26,
+    0.03,
+    0.14
+   ],
+   "at": [
+    0.16,
+    1.06,
+    0.26
+   ],
+   "rot": [
+    22,
+    0,
+    0
+   ],
+   "mat": "plastic:#3b3d41",
+   "round": 0.006
+  },
+  {
+   "shape": "text",
+   "size": [
+    0.16,
+    0.08
+   ],
+   "at": [
+    0.16,
+    1.0752,
+    0.2662
+   ],
+   "rot": [
+    -68,
+    0,
+    0
+   ],
+   "text": "MENCETAK",
+   "ink": "#c8ffe8",
+   "bg": "#10302a",
+   "glowState": "aktif"
+  },
+  {
+   "shape": "sphere",
+   "r": 0.008,
+   "at": [
+    0.265,
+    1.074,
+    0.29
+   ],
+   "mat": "emissive:#ff9a3a"
+  },
+  {
+   "shape": "sphere",
+   "r": 0.009,
+   "at": [
+    -0.24,
+    1.03,
+    0.292
+   ],
+   "mat": "emissive:#2dff8a",
+   "glowState": "aktif"
+  },
+  {
+   "shape": "text",
+   "size": [
+    0.16,
+    0.035
+   ],
+   "at": [
+    -0.17,
+    0.88,
+    0.291
+   ],
+   "text": "OFFICEJET",
+   "ink": "#3c3e42",
+   "bg": "#d3d4ce"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.21,
+    0.003,
+    0.297
+   ],
+   "at": [
+    0,
+    0.744,
+    0.191
+   ],
+   "mat": "paper:#d9d4c8",
+   "when": "k1"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.21,
+    0.003,
+    0.297
+   ],
+   "at": [
+    0,
+    0.744,
+    0.2405
+   ],
+   "mat": "paper:#d9d4c8",
+   "when": "k2"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.21,
+    0.003,
+    0.297
+   ],
+   "at": [
+    0,
+    0.744,
+    0.29
+   ],
+   "mat": "paper:#d9d4c8",
+   "when": "k3"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.21,
+    0.003,
+    0.297
+   ],
+   "at": [
+    0,
+    0.744,
+    0.3395
+   ],
+   "mat": "paper:#d9d4c8",
+   "when": "k4"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.21,
+    0.003,
+    0.297
+   ],
+   "at": [
+    0,
+    0.744,
+    0.389
+   ],
+   "mat": "paper:#d9d4c8",
+   "when": "k5"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.21,
+    0.003,
+    0.297
+   ],
+   "at": [
+    0,
+    0.744,
+    0.4385
+   ],
+   "mat": "paper:#d9d4c8",
+   "when": "k6"
+  }
+ ]
+}
+==== 861 project/library/objects/park-bench.json
+{
+  "id": "park-bench",
+  "doc": "park bench 1.6 m, wooden slats on dark iron sides; sits facing +z",
+  "anchors": { "seat": [0, 0.45, 0.04], "front": [0, 0, 0.75] },
+  "parts": [
+    { "shape": "box", "size": [1.6, 0.03, 0.1], "at": [0, 0.44, 0.17], "mat": "wood:#9a6a3c", "repeat": { "n": 4, "step": [0, 0, -0.11] } },
+    { "shape": "box", "size": [1.6, 0.09, 0.025], "at": [0, 0.6, -0.2], "rot": [-12, 0, 0], "mat": "wood:#9a6a3c", "repeat": { "n": 3, "step": [0, 0.12, -0.025] } },
+    { "shape": "box", "size": [0.05, 0.44, 0.05], "at": [0.72, 0.22, 0.18], "mat": "metal:#2a2c2e", "mirror": "x" },
+    { "shape": "box", "size": [0.05, 0.86, 0.05], "at": [0.72, 0.43, -0.2], "rot": [-8, 0, 0], "mat": "metal:#2a2c2e", "mirror": "x" },
+    { "shape": "box", "size": [0.05, 0.04, 0.46], "at": [0.72, 0.62, 0.0], "mat": "metal:#2a2c2e", "mirror": "x" }
+  ]
+}
+
+==== 1175 project/library/objects/potted-plant.json
+{
+ "id": "potted-plant",
+ "doc": "office potted plant: dark ceramic pot with a leafy plant, ~1.2 m tall",
+ "parts": [
+  {
+   "shape": "lathe",
+   "profile": [
+    [
+     0,
+     0
+    ],
+    [
+     0.16,
+     0
+    ],
+    [
+     0.2,
+     0.36
+    ],
+    [
+     0.21,
+     0.38
+    ],
+    [
+     0,
+     0.38
+    ]
+   ],
+   "mat": "ceramic:#2e3236"
+  },
+  {
+   "shape": "cyl",
+   "r": 0.19,
+   "h": 0.02,
+   "at": [
+    0,
+    0.36,
+    0
+   ],
+   "mat": "dirt:#3a2c20"
+  },
+  {
+   "shape": "rod",
+   "from": [
+    0,
+    0.36,
+    0
+   ],
+   "to": [
+    0.03,
+    0.8,
+    0.02
+   ],
+   "r": 0.015,
+   "mat": "bark"
+  },
+  {
+   "shape": "sphere",
+   "r": 0.2,
+   "at": [
+    0.05,
+    0.85,
+    0.02
+   ],
+   "scale": [
+    1,
+    1.2,
+    1
+   ],
+   "mat": "leaf:#3c5a34"
+  },
+  {
+   "shape": "sphere",
+   "r": 0.16,
+   "at": [
+    -0.12,
+    0.72,
+    0.08
+   ],
+   "scale": [
+    1.1,
+    1,
+    1
+   ],
+   "mat": "leaf:#476a3c"
+  },
+  {
+   "shape": "sphere",
+   "r": 0.15,
+   "at": [
+    0.14,
+    1.05,
+    -0.06
+   ],
+   "mat": "leaf:#36522f"
+  },
+  {
+   "shape": "sphere",
+   "r": 0.13,
+   "at": [
+    -0.06,
+    1.12,
+    0.07
+   ],
+   "mat": "leaf:#41613a"
+  }
+ ]
+}
+==== 883 project/library/objects/qris.json
+{
+  "id": "qris",
+  "doc": "small QRIS payment standee for a checkout counter: a white sign card with a QR code on a short stand; screen panel glows",
+  "anchors": { "front": [0, 0, 0.2] },
+  "states": { "screen": 1 },
+  "parts": [
+    { "shape": "box", "size": [0.14, 0.02, 0.1], "at": [0, 0.01, 0], "mat": "plastic:#2f3337" },
+    { "shape": "rod", "from": [0, 0.02, 0], "to": [0, 0.2, 0], "r": 0.012, "mat": "metal:#9a9da0" },
+    { "shape": "box", "size": [0.18, 0.22, 0.012], "at": [0, 0.31, 0], "mat": "paper:#e6e2d6" },
+    { "shape": "text", "size": [0.14, 0.04], "text": "QRIS", "ink": "#2f3337", "bg": "#e6e2d6", "at": [0, 0.4, 0.008] },
+    { "shape": "box", "size": [0.12, 0.12, 0.004], "at": [0, 0.29, 0.009], "mat": "paint:#2f3337" },
+    { "shape": "box", "size": [0.085, 0.085, 0.006], "at": [0, 0.29, 0.011], "mat": "emissive:#bfe8ff", "glowState": "screen" }
+  ]
+}
+
+==== 1634 project/library/objects/reading-table.json
+{
+  "id": "reading-table",
+  "doc": "wooden reading table 1.6 \u00d7 0.8 m, 0.76 m high",
+  "anchors": {
+    "top": [
+      0,
+      0.765,
+      0
+    ],
+    "front": [
+      0,
+      0,
+      0.9
+    ],
+    "papers": [
+      0.15,
+      0.77,
+      0.27
+    ]
+  },
+  "parts": [
+    {
+      "shape": "box",
+      "size": [
+        1.6,
+        0.05,
+        0.8
+      ],
+      "at": [
+        0,
+        0.74,
+        0
+      ],
+      "mat": "wood:#8a6440",
+      "round": 0.01
+    },
+    {
+      "shape": "box",
+      "size": [
+        0.06,
+        0.72,
+        0.06
+      ],
+      "at": [
+        0.72,
+        0.36,
+        0.33
+      ],
+      "mat": "wood:#6a4a2e",
+      "mirror": "x"
+    },
+    {
+      "shape": "box",
+      "size": [
+        0.06,
+        0.72,
+        0.06
+      ],
+      "at": [
+        0.72,
+        0.36,
+        -0.33
+      ],
+      "mat": "wood:#6a4a2e",
+      "mirror": "x"
+    },
+    {
+      "shape": "box",
+      "size": [
+        1.4,
+        0.08,
+        0.03
+      ],
+      "at": [
+        0,
+        0.66,
+        0.36
+      ],
+      "mat": "wood:#6a4a2e",
+      "mirror": "z"
+    },
+    {
+      "shape": "box",
+      "size": [
+        0.22,
+        0.008,
+        0.3
+      ],
+      "at": [
+        0.15,
+        0.769,
+        0.24
+      ],
+      "rot": [
+        0,
+        12,
+        0
+      ],
+      "mat": "paper:#ddd6c6"
+    },
+    {
+      "shape": "box",
+      "size": [
+        0.17,
+        0.05,
+        0.24
+      ],
+      "at": [
+        -0.45,
+        0.79,
+        -0.1
+      ],
+      "rot": [
+        0,
+        -20,
+        0
+      ],
+      "mat": "paint:#2f4f6a"
+    }
+  ]
+}
+==== 932 project/library/objects/school-chair.json
+{
+ "id": "school-chair",
+ "doc": "school chair with a blue plastic seat and back on a steel frame, sits facing +z",
+ "anchors": {
+  "seat": [
+   0,
+   0.45,
+   0.02
+  ],
+  "front": [
+   0,
+   0,
+   0.55
+  ]
+ },
+ "parts": [
+  {
+   "shape": "box",
+   "size": [
+    0.4,
+    0.03,
+    0.38
+   ],
+   "at": [
+    0,
+    0.44,
+    0
+   ],
+   "mat": "plastic:#3e7cb1",
+   "round": 0.01
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.4,
+    0.26,
+    0.03
+   ],
+   "at": [
+    0,
+    0.72,
+    -0.19
+   ],
+   "rot": [
+    -6,
+    0,
+    0
+   ],
+   "mat": "plastic:#3e7cb1",
+   "round": 0.01
+  },
+  {
+   "shape": "rod",
+   "from": [
+    0.18,
+    0,
+    0.17
+   ],
+   "to": [
+    0.18,
+    0.43,
+    0.17
+   ],
+   "r": 0.012,
+   "mat": "steel",
+   "mirror": "x"
+  },
+  {
+   "shape": "rod",
+   "from": [
+    0.18,
+    0,
+    -0.17
+   ],
+   "to": [
+    0.18,
+    0.86,
+    -0.2
+   ],
+   "r": 0.012,
+   "mat": "steel",
+   "mirror": "x"
+  }
+ ]
+}
+==== 1170 project/library/objects/school-desk.json
+{
+ "id": "school-desk",
+ "doc": "school desk with a shelf under the top, 0.65 × 0.45 m, 0.72 m high; the pupil sits at +z facing −z… place it with yaw so its +z side faces the pupil",
+ "anchors": {
+  "top": [
+   0,
+   0.73,
+   0
+  ],
+  "front": [
+   0,
+   0,
+   0.55
+  ],
+  "book": [
+   0,
+   0.735,
+   0.08
+  ]
+ },
+ "parts": [
+  {
+   "shape": "box",
+   "size": [
+    0.65,
+    0.035,
+    0.45
+   ],
+   "at": [
+    0,
+    0.715,
+    0
+   ],
+   "mat": "wood:#c89a6a",
+   "round": 0.008
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.6,
+    0.012,
+    0.38
+   ],
+   "at": [
+    0,
+    0.6,
+    -0.02
+   ],
+   "mat": "metal:#3a3d44"
+  },
+  {
+   "shape": "rod",
+   "from": [
+    0.29,
+    0,
+    0.19
+   ],
+   "to": [
+    0.29,
+    0.7,
+    0.19
+   ],
+   "r": 0.015,
+   "mat": "steel",
+   "mirror": "x"
+  },
+  {
+   "shape": "rod",
+   "from": [
+    0.29,
+    0,
+    -0.19
+   ],
+   "to": [
+    0.29,
+    0.7,
+    -0.19
+   ],
+   "r": 0.015,
+   "mat": "steel",
+   "mirror": "x"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.22,
+    0.02,
+    0.3
+   ],
+   "at": [
+    0.05,
+    0.743,
+    0.06
+   ],
+   "rot": [
+    0,
+    -8,
+    0
+   ],
+   "mat": "paper:#ddd6c6"
+  }
+ ]
+}
+==== 792 project/library/objects/shoe-rack.json
+{
+ "id": "shoe-rack",
+ "doc": "small shoe rack by a front door with two pairs of sandals",
+ "anchors": {
+  "top": [
+   0,
+   0.42,
+   0
+  ],
+  "front": [
+   0,
+   0,
+   0.5
+  ]
+ },
+ "parts": [
+  {
+   "shape": "box",
+   "size": [
+    0.8,
+    0.03,
+    0.3
+   ],
+   "at": [
+    0,
+    0.4,
+    0
+   ],
+   "mat": "wood:#8a6243",
+   "repeat": {
+    "n": 2,
+    "step": [
+     0,
+     -0.2,
+     0
+    ]
+   }
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.03,
+    0.42,
+    0.3
+   ],
+   "at": [
+    0.385,
+    0.21,
+    0
+   ],
+   "mat": "wood:#6a4a2e",
+   "mirror": "x"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.1,
+    0.025,
+    0.25
+   ],
+   "at": [
+    -0.2,
+    0.43,
+    0
+   ],
+   "mat": "rubber",
+   "repeat": {
+    "n": 4,
+    "step": [
+     0.13,
+     0,
+     0
+    ]
+   }
+  }
+ ]
+}
+==== 1448 project/library/objects/sofa.json
+{
+ "id": "sofa",
+ "doc": "three-seat fabric sofa 2.0 m wide, sits facing +z (backrest at −z)",
+ "anchors": {
+  "seat": [
+   -0.45,
+   0.46,
+   0.08
+  ],
+  "seat2": [
+   0.45,
+   0.46,
+   0.08
+  ],
+  "front": [
+   0,
+   0,
+   0.85
+  ]
+ },
+ "parts": [
+  {
+   "shape": "box",
+   "size": [
+    2.0,
+    0.26,
+    0.86
+   ],
+   "at": [
+    0,
+    0.24,
+    0
+   ],
+   "mat": "fabric:#5b7fa6",
+   "round": 0.06
+  },
+  {
+   "shape": "box",
+   "size": [
+    1.84,
+    0.12,
+    0.62
+   ],
+   "at": [
+    0,
+    0.42,
+    0.09
+   ],
+   "mat": "fabric:#6a8fb6",
+   "round": 0.05
+  },
+  {
+   "shape": "box",
+   "size": [
+    2.0,
+    0.52,
+    0.2
+   ],
+   "at": [
+    0,
+    0.6,
+    -0.33
+   ],
+   "mat": "fabric:#5b7fa6",
+   "round": 0.08
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.17,
+    0.46,
+    0.86
+   ],
+   "at": [
+    0.915,
+    0.37,
+    0
+   ],
+   "mat": "fabric:#5b7fa6",
+   "round": 0.07,
+   "mirror": "x"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.42,
+    0.36,
+    0.13
+   ],
+   "at": [
+    0.62,
+    0.62,
+    -0.16
+   ],
+   "rot": [
+    -14,
+    -8,
+    3
+   ],
+   "mat": "fabric:#e9c46a",
+   "round": 0.06
+  },
+  {
+   "shape": "cyl",
+   "r": 0.025,
+   "r2": 0.02,
+   "h": 0.08,
+   "at": [
+    0.92,
+    0.04,
+    0.36
+   ],
+   "mat": "darkwood",
+   "mirror": "x"
+  },
+  {
+   "shape": "cyl",
+   "r": 0.025,
+   "r2": 0.02,
+   "h": 0.08,
+   "at": [
+    0.92,
+    0.04,
+    -0.36
+   ],
+   "mat": "darkwood",
+   "mirror": "x"
+  }
+ ]
+}
+==== 1229 project/library/objects/standing-fan.json
+{
+ "id": "standing-fan",
+ "doc": "standing electric fan (kipas angin) 1.3 m tall, faces +z",
+ "anchors": {
+  "front": [
+   0,
+   0,
+   0.6
+  ]
+ },
+ "parts": [
+  {
+   "shape": "cyl",
+   "r": 0.2,
+   "r2": 0.22,
+   "h": 0.04,
+   "at": [
+    0,
+    0.02,
+    0
+   ],
+   "mat": "plastic:#cdc8be"
+  },
+  {
+   "shape": "rod",
+   "from": [
+    0,
+    0.04,
+    0
+   ],
+   "to": [
+    0,
+    1.05,
+    0
+   ],
+   "r": 0.02,
+   "mat": "plastic:#cdc8be"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.14,
+    0.14,
+    0.18
+   ],
+   "at": [
+    0,
+    1.12,
+    -0.05
+   ],
+   "mat": "plastic:#cdc8be",
+   "round": 0.04
+  },
+  {
+   "shape": "torus",
+   "R": 0.22,
+   "r": 0.012,
+   "at": [
+    0,
+    1.12,
+    0.08
+   ],
+   "mat": "plastic:#cdc8be"
+  },
+  {
+   "shape": "rod",
+   "from": [
+    -0.22,
+    1.12,
+    0.08
+   ],
+   "to": [
+    0.22,
+    1.12,
+    0.08
+   ],
+   "r": 0.004,
+   "mat": "plastic:#cdc8be",
+   "repeat": {
+    "n": 4,
+    "stepRot": [
+     0,
+     0,
+     45
+    ],
+    "around": false
+   }
+  },
+  {
+   "shape": "sphere",
+   "r": 0.17,
+   "scale": [
+    1,
+    1,
+    0.12
+   ],
+   "at": [
+    0,
+    1.12,
+    0.06
+   ],
+   "mat": {
+    "color": "#8ecae6",
+    "opacity": 0.55,
+    "roughness": 0.3
+   }
+  }
+ ]
+}
+==== 1221 project/library/objects/store-shelf.json
+{
+  "id": "store-shelf",
+  "doc": "minimarket gondola shelf 1.0 x 1.7 m, four shelves of colourful packaged goods facing +z; back against a wall",
+  "anchors": { "front": [0, 0, 0.6] },
+  "parts": [
+    { "shape": "box", "size": [0.03, 1.7, 0.42], "at": [0.485, 0.85, 0], "mat": "metal:#c9ccce", "mirror": "x" },
+    { "shape": "box", "size": [1.0, 1.7, 0.02], "at": [0, 0.85, -0.2], "mat": "paint:#eef1f2" },
+    { "shape": "box", "size": [0.96, 0.03, 0.4], "at": [0, 0.06, 0], "mat": "metal:#d4d7d9", "repeat": { "n": 5, "step": [0, 0.4, 0] } },
+    { "shape": "pile", "size": [0.9, 0.16, 0.28], "at": [0, 0.17, 0.02], "count": 16, "r": 0.055, "colors": ["#d8402f", "#2f6f8a", "#e0a324", "#3d8a4a"], "seed": 1 },
+    { "shape": "pile", "size": [0.9, 0.16, 0.28], "at": [0, 0.57, 0.02], "count": 16, "r": 0.055, "colors": ["#e0a324", "#8a3f7a", "#2f8a7a", "#d8402f"], "seed": 2 },
+    { "shape": "pile", "size": [0.9, 0.16, 0.28], "at": [0, 0.97, 0.02], "count": 16, "r": 0.055, "colors": ["#3d8a4a", "#d8402f", "#2f6f8a", "#e0a324"], "seed": 3 },
+    { "shape": "pile", "size": [0.9, 0.16, 0.28], "at": [0, 1.37, 0.02], "count": 16, "r": 0.055, "colors": ["#2f6f8a", "#e0a324", "#8a3f7a", "#3d8a4a"], "seed": 4 }
+  ]
+}
+
+==== 1300 project/library/objects/tv-cabinet.json
+{
+ "id": "tv-cabinet",
+ "doc": "low TV cabinet 1.6 m with a flat TV on top (screen glows with state 'on'); front faces +z",
+ "anchors": {
+  "top": [
+   0,
+   0.5,
+   0
+  ],
+  "front": [
+   0,
+   0,
+   1.4
+  ],
+  "screen": [
+   0,
+   0.95,
+   0.03
+  ]
+ },
+ "states": {
+  "on": 0
+ },
+ "parts": [
+  {
+   "shape": "box",
+   "size": [
+    1.6,
+    0.48,
+    0.42
+   ],
+   "at": [
+    0,
+    0.26,
+    0
+   ],
+   "mat": "wood:#8a6243",
+   "round": 0.02
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.76,
+    0.38,
+    0.01
+   ],
+   "at": [
+    0.39,
+    0.26,
+    0.212
+   ],
+   "mat": "wood:#a57a55",
+   "mirror": "x"
+  },
+  {
+   "shape": "box",
+   "size": [
+    1.24,
+    0.72,
+    0.05
+   ],
+   "at": [
+    0,
+    0.94,
+    0.0
+   ],
+   "mat": "plastic:#1a1c20",
+   "round": 0.012
+  },
+  {
+   "shape": "plane",
+   "size": [
+    1.18,
+    0.66
+   ],
+   "at": [
+    0,
+    0.94,
+    0.027
+   ],
+   "mat": {
+    "color": "#0d1520",
+    "emissive": "#5a8fd8",
+    "roughness": 0.2
+   },
+   "glowState": "on"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.3,
+    0.02,
+    0.18
+   ],
+   "at": [
+    0,
+    0.51,
+    0.0
+   ],
+   "mat": "plastic:#1a1c20"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.05,
+    0.12,
+    0.05
+   ],
+   "at": [
+    0,
+    0.56,
+    0.0
+   ],
+   "mat": "plastic:#1a1c20"
+  }
+ ]
+}
+==== 3891 project/library/objects/wall-clock.json
+{
+ "id": "wall-clock",
+ "doc": "round office wall clock Ø 0.34 m, white face, black hands (states m13 / m14 = 2:13 / 2:14); hangs on a wall, face toward +z",
+ "anchors": {
+  "face": [
+   0,
+   0,
+   0.02
+  ],
+  "front": [
+   0,
+   -2.2,
+   0.9
+  ]
+ },
+ "states": {
+  "m13": 1,
+  "m14": 0
+ },
+ "parts": [
+  {
+   "shape": "torus",
+   "R": 0.162,
+   "r": 0.014,
+   "at": [
+    0,
+    0,
+    0.012
+   ],
+   "mat": "plastic:#2a2c30"
+  },
+  {
+   "shape": "cyl",
+   "r": 0.158,
+   "h": 0.022,
+   "at": [
+    0,
+    0,
+    0
+   ],
+   "rot": [
+    90,
+    0,
+    0
+   ],
+   "mat": "plastic:#2a2c30"
+  },
+  {
+   "shape": "cyl",
+   "r": 0.152,
+   "h": 0.004,
+   "at": [
+    0,
+    0,
+    0.0115
+   ],
+   "rot": [
+    90,
+    0,
+    0
+   ],
+   "mat": "ceramic:#d8d4ca"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.012,
+    0.03,
+    0.003
+   ],
+   "at": [
+    0,
+    0.128,
+    0.0145
+   ],
+   "rot": [
+    0,
+    0,
+    0
+   ],
+   "mat": "paint:#1c1d20"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.006,
+    0.018,
+    0.003
+   ],
+   "at": [
+    0.064,
+    0.1109,
+    0.0145
+   ],
+   "rot": [
+    0,
+    0,
+    -30
+   ],
+   "mat": "paint:#1c1d20"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.006,
+    0.018,
+    0.003
+   ],
+   "at": [
+    0.1109,
+    0.064,
+    0.0145
+   ],
+   "rot": [
+    0,
+    0,
+    -60
+   ],
+   "mat": "paint:#1c1d20"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.012,
+    0.03,
+    0.003
+   ],
+   "at": [
+    0.128,
+    0,
+    0.0145
+   ],
+   "rot": [
+    0,
+    0,
+    -90
+   ],
+   "mat": "paint:#1c1d20"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.006,
+    0.018,
+    0.003
+   ],
+   "at": [
+    0.1109,
+    -0.064,
+    0.0145
+   ],
+   "rot": [
+    0,
+    0,
+    -120
+   ],
+   "mat": "paint:#1c1d20"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.006,
+    0.018,
+    0.003
+   ],
+   "at": [
+    0.064,
+    -0.1109,
+    0.0145
+   ],
+   "rot": [
+    0,
+    0,
+    -150
+   ],
+   "mat": "paint:#1c1d20"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.012,
+    0.03,
+    0.003
+   ],
+   "at": [
+    0,
+    -0.128,
+    0.0145
+   ],
+   "rot": [
+    0,
+    0,
+    -180
+   ],
+   "mat": "paint:#1c1d20"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.006,
+    0.018,
+    0.003
+   ],
+   "at": [
+    -0.064,
+    -0.1109,
+    0.0145
+   ],
+   "rot": [
+    0,
+    0,
+    -210
+   ],
+   "mat": "paint:#1c1d20"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.006,
+    0.018,
+    0.003
+   ],
+   "at": [
+    -0.1109,
+    -0.064,
+    0.0145
+   ],
+   "rot": [
+    0,
+    0,
+    -240
+   ],
+   "mat": "paint:#1c1d20"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.012,
+    0.03,
+    0.003
+   ],
+   "at": [
+    -0.128,
+    0,
+    0.0145
+   ],
+   "rot": [
+    0,
+    0,
+    -270
+   ],
+   "mat": "paint:#1c1d20"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.006,
+    0.018,
+    0.003
+   ],
+   "at": [
+    -0.1109,
+    0.064,
+    0.0145
+   ],
+   "rot": [
+    0,
+    0,
+    -300
+   ],
+   "mat": "paint:#1c1d20"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.006,
+    0.018,
+    0.003
+   ],
+   "at": [
+    -0.064,
+    0.1109,
+    0.0145
+   ],
+   "rot": [
+    0,
+    0,
+    -330
+   ],
+   "mat": "paint:#1c1d20"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.011,
+    0.085,
+    0.003
+   ],
+   "at": [
+    0.0281,
+    0.0119,
+    0.016
+   ],
+   "rot": [
+    0,
+    0,
+    -67
+   ],
+   "mat": "paint:#141518"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.007,
+    0.125,
+    0.003
+   ],
+   "at": [
+    0.0494,
+    0.0105,
+    0.019
+   ],
+   "rot": [
+    0,
+    0,
+    -78
+   ],
+   "mat": "paint:#141518",
+   "when": "m13"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.007,
+    0.125,
+    0.003
+   ],
+   "at": [
+    0.0502,
+    0.0053,
+    0.019
+   ],
+   "rot": [
+    0,
+    0,
+    -84
+   ],
+   "mat": "paint:#141518",
+   "when": "m14"
+  },
+  {
+   "shape": "cyl",
+   "r": 0.008,
+   "h": 0.006,
+   "at": [
+    0,
+    0,
+    0.022
+   ],
+   "rot": [
+    90,
+    0,
+    0
+   ],
+   "mat": "chrome"
+  }
+ ]
+}
+==== 986 project/library/objects/wall-photo.json
+{
+ "id": "wall-photo",
+ "doc": "framed family photo 0.5 × 0.4 m on a wall",
+ "anchors": {
+  "front": [
+   0,
+   0,
+   0.8
+  ],
+  "photo": [
+   0,
+   1.7,
+   0.02
+  ]
+ },
+ "parts": [
+  {
+   "shape": "box",
+   "size": [
+    0.5,
+    0.4,
+    0.03
+   ],
+   "at": [
+    0,
+    1.7,
+    0
+   ],
+   "mat": "wood:#3b2a20",
+   "round": 0.005
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.44,
+    0.34,
+    0.004
+   ],
+   "at": [
+    0,
+    1.7,
+    0.017
+   ],
+   "mat": {
+    "color": "#c9b79c",
+    "roughness": 0.7
+   }
+  },
+  {
+   "shape": "sphere",
+   "r": 0.05,
+   "scale": [
+    1,
+    1.15,
+    0.2
+   ],
+   "at": [
+    -0.1,
+    1.72,
+    0.02
+   ],
+   "mat": {
+    "color": "#6d4c41",
+    "roughness": 0.7
+   },
+   "repeat": {
+    "n": 3,
+    "step": [
+     0.1,
+     -0.01,
+     0
+    ]
+   }
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.36,
+    0.08,
+    0.004
+   ],
+   "at": [
+    0,
+    1.6,
+    0.02
+   ],
+   "mat": {
+    "color": "#8d6e63",
+    "roughness": 0.7
+   }
+  }
+ ]
+}
+==== 906 project/library/objects/wardrobe.json
+{
+ "id": "wardrobe",
+ "doc": "tall two-door wooden wardrobe (lemari) 1.0 × 2.0 m, front faces +z",
+ "anchors": {
+  "front": [
+   0,
+   0,
+   0.7
+  ],
+  "door": [
+   0.25,
+   1.1,
+   0.31
+  ]
+ },
+ "states": {
+  "open": 0
+ },
+ "parts": [
+  {
+   "shape": "box",
+   "size": [
+    1.0,
+    2.0,
+    0.56
+   ],
+   "at": [
+    0,
+    1.0,
+    0
+   ],
+   "mat": "wood:#7a5236",
+   "round": 0.02
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.47,
+    1.84,
+    0.02
+   ],
+   "at": [
+    0.245,
+    1.0,
+    0.285
+   ],
+   "mat": "wood:#8f6644",
+   "mirror": "x"
+  },
+  {
+   "shape": "cyl",
+   "r": 0.015,
+   "h": 0.1,
+   "at": [
+    0.05,
+    1.05,
+    0.305
+   ],
+   "rot": [
+    90,
+    0,
+    0
+   ],
+   "mat": "metal:#c9a45a",
+   "mirror": "x"
+  },
+  {
+   "shape": "box",
+   "size": [
+    1.04,
+    0.06,
+    0.6
+   ],
+   "at": [
+    0,
+    2.02,
+    0
+   ],
+   "mat": "wood:#6a4a2e",
+   "round": 0.01
+  }
+ ]
+}
+==== 1080 project/library/objects/whiteboard.json
+{
+ "id": "whiteboard",
+ "doc": "wall whiteboard 1.6 × 1.0 m with an aluminium frame and marker tray, faces +z (origin = board centre)",
+ "anchors": {
+  "front": [
+   0,
+   -1.4,
+   1
+  ]
+ },
+ "parts": [
+  {
+   "shape": "box",
+   "size": [
+    1.64,
+    1.04,
+    0.025
+   ],
+   "at": [
+    0,
+    0,
+    0.0125
+   ],
+   "mat": "aluminium"
+  },
+  {
+   "shape": "box",
+   "size": [
+    1.6,
+    1,
+    0.01
+   ],
+   "at": [
+    0,
+    0,
+    0.026
+   ],
+   "mat": "plastic:#d4d6d2"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.7,
+    0.012,
+    0.002
+   ],
+   "at": [
+    -0.3,
+    0.25,
+    0.032
+   ],
+   "mat": "paint:#2c4f8a"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.5,
+    0.012,
+    0.002
+   ],
+   "at": [
+    -0.4,
+    0.15,
+    0.032
+   ],
+   "mat": "paint:#2c4f8a"
+  },
+  {
+   "shape": "box",
+   "size": [
+    0.6,
+    0.012,
+    0.002
+   ],
+   "at": [
+    0.3,
+    -0.05,
+    0.032
+   ],
+   "mat": "paint:#8a2c2c"
+  },
+  {
+   "shape": "box",
+   "size": [
+    1.2,
+    0.03,
+    0.06
+   ],
+   "at": [
+    0,
+    -0.53,
+    0.04
+   ],
+   "mat": "aluminium"
+  }
+ ]
+}
+==== 663 project/library/objects/wooden-chair.json
+{
+  "id": "wooden-chair",
+  "doc": "simple wooden chair, sits facing +z (backrest at −z)",
+  "anchors": { "seat": [0, 0.46, 0.03], "front": [0, 0, 0.6] },
+  "parts": [
+    { "shape": "box", "size": [0.44, 0.04, 0.42], "at": [0, 0.45, 0], "mat": "wood:#8a6440", "round": 0.01 },
+    { "shape": "box", "size": [0.04, 0.45, 0.04], "at": [0.19, 0.225, 0.18], "mat": "wood:#6a4a2e", "mirror": "x" },
+    { "shape": "box", "size": [0.04, 0.92, 0.04], "at": [0.19, 0.46, -0.19], "mat": "wood:#6a4a2e", "mirror": "x" },
+    { "shape": "box", "size": [0.4, 0.07, 0.025], "at": [0, 0.82, -0.19], "mat": "wood:#8a6440", "repeat": { "n": 2, "step": [0, -0.16, 0] } }
+  ]
+}
+
+==== 1593 project/package.json
+{
+  "name": "voynann-cinestory-project",
+  "version": "1.0.0",
+  "private": true,
+  "description": "VOYNANN Motion CINÉSTORY 3D project (Remotion + React Three Fiber): story.json + voice-over → cinematic 9:16 film (16:9 on request).",
+  "type": "module",
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "scripts": {
+    "dev": "remotion studio",
+    "typecheck": "tsc --noEmit",
+    "check-env": "node scripts/check-env.mjs",
+    "make": "node scripts/make.mjs",
+    "smoke": "node scripts/stills.mjs out/smoke/cast 0,1,16,17 cast-sheet && node scripts/stills.mjs out/smoke/coast 0,4 world-coast && node scripts/stills.mjs out/smoke/kos 0,2 world-kos",
+    "look:cast": "node scripts/stills.mjs out/look/cast 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17 cast-sheet",
+    "look:coast": "node scripts/stills.mjs out/look/coast 0,1,2,3,4,5,6,7,8 world-coast",
+    "look:kos": "node scripts/stills.mjs out/look/kos 0,1,2,3,4,5 world-kos",
+    "worlds": "node scripts/worlds.mjs",
+    "qa": "node scripts/qa-scene.mjs",
+    "qa:video": "node scripts/qa-video.mjs"
+  },
+  "dependencies": {
+    "@react-three/fiber": "9.8.2",
+    "@remotion/cli": "4.0.539",
+    "@remotion/google-fonts": "4.0.539",
+    "@remotion/three": "4.0.539",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "remotion": "4.0.539",
+    "three": "0.186.1",
+    "three-mesh-bvh": "0.9.16"
+  },
+  "devDependencies": {
+    "@remotion/bundler": "4.0.539",
+    "@remotion/renderer": "4.0.539",
+    "@types/react": "19.2.7",
+    "@types/three": "0.186.0",
+    "typescript": "5.9.3"
+  },
+  "overrides": {
+    "zod": "4.6.7"
+  }
+}
+
+==== 711 project/README.md
+# CINÉSTORY 3D project
+
+Made from the VOYNANN Motion skill, style 09 CINÉSTORY 3D (portrait 9:16 by default). Per video you write `stories/<id>/story.json`;
+`node scripts/make.mjs stories/<id>/story.json --final` does the rest (plan → sound → render → QA).
+
+- `src/director` — story.json → film plan (acting, cameras, light, grade, UI, sound cues)
+- `src/cine` — character rig, light rig, post/grade, FX, motion-graphics kit, set-building kit
+- `src/worlds` — `coast`, `kos`, and the `mind` studio
+- `src/film` — the generic renderer · `scripts/` — transcribe, TTS, sound, render, QA
+
+Docs: the skill folder's `references/cinestory.md`, `references/cinestory/` and `kits/cinestory/KIT.md`.
+
+==== 664 project/remotion.config.ts
+// See all configuration options: https://remotion.dev/docs/config
+import fs from "node:fs";
+import { Config } from "@remotion/cli/config";
+
+Config.setVideoImageFormat("jpeg");
+Config.setJpegQuality(95);
+Config.setOverwriteOutput(true);
+// WebGL film: GPU-backed ANGLE path in headless Chrome, or software "swangle" when scripts/gl.mjs found
+// no usable GPU on this computer (remembered in .gl-mode). The GL env var overrides both.
+type GL = Parameters<typeof Config.setChromiumOpenGlRenderer>[0];
+const gl = (process.env.GL || (fs.existsSync(".gl-mode") ? fs.readFileSync(".gl-mode", "utf8").trim() : "") || "angle") as GL;
+Config.setChromiumOpenGlRenderer(gl);
+
+==== 3812 project/scripts/check-env.mjs
+// Environment check before any VOYNANN render. Prints a plain report and exits non-zero only
+// when something required is missing. Installs nothing.
+//   node scripts/check-env.mjs
+
+import { execFileSync, spawnSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+
+const rows = [];
+const add = (name, ok, detail, required = true) => rows.push({ name, ok, detail, required });
+
+const [maj, min] = process.versions.node.split(".").map(Number);
+// 22.18+ runs the .ts helper scripts directly (type stripping on by default)
+add("Node.js ≥ 22.18", maj > 22 || (maj === 22 && min >= 18), `found ${process.versions.node}`);
+
+const has = (cmd, args = ["-version"]) => {
+  const r = spawnSync(cmd, args, { encoding: "utf8" });
+  return r.status === 0 ? (r.stdout || r.stderr).split("\n")[0].trim() : null;
+};
+const npmV = has(process.platform === "win32" ? "npm.cmd" : "npm", ["-v"]);
+add("npm", !!npmV, npmV ?? "not found");
+const ff = has("ffmpeg");
+add("ffmpeg (audio analysis, contact sheets, final audio)", !!ff, ff ? ff.slice(0, 60) : "not found — rendering still works, VO analysis/delivery does not");
+const fp = has("ffprobe");
+add("ffprobe", !!fp, fp ? "ok" : "not found");
+
+// optional: real word timings (whisper.cpp) and offline narration (macOS `say`)
+const whisperCli = [process.env.WHISPER_CLI, spawnSync("sh", ["-c", "command -v whisper-cli"], { encoding: "utf8" }).stdout?.trim(), "/opt/homebrew/bin/whisper-cli", "/usr/local/bin/whisper-cli"].filter(Boolean).find((c) => fs.existsSync(c));
+const modelDirs = [`${os.homedir()}/.cache/whisper.cpp`, "models", "/opt/homebrew/share/whisper-cpp"];
+const whisperModel = (process.env.WHISPER_MODEL && fs.existsSync(process.env.WHISPER_MODEL) && process.env.WHISPER_MODEL) || modelDirs.flatMap((d) => (fs.existsSync(d) ? fs.readdirSync(d).filter((f) => f.endsWith(".bin")).map((f) => `${d}/${f}`) : []))[0];
+add("whisper.cpp (exact word timing from any VO)", !!(whisperCli && whisperModel), whisperCli && whisperModel ? `${whisperCli} + ${whisperModel.split("/").pop()}` : `${whisperCli ? "model" : "whisper-cli"} not found — without it the VO script text is needed (timing ≈0.3 s less precise)`, false);
+const say = process.platform === "darwin" && spawnSync("say", ["-v", "?"], { encoding: "utf8" }).stdout?.includes("id_ID");
+add("Offline Indonesian narration (macOS say, voice Damayanti)", !!say, say ? "available (used only with the user's approval)" : "not available — bring a recorded VO", false);
+
+let freeGb = null;
+try {
+  const st = fs.statfsSync(process.cwd());
+  freeGb = (st.bavail * st.bsize) / 1e9;
+} catch {}
+add("Free disk ≥ 5 GB", freeGb === null ? true : freeGb >= 5, freeGb === null ? "unknown" : `${freeGb.toFixed(1)} GB free`);
+add("RAM", true, `${(os.totalmem() / 1e9).toFixed(0)} GB total`, false);
+
+const plat = { darwin: "macOS (recommended)", win32: "Windows: run npm run smoke to confirm 3D rendering", linux: "Linux: run npm run smoke; without a GPU use GL=swangle (slow)" }[process.platform] ?? process.platform;
+add("Platform", true, plat, false);
+
+const deps = fs.existsSync("node_modules/remotion") && fs.existsSync("node_modules/three");
+add("Project packages installed (npm ci)", deps, deps ? "ok" : "run: npm ci", false);
+let browser = false;
+try {
+  browser = fs.readdirSync("node_modules/.remotion").some((d) => d.includes("chrome"));
+} catch {}
+add("Remotion headless browser downloaded", browser, browser ? "ok" : "downloads automatically on first render (~100–200 MB)", false);
+
+for (const r of rows) console.log(`${r.ok ? "✓" : r.required ? "✗" : "!"} ${r.name}: ${r.detail}`);
+const missing = rows.filter((r) => r.required && !r.ok);
+console.log(missing.length ? `\n${missing.length} required item(s) missing.` : "\nReady.");
+process.exit(missing.length ? 1 : 0);
+
+==== 2500 project/scripts/deliver.mjs
+// Delivery master: measure integrated loudness, apply gain + a true limiter so the file
+// lands at the target without clipping, copy the video stream untouched, then verify.
+//   node scripts/deliver.mjs <in.mp4> <out.mp4> [targetLUFS=-14] [ceilingDb=-2]
+// (loudnorm alone can't stop AAC inter-sample overshoot; a limiter before the encoder can.)
+
+import { spawnSync } from "node:child_process";
+
+const [input, output, targetArg = "-14", ceilArg = "-2"] = process.argv.slice(2);
+if (!input || !output) {
+  console.error("usage: node scripts/deliver.mjs <in.mp4> <out.mp4> [targetLUFS] [ceilingDb]");
+  process.exit(1);
+}
+const target = Number(targetArg);
+const ceiling = 10 ** (Number(ceilArg) / 20);
+
+const ffmpeg = (args) => {
+  const r = spawnSync("ffmpeg", args, { encoding: "utf8" });
+  if (r.status !== 0) throw new Error(r.stderr);
+  return r.stderr;
+};
+
+/** ebur128 prints its summary to stderr. */
+const loudness = (file) => {
+  const log = ffmpeg(["-nostats", "-i", file, "-af", "ebur128=peak=true", "-f", "null", "-"]);
+  const s = log.slice(log.lastIndexOf("Summary"));
+  return {
+    I: Number(/I:\s+(-?[\d.]+) LUFS/.exec(s)?.[1]),
+    peak: Number(/Peak:\s+(-?[\d.]+) dBFS/.exec(s)?.[1]),
+  };
+};
+
+const before = loudness(input);
+let gain = target - before.I + 0.4; // the limiter shaves a little; aim slightly high
+let after;
+// Peaky voices make the limiter eat more than expected, so measure and correct (max 5 passes).
+for (let pass = 1; pass <= 5; pass++) {
+  ffmpeg([
+    "-v", "error", "-y", "-i", input, "-c:v", "copy",
+    "-af", `volume=${gain.toFixed(2)}dB,alimiter=limit=${ceiling.toFixed(3)}:level=false:attack=2:release=80,aresample=48000`,
+    "-c:a", "aac", "-b:a", "256k", "-movflags", "+faststart", output,
+  ]);
+  after = loudness(output);
+  if (Math.abs(after.I - target) <= 0.5) break;
+  gain += 1.6 * (target - after.I); // the limiter absorbs part of every boost
+}
+const probe = spawnSync(
+  "ffprobe",
+  ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=codec_name,width,height,r_frame_rate,nb_frames", "-of", "csv=p=0", output],
+  { encoding: "utf8" },
+).stdout.trim();
+console.log(`in : ${before.I} LUFS, true peak ${before.peak} dBFS`);
+console.log(`out: ${after.I} LUFS, true peak ${after.peak} dBFS (gain ${gain.toFixed(2)} dB)`);
+console.log(`video: ${probe}`);
+if (Math.abs(after.I - target) > 0.5) console.warn(`WARNING: integrated loudness ${after.I} LUFS is more than 0.5 LU from the ${target} LUFS target; report this honestly.`);
+
+==== 1469 project/scripts/gl.mjs
+// WebGL renderer choice for headless Chrome, shared by every render script.
+// Order: GL env var > the project's .gl-mode file > "angle" (GPU). When the GPU path cannot create a WebGL
+// context (no GPU, some VMs/drivers), the scripts switch to "swangle" (software, much slower) automatically
+// and remember it in .gl-mode, so later renders and `npx remotion render` (remotion.config.ts) use it too.
+import fs from "node:fs";
+
+const FILE = ".gl-mode";
+
+// When the GPU path crashes, Remotion may reject an internal "Target closed" promise that nothing awaits.
+// That rejection is noise from the dead tab, not a render failure; real errors still reach the caller.
+export const tolerateClosedTargets = () =>
+  process.on("unhandledRejection", (e) => {
+    if (/Target closed/i.test(String(e?.message ?? e))) return;
+    console.error(e);
+    process.exit(1);
+  });
+
+export const glMode = () =>
+  process.env.GL || (fs.existsSync(FILE) ? fs.readFileSync(FILE, "utf8").trim() : "") || "angle";
+
+export const isWebGLError = (e) =>
+  /webgl|WebGLRenderer|GL context|BindToCurrentSequence|GL_VENDOR = Disabled/i.test(String(e?.stack ?? e?.message ?? e));
+
+export const switchToSoftware = () => {
+  fs.writeFileSync(FILE, "swangle\n");
+  console.log(
+    "\n! GPU 3D rendering is not available on this computer: switched to software rendering (GL=swangle, much slower)." +
+      "\n  Saved in .gl-mode; delete that file to try the GPU again.\n",
+  );
+  return "swangle";
+};
+
+==== 2444 project/scripts/objects.mjs
+// Object library tools.
+//   node scripts/objects.mjs            regenerate src/gen/objects/registry.ts (library/objects + assets/objects)
+//   node scripts/objects.mjs --sheet [ids]   …and render a look sheet: every object from two angles next to a
+//                                             1.8 m person for scale → out/look/objects/_sheet.jpg
+// Project objects (assets/objects/<id>.json) override library ones with the same id.
+import fs from "node:fs";
+import path from "node:path";
+import { spawnSync } from "node:child_process";
+
+const dirs = ["library/objects", "assets/objects"];
+const files = [];
+for (const d of dirs) if (fs.existsSync(d)) for (const f of fs.readdirSync(d).filter((f) => f.endsWith(".json")).sort()) files.push(path.join(d, f));
+const byId = new Map();
+const problems = [];
+for (const f of files) {
+  try {
+    const j = JSON.parse(fs.readFileSync(f, "utf8"));
+    if (!j.id || !Array.isArray(j.parts)) { problems.push(`${f}: needs "id" and "parts"`); continue; }
+    if (path.basename(f, ".json") !== j.id) problems.push(`${f}: file name should be ${j.id}.json`);
+    byId.set(j.id, f);
+  } catch (e) { problems.push(`${f}: ${e.message}`); }
+}
+const v = (s) => "o_" + s.replace(/[^a-z0-9]/gi, "_");
+const list = [...byId.entries()];
+fs.writeFileSync("src/gen/objects/registry.ts", `// Generated by scripts/objects.mjs — every object JSON in library/objects and assets/objects.\nimport type { ObjectSpec } from "../spec.ts";\n${list.map(([id, f]) => `import ${v(id)} from "../../../${f}";`).join("\n")}\n\nexport const OBJECTS: ObjectSpec[] = [${list.map(([id]) => `${v(id)} as unknown as ObjectSpec`).join(", ")}];\n`);
+console.log(`objects: ${list.length} (${list.map(([id]) => id).join(", ")})`);
+for (const p of problems) console.log(`  ⚠ ${p}`);
+const want = process.argv.includes("--sheet");
+if (want) {
+  const ids = process.argv.slice(2).filter((a) => !a.startsWith("--")).flatMap((a) => a.split(",")).filter(Boolean);
+  const all = (await import(path.resolve("src/gen/objects/builtin-data.ts"))).BUILTIN;
+  const names = ids.length ? ids : [...list.map(([id]) => id), ...Object.keys(all)];
+  fs.writeFileSync("src/gen/objects/sheet-list.json", JSON.stringify(names));
+  const frames = names.flatMap((_, i) => [i * 2, i * 2 + 1]).join(",");
+  const r = spawnSync("node", ["scripts/stills.mjs", "out/look/objects", frames, "object-sheet"], { stdio: "inherit" });
+  process.exit(r.status ?? 0);
+}
+
+==== 3557 project/scripts/stills.mjs
+// Visual QA: bundle once, render chosen frames of a composition, tile them into a contact sheet.
+//   node scripts/stills.mjs <outDir> <frame,frame,...> <compositionId> [scale]
+// Frames may be given in seconds with an "s" suffix (e.g. 4.5s), using the composition's fps.
+
+import path from "node:path";
+import fs from "node:fs";
+import { execFileSync } from "node:child_process";
+import { bundle } from "@remotion/bundler";
+import { openBrowser, renderStill, selectComposition } from "@remotion/renderer";
+import { glMode, isWebGLError, switchToSoftware, tolerateClosedTargets } from "./gl.mjs";
+
+tolerateClosedTargets();
+
+const [outDir, list, id, scaleArg = "1"] = process.argv.slice(2);
+if (!outDir || !list || !id) {
+  console.error("usage: node scripts/stills.mjs <outDir> <frame,frame,...|4.5s,...> <compositionId> [scale]");
+  process.exit(1);
+}
+fs.mkdirSync(outDir, { recursive: true });
+
+const serveUrl = await bundle({ entryPoint: path.resolve("src/index.ts") });
+// bundles are ~50 MB each; never leave them in the temp dir, even when a render throws
+const cleanup = () => fs.rmSync(serveUrl, { recursive: true, force: true });
+process.on("exit", cleanup);
+const composition = await selectComposition({ serveUrl, id });
+const frames = list.split(",").map((t) => (t.endsWith("s") ? Math.round(parseFloat(t) * composition.fps) : parseInt(t, 10)));
+const files = [];
+const renderAll = async (gl) => {
+  // one browser for all stills: WebGL contexts are expensive to create and tear down
+  const puppeteerInstance = await openBrowser("chrome", { chromiumOptions: { gl } });
+  try {
+    files.length = 0;
+    for (const frame of frames) {
+      const output = path.join(outDir, `f${String(frame).padStart(4, "0")}.png`);
+      await renderStill({ composition, serveUrl, output, frame, scale: Number(scaleArg), chromiumOptions: { gl }, timeoutInMilliseconds: 180000, puppeteerInstance });
+      files.push(output);
+      process.stdout.write(`${frame} `);
+    }
+  } finally {
+    // after a WebGL crash the tab may already be gone; closing must not hide the original error
+    await puppeteerInstance.close({ silent: true }).catch(() => {});
+  }
+};
+const gl = glMode();
+try {
+  await renderAll(gl);
+} catch (e) {
+  if (gl === "swangle" || !isWebGLError(e)) throw e;
+  await renderAll(switchToSoftware());
+}
+console.log();
+cleanup();
+
+// contact sheet (needs ffmpeg; skipped if missing)
+try {
+  const w = Math.round(composition.width * Number(scaleArg)), h = Math.round(composition.height * Number(scaleArg));
+  const cols = Math.min(4, files.length), rows = Math.ceil(files.length / cols), n = cols * rows;
+  if (n > 1) {
+    const inputs = files.flatMap((f) => ["-i", f]);
+    const pads = Array.from({ length: n - files.length }, () => ["-f", "lavfi", "-i", `color=c=black:s=${w}x${h}`]).flat();
+    const filter =
+      Array.from({ length: n }, (_, i) => `[${i}:v]scale=${w}:${h},setsar=1[v${i}]`).join(";") + ";" +
+      Array.from({ length: n }, (_, i) => `[v${i}]`).join("") +
+      `xstack=inputs=${n}:layout=` + Array.from({ length: n }, (_, i) => `${(i % cols) * w}_${Math.floor(i / cols) * h}`).join("|") +
+      `,scale='min(2160,iw)':-2`;
+    execFileSync("ffmpeg", ["-v", "error", "-y", ...inputs, ...pads, "-filter_complex", filter, "-frames:v", "1", path.join(outDir, "_sheet.jpg")]);
+    console.log(`sheet: ${path.join(outDir, "_sheet.jpg")}`);
+  }
+} catch {
+  console.log("(contact sheet skipped: ffmpeg not available)");
+}
+// a render that failed on the GPU path leaves its timeout timer behind; do not wait for it
+process.exit(0);
+
+==== 2032 project/scripts/tts.mjs
+// Offline narration with the operating system's voice (only with the user's approval — it is a
+// stand-in for a real voice-over). macOS: `say` (Indonesian voice "Damayanti"). Writes an MP3 and,
+// because the text is known, the word timings too.
+//   node scripts/tts.mjs <script.txt> <public/audio/<id>.mp3> --words=stories/<id>/words.json [--voice=Damayanti] [--rate=170]
+
+import { spawnSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
+const [scriptFile, outMp3] = process.argv.slice(2).filter((a) => !a.startsWith("--"));
+const opt = (k, d) => (process.argv.find((a) => a.startsWith(`--${k}=`)) ?? `=${d ?? ""}`).split("=").slice(1).join("=");
+if (!scriptFile || !outMp3) {
+  console.error("usage: node scripts/tts.mjs <script.txt> <out.mp3> --words=stories/<id>/words.json [--voice=Damayanti] [--rate=170]");
+  process.exit(1);
+}
+if (process.platform !== "darwin") {
+  console.error("Built-in TTS is only wired for macOS (`say`). On other systems record or generate the voice-over elsewhere and use scripts/transcribe.mjs.");
+  process.exit(2);
+}
+const voice = opt("voice", "Damayanti"), rate = opt("rate", "170");
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "cf-tts-"));
+const aiff = path.join(tmp, "vo.aiff");
+const r = spawnSync("say", ["-v", voice, "-r", rate, "-o", aiff, "-f", scriptFile], { encoding: "utf8" });
+if (r.status !== 0) { console.error(r.stderr || `say failed (voice "${voice}" installed?)`); process.exit(3); }
+fs.mkdirSync(path.dirname(outMp3), { recursive: true });
+spawnSync("ffmpeg", ["-v", "error", "-y", "-i", aiff, "-af", "apad=pad_dur=0.2", "-ar", "44100", "-ac", "1", "-b:a", "160k", outMp3]);
+fs.rmSync(tmp, { recursive: true, force: true });
+console.log(`tts: ${outMp3} (${voice}, rate ${rate})`);
+const words = opt("words");
+if (words) {
+  const t = spawnSync("node", [path.join("scripts", "transcribe.mjs"), outMp3, `--out=${words}`, `--script=${scriptFile}`], { stdio: "inherit" });
+  process.exit(t.status ?? 0);
+}
+
+==== 3047 project/scripts/vo-analyze.mjs
+// Read the real timing of a voice-over: duration, pauses and phrases (stretches of speech between
+// pauses). Optional word timings when whisper.cpp is available (set WHISPER_CLI and WHISPER_MODEL).
+// Write cuts in VO seconds from this output — never from a guessed script length.
+//   node scripts/vo-analyze.mjs public/audio/vo.mp3 [--noise=-38] [--pause=0.25] [--lang=id]
+
+import { spawnSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
+const args = process.argv.slice(2);
+const file = args.find((a) => !a.startsWith("--"));
+const opt = (k, d) => (args.find((a) => a.startsWith(`--${k}=`)) ?? `=${d}`).split("=")[1];
+if (!file || !fs.existsSync(file)) {
+  console.error("usage: node scripts/vo-analyze.mjs <audio.mp3|wav> [--noise=-38] [--pause=0.25] [--lang=id]");
+  process.exit(1);
+}
+const run = (cmd, a) => spawnSync(cmd, a, { encoding: "utf8" });
+const duration = Number(run("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", file]).stdout.trim());
+const log = run("ffmpeg", ["-v", "info", "-i", file, "-af", `silencedetect=n=${opt("noise", -38)}dB:d=${opt("pause", 0.25)}`, "-f", "null", "-"]).stderr;
+const starts = [...log.matchAll(/silence_start: ([\d.]+)/g)].map((m) => Number(m[1]));
+const ends = [...log.matchAll(/silence_end: ([\d.]+)/g)].map((m) => Number(m[1]));
+const pauses = starts.map((s, i) => ({ start: s, end: ends[i] ?? duration }));
+// phrases = speech between pauses
+const phrases = [];
+let cur = 0;
+for (const p of pauses) {
+  if (p.start - cur > 0.15) phrases.push({ start: +cur.toFixed(2), end: +p.start.toFixed(2) });
+  cur = p.end;
+}
+if (duration - cur > 0.15) phrases.push({ start: +cur.toFixed(2), end: +duration.toFixed(2) });
+
+let words = null;
+const cli = process.env.WHISPER_CLI, model = process.env.WHISPER_MODEL;
+if (cli && model && fs.existsSync(cli) && fs.existsSync(model)) {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "vo-"));
+  const wav = path.join(tmp, "vo16k.wav");
+  run("ffmpeg", ["-v", "error", "-y", "-i", file, "-ar", "16000", "-ac", "1", wav]);
+  run(cli, ["-m", model, "-f", wav, "-l", opt("lang", "id"), "-ml", "1", "-sow", "-ojf", "-of", path.join(tmp, "w")]);
+  try {
+    const j = JSON.parse(fs.readFileSync(path.join(tmp, "w.json"), "utf8"));
+    words = j.transcription.map((s) => ({ t: s.offsets.from / 1000, w: s.text.trim() })).filter((x) => x.w);
+  } catch {}
+  fs.rmSync(tmp, { recursive: true, force: true });
+}
+
+const out = { file, duration: +duration.toFixed(3), firstSpeech: phrases[0]?.start ?? 0, pauses, phrases, words };
+const json = file.replace(/\.[^.]+$/, "") + ".timing.json";
+fs.writeFileSync(json, JSON.stringify(out, null, 2));
+console.log(`duration ${out.duration} s · speech starts ${out.firstSpeech} s · ${phrases.length} phrases · ${pauses.length} pauses${words ? ` · ${words.length} words` : ""}`);
+for (const p of phrases) console.log(`  ${p.start.toFixed(2).padStart(7)} – ${p.end.toFixed(2).padStart(7)} s`);
+console.log(`timing: ${json}`);
+
+==== 3122 project/src/cine/neural/glow.ts
+// Additive "light" materials for the neural world: fresnel glow shells, soft point sprites, 3D noise.
+
+import { AdditiveBlending, CanvasTexture, Color, DoubleSide, PointsMaterial, ShaderMaterial, type Side } from "three";
+
+const h3 = (x: number, y: number, z: number) => {
+  let n = Math.sin(x * 127.1 + y * 311.7 + z * 74.7) * 43758.5453;
+  return n - Math.floor(n);
+};
+const sm = (t: number) => t * t * (3 - 2 * t);
+/** Smooth 3D value noise in 0..1. */
+export const noise3 = (x: number, y: number, z: number) => {
+  const xi = Math.floor(x), yi = Math.floor(y), zi = Math.floor(z);
+  const xf = sm(x - xi), yf = sm(y - yi), zf = sm(z - zi);
+  const l = (a: number, b: number, t: number) => a + (b - a) * t;
+  const c = (dx: number, dy: number, dz: number) => h3(xi + dx, yi + dy, zi + dz);
+  return l(
+    l(l(c(0, 0, 0), c(1, 0, 0), xf), l(c(0, 1, 0), c(1, 1, 0), xf), yf),
+    l(l(c(0, 0, 1), c(1, 0, 1), xf), l(c(0, 1, 1), c(1, 1, 1), xf), yf),
+    zf,
+  );
+};
+
+export type GlowOpts = { color: string; rim?: number; core?: number; power?: number; side?: Side; opacity?: number };
+
+/** Fresnel glow (additive): bright silhouettes, faint faces. Uniform `uOpacity` fades it. */
+export const glowMat = (o: GlowOpts) =>
+  new ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    blending: AdditiveBlending,
+    side: o.side ?? DoubleSide,
+    fog: false,
+    uniforms: {
+      uColor: { value: new Color(o.color) },
+      uRim: { value: o.rim ?? 1.0 },
+      uCore: { value: o.core ?? 0.15 },
+      uPow: { value: o.power ?? 2.0 },
+      uOpacity: { value: o.opacity ?? 1 },
+    },
+    vertexShader: /* glsl */ `varying vec3 vN; varying vec3 vV;
+      void main(){ vec4 mv = modelViewMatrix * vec4(position,1.0); vN = normalize(normalMatrix * normal); vV = normalize(-mv.xyz); gl_Position = projectionMatrix * mv; }`,
+    fragmentShader: /* glsl */ `uniform vec3 uColor; uniform float uRim; uniform float uCore; uniform float uPow; uniform float uOpacity;
+      varying vec3 vN; varying vec3 vV;
+      void main(){ float f = clamp(1.0 - abs(dot(normalize(vN), normalize(vV))), 0.0, 1.0);
+        float g = uCore + uRim * pow(f, uPow);
+        gl_FragColor = vec4(uColor * g * uOpacity, 1.0); }`,
+  });
+
+let sprite: CanvasTexture | null = null;
+/** Soft round sprite for points (never square). */
+export const spriteTex = () => {
+  if (sprite) return sprite;
+  const c = document.createElement("canvas");
+  c.width = c.height = 64;
+  const g = c.getContext("2d")!;
+  const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  gr.addColorStop(0, "rgba(255,255,255,1)");
+  gr.addColorStop(0.25, "rgba(255,255,255,0.55)");
+  gr.addColorStop(1, "rgba(255,255,255,0)");
+  g.fillStyle = gr;
+  g.fillRect(0, 0, 64, 64);
+  sprite = new CanvasTexture(c);
+  return sprite;
+};
+
+export const pointsMat = (size: number, opacity = 1) =>
+  new PointsMaterial({
+    size, map: spriteTex(), vertexColors: true, transparent: true, opacity, depthWrite: false, blending: AdditiveBlending, sizeAttenuation: true, fog: false,
+  });
+
+export const CYAN = "#5fe3ff";
+export const ORANGE = "#ff9a3d";
+export const BLUE = "#2f7bff";
+
+==== 197 project/src/cine/neural/plane.ts
+import { PlaneGeometry } from "three";
+import { cached } from "../../kits/worldforge/geo.ts";
+
+export const planeG = (w: number, h: number) => cached(`pl${w},${h}`, () => new PlaneGeometry(w, h));
+
+==== 2434 project/src/cine/Stage.tsx
+// CINÉSTORY stage: waits for the bundled font, mounts a Remotion-synchronised ThreeCanvas (PCF shadows,
+// dpr 1, MSAA in the post chain) and lays the 2D overlay on top — designed at 1080 × 1920 for portrait
+// (the default) or 1920 × 1080 for landscape, scaled to the render size. Everything inside must be a pure
+// function of the frame.
+
+import React, { useEffect, useState } from "react";
+import { AbsoluteFill, continueRender, delayRender, useVideoConfig } from "remotion";
+import { ThreeCanvas } from "@remotion/three";
+import { QaProbe, qaNoOverlay } from "../core/qa/scene-qa.tsx";
+import { PCFShadowMap } from "three";
+import { fontReady } from "../core/type/fonts.ts";
+
+/** overlay design space per orientation */
+export const designOf = (width: number, height: number) => (height > width ? { W: 1080, H: 1920 } : { W: 1920, H: 1080 });
+
+/** Draft (fast look checks) and final (delivery) presets per format. */
+export const PRESETS = {
+  portrait: { draft: { width: 540, height: 960, fps: 30 }, final: { width: 1080, height: 1920, fps: 60 } },
+  landscape: { draft: { width: 960, height: 540, fps: 30 }, final: { width: 1920, height: 1080, fps: 60 } },
+} as const;
+
+export const Stage: React.FC<{ children: React.ReactNode; overlay?: () => React.ReactNode }> = ({ children, overlay }) => {
+  const { width, height } = useVideoConfig();
+  const { W, H } = designOf(width, height);
+  const [handle] = useState(() => delayRender("font"));
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    fontReady().then(() => {
+      setReady(true);
+      continueRender(handle);
+    });
+  }, [handle]);
+  return (
+    <AbsoluteFill style={{ backgroundColor: "#000" }}>
+      {ready ? (
+        <>
+          <ThreeCanvas
+            width={width}
+            height={height}
+            shadows={{ type: PCFShadowMap }}
+            dpr={1}
+            gl={{ antialias: false, preserveDrawingBuffer: true, powerPreference: "high-performance" }}
+            camera={{ fov: 30, near: 0.05, far: 400, position: [0, 1.6, 4] }}
+          >
+            {children}
+            <QaProbe />
+          </ThreeCanvas>
+          {overlay && !qaNoOverlay() ? (
+            <div style={{ position: "absolute", left: 0, top: 0, width: W, height: H, transform: `scale(${width / W})`, transformOrigin: "0 0" }}>
+              {overlay()}
+            </div>
+          ) : null}
+        </>
+      ) : null}
+    </AbsoluteFill>
+  );
+};
+
+==== 1824 project/src/cine/types.ts
+// Plain data types + constants shared by the picture (TSX) and Node scripts (director, sound): light rig
+// state, camera, grade. No React / WebGL imports here, so Node's type stripping can load it.
+
+export type V3 = [number, number, number];
+export type PointL = { pos: V3; color: string; i: number; dist: number };
+export type SpotL = { pos: V3; target: V3; color: string; i: number; angle: number; penumbra: number; dist: number };
+export type LightState = {
+  bg: string;
+  fog: { color: string; density: number };
+  env: number;
+  hemi: { sky: string; ground: string; i: number };
+  moon: { dir: V3; color: string; i: number; box: { min: V3; max: V3 } };
+  spots: [SpotL, SpotL];
+  pts: [PointL, PointL, PointL, PointL, PointL, PointL];
+};
+
+export const P_OFF: PointL = { pos: [0, -50, 0], color: "#ffffff", i: 0, dist: 1 };
+export const S_OFF: SpotL = { pos: [0, 40, 0], target: [0, 0, 0], color: "#ffffff", i: 0, angle: 0.6, penumbra: 0.6, dist: 10 };
+
+export type Cam = { pos: V3; target: V3; fov: number; roll?: number; focus?: number; aperture?: number; maxBlur?: number; near?: number; far?: number };
+
+export type Grade = {
+  exposure: number;
+  /** additive lift in the shadows, multiplicative gain */
+  lift: V3; gain: V3;
+  sat: number; contrast: number;
+  vignette: number; grain: number;
+  bloom: number; bloomRadius: number; bloomThreshold: number;
+  /** 0..1 flash toward `flashColor`, 0..1 fade to black */
+  flash: number; flashColor: string; black: number;
+  ao: number;
+  /** lens chromatic fringe at the frame edge (0 = off) */
+  ca: number;
+};
+
+export const GRADE0: Grade = {
+  exposure: 1, lift: [0, 0, 0], gain: [1, 1, 1], sat: 1, contrast: 1, vignette: 0.22, grain: 0.016,
+  bloom: 0.22, bloomRadius: 0.45, bloomThreshold: 1.05, flash: 0, flashColor: "#ffffff", black: 0, ao: 1, ca: 0.0012,
+};
+
+
+==== 2937 project/src/core/motion/easing.ts
+// PRECISION easing vocabulary. Every curve is a pure function of normalised time, so the
+// whole film stays deterministic: same frame in, same pose out.
+
+export const clamp = (x: number, lo = 0, hi = 1) => Math.min(hi, Math.max(lo, x));
+export const mix = (a: number, b: number, t: number) => a + (b - a) * t;
+export const remap = (x: number, a: number, b: number) => clamp((x - a) / (b - a));
+
+export const smoothstep = (t: number) => {
+  const x = clamp(t);
+  return x * x * (3 - 2 * x);
+};
+
+/** C2-continuous: zero velocity and acceleration at both ends. The house curve. */
+export const smootherstep = (t: number) => {
+  const x = clamp(t);
+  return x * x * x * (x * (x * 6 - 15) + 10);
+};
+
+/** CSS-style cubic bezier easing (x1,y1,x2,y2), solved by Newton + bisection. */
+export const bezier = (x1: number, y1: number, x2: number, y2: number) => {
+  const cx = 3 * x1, bx = 3 * (x2 - x1) - cx, ax = 1 - cx - bx;
+  const cy = 3 * y1, by = 3 * (y2 - y1) - cy, ay = 1 - cy - by;
+  const sx = (t: number) => ((ax * t + bx) * t + cx) * t;
+  const sy = (t: number) => ((ay * t + by) * t + cy) * t;
+  const dx = (t: number) => (3 * ax * t + 2 * bx) * t + cx;
+  return (x: number) => {
+    const X = clamp(x);
+    let t = X;
+    for (let i = 0; i < 8; i++) {
+      const e = sx(t) - X;
+      const d = dx(t);
+      if (Math.abs(e) < 1e-6) return sy(t);
+      if (Math.abs(d) < 1e-6) break;
+      t -= e / d;
+    }
+    let lo = 0, hi = 1;
+    t = X;
+    for (let i = 0; i < 30; i++) {
+      const v = sx(t);
+      if (Math.abs(v - X) < 1e-6) break;
+      if (v < X) lo = t;
+      else hi = t;
+      t = (lo + hi) / 2;
+    }
+    return sy(t);
+  };
+};
+
+// Named curves, tuned for product cinematography (long, confident tails; no bounce).
+export const ease = {
+  /** Default move: decisive start, very long settle. */
+  glide: bezier(0.45, 0, 0.12, 1),
+  /** Symmetric, weighty. Camera and large objects. */
+  inOut: bezier(0.65, 0, 0.35, 1),
+  /** Soft symmetric for subtle drifts. */
+  sine: (t: number) => 0.5 - 0.5 * Math.cos(Math.PI * clamp(t)),
+  /** Starts with energy (a magnet letting go), long deceleration. */
+  release: bezier(0.2, 0.7, 0.1, 1),
+  /** Gathers speed and arrives fast (magnetic pull into a dock). */
+  attract: bezier(0.55, 0, 0.95, 0.55),
+  /** Typographic reveal. */
+  type: bezier(0.2, 0, 0, 1),
+  out: bezier(0, 0, 0.2, 1),
+  in: bezier(0.6, 0, 1, 1),
+  smoother: smootherstep,
+};
+
+/** Eased progress of `frame` through [start, end]. */
+export const seg = (frame: number, start: number, end: number, curve: (t: number) => number = ease.inOut) =>
+  curve(remap(frame, start, end));
+
+/**
+ * Critically damped settle used after a mechanical stop: decays to zero with at most one
+ * tiny overshoot. `t` in frames since the stop, `amp` the initial offset.
+ */
+export const settle = (t: number, amp: number, freq = 0.11, damping = 0.16) =>
+  t <= 0 ? 0 : amp * Math.exp(-damping * t) * Math.cos(freq * t * Math.PI);
+
+==== 1366 project/src/core/type/fonts.ts
+import { continueRender, delayRender, staticFile } from "remotion";
+
+// Default typeface: Manrope (SIL Open Font License, see public/fonts/OFL-manrope.txt).
+// Bundled locally in public/fonts so rendering never depends on Google Fonts being reachable
+// and every OS renders the same glyph metrics.
+const FAMILY = "Manrope";
+const WEIGHTS = ["200", "300", "400", "500", "600"] as const;
+
+let ready: Promise<void> | null = null;
+const load = (): Promise<void> => {
+  if (ready) return ready;
+  if (typeof document === "undefined") return (ready = Promise.resolve());
+  const handle = delayRender("Loading bundled Manrope font");
+  ready = Promise.all(
+    WEIGHTS.map(async (w) => {
+      const face = new FontFace(FAMILY, `url(${staticFile(`fonts/manrope-latin-${w}-normal.woff2`)}) format("woff2")`, {
+        weight: w,
+        style: "normal",
+      });
+      await face.load();
+      (document.fonts as unknown as { add(f: FontFace): void }).add(face);
+    }),
+  ).then(
+    () => continueRender(handle),
+    (err) => {
+      continueRender(handle);
+      throw err;
+    },
+  );
+  return ready;
+};
+load();
+
+export const MANROPE = FAMILY;
+export const manropeReady = load;
+
+/** The font every overlay and canvas texture uses. */
+export const FONT = MANROPE;
+export const fontReady = manropeReady;
+
+export const INK = "#1f2426";
+export const INK_SOFT = "#6a7174";
+
+==== 3105 project/src/director/cues.ts
+// Spoken-word cues → VO seconds, and the VO's pauses (where cuts like to land).
+
+import type { Cue, Word } from "./story.ts";
+
+export const norm = (w: string) => w.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]/g, "");
+
+export type Cues = {
+  words: Word[];
+  offset: number;
+  voEnd: number;
+  /** VO seconds of a cue (throws a plain-language error when the word isn't spoken) */
+  at: (c: Cue, label?: string, after?: number) => number;
+  /** pauses in the VO: [start, end] VO seconds, gaps ≥ 0.18 s */
+  pauses: [number, number][];
+  /** the best cut time (VO s) for an action that starts at `v`: a pause just before it, else v − 0.12 */
+  cutFor: (v: number) => number;
+};
+
+export const makeCues = (words: Word[], offset: number): Cues => {
+  const map = new Map<string, number[]>();
+  words.forEach(([w, s]) => {
+    const k = norm(w);
+    if (!k) return;
+    if (!map.has(k)) map.set(k, []);
+    map.get(k)!.push(s);
+  });
+  const pauses: [number, number][] = [];
+  for (let i = 1; i < words.length; i++) if (words[i][1] - words[i - 1][2] >= 0.18) pauses.push([words[i - 1][2], words[i][1]]);
+  const voEnd = words.length ? words[words.length - 1][2] : 0;
+  const toks = words.map(([w]) => norm(w));
+  /** VO seconds of a cue. Without "#n" the first occurrence at/after `after` (VO s) is used, so beats
+   *  written in order never need counting. A cue may be a short phrase ("di balik"). */
+  const at = (c: Cue, label = "cue", after = -1) => {
+    if (typeof c === "number") return c;
+    const [w, n] = c.split("#");
+    const parts = w.split(/\s+/).map(norm).filter(Boolean);
+    if (!parts.length) throw new Error(`${label}: empty cue`);
+    const hits: number[] = [];
+    for (let i = 0; i + parts.length <= toks.length; i++) if (parts.every((p, k) => toks[i + k] === p)) hits.push(words[i][1]);
+    if (!hits.length) {
+      const k = parts[0];
+      const near = [...map.keys()].filter((x) => x.startsWith(k.slice(0, 3))).slice(0, 6);
+      throw new Error(`${label}: "${w}" is not spoken in the VO${near.length ? ` (similar words: ${near.join(", ")})` : ""}`);
+    }
+    if (n !== undefined) {
+      const i = Number(n);
+      if (!(i >= 0 && i < hits.length)) throw new Error(`${label}: "${w}" is spoken ${hits.length}× — "${c}" asks for occurrence #${n} (use #0…#${hits.length - 1}, or leave "#n" out to take the next one in order)`);
+      return hits[i];
+    }
+    const next = hits.find((h) => h >= after - 0.05);
+    if (next === undefined) throw new Error(`${label}: "${w}" is not spoken again after ${after.toFixed(2)} s in the VO (beats must be in VO order; spoken at ${hits.map((h) => h.toFixed(2)).join(", ")} s)`);
+    return next;
+  };
+  const cutFor = (v: number) => {
+    // the latest pause that ends just before (or at) the word: cut inside it, shortly before the word
+    let best: [number, number] | null = null;
+    for (const p of pauses) if (p[1] <= v + 0.05 && p[1] >= v - 0.9 && (!best || p[1] > best[1])) best = p;
+    return best ? Math.max(best[0] + 0.05, best[1] - 0.15) : v - 0.12;
+  };
+  return { words, offset, voEnd, at, pauses, cutFor };
+};
+
+==== 3145 project/src/director/grade.ts
+// Mood × time of day → film grade and letterbox. Night stories keep CINÉSTORY's readable moonlight
+// (never crushed blacks); explanation moods open the frame to full 16:9.
+
+import { GRADE0, type Grade } from "../cine/types.ts";
+import type { Mood } from "./story.ts";
+
+const NIGHT: Grade = { ...GRADE0, exposure: 1.5, lift: [0.02, 0.03, 0.058], gain: [0.96, 1.0, 1.07], sat: 0.9, contrast: 1.05, vignette: 0.36, grain: 0.022, bloom: 0.32, bloomRadius: 0.55, bloomThreshold: 0.92, ca: 0.0016 };
+const DAY: Grade = { ...GRADE0, exposure: 0.98, lift: [0.01, 0.01, 0.012], gain: [1.02, 1.0, 0.98], sat: 1.0, contrast: 1.03, vignette: 0.2, grain: 0.012, bloom: 0.18, bloomThreshold: 1.05, ca: 0.0008 };
+
+const MOOD: Record<Mood, (g: Grade) => Grade> = {
+  mystery: (g) => g,
+  tense: (g) => ({ ...g, contrast: g.contrast + 0.08, sat: g.sat * 0.88, vignette: g.vignette + 0.1, grain: g.grain + 0.008 }),
+  calm: (g) => ({ ...g, sat: g.sat * 1.04, vignette: g.vignette - 0.05 }),
+  memory: (g) => ({ ...g, lift: [0.045, 0.035, 0.02], gain: [1.06, 0.98, 0.86], sat: 0.7, vignette: 0.48, grain: 0.04, bloom: g.bloom + 0.1 }),
+  told: (g) => ({ ...g, lift: [0.01, 0.03, 0.04], gain: [0.86, 0.98, 1.0], sat: 0.55, contrast: 1.12, vignette: 0.5, grain: 0.045 }),
+  reveal: (g) => ({ ...g, exposure: g.exposure * 1.06, sat: 1.0, contrast: 1.0, vignette: 0.22, grain: 0.012, bloom: g.bloom * 0.7 }),
+  science: (g) => ({ ...g, sat: 1.05, contrast: 1.04, vignette: 0.24, grain: 0.01 }),
+  warm: (g) => ({ ...g, lift: [0.035, 0.025, 0.012], gain: [1.07, 1.0, 0.9], sat: 1.05, vignette: 0.3 }),
+  cctv: () => ({ ...GRADE0, exposure: 1.35, lift: [0.04, 0.05, 0.04], gain: [0.92, 1.0, 0.9], sat: 0.0, contrast: 1.18, vignette: 0.5, grain: 0.06, bloom: 0.1, bloomThreshold: 1.2, ca: 0.003 }),
+};
+
+const MIND: Grade = { ...GRADE0, exposure: 1.1, lift: [0.0, 0.01, 0.02], sat: 1.05, contrast: 1.05, vignette: 0.3, grain: 0.014, bloom: 0.45, bloomRadius: 0.6, bloomThreshold: 0.75, ca: 0.0012, ao: 0 };
+
+/** `dark` 1 = night, 0 = full day (from the world's time of day). */
+export const gradeFor = (mood: Mood, dark: number, interior: boolean, studio = false, mobile = false): Grade => {
+  if (studio) return mood === "science" ? MIND : MOOD[mood](MIND);
+  const b = dark > 0.5 ? { ...NIGHT, exposure: NIGHT.exposure * (interior ? 1.0 : 1.0) } : dark > 0.2 ? { ...DAY, exposure: 1.12, sat: 0.95 } : DAY;
+  const g = MOOD[mood](b);
+  if (!mobile || mood === "cctv") return g;
+  // a phone screen (small, often bright surroundings): open the shadows and ease the corners — the night
+  // stays a night (blue, low key), but faces and the important shapes read
+  const lift = dark > 0.5 ? 0.024 : 0.008;
+  return { ...g, exposure: g.exposure * (dark > 0.5 ? 1.16 : 1.04), lift: [g.lift[0] + lift * 0.8, g.lift[1] + lift, g.lift[2] + lift * 1.2], contrast: Math.max(0.98, g.contrast - 0.04), vignette: g.vignette * 0.72 };
+};
+
+export const BARS: Record<Mood, number> = { mystery: 1, tense: 1, calm: 1, memory: 1, told: 1, reveal: 1, science: 0, warm: 1, cctv: 0 };
+
+export const DARK: Record<string, number> = { night: 1, storm: 1, dusk: 0.6, dawn: 0.35, day: 0 };
+
+==== 1015 project/src/film/project.ts
+import { Vector3 } from "three";
+import type { Cam } from "../cine/Post.tsx";
+import type { V3 } from "../cine/Lights.tsx";
+
+/** Project a world point to overlay pixels (W × H: 1080×1920 portrait, 1920×1080 landscape); z < 0 = behind. */
+export const project = (cam: Cam, p: V3, W = 1920, H = 1080): { x: number; y: number; z: number } => {
+  const pos = new Vector3(...cam.pos), f = new Vector3(...cam.target).sub(pos).normalize();
+  const right = new Vector3().crossVectors(f, new Vector3(0, 1, 0)).normalize();
+  let up = new Vector3().crossVectors(right, f).normalize();
+  const r = cam.roll ?? 0;
+  if (r) {
+    const u2 = up.clone().multiplyScalar(Math.cos(r)).addScaledVector(right, Math.sin(r));
+    right.crossVectors(f, u2).normalize();
+    up = u2;
+  }
+  const d = new Vector3(...p).sub(pos);
+  const z = d.dot(f), x = d.dot(right), y = d.dot(up);
+  const th = Math.tan((cam.fov * Math.PI) / 360);
+  return { x: W / 2 + (x / (z * th * (W / H))) * (W / 2), y: H / 2 - (y / (z * th)) * (H / 2), z };
+};
+
+==== 210 project/src/gen/dyn.ts
+import type { V3 } from "./spec.ts";
+/** Per-frame transforms of objects that moved (pushed, carried, rolling) — by object id. */
+export type Dyn = Record<string, { pos: V3; yaw: number; hidden?: boolean }>;
+
+==== 1653 project/src/gen/objects/builtin-data.ts
+// Built-in objects drawn by code (organic shapes that primitives cannot make well: trees, bushes, rocks,
+// ferns). Metadata only — the renderer is builtin.tsx. Everything else lives in library/objects/*.json.
+import type { V3 } from "../spec.ts";
+
+/** `solid`: the part that blocks bodies and cameras [min, max] in local metres (trees: the trunk); default = bounds.
+ *  `crown`: foliage a camera must not sit inside (the view may pass through it). */
+export type BuiltinMeta = { doc: string; bounds: V3; anchors?: Record<string, V3>; walkable?: boolean; hand?: boolean; states?: Record<string, number>; solid?: [V3, V3]; crown?: [V3, V3] };
+
+export const BUILTIN: Record<string, BuiltinMeta> = {
+  "tree-pine": { doc: "tall conifer (forest, hills)", bounds: [3.2, 11, 3.2], solid: [[-0.2, 0, -0.2], [0.2, 4, 0.2]], crown: [[-1.45, 1.5, -1.45], [1.45, 11, 1.45]] },
+  "tree-broad": { doc: "broad-leaf tree with a round crown (forest, parks, villages)", bounds: [5, 8, 5], solid: [[-0.28, 0, -0.28], [0.28, 4.6, 0.28]], crown: [[-2.5, 3.6, -2.2], [2.7, 8, 2.5]] },
+  "tree-palm": { doc: "coconut palm (coast, villages)", bounds: [4, 9, 4], solid: [[-0.18, 0, -0.18], [0.75, 8.2, 0.18]], crown: [[-1.8, 7.4, -2.3], [3.3, 9.2, 2.3]] },
+  bush: { doc: "leafy bush ~1 m", bounds: [1.4, 1.0, 1.4], crown: [[-0.75, 0, -0.7], [0.8, 1.0, 0.7]] },
+  fern: { doc: "low fern / undergrowth", bounds: [0.9, 0.5, 0.9], walkable: true },
+  rock: { doc: "mossy rock ~0.8 m", bounds: [1.0, 0.6, 0.9] },
+  log: { doc: "fallen mossy log ~3 m", bounds: [3.2, 0.5, 0.5] },
+  "grass-tuft": { doc: "grass tuft (scatter only)", bounds: [0.3, 0.35, 0.3], walkable: true },
+};
+
+==== 627 project/src/gen/objects/registry.ts
+// Generated by scripts/objects.mjs — every object JSON in library/objects and assets/objects.
+import type { ObjectSpec } from "../spec.ts";
+import o_bookshelf from "../../../library/objects/bookshelf.json";
+import o_park_bench from "../../../library/objects/park-bench.json";
+import o_reading_table from "../../../library/objects/reading-table.json";
+import o_wooden_chair from "../../../library/objects/wooden-chair.json";
+
+export const OBJECTS: ObjectSpec[] = [o_bookshelf as unknown as ObjectSpec, o_park_bench as unknown as ObjectSpec, o_reading_table as unknown as ObjectSpec, o_wooden_chair as unknown as ObjectSpec];
+
+==== 4099 project/src/kits/worldforge/geo.ts
+// Small geometry kit for architecture: struts between points, merged lattices, lathe and
+// arch profiles, geodesic frames. Geometries are cached by key so a film builds each once.
+
+import {
+  BufferGeometry,
+  CylinderGeometry,
+  IcosahedronGeometry,
+  LatheGeometry,
+  Matrix4,
+  Quaternion,
+  Shape,
+  SphereGeometry,
+  TorusGeometry,
+  Vector2,
+  Vector3,
+} from "three";
+import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+
+const cache = new Map<string, BufferGeometry>();
+export const cached = <G extends BufferGeometry>(key: string, make: () => G): G => {
+  let g = cache.get(key);
+  if (!g) {
+    g = make();
+    cache.set(key, g);
+  }
+  return g as G;
+};
+
+export const cyl = (rt: number, rb: number, h: number, seg = 32, open = false, ts = 0, tl = Math.PI * 2) =>
+  cached(`cyl${rt},${rb},${h},${seg},${open},${ts},${tl}`, () => new CylinderGeometry(rt, rb, h, seg, 1, open, ts, tl));
+export const box = (w: number, h: number, d: number, r = 0.04, seg = 2) =>
+  cached(`box${w},${h},${d},${r}`, () => new RoundedBoxGeometry(w, h, d, seg, Math.min(r, w / 2.01, h / 2.01, d / 2.01)));
+export const sphere = (r: number, ws = 32, hs = 16, phiLen = Math.PI * 2, thetaLen = Math.PI) =>
+  cached(`sph${r},${ws},${hs},${phiLen},${thetaLen}`, () => new SphereGeometry(r, ws, hs, 0, phiLen, 0, thetaLen));
+export const torus = (R: number, r: number, rs = 8, ts = 48, arc = Math.PI * 2) =>
+  cached(`tor${R},${r},${rs},${ts},${arc}`, () => new TorusGeometry(R, r, rs, ts, arc));
+export const lathe = (key: string, pts: [number, number][], seg = 64) =>
+  cached(`lathe${key}`, () => new LatheGeometry(pts.map(([x, y]) => new Vector2(x, y)), seg));
+
+const UP = new Vector3(0, 1, 0);
+/** A cylinder from p to q (world-free; positions in the caller's frame). */
+export const strutGeo = (p: Vector3, q: Vector3, r: number, seg = 6) => {
+  const d = new Vector3().subVectors(q, p);
+  const len = d.length();
+  const g = new CylinderGeometry(r, r, len, seg, 1, false);
+  const m = new Matrix4().compose(
+    new Vector3().addVectors(p, q).multiplyScalar(0.5),
+    new Quaternion().setFromUnitVectors(UP, d.normalize()),
+    new Vector3(1, 1, 1),
+  );
+  g.applyMatrix4(m);
+  return g;
+};
+
+export const merged = (key: string, make: () => BufferGeometry[]) =>
+  cached(key, () => {
+    const parts = make().map((g) => (g.index ? g.toNonIndexed() : g));
+    for (const p of parts) {
+      for (const name of Object.keys(p.attributes)) if (name !== "position" && name !== "normal" && name !== "uv") p.deleteAttribute(name);
+    }
+    return mergeGeometries(parts, false)!;
+  });
+
+/** Geodesic frame over the upper hemisphere (edges of a subdivided icosahedron). */
+export const geodesicFrame = (R: number, detail: number, strutR: number) =>
+  merged(`geo${R},${detail},${strutR}`, () => {
+    const ico = new IcosahedronGeometry(R, detail);
+    const p = ico.attributes.position;
+    const key = (v: Vector3) => `${v.x.toFixed(3)},${v.y.toFixed(3)},${v.z.toFixed(3)}`;
+    const edges = new Map<string, [Vector3, Vector3]>();
+    for (let i = 0; i < p.count; i += 3) {
+      const tri = [0, 1, 2].map((k) => new Vector3(p.getX(i + k), p.getY(i + k), p.getZ(i + k)));
+      for (let k = 0; k < 3; k++) {
+        const a = tri[k], b = tri[(k + 1) % 3];
+        if (a.y < -0.01 || b.y < -0.01) continue;
+        const ka = key(a), kb = key(b);
+        const id = ka < kb ? ka + "|" + kb : kb + "|" + ka;
+        if (!edges.has(id)) edges.set(id, [a, b]);
+      }
+    }
+    return [...edges.values()].map(([a, b]) => strutGeo(a, b, strutR, 5));
+  });
+
+/** Arch outline (flat sides, rounded roof) in the x-y plane, base on y = 0. */
+export const archShape = (w: number, h: number, shoulder: number, inset = 0) => {
+  const s = new Shape();
+  const hw = w / 2 - inset;
+  s.moveTo(-hw, inset > 0 ? 0 : 0);
+  s.lineTo(-hw, h - shoulder);
+  s.quadraticCurveTo(-hw, h - inset, 0, h - inset);
+  s.quadraticCurveTo(hw, h - inset, hw, h - shoulder);
+  s.lineTo(hw, 0);
+  s.lineTo(-hw, 0);
+  return s;
+};
+
+==== 2090 project/src/kits/worldforge/path.ts
+// Plan-view paths for vehicles and people: Catmull-Rom through the points, sampled by arc
+// length so speed along the path is exact (wheels and footsteps can be derived from distance).
+
+export type P2 = [number, number];
+
+export type PlanPath = {
+  length: number;
+  /** Position and unit direction at arc length s (clamped). */
+  at: (s: number) => { p: P2; dir: P2 };
+};
+
+const cr = (a: number, b: number, c: number, d: number, t: number) =>
+  0.5 * (2 * b + (-a + c) * t + (2 * a - 5 * b + 4 * c - d) * t * t + (-a + 3 * b - 3 * c + d) * t * t * t);
+
+export const planPath = (pts: P2[], perSeg = 40): PlanPath => {
+  const n = pts.length;
+  const get = (i: number) => pts[Math.max(0, Math.min(n - 1, i))];
+  const samples: P2[] = [];
+  for (let i = 0; i < n - 1; i++) {
+    const a = get(i - 1), b = get(i), c = get(i + 1), d = get(i + 2);
+    for (let k = 0; k < perSeg; k++) {
+      const t = k / perSeg;
+      samples.push([cr(a[0], b[0], c[0], d[0], t), cr(a[1], b[1], c[1], d[1], t)]);
+    }
+  }
+  samples.push(pts[n - 1]);
+  const cum = [0];
+  for (let i = 1; i < samples.length; i++) cum.push(cum[i - 1] + Math.hypot(samples[i][0] - samples[i - 1][0], samples[i][1] - samples[i - 1][1]));
+  const length = cum[cum.length - 1];
+  const at = (s: number) => {
+    const x = Math.max(0, Math.min(length - 1e-6, s));
+    let lo = 0, hi = cum.length - 1;
+    while (hi - lo > 1) {
+      const m = (lo + hi) >> 1;
+      if (cum[m] <= x) lo = m;
+      else hi = m;
+    }
+    const f = (x - cum[lo]) / Math.max(1e-9, cum[hi] - cum[lo]);
+    const A = samples[lo], B = samples[hi];
+    const dx = B[0] - A[0], dz = B[1] - A[1];
+    const l = Math.hypot(dx, dz) || 1;
+    return { p: [A[0] + dx * f, A[1] + dz * f] as P2, dir: [dx / l, dz / l] as P2 };
+  };
+  return { length, at };
+};
+
+/** Distance travelled with a smooth start: rest until t0, accelerate over `ramp`, then speed v. */
+export const travel = (t: number, t0: number, ramp: number, v: number) => {
+  if (t <= t0) return 0;
+  const u = t - t0;
+  if (u < ramp) return (v * u * u) / (2 * ramp);
+  return v * (u - ramp / 2);
+};
+
+==== 2106 project/src/lookdev/CastSheet.tsx
+// Character bible sheet: frame 2k = look k full body (3/4), frame 2k+1 = its face. Neutral studio light.
+import React from "react";
+import { useCurrentFrame } from "remotion";
+import { Stage } from "../cine/Stage.tsx";
+import { Lights, P_OFF, S_OFF, type LightState } from "../cine/Lights.tsx";
+import { CameraRig, FilmPost, GRADE0, type Cam } from "../cine/Post.tsx";
+import { Character } from "../cine/character/Character.tsx";
+import { restPose } from "../cine/character/pose.ts";
+import { LOOKS, lookSpec } from "../cine/character/looks.ts";
+import { phys } from "../cine/mats.ts";
+import { box } from "../kits/worldforge/geo.ts";
+
+export const CAST_SHEET_FRAMES = Object.keys(LOOKS).length * 2;
+
+const L: LightState = {
+  bg: "#9aa3ad", fog: { color: "#9aa3ad", density: 0.0 }, env: 0.5,
+  hemi: { sky: "#dfe6ee", ground: "#5a5048", i: 0.9 },
+  moon: { dir: [0.5, 0.8, 0.6], color: "#fff4e6", i: 2.6, box: { min: [-1.5, 0, -1.5], max: [1.5, 2.2, 1.5] } },
+  spots: [S_OFF, S_OFF],
+  pts: [{ pos: [-1.6, 1.8, 1.4], color: "#cfe0ff", i: 2.2, dist: 6 }, P_OFF, P_OFF, P_OFF, P_OFF, P_OFF],
+};
+
+export const CastSheet: React.FC<{ hold?: string }> = () => {
+  const f = useCurrentFrame();
+  const names = Object.keys(LOOKS);
+  const name = names[Math.floor(f / 2) % names.length];
+  const face = f % 2 === 1;
+  const spec = lookSpec(name, name);
+  const p = restPose();
+  p.yaw = -0.45;
+  const h = 1.8 * spec.scale;
+  const cam: Cam = face
+    ? { pos: [-0.25, h * 0.93, 0.62], target: [0, h * 0.91, 0], fov: 24 }
+    : { pos: [-1.0, h * 0.62, 3.6], target: [0, h * 0.5, 0], fov: 32 };
+  return (
+    <Stage overlay={() => <div style={{ position: "absolute", left: 40, top: 30, font: "600 40px Manrope", color: "#1d232b" }}>{name}</div>}>
+      <Lights s={L} />
+      <mesh geometry={box(8, 0.1, 8, 0.01)} material={phys("sheetFloor", { color: "#8a9099", roughness: 0.9 })} position={[0, -0.05, 0]} receiveShadow />
+      <Character spec={spec} pose={p} t={1} />
+      <CameraRig cam={cam} />
+      <FilmPost cam={cam} grade={{ ...GRADE0, vignette: 0.1, grain: 0.004 }} frame={f} />
+    </Stage>
+  );
+};
+
+==== 2774 project/src/lookdev/ObjectSheet.tsx
+// Object look sheet: frame 2k / 2k+1 = object k from the front-left and back-right, on a grey studio floor
+// next to a 1.8 m person (scale check). Objects: the library registry + built-ins (sheet-list.json).
+import React from "react";
+import { useCurrentFrame } from "remotion";
+import { Stage } from "../cine/Stage.tsx";
+import { Lights, P_OFF, S_OFF, type LightState } from "../cine/Lights.tsx";
+import { CameraRig, FilmPost, GRADE0, type Cam } from "../cine/Post.tsx";
+import { Character } from "../cine/character/Character.tsx";
+import { restPose } from "../cine/character/pose.ts";
+import { lookSpec } from "../cine/character/looks.ts";
+import { phys } from "../cine/mats.ts";
+import { box } from "../kits/worldforge/geo.ts";
+import { OBJECTS } from "../gen/objects/registry.ts";
+import { objectInfo } from "../gen/build.ts";
+import { Compound } from "../gen/objects/Compound.tsx";
+import { Builtin } from "../gen/objects/builtin.tsx";
+import LIST from "../gen/objects/sheet-list.json";
+
+const L: LightState = {
+  bg: "#9aa3ad", fog: { color: "#9aa3ad", density: 0.0 }, env: 0.5,
+  hemi: { sky: "#dfe6ee", ground: "#5a5048", i: 0.9 },
+  moon: { dir: [0.5, 0.8, 0.6], color: "#fff4e6", i: 2.6, box: { min: [-4, 0, -4], max: [4, 6, 4] } },
+  spots: [S_OFF, S_OFF],
+  pts: [{ pos: [-2.6, 2.6, 2.4], color: "#cfe0ff", i: 3.0, dist: 9 }, P_OFF, P_OFF, P_OFF, P_OFF, P_OFF],
+};
+export const OBJECT_SHEET_FRAMES = Math.max(2, (LIST as string[]).length * 2);
+
+export const ObjectSheet: React.FC = () => {
+  const f = useCurrentFrame();
+  const names = LIST as string[];
+  const id = names[Math.floor(f / 2)] ?? names[0];
+  const objs = Object.fromEntries(OBJECTS.map((o) => [o.id, o]));
+  let info;
+  try { info = objectInfo(id, objs); } catch { return null; }
+  const [w, h, d] = info.bounds;
+  const R = Math.max(w, h * 1.1, d, 1.2) * 1.55 + 0.8;
+  const a = f % 2 ? 2.4 : -0.7;
+  const cy = Math.max(0.5, h * 0.45);
+  const cam: Cam = { pos: [Math.sin(a) * R, cy + R * 0.38, Math.cos(a) * R], target: [0, cy * 0.85, 0], fov: 34 };
+  const p = restPose();
+  p.x = -(w / 2 + 0.45); p.yaw = 0.4;
+  return (
+    <Stage overlay={() => <div style={{ position: "absolute", left: 40, top: 30, font: "600 40px Manrope", color: "#1d232b" }}>{id} · {w.toFixed(2)}×{h.toFixed(2)}×{d.toFixed(2)} m</div>}>
+      <Lights s={L} />
+      <mesh geometry={box(30, 0.1, 30, 0.01)} material={phys("osFloor", { color: "#8a9099", roughness: 0.9 })} position={[0, -0.05, 0]} receiveShadow />
+      {info.builtin ? <Builtin id={id} /> : <Compound spec={objs[id]} />}
+      {h < 4 ? <Character spec={lookSpec("ref", "pemuda")} pose={p} t={1} /> : null}
+      <CameraRig cam={cam} />
+      <FilmPost cam={cam} grade={{ ...GRADE0, vignette: 0.1, grain: 0.004 }} frame={f} />
+    </Stage>
+  );
+};
+
+==== 2210 project/src/lookdev/views.ts
+import type { LookView } from "./WorldLook.tsx";
+
+export const COAST_VIEWS: LookView[] = [
+  { label: "establish (night)", place: "cliff", time: "night", cam: { pos: [26, 24, 22], target: [2, 16, -2], fov: 38 }, s: { seaLight: 1 } },
+  { label: "from the sea", place: "cliff", time: "night", cam: { pos: [-10, 6, -48], target: [2, 18, 0], fov: 40 } },
+  { label: "edge looking out", place: "cliff", time: "night", cam: { pos: [4.2, 13.6, -3.5], target: [-40, 2, -200], fov: 40 }, s: { seaLight: 1, fog: 0.6 } },
+  { label: "long lens sea light", place: "cliff", time: "night", cam: { pos: [2.4, 13.6, -6.8], target: [-48, 4, -235], fov: 6 }, s: { seaLight: 1, fog: 0.4 } },
+  { label: "gallery", place: "gallery", time: "night", cam: { pos: [3.6, 29.6, -3.8], target: [0, 29.5, 0], fov: 40 }, s: { seaLight: 1 } },
+  { label: "cottage interior", place: "cottage", time: "night", cam: { pos: [8.0, 13.55, 1.9], target: [10.6, 12.95, -1.6], fov: 50 } },
+  { label: "boat at night", place: "sea", time: "night", cam: { pos: [-36, 5, -215], target: [-48, 2.5, -235], fov: 35 }, s: { boat: 1, seaLight: 1, fog: 0.4 } },
+  { label: "boat revealed (dawn)", place: "sea", time: "dawn", cam: { pos: [-30, 6, -205], target: [-48, 2, -235], fov: 35 }, s: { boat: 1, seaLight: 1, fog: 0.3 } },
+  { label: "day establish", place: "cliff", time: "day", cam: { pos: [26, 24, 22], target: [2, 16, -2], fov: 38 } },
+];
+
+export const KOS_VIEWS: LookView[] = [
+  { label: "hall night", place: "hall", time: "night", cam: { pos: [0.3, 1.55, -1.0], target: [-0.2, 1.4, -15], fov: 40 } },
+  { label: "hall lamps on", place: "hall", time: "night", s: { tubes: 1 }, cam: { pos: [0.3, 1.55, -1.0], target: [-0.2, 1.4, -15], fov: 40 } },
+  { label: "room night", place: "room", time: "night", cam: { pos: [-1.3, 1.6, -4.2], target: [-3.4, 0.9, -6.2], fov: 50 } },
+  { label: "room day", place: "room", time: "day", cam: { pos: [-1.3, 1.6, -4.2], target: [-3.4, 0.9, -6.2], fov: 50 } },
+  { label: "yard night", place: "yard", time: "night", cam: { pos: [2.5, 2.2, 7.5], target: [0, 1.6, 0.5], fov: 42 } },
+  { label: "end of hall", place: "hall", time: "night", cam: { pos: [0.1, 1.55, -9.5], target: [-0.3, 1.45, -15], fov: 26 } },
+];
+
+==== 1876 project/src/lookdev/WorldLook.tsx
+// World lookdev: one camera per frame over a world's places (establishing views + a few angles), with
+// the set state given in props. Render with: node scripts/stills.mjs out/look/<world> 0,1,2,… world-<id>
+import React from "react";
+import { useCurrentFrame } from "remotion";
+import { Stage } from "../cine/Stage.tsx";
+import { Lights } from "../cine/Lights.tsx";
+import { CameraRig, FilmPost, GRADE0, type Cam, type Grade } from "../cine/Post.tsx";
+import { WORLDS } from "../worlds/index.ts";
+import { SETS } from "../worlds/sets.tsx";
+import { legalCam, type SetState } from "../worlds/types.ts";
+
+export type LookView = { place: string; time: string; cam: Cam; s?: SetState; t?: number; label?: string };
+export const NIGHT_GRADE: Grade = { ...GRADE0, exposure: 1.45, lift: [0.02, 0.03, 0.055], gain: [0.96, 1.0, 1.06], sat: 0.92, contrast: 1.06, vignette: 0.32, grain: 0.02, bloom: 0.3, bloomRadius: 0.55, bloomThreshold: 0.9 };
+
+export const WorldLook: React.FC<{ world: string; views: LookView[] }> = ({ world, views }) => {
+  const f = useCurrentFrame();
+  const v = views[f % views.length];
+  const W = WORLDS[world];
+  const Set = SETS[world];
+  const pl = W.places[v.place];
+  const s: SetState = { ...Object.fromEntries(Object.entries(W.props).map(([k, p]) => [k, p.default])), ...v.s };
+  const cam = { ...v.cam, pos: legalCam(pl, v.cam.pos) };
+  const t = v.t ?? 3;
+  return (
+    <Stage overlay={() => <div style={{ position: "absolute", left: 30, top: 24, font: "600 30px Manrope", color: "#fff", textShadow: "0 2px 6px #000" }}>{v.label ?? `${v.place} · ${v.time}`}</div>}>
+      <Lights s={W.light(v.place, v.time, s, t)} />
+      <Set place={v.place} time={v.time} s={s} t={t} cam={cam} />
+      <CameraRig cam={cam} />
+      <FilmPost cam={cam} grade={v.time === "day" ? { ...GRADE0, exposure: 1.0 } : NIGHT_GRADE} frame={f} />
+    </Stage>
+  );
+};
+
+==== 2616 project/src/Root.tsx
+import React from "react";
+import { Composition } from "remotion";
+import { PRESETS } from "./cine/Stage.tsx";
+import { CAST_SHEET_FRAMES, CastSheet } from "./lookdev/CastSheet.tsx";
+import { WorldLook } from "./lookdev/WorldLook.tsx";
+import { OBJECT_SHEET_FRAMES, ObjectSheet } from "./lookdev/ObjectSheet.tsx";
+import { COAST_VIEWS, KOS_VIEWS } from "./lookdev/views.ts";
+import { Film } from "./film/Film.tsx";
+import { compile } from "./director/compile.ts";
+import { STORIES } from "./stories/registry.ts";
+
+const { final } = PRESETS.landscape;
+
+// Every story in src/stories/data (written by scripts/make.mjs) becomes <id>-preview and <id>-final:
+// portrait (default) 540×960 @ 30 / 1080×1920 @ 60, landscape 960×540 @ 30 / 1920×1080 @ 60.
+// Lookdev: cast-sheet, world-<id>, object-sheet (landscape).
+// a story that does not compile (being edited, a typo) is left out instead of breaking every other story's render
+const durationOf = (s: (typeof STORIES)[number]) => { try { return compile(s).duration; } catch (e) { console.warn(`story "${s.id}" skipped: ${(e as Error).message.split("\n")[0]}`); return null; } };
+
+export const RemotionRoot: React.FC = () => (
+  <>
+    {STORIES.map((s) => {
+      const d = durationOf(s);
+      if (d === null) return null;
+      const { draft, final } = PRESETS[s.format === "landscape" ? "landscape" : "portrait"];
+      return (
+        <React.Fragment key={s.id}>
+          <Composition id={`${s.id}-preview`} component={Film} defaultProps={{ story: s, audio: s.audio }} durationInFrames={Math.round(d * draft.fps)} fps={draft.fps} width={draft.width} height={draft.height} />
+          <Composition id={`${s.id}-final`} component={Film} defaultProps={{ story: s, audio: s.audio }} durationInFrames={Math.round(d * final.fps)} fps={final.fps} width={final.width} height={final.height} />
+        </React.Fragment>
+      );
+    })}
+    <Composition id="object-sheet" component={ObjectSheet} durationInFrames={OBJECT_SHEET_FRAMES} fps={1} width={final.width / 2} height={final.height / 2} />
+    <Composition id="cast-sheet" component={CastSheet} durationInFrames={CAST_SHEET_FRAMES} fps={1} width={final.width / 2} height={final.height / 2} />
+    <Composition id="world-coast" component={WorldLook} defaultProps={{ world: "coast", views: COAST_VIEWS }} durationInFrames={COAST_VIEWS.length} fps={1} width={final.width / 2} height={final.height / 2} />
+    <Composition id="world-kos" component={WorldLook} defaultProps={{ world: "kos", views: KOS_VIEWS }} durationInFrames={KOS_VIEWS.length} fps={1} width={final.width / 2} height={final.height / 2} />
+  </>
+);
+
+==== 183 project/src/stories/registry.ts
+// Generated by scripts/make.mjs — every story in src/stories/data becomes two compositions.
+import type { Story } from "../director/story.ts";
+
+export const STORIES: Story[] = [];
+
+==== 2539 project/src/worlds/coast/layout.ts
+// The coast: one coordinate plan for the headland, lighthouse, keeper's cottage, sea and the boat. Units
+// metres, y up, sea level y = 0, the sea lies toward −z. Every place, light and camera reads these numbers.
+
+import { fbm } from "../../kits/worldforge/noise.ts";
+import type { V3 } from "../types.ts";
+
+/** Plateau height of the headland. */
+export const TOP = 12;
+/** Coastline (cliff edge) z for an x; land is z greater than this. */
+export const coastZ = (x: number) => -9 + 0.0035 * x * x + 0.8 * Math.sin(x * 0.21) + 0.5 * Math.sin(x * 0.53 + 1);
+
+const sstep = (a: number, b: number, x: number) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+
+/** Terrain height (headland plateau, cliff, seabed). Flattened around the buildings and paths. */
+export const ground = (x: number, z: number) => {
+  const d = z - coastZ(x) + 0.5 * fbm(x * 0.3 + 11, z * 0.3, 3);
+  const flat = sstep(14, 6, Math.hypot(Math.max(0, Math.abs(x - 5) - 7), Math.max(0, Math.abs(z) - 4)));
+  const plateau = TOP + 2.8 * sstep(10, 70, z) + (1 - flat) * 0.35 * fbm(x * 0.05, z * 0.05, 3) + 0.07 * fbm(x * 0.6, z * 0.6, 2);
+  const cliff = sstep(-2.2, 1.0, d);
+  const rock = (1 - cliff) * cliff * 3.5 * fbm(x * 0.9, z * 0.9 + 3, 3);
+  const sea = -4 - 0.06 * Math.max(0, -d);
+  return sea + (plateau - sea) * cliff + rock;
+};
+
+export const LH = { x: 0, z: 0, r0: 2.3, r1: 1.62, h: 16 };
+export const DECK_Y = TOP + LH.h + 0.3;
+export const LANTERN = { r: 1.35, y0: DECK_Y, y1: DECK_Y + 3.0 };
+export const LAMP: V3 = [0, DECK_Y + 1.5, 0];
+/** Seconds per revolution of the lamp (two opposite beams). */
+export const BEAM_PERIOD = 10;
+export const beamAngle = (t: number) => (t / BEAM_PERIOD) * Math.PI * 2;
+
+export const COTTAGE = { x0: 7, x1: 13, z0: -2.6, z1: 2.6, y: TOP + 0.15, h: 2.6, t: 0.18 };
+export const C_DOOR = { z: 0.6, w: 0.9 };
+export const C_WIN = { x: 10.2, w: 1.4, y0: 0.95, y1: 2.05 };
+export const DESK: V3 = [10.2, COTTAGE.y, -2.08];
+export const DESK_TOP = 0.76;
+export const BED_AT: V3 = [11.9, COTTAGE.y, 1.5];
+
+/** The light at sea (a fishing boat's lamps, seen from the headland). */
+export const BOAT: V3 = [-48, 0, -235];
+export const BOAT_YAW = 0.6;
+export const SEA_LIGHT: V3 = [BOAT[0], 4.2, BOAT[2]];
+
+/** Direction toward the moon (over the sea, a little left). */
+export const MOON: V3 = [-0.33, 0.42, -0.84];
+/** Direction toward the low sun at dawn (rises over the sea, right). */
+export const SUN_DAWN: V3 = [0.55, 0.16, -0.82];
+
+export const BENCH: V3 = [6.0, TOP, -5.5];
+
+==== 2394 project/src/worlds/kos/Kos.tsx
+// Kos world, picture side: the EP01 boarding-house set driven by the story's set state, plus the moonlit
+// atmosphere (shafts through the small window and the bedroom window, dust).
+
+import React from "react";
+import { Dust, Shaft } from "../../cine/FX.tsx";
+import type { Cam } from "../../cine/types.ts";
+import type { SetState, V3 } from "../types.ts";
+import { Kos, type KosState } from "./set/Kos.tsx";
+import { Exterior } from "./set/Exterior.tsx";
+import { MOON } from "./looks.ts";
+import { ROOM, ROOM_WIN, SMALL_WIN, WALL } from "./layout.ts";
+
+const into: V3 = [-MOON[0], -MOON[1], -MOON[2]];
+const SMALL_CORNERS: V3[] = [[SMALL_WIN.x - 0.1, SMALL_WIN.y0, SMALL_WIN.z0], [SMALL_WIN.x - 0.1, SMALL_WIN.y0, SMALL_WIN.z1], [SMALL_WIN.x - 0.1, SMALL_WIN.y1, SMALL_WIN.z1], [SMALL_WIN.x - 0.1, SMALL_WIN.y1, SMALL_WIN.z0]];
+const RX = ROOM.x0 - WALL / 2;
+const ROOM_CORNERS: V3[] = [[RX, ROOM_WIN.y0, ROOM_WIN.z0], [RX, ROOM_WIN.y0, ROOM_WIN.z1], [RX, ROOM_WIN.y1, ROOM_WIN.z1], [RX, ROOM_WIN.y1, ROOM_WIN.z0]];
+
+export const KosSet: React.FC<{ place: string; time: string; s: SetState; t: number; cam: Cam }> = ({ place, time, s, t }) => {
+  const day = time === "day";
+  const vent = s.vent ?? 0;
+  const k: KosState = {
+    roomDoor: (s.door ?? 0) * 1.55, key: 0, lever: 0,
+    vent: 0.004 * Math.sin(t * 3.1) + vent * 0.22 * Math.max(0, Math.sin(t * 9.4)) ** 6,
+    tubes: s.tubes ?? 0, led: Math.floor(t) % 2 === 0 ? 1 : 0.2, colon: Math.floor(t * 2) % 2 === 0,
+    fan: t * Math.PI * 2 * 3.3 * (s.fan ?? 1), coat: 0.012 * Math.sin(t * 0.9), coatOn: (s.coat ?? 1) > 0.5,
+    room: true, hall: true, roof: true, gudang: s.gudang ?? 0, pile: (s.pile ?? 0) > 0.5, day,
+  };
+  const hall = place === "hall";
+  return (
+    <group>
+      <Kos s={k} />
+      <Exterior visible={place === "yard" || day} lamp={day ? 0 : 1} day={day} roof />
+      <Shaft corners={SMALL_CORNERS} dir={into} len={2.6} spread={0.3} color="#9fb8ff" i={hall && !day && (s.tubes ?? 0) < 0.5 ? 0.05 : 0} />
+      <Shaft corners={ROOM_CORNERS} dir={into} len={2.8} spread={0.2} color={day ? "#fff2d8" : "#9fb8ff"} i={place === "room" ? 0.07 : 0} />
+      <Dust min={[-0.78, 0.15, -15.0]} max={[0.78, 2.7, -11.5]} n={260} t={t} i={hall ? 0.32 : 0} size={0.01} />
+      <Dust min={[-4.2, 0.2, -6.6]} max={[-2.0, 2.6, -4.4]} n={160} t={t} i={place === "room" ? 0.28 : 0} size={0.009} seed={9} />
+    </group>
+  );
+};
+
+==== 4198 project/src/worlds/kos/layout.ts
+// Kos world (from Dunia Nabel EP01): one coordinate module for the boarding house — the kos plan, every story-critical prop, character marks.
+// Geometry, performances, cameras and the Act 5 reveal all read these numbers, so the building never
+// changes between the mystery and the reveal. Units metres, y up. The hallway runs along −Z from the
+// entrance (z = ENTRANCE_Z) to the end wall (z = END_Z); the hallway centre line is x = 0.
+
+export type V3 = [number, number, number];
+
+
+export const CEIL = 2.8;
+export const HALL = { x0: -0.8, x1: 0.8, z0: 1.0, z1: -15.0 };
+export const ENTRANCE_Z = HALL.z0;
+export const END_Z = HALL.z1;
+export const WALL = 0.15;
+
+export type Door = { id: string; side: -1 | 1; z: number; w: number; h: number; label: string; hinge: -1 | 1 };
+/** Room doors on the hallway walls (side −1 = left wall x = −0.8, +1 = right wall). `hinge` = which z end. */
+export const DOORS: Door[] = [
+  { id: "K1", side: -1, z: -2.0, w: 0.82, h: 2.05, label: "1", hinge: 1 },
+  { id: "K2", side: -1, z: -5.5, w: 0.82, h: 2.05, label: "2", hinge: 1 },
+  { id: "K3", side: -1, z: -9.0, w: 0.82, h: 2.05, label: "3", hinge: 1 },
+  { id: "K5", side: 1, z: -3.5, w: 0.82, h: 2.05, label: "5", hinge: 1 },
+  { id: "K6", side: 1, z: -7.0, w: 0.82, h: 2.05, label: "6", hinge: 1 },
+  { id: "K7", side: 1, z: -10.5, w: 0.82, h: 2.05, label: "7", hinge: 1 },
+  { id: "K8", side: 1, z: -13.6, w: 0.82, h: 2.05, label: "8", hinge: 1 },
+];
+export const ROOM_DOOR = DOORS[1];
+export const EMPTY_ROOM_DOOR = DOORS[6];
+
+/** the bedroom (K2) interior box. Door on its +X wall (the hallway wall). */
+export const ROOM = { x0: -4.3, x1: HALL.x0, z0: -7.2, z1: -3.8 };
+export const ROOM_WIN = { z0: -6.2, z1: -4.8, y0: 0.95, y1: 2.15 }; // on the outer wall x = ROOM.x0
+export const BED = { x0: -4.25, x1: -2.25, z0: -7.15, z1: -6.2, top: 0.46 };
+export const DESK = { x0: -3.75, x1: -2.55, z: -3.85, d: 0.55, top: 0.74 };
+export const CLOCK: V3 = [-2.68, DESK.top, -4.17];
+export const CLOCK_YAW = 0.42;
+export const BOTTLE: V3 = [-3.08, DESK.top, -4.24];
+export const FAN: V3 = [-3.95, 0, -5.3];
+export const WARDROBE = { x0: -1.95, x1: -0.95, z: -7.15, d: 0.55, h: 1.95 };
+export const SOCKET: V3 = [-4.3 + 0.012, 0.32, -4.25];
+/** Key in the lock on the room side of the bedroom door (door closed). */
+export const KEY: V3 = [HALL.x0 - WALL - 0.035, 0.955, ROOM_DOOR.z - ROOM_DOOR.w / 2 + 0.1];
+/** Door handle (latch side), hallway face. */
+export const HANDLE_Z = ROOM_DOOR.z - ROOM_DOOR.w / 2 + 0.085;
+
+/** The end of the hallway: gudang door in the end wall, the vent above it, the raincoat on its hook. */
+export const GUDANG = { x: 0.22, w: 0.8, h: 2.0 };
+export const VENT = { x: GUDANG.x, y0: 2.18, y1: 2.5, w: 0.56 };
+/** Hook position on the end wall; the raincoat hangs from here (hood up). */
+export const RAINCOAT_HOOK: V3 = [-0.5, 2.0, END_Z + 0.02];
+/** Small high window on the left wall near the end, opening onto the side passage (motorbike light enters here). */
+export const SMALL_WIN = { x: HALL.x0, z0: -14.45, z1: -13.95, y0: 1.72, y1: 2.22 };
+/** Water dispenser against the right wall between K7 and K8. */
+export const DISPENSER: V3 = [HALL.x1 - 0.22, 0, -12.05];
+/** Left rooms K1–K3 end here; beyond it, outside the left wall, an open side passage (gang samping). */
+export const LEFT_ROOMS_END = -10.8;
+export const PASSAGE = { x0: -3.4, x1: HALL.x0 - WALL, z0: LEFT_ROOMS_END, z1: END_Z - 1.2 };
+
+/** Ceiling tube lamps (off at night) and the CCTV camera at the entrance. */
+export const TUBES: V3[] = [[0, CEIL - 0.03, -4.0], [0, CEIL - 0.03, -10.0]];
+export const CCTV: V3 = [0.6, 2.42, 0.25];
+export const CCTV_LOOK: V3 = [-0.1, 0.6, -13.5];
+
+/** Outside. Terrace + yard at the entrance side, gate further out; side alley along the left. */
+export const TERRACE_LAMP: V3 = [0.95, 2.55, 1.6];
+export const YARD = { z0: 1.0, z1: 6.5, x0: -4.6, x1: 4.6 };
+export const GATE = { z: 6.5, x0: -1.4, x1: 1.4, h: 1.75 };
+export const ALLEY_X = -6.2;
+export const STREET_LAMP: V3 = [5.6, 4.2, 8.4];
+
+/** Character marks in the hallway (Act 1). */
+export const MARK_STOP: [number, number] = [0.08, -7.6];
+export const MARK_CREEP: [number, number] = [0.04, -8.6];
+
+==== 456 project/src/worlds/sets.tsx
+// World registry (picture side): the Set component of every world.
+import type React from "react";
+import type { Cam } from "../cine/Post.tsx";
+import type { SetState } from "./types.ts";
+import { CoastSet } from "./coast/Coast.tsx";
+import { KosSet } from "./kos/Kos.tsx";
+
+export type SetProps = { place: string; time: string; s: SetState; t: number; cam: Cam };
+export const SETS: Record<string, React.FC<SetProps>> = { coast: CoastSet, kos: KosSet };
+
+==== 1720 project/src/worlds/studio/data.ts
+// Studio places available in EVERY world (for the explanation passages): "mind" — a deep-blue neural
+// space with the glass brain from Dunia Nabel EP01. Far away from every set, never shares a frame with it.
+
+import { P_OFF, S_OFF, type LightState } from "../../cine/types.ts";
+import type { Place, V3 } from "../types.ts";
+
+export const MIND_O: V3 = [0, 0, 500];
+const add = (a: V3, b: V3): V3 => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+
+const mind: Place = {
+  id: "mind", doc: "studio: the glass brain floating in a deep-blue neural space (any world) — for explaining perception, memory, fear",
+  kind: "studio", floor: MIND_O[1],
+  marks: {},
+  pois: { brain: MIND_O, front: add(MIND_O, [0, 0.1, 0.9]), top: add(MIND_O, [0, 0.8, 0]), back: add(MIND_O, [0, 0.1, -0.9]), left: add(MIND_O, [-0.9, 0, 0]), right: add(MIND_O, [0.9, 0, 0]) },
+  box: { min: add(MIND_O, [-12, -6, -12]), max: add(MIND_O, [12, 8, 12]) },
+  solids: [{ min: add(MIND_O, [-1.1, -0.9, -1.1]), max: add(MIND_O, [1.1, 1.0, 1.1]) }],
+  establish: { center: MIND_O, radius: 4.2, height: 0.8, yaw: 0.6 },
+  view: "brain", ambience: "studio", surface: "carpet", reverb: 0.6,
+};
+
+export const STUDIO: Record<string, Place> = { mind };
+
+export const studioLight = (): LightState => ({
+  bg: "#061426", fog: { color: "#061426", density: 0.0 }, env: 0.25,
+  hemi: { sky: "#6fa8d8", ground: "#0b1a2c", i: 0.5 },
+  moon: { dir: [0.3, 0.8, 0.5], color: "#cfe6ff", i: 1.6, box: { min: add(MIND_O, [-4, -3, -4]), max: add(MIND_O, [4, 4, 4]) } },
+  spots: [S_OFF, S_OFF],
+  pts: [{ pos: add(MIND_O, [0, 1.5, 3]), color: "#8fdcff", i: 3, dist: 9 }, { pos: add(MIND_O, [-2.5, 0.5, 1]), color: "#ffbf73", i: 1.6, dist: 7 }, P_OFF, P_OFF, P_OFF, P_OFF],
+});
+
+==== 755 project/src/worlds/studio/Mind.tsx
+// The "mind" studio: neural backdrop, drifting motes and the glass brain with its pulsing network.
+import React from "react";
+import { BrainShell, brainNet, Motes, Network, NeuralBackdrop, type Net } from "../../cine/neural/Brain.tsx";
+import { MIND_O } from "./data.ts";
+
+export const MindStudio: React.FC<{ t: number }> = ({ t }) => {
+  const net = brainNet().userData.net as Net;
+  return (
+    <group position={MIND_O}>
+      <NeuralBackdrop top="#0f3b66" bottom="#06162b" glow="#3aa6e8" r={60} />
+      <Motes t={t} R={5} opacity={0.8} />
+      <group rotation={[0, t * 0.12, 0]}>
+        <BrainShell t={t} opacity={1} orange={0.85} />
+        <Network net={net} t={t} opacity={1} pulse={1} orangeShare={0.25} />
+      </group>
+    </group>
+  );
+};
+
+==== 171 project/stories/README.md
+One folder per video: `stories/<id>/story.json` (+ `words.json`, `script.txt`, optional `<world>.world.json`).
+Build with `node scripts/make.mjs stories/<id>/story.json`.
+
+==== 484 project/tsconfig.json
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "Preserve",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "noEmit": true,
+    "lib": ["ES2022", "DOM"],
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "noUnusedLocals": true,
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true
+  },
+  "include": ["src", "scripts/*.ts"],
+  "exclude": ["remotion.config.ts"]
+}
+
+==== 560 project/worlds/README.md
+Reusable worlds (`<name>.world.json`, see the skill's references/cinestory/dynamic-worlds.md and worlds.md).
+
+Ready-made: `rumah` (house: living room, kitchen, bedroom, back corridor, terrace), `sekolah` (classroom, veranda corridor,
+field), `kantor` (open-plan office, printer corner, CCTV view), `minimarket` (shop + street), `perpustakaan`
+(library + park). `node scripts/worlds.mjs <id>` prints what a story can name in each. A story can also keep its
+own world next to it: `stories/<id>/<name>.world.json` — move it here when another film will need it.

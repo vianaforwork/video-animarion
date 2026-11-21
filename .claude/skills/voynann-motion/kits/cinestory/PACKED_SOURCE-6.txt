@@ -1,0 +1,3697 @@
+VOYNANN Motion - packed source files of this folder. Do not edit by hand.
+The skill upload in the Claude app accepts at most 200 files, so the source files are packed here.
+`node <skill folder>/new-project.mjs <project folder> --kit=<style>` unpacks them into the project.
+Format: per file one line with four '=' signs, the byte length and the path, then exactly that many bytes.
+
+==== 4854 project/scripts/render-final.mjs
+// Final delivery, cross-platform and restartable: bundle once, render the composition muted in
+// segments (finished segments are kept and skipped when re-run — delete out/seg after a source
+// edit), join them, lay the voice-over in at its offset, then master the audio to -14 LUFS.
+//   node scripts/render-final.mjs --comp=<id> --out=out/film.mp4 [--vo=public/audio/vo.mp3 --offset=0.4]
+//                                 [--parts=3] [--concurrency=2] [--crf=17] [--seg=out/seg] [--from=12 --to=30]
+// --from / --to (film seconds) render only that section, with the soundtrack cut to match.
+// Bounded concurrency + segments: one-pass high-concurrency 1080p renders have filled disks via swap.
+
+import { spawnSync } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
+import { bundle } from "@remotion/bundler";
+import { renderMedia, selectComposition } from "@remotion/renderer";
+import { glMode, isWebGLError, switchToSoftware, tolerateClosedTargets } from "./gl.mjs";
+
+tolerateClosedTargets();
+
+const arg = (k, d) => (process.argv.find((a) => a.startsWith(`--${k}=`)) ?? `=${d ?? ""}`).split("=").slice(1).join("=");
+const comp = arg("comp"), out = arg("out"), vo = arg("vo"), offset = Number(arg("offset", "0"));
+const parts = Number(arg("parts", "3")), concurrency = Number(arg("concurrency", "2")), crf = Number(arg("crf", "17"));
+if (!comp || !out) {
+  console.error("usage: node scripts/render-final.mjs --comp=<id> --out=<file.mp4> [--vo=<audio> --offset=<s>] [--parts=3] [--concurrency=2]");
+  process.exit(1);
+}
+const ff = (a) => {
+  const r = spawnSync("ffmpeg", a, { encoding: "utf8" });
+  if (r.status !== 0) throw new Error(r.stderr);
+};
+const segDir = arg("seg", path.join("out", "seg"));
+fs.mkdirSync(segDir, { recursive: true });
+const serveUrl = await bundle({ entryPoint: path.resolve("src/index.ts") });
+const composition = await selectComposition({ serveUrl, id: comp });
+const fromS = arg("from"), toS = arg("to");
+const F0 = fromS ? Math.max(0, Math.round(Number(fromS) * composition.fps)) : 0;
+const F1 = toS ? Math.min(composition.durationInFrames, Math.round(Number(toS) * composition.fps)) : composition.durationInFrames;
+const N = F1 - F0;
+const count = (f) => Number(spawnSync("ffprobe", ["-v", "error", "-select_streams", "v:0", "-count_packets", "-show_entries", "stream=nb_read_packets", "-of", "csv=p=0", f], { encoding: "utf8" }).stdout.trim() || 0);
+const list = [];
+let gl = glMode();
+for (let i = 0; i < parts; i++) {
+  const a = F0 + Math.floor((N * i) / parts), b = F0 + Math.floor((N * (i + 1)) / parts) - 1;
+  const part = path.join(segDir, `part${i}.mp4`);
+  list.push(`file 'part${i}.mp4'`);
+  if (fs.existsSync(part) && count(part) === b - a + 1) {
+    console.log(`part ${i} (${a}-${b}) done, skipping`);
+    continue;
+  }
+  console.log(`part ${i}: frames ${a}-${b}`);
+  let shown = 0;
+  const tmp = path.join(segDir, `part${i}.tmp.mp4`);
+  const renderPart = () => renderMedia({
+    composition, serveUrl, codec: "h264", crf, pixelFormat: "yuv420p", muted: true, frameRange: [a, b], outputLocation: tmp,
+    concurrency, imageFormat: "jpeg", jpegQuality: 95, chromiumOptions: { gl }, timeoutInMilliseconds: 300000,
+    // a line per quarter (a \r counter floods logs that are read by an agent)
+    onProgress: ({ progress }) => { const q = Math.floor(progress * 4); if (q > shown) { shown = q; process.stdout.write(`  ${q * 25}%`); } },
+  });
+  try {
+    await renderPart();
+  } catch (e) {
+    if (gl === "swangle" || !isWebGLError(e)) throw e;
+    gl = switchToSoftware();
+    await renderPart();
+  }
+  process.stdout.write("\n");
+  fs.renameSync(tmp, part);
+}
+fs.rmSync(serveUrl, { recursive: true, force: true });
+fs.writeFileSync(path.join(segDir, "list.txt"), list.join("\n") + "\n");
+fs.mkdirSync(path.dirname(out), { recursive: true });
+const dur = (N / composition.fps).toFixed(4);
+const joined = path.join(segDir, "joined.mp4");
+if (vo) {
+  ff(["-v", "error", "-y", "-f", "concat", "-safe", "0", "-i", path.join(segDir, "list.txt"), ...(F0 ? ["-ss", (F0 / composition.fps).toFixed(4)] : []), "-i", vo, "-map", "0:v", "-map", "1:a", "-c:v", "copy",
+    "-af", `adelay=${Math.round(offset * 1000)}:all=1,apad`, "-t", dur, "-c:a", "aac", "-b:a", "320k", "-ar", "48000", joined]);
+  const r = spawnSync("node", [path.join("scripts", "deliver.mjs"), joined, out], { stdio: "inherit" });
+  if (r.status !== 0) process.exit(r.status ?? 1);
+} else {
+  ff(["-v", "error", "-y", "-f", "concat", "-safe", "0", "-i", path.join(segDir, "list.txt"), "-c", "copy", "-movflags", "+faststart", out]);
+}
+fs.rmSync(segDir, { recursive: true, force: true });
+console.log(`final: ${out} (${N} frames, ${composition.width}×${composition.height} @ ${composition.fps} fps)`);
+// a part that failed on the GPU path leaves its timeout timer behind; do not wait for it
+process.exit(0);
+
+==== 5834 project/scripts/transcribe.mjs
+// Word timings for a voice-over → JSON [[word, start, end], …] (VO seconds).
+//   node scripts/transcribe.mjs <vo.mp3> --out=stories/<id>/words.json [--script=script.txt] [--lang=id]
+//   node scripts/transcribe.mjs <any/path/vo.mp3> --id=<id> [--script=…]   copies the VO to public/audio/<id>.<ext>
+//                                                                          and writes stories/<id>/words.json
+//
+// 1. whisper.cpp when available (WHISPER_CLI + WHISPER_MODEL, or `whisper-cli` on PATH with a model in
+//    ~/.cache/whisper.cpp or ./models) — real word timings; with --script the script's words are kept
+//    (names and numbers spelled as written) and timed by whisper.
+// 2. otherwise, with the script text: every speech segment of the VO (silence detection) is given its run of
+//    script words by a global alignment (scripts/align.mjs) — sentence starts land on the right pause from
+//    the first to the last line (no drift), word timing inside a phrase ≈ ±0.3 s.
+// --method=script forces 2 even when whisper.cpp is installed.
+// Without whisper and without a script there is nothing to align: the script text must be provided.
+
+import { spawnSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { alignScript, scriptOnWhisper, speechSegments } from "./align.mjs";
+
+const args = process.argv.slice(2);
+const file = args.find((a) => !a.startsWith("--"));
+const opt = (k, d) => (args.find((a) => a.startsWith(`--${k}=`)) ?? `=${d ?? ""}`).split("=").slice(1).join("=");
+const id = opt("id");
+if (id && !/^[a-z0-9-]+$/.test(id)) { console.error(`--id "${id}" must use only a-z, 0-9 and "-"`); process.exit(1); }
+const out = opt("out") || (id ? `stories/${id}/words.json` : "");
+if (file && fs.existsSync(file) && id) {
+  const dst = path.join("public", "audio", `${id}${path.extname(file).toLowerCase() || ".mp3"}`);
+  fs.mkdirSync(path.dirname(dst), { recursive: true });
+  if (path.resolve(dst) !== path.resolve(file)) fs.copyFileSync(file, dst);
+  console.log(`vo: ${dst}  →  story.json "vo": { "file": "${path.relative("public", dst)}", "offset": 1.5 }`);
+}
+if (!file || !fs.existsSync(file) || !out) {
+  console.error("usage: node scripts/transcribe.mjs <vo.mp3> (--id=<id> | --out=stories/<id>/words.json) [--script=script.txt] [--lang=id] [--method=script]");
+  process.exit(1);
+}
+const run = (cmd, a) => spawnSync(cmd, a, { encoding: "utf8", maxBuffer: 1 << 28 });
+const duration = Number(run("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", file]).stdout.trim());
+
+const findWhisper = () => {
+  const home = os.homedir();
+  const cands = [process.env.WHISPER_CLI, run("sh", ["-c", "command -v whisper-cli"]).stdout.trim(), "/opt/homebrew/bin/whisper-cli", "/usr/local/bin/whisper-cli"].filter(Boolean);
+  const cli = cands.find((c) => fs.existsSync(c));
+  const modelDirs = [path.join(home, ".cache/whisper.cpp"), path.resolve("models"), "/opt/homebrew/share/whisper-cpp"];
+  let model = process.env.WHISPER_MODEL && fs.existsSync(process.env.WHISPER_MODEL) ? process.env.WHISPER_MODEL : null;
+  if (!model) for (const d of modelDirs) { if (!fs.existsSync(d)) continue; const m = fs.readdirSync(d).filter((f) => f.endsWith(".bin")).sort((a, b) => (b.includes("large") ? 1 : 0) - (a.includes("large") ? 1 : 0))[0]; if (m) { model = path.join(d, m); break; } }
+  return cli && model ? { cli, model } : null;
+};
+
+let words = null, method = "";
+const method0 = opt("method", "auto");
+const W = method0 === "script" ? null : findWhisper();
+if (W) {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "cf-vo-"));
+  const wav = path.join(tmp, "vo16k.wav");
+  run("ffmpeg", ["-v", "error", "-y", "-i", file, "-ar", "16000", "-ac", "1", wav]);
+  run(W.cli, ["-m", W.model, "-f", wav, "-l", opt("lang", "id"), "-ml", "1", "-sow", "-ojf", "-of", path.join(tmp, "w")]);
+  try {
+    const j = JSON.parse(fs.readFileSync(path.join(tmp, "w.json"), "utf8"));
+    words = j.transcription.map((s) => [s.text.trim(), s.offsets.from / 1000, s.offsets.to / 1000]).filter((w) => w[0]);
+    method = `whisper.cpp (${path.basename(W.model)})`;
+    const sf = opt("script");
+    if (sf && fs.existsSync(sf) && words.length) {
+      const m = scriptOnWhisper(fs.readFileSync(sf, "utf8"), words);
+      if (m.matched >= 0.6) { words = m.words; method += `, script words timed by whisper (${Math.round(m.matched * 100)} % matched)`; }
+      else method += ` — the script matches only ${Math.round(m.matched * 100)} % of what was heard: whisper's own words kept (is it the right script?)`;
+    }
+  } catch { words = null; }
+  fs.rmSync(tmp, { recursive: true, force: true });
+}
+
+if (!words) {
+  const scriptFile = opt("script");
+  if (!scriptFile || !fs.existsSync(scriptFile)) {
+    console.error("No whisper.cpp found and no --script given. Provide the narration text (e.g. --script=stories/<id>/script.txt) or install whisper.cpp (see the skill's references/cinestory/setup.md).");
+    process.exit(2);
+  }
+  const segs = speechSegments(file, duration);
+  const r = alignScript(fs.readFileSync(scriptFile, "utf8"), segs);
+  if (!r) { console.error("Could not align: no speech found in the VO, or the script is empty."); process.exit(3); }
+  words = r.words;
+  method = `script aligned to ${r.segments} speech segments (${r.clauses} script phrases, ${r.rate.toFixed(1)} syllables/s); word timing inside a phrase ≈ ±0.3 s`;
+  for (const w of r.warnings) console.log(`  ⚠ ${w}`);
+}
+
+fs.mkdirSync(path.dirname(out), { recursive: true });
+fs.writeFileSync(out, JSON.stringify(words.map(([w, a, b]) => [w, +a.toFixed(2), +b.toFixed(2)])));
+console.log(`words: ${out} — ${words.length} words, ${duration.toFixed(2)} s, via ${method}`);
+console.log(words.map(([w, a]) => `${a.toFixed(2)} ${w}`).join("  "));
+
+==== 4209 project/scripts/worlds.mjs
+// The world catalog: every reusable world in this project, so a film starts from a finished set instead of a
+// new one. Without an id it lists them; with an id it prints what a story can name in that world.
+//   node scripts/worlds.mjs            → id, times, places and a one-line description of every world
+//   node scripts/worlds.mjs rumah      → its places with marks, seats / beds, POIs and set props
+
+import fs from "node:fs";
+import path from "node:path";
+
+const ls = (dir, ext) => (fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => f.endsWith(ext)).map((f) => path.join(dir, f)) : []);
+const files = [...ls("worlds", ".world.json"), ...(fs.existsSync("stories") ? fs.readdirSync("stories", { withFileTypes: true }).filter((e) => e.isDirectory()).flatMap((e) => ls(path.join("stories", e.name), ".world.json")) : [])];
+const worlds = files.map((f) => { try { return { file: f, ...JSON.parse(fs.readFileSync(f, "utf8")) }; } catch (e) { console.error(`✗ ${f}: ${e.message}`); return null; } }).filter(Boolean);
+// object anchors decide the automatic marks (<id>:seat, <id>:bed, <id>:behind …)
+const anchors = {};
+for (const f of [...ls("library/objects", ".json"), ...ls("assets/objects", ".json")]) { try { const o = JSON.parse(fs.readFileSync(f, "utf8")); anchors[o.id] = Object.keys(o.anchors ?? {}); } catch { /* not an object file */ } }
+const BUILTIN = { kos: "boarding house (kos): room, long hallway, front yard — see references/cinestory/worlds.md", coast: "rocky headland with a lighthouse, the keeper's cottage and the sea — see references/cinestory/worlds.md" };
+
+const id = process.argv[2];
+if (!id) {
+  console.log("Built-in worlds:");
+  for (const [k, v] of Object.entries(BUILTIN)) console.log(`  ${k.padEnd(14)} ${v}`);
+  console.log("\nReady-made worlds (world.json):");
+  for (const w of worlds) console.log(`  ${String(w.id).padEnd(14)} [${(w.times ?? []).join(", ")}] places: ${Object.keys(w.places ?? {}).join(", ")}\n  ${"".padEnd(14)} ${w.doc ?? ""}\n  ${"".padEnd(14)} ${w.file}`);
+  console.log("\nDetails: node scripts/worlds.mjs <id>   ·   use it in story.json: \"world\": \"<id>\"");
+  process.exit(0);
+}
+if (BUILTIN[id]) { console.log(`${id}: ${BUILTIN[id]}`); process.exit(0); }
+const w = worlds.find((x) => x.id === id);
+if (!w) { console.error(`✗ no world "${id}" — available: ${[...Object.keys(BUILTIN), ...worlds.map((x) => x.id)].join(", ")}`); process.exit(1); }
+
+const inRect = (p, r) => p[0] >= r[0] && p[0] <= r[2] && p[1] >= r[1] && p[1] <= r[3];
+const rooms = Object.fromEntries((w.rooms ?? []).map((r) => [r.id, r.rect]));
+const where = (pl, at) => (pl.kind === "interior" ? (pl.rooms ?? []).some((r) => rooms[r] && inRect(at, rooms[r])) : pl.area ? inRect(at, pl.area) : false);
+const xz = (o) => (o.at.length === 3 ? [o.at[0], o.at[2]] : o.at);
+console.log(`# ${w.id} — ${w.doc}\n\nfile: ${w.file}\ntimes: ${(w.times ?? []).join(", ")}\n`);
+for (const [pid, pl] of Object.entries(w.places ?? {})) {
+  console.log(`## place "${pid}" (${pl.kind}) — ${pl.doc ?? ""}`);
+  for (const [m, v] of Object.entries(pl.marks ?? {})) console.log(`  mark   ${m.padEnd(22)} ${v.doc ?? ""}`);
+  const here = (w.objects ?? []).filter((o) => o.id && where(pl, xz(o)));
+  const auto = here.flatMap((o) => (anchors[o.use] ?? []).filter((a) => ["seat", "bed", "behind", "push"].includes(a)).map((a) => `${o.id}:${a}`));
+  if (auto.length) console.log(`  seats / beds / sides: ${auto.join(", ")}`);
+  if (here.length) console.log(`  objects (targets, <id>:front): ${here.map((o) => `${o.id} (${o.use})`).join(", ")}`);
+  const doors = (pl.rooms ?? []).flatMap((r) => ((w.rooms ?? []).find((x) => x.id === r)?.openings ?? []).filter((o) => o.id && o.type !== "arch" && o.type !== "window").map((o) => o.id));
+  if (doors.length) console.log(`  doors (set "<id>": 1 opens): ${[...new Set(doors)].join(", ")}`);
+  console.log(`  ambience ${pl.ambience ?? "room"} · footsteps ${pl.surface ?? "-"} · view ${pl.view ?? "-"}\n`);
+}
+if (w.props && Object.keys(w.props).length) {
+  console.log("## set props (scene / beat \"set\")");
+  for (const [k, v] of Object.entries(w.props)) console.log(`  ${k.padEnd(18)} default ${v.default} — ${v.doc ?? ""}`);
+}
+
+==== 6139 project/src/cine/character/looks.ts
+// Character looks library: ready-made people for any story. A story picks a `look` and may override
+// colours / features per person (story.cast[].custom); identity then never changes between shots.
+
+import type { CharSpec } from "./Character.tsx";
+
+type Look = Omit<CharSpec, "key">;
+
+export const LOOKS: Record<string, Look> = {
+  /** young man, dark blue hoodie, sandals */
+  pemuda: {
+    skin: "#c08a62", hair: "#120e0b", iris: "#6a4024", lip: "#7c4236", brow: "#120d0a",
+    scale: 0.92, headScale: 1.08,
+    top: "hoodie", topColor: "#2b3f66", trim: "#eceae4",
+    legs: "#3a3c43", feet: "sandal", sandal: "#1e2a44",
+    hairStyle: "crop",
+    face: { jaw: 0.35, cheek: 0.4, nose: 0.5, brow: 0.45, chin: 0.45 },
+  },
+  /** young man, mustard t-shirt, messy hair */
+  "pemuda-kaos": {
+    skin: "#a8744f", hair: "#0f0b09", iris: "#5a3420", lip: "#6e3a30", brow: "#0e0a08",
+    scale: 0.95, headScale: 1.1,
+    top: "tee", topColor: "#c8962e", trim: "#b5862a",
+    legs: "#2c3b55", feet: "sandal", sandal: "#151515",
+    hairStyle: "messy",
+    face: { jaw: 0.75, cheek: 0.75, nose: 0.35, brow: 0.8, chin: 0.3 },
+  },
+  /** young woman, long hair, sage jacket */
+  pemudi: {
+    skin: "#c99572", hair: "#160f0b", iris: "#5b3a22", lip: "#9a4a46", brow: "#1a120d",
+    scale: 0.86, headScale: 1.08,
+    top: "jacket", topColor: "#7d8f74", trim: "#e9e3d6",
+    legs: "#2d3240", feet: "shoe", sandal: "#e8e4dc",
+    hairStyle: "long",
+    face: { jaw: 0.15, cheek: 0.6, nose: 0.3, brow: 0.25, chin: 0.35 },
+  },
+  /** young woman, hijab, long-sleeved top */
+  "pemudi-hijab": {
+    skin: "#c48f68", hair: "#160f0b", iris: "#4d3020", lip: "#94473f", brow: "#1a120d",
+    scale: 0.85, headScale: 1.08,
+    top: "jacket", topColor: "#b4677a", trim: "#f0e8e2",
+    legs: "#33384a", feet: "shoe", sandal: "#2c2c30",
+    hairStyle: "crop", hijab: "#e6dccd",
+    face: { jaw: 0.2, cheek: 0.65, nose: 0.3, brow: 0.3, chin: 0.35 },
+  },
+  /** middle-aged man, batik shirt, glasses */
+  bapak: {
+    skin: "#a7704c", hair: "#3a3632", iris: "#3a2416", lip: "#6a3a30", brow: "#2d2824",
+    scale: 0.9, headScale: 1.08,
+    top: "tee", topColor: "#7a4a2a", trim: "#5e3820", batik: "#e0b56a", glasses: true,
+    legs: "#4a3f35", feet: "sandal", sandal: "#3a2c22",
+    hairStyle: "crop",
+    face: { jaw: 0.6, cheek: 0.35, nose: 0.6, brow: 0.5, chin: 0.55 },
+  },
+  /** middle-aged woman, hijab, batik top */
+  ibu: {
+    skin: "#b98260", hair: "#1a1410", iris: "#4a2e1c", lip: "#8a4440", brow: "#2a2018",
+    scale: 0.84, headScale: 1.08,
+    top: "jacket", topColor: "#5c3a5e", trim: "#d9c7a8", batik: "#d9b46a",
+    legs: "#2f2a33", feet: "sandal", sandal: "#3a2c22",
+    hairStyle: "crop", hijab: "#3b4a6b",
+    face: { jaw: 0.4, cheek: 0.75, nose: 0.4, brow: 0.35, chin: 0.45 },
+  },
+  /** old man, grey hair, white beard, cardigan */
+  kakek: {
+    skin: "#a06e4e", hair: "#c9c6c0", iris: "#3a2a1e", lip: "#6a3c34", brow: "#b8b4ae",
+    scale: 0.87, headScale: 1.07,
+    top: "jacket", topColor: "#6b5a48", trim: "#d8cdb8",
+    legs: "#3d3a36", feet: "sandal", sandal: "#2a2522",
+    hairStyle: "crop", beard: "#bdb8b0", glasses: true,
+    face: { jaw: 0.55, cheek: 0.3, nose: 0.65, brow: 0.6, chin: 0.5 },
+  },
+  /** child (about 9), striped tee */
+  anak: {
+    skin: "#c28c64", hair: "#120e0b", iris: "#5a3a22", lip: "#9a5048", brow: "#16100c",
+    scale: 0.66, headScale: 1.22,
+    top: "tee", topColor: "#d0573f", trim: "#f2eee6",
+    legs: "#2f3f63", feet: "shoe", sandal: "#e8e6e0",
+    hairStyle: "messy",
+    face: { jaw: 0.1, cheek: 0.85, nose: 0.15, brow: 0.2, chin: 0.2 },
+  },
+  /** nurse: white hijab, teal scrubs, white shoes */
+  perawat: {
+    skin: "#c08b66", hair: "#160f0b", iris: "#4d3020", lip: "#9a4a46", brow: "#1a120d",
+    scale: 0.85, headScale: 1.08,
+    top: "jacket", topColor: "#8fcac6", trim: "#eef6f5",
+    legs: "#8fcac6", feet: "shoe", sandal: "#f2f2ee",
+    hairStyle: "crop", hijab: "#d6dfe0",
+    face: { jaw: 0.25, cheek: 0.6, nose: 0.3, brow: 0.3, chin: 0.35 },
+  },
+  /** doctor: white coat, glasses, short hair */
+  dokter: {
+    skin: "#b98262", hair: "#1a1410", iris: "#3a2416", lip: "#7a4036", brow: "#1a1410",
+    scale: 0.92, headScale: 1.07,
+    top: "jacket", topColor: "#f2f3f0", trim: "#cfd6dc",
+    legs: "#2d3240", feet: "shoe", sandal: "#2a2522",
+    hairStyle: "crop", glasses: true,
+    face: { jaw: 0.55, cheek: 0.4, nose: 0.55, brow: 0.5, chin: 0.5 },
+  },
+  /** market seller: patterned top, apron-coloured jacket, hijab */
+  pedagang: {
+    skin: "#a8724e", hair: "#1a1410", iris: "#4a2e1c", lip: "#8a4440", brow: "#2a2018",
+    scale: 0.84, headScale: 1.09,
+    top: "jacket", topColor: "#2f6f6a", trim: "#e8d7b0",
+    legs: "#3a3340", feet: "sandal", sandal: "#2a2522",
+    hairStyle: "crop", hijab: "#c98a3a",
+    face: { jaw: 0.5, cheek: 0.8, nose: 0.45, brow: 0.35, chin: 0.45 },
+  },
+  /** hiker / camper: orange jacket, knit cap */
+  pendaki: {
+    skin: "#b98260", hair: "#120e0b", iris: "#5a3a22", lip: "#8a4a40", brow: "#16100c",
+    scale: 0.92, headScale: 1.08,
+    top: "jacket", topColor: "#d0662a", trim: "#2b2f36",
+    legs: "#3a4250", feet: "shoe", sandal: "#3a3028",
+    hairStyle: "crop", cap: "#2f4a6a",
+    face: { jaw: 0.45, cheek: 0.45, nose: 0.5, brow: 0.5, chin: 0.45 },
+  },
+  /** lighthouse keeper / fisherman: knit cap, grey beard, navy jacket */
+  "penjaga-mercusuar": {
+    skin: "#9c6646", hair: "#8f8b85", iris: "#3a2a1e", lip: "#6a3a30", brow: "#77736d",
+    scale: 0.92, headScale: 1.07,
+    top: "jacket", topColor: "#26354d", trim: "#c9b48a",
+    legs: "#3b3a38", feet: "shoe", sandal: "#2b2420",
+    hairStyle: "crop", cap: "#8a3a2c", beard: "#77726c",
+    face: { jaw: 0.7, cheek: 0.35, nose: 0.65, brow: 0.7, chin: 0.55 },
+  },
+};
+
+export type CustomLook = Partial<Omit<CharSpec, "key" | "face">> & { face?: Partial<CharSpec["face"]> };
+
+export const lookSpec = (key: string, look: string, custom?: CustomLook): CharSpec => {
+  const base = LOOKS[look];
+  if (!base) throw new Error(`unknown look "${look}" (use one of: ${Object.keys(LOOKS).join(", ")})`);
+  return { ...base, ...custom, face: { ...base.face, ...(custom?.face ?? {}) }, key };
+};
+
+==== 8099 project/src/cine/character/pose.ts
+// Character pose (CINÉSTORY rig): a plain number tree, computed per frame from film time (no state, no clocks).
+// Angles in radians. Conventions (character faces +Z, his left is +X):
+//   spine/chest/neck/head [pitch fwd +, yaw to his left +, roll to his left +]
+//   legs [swing fwd +, abduct out +, twist], knee bend +, ankle toes-up +
+//   arms: either FK [swing fwd +, abduct out +, twist] + elbow bend, or an IK target in chest space.
+
+export type E3 = [number, number, number];
+export type Face = {
+  browUp: number; // 0 neutral, 1 raised
+  browIn: number; // 1 = inner ends up (worry)
+  lid: number; // 1 open, 0 closed, >1 wide
+  mouth: number; // −1 frown … 1 smile
+  open: number; // 0 closed … 1 open
+  eyeX: number; // gaze yaw (rad, to his left +)
+  eyeY: number; // gaze pitch (rad, up +)
+};
+export type Hand = { curl: number; index: number; thumb: number };
+export type Arm = { sw: number; ab: number; tw: number; el: number; wr: E3; ik?: { t: [number, number, number]; pole: [number, number, number]; w: number } };
+export type Leg = { sw: number; ab: number; tw: number; kn: number; an: number };
+
+export type Pose = {
+  x: number; y: number; z: number; yaw: number;
+  hipY: number; hips: E3;
+  spine: E3; chest: E3; neck: E3; head: E3;
+  armL: Arm; armR: Arm;
+  legL: Leg; legR: Leg;
+  handL: Hand; handR: Hand;
+  face: Face;
+  /** 0 none, 1 in the right hand, 2 in the left hand; screen brightness. */
+  phone: number; phoneOn: number;
+  /** breathing amplitude (0..1) and tremble (0..1) of the hands */
+  breath: number; tremble: number;
+  /** a held prop other than the phone (binoculars sit at the eyes; the rest in one hand, side 1 = left) */
+  hold: Hold | null;
+  /** mouth flap 0..1 added on top of face.open (dialogue) */
+  talk: number;
+  /** where a held light points (flashlight / lantern raised toward a target) */
+  aim?: [number, number, number];
+};
+export type HoldKind = "binoculars" | "lantern" | "flashlight" | "mug" | "book" | "pen";
+export type Hold = { kind: HoldKind; side: 1 | -1; on: number };
+
+const arm = (): Arm => ({ sw: 0.04, ab: 0.09, tw: 0, el: 0.18, wr: [0, 0, 0] });
+const leg = (): Leg => ({ sw: 0, ab: 0.02, tw: 0, kn: 0.04, an: 0 });
+export const FACE0: Face = { browUp: 0, browIn: 0, lid: 0.88, mouth: 0.05, open: 0, eyeX: 0, eyeY: 0 };
+
+export const restPose = (): Pose => ({
+  x: 0, y: 0, z: 0, yaw: 0,
+  hipY: 0, hips: [0, 0, 0],
+  spine: [0, 0, 0], chest: [0, 0, 0], neck: [0, 0, 0], head: [0, 0, 0],
+  armL: arm(), armR: arm(),
+  legL: leg(), legR: leg(),
+  handL: { curl: 0.35, index: 0.3, thumb: 0.2 }, handR: { curl: 0.35, index: 0.3, thumb: 0.2 },
+  face: { ...FACE0 },
+  phone: 0, phoneOn: 0,
+  breath: 1, tremble: 0,
+  hold: null, talk: 0,
+});
+
+export const lerpN = (a: number, b: number, k: number) => a + (b - a) * k;
+const lerp3 = (a: E3, b: E3, k: number): E3 => [lerpN(a[0], b[0], k), lerpN(a[1], b[1], k), lerpN(a[2], b[2], k)];
+const lerpArm = (a: Arm, b: Arm, k: number): Arm => ({
+  sw: lerpN(a.sw, b.sw, k), ab: lerpN(a.ab, b.ab, k), tw: lerpN(a.tw, b.tw, k), el: lerpN(a.el, b.el, k), wr: lerp3(a.wr, b.wr, k),
+  ik: a.ik || b.ik ? {
+    t: lerp3((a.ik ?? b.ik)!.t, (b.ik ?? a.ik)!.t, k),
+    pole: lerp3((a.ik ?? b.ik)!.pole, (b.ik ?? a.ik)!.pole, k),
+    w: lerpN(a.ik?.w ?? 0, b.ik?.w ?? 0, k),
+  } : undefined,
+});
+const lerpLeg = (a: Leg, b: Leg, k: number): Leg => ({ sw: lerpN(a.sw, b.sw, k), ab: lerpN(a.ab, b.ab, k), tw: lerpN(a.tw, b.tw, k), kn: lerpN(a.kn, b.kn, k), an: lerpN(a.an, b.an, k) });
+const lerpHand = (a: Hand, b: Hand, k: number): Hand => ({ curl: lerpN(a.curl, b.curl, k), index: lerpN(a.index, b.index, k), thumb: lerpN(a.thumb, b.thumb, k) });
+const lerpFace = (a: Face, b: Face, k: number): Face => {
+  const o = { ...a };
+  for (const key of Object.keys(a) as (keyof Face)[]) o[key] = lerpN(a[key], b[key], k);
+  return o;
+};
+
+/** Blend two whole poses (yaw shortest way). */
+export const blend = (a: Pose, b: Pose, k: number): Pose => {
+  if (k <= 0) return a;
+  if (k >= 1) return b;
+  let dy = b.yaw - a.yaw;
+  while (dy > Math.PI) dy -= Math.PI * 2;
+  while (dy < -Math.PI) dy += Math.PI * 2;
+  return {
+    x: lerpN(a.x, b.x, k), y: lerpN(a.y, b.y, k), z: lerpN(a.z, b.z, k), yaw: a.yaw + dy * k,
+    hipY: lerpN(a.hipY, b.hipY, k), hips: lerp3(a.hips, b.hips, k),
+    spine: lerp3(a.spine, b.spine, k), chest: lerp3(a.chest, b.chest, k), neck: lerp3(a.neck, b.neck, k), head: lerp3(a.head, b.head, k),
+    armL: lerpArm(a.armL, b.armL, k), armR: lerpArm(a.armR, b.armR, k),
+    legL: lerpLeg(a.legL, b.legL, k), legR: lerpLeg(a.legR, b.legR, k),
+    handL: lerpHand(a.handL, b.handL, k), handR: lerpHand(a.handR, b.handR, k),
+    face: lerpFace(a.face, b.face, k),
+    phone: k < 0.5 ? a.phone : b.phone, phoneOn: lerpN(a.phoneOn, b.phoneOn, k),
+    breath: lerpN(a.breath, b.breath, k), tremble: lerpN(a.tremble, b.tremble, k),
+    hold: a.hold && b.hold && a.hold.kind === b.hold.kind ? { ...b.hold, on: lerpN(a.hold.on, b.hold.on, k) } : k < 0.5 ? a.hold : b.hold,
+    talk: lerpN(a.talk, b.talk, k),
+  };
+};
+
+const TAU = Math.PI * 2;
+const D = Math.PI / 180;
+
+/**
+ * Walk cycle at gait phase `p` (cycles; left heel strike near p = 0.25). `amt` scales the stride
+ * (1 = normal walk, 0.6 = careful), `climb` adds stair knee lift.
+ */
+export const walkCycle = (pose: Pose, p: number, amt = 1, climb = 0): Pose => {
+  const o = { ...pose, legL: { ...pose.legL }, legR: { ...pose.legR }, armL: { ...pose.armL }, armR: { ...pose.armR } };
+  const legAt = (ph: number, l: Leg) => {
+    const s = Math.sin(TAU * ph), c = Math.cos(TAU * ph);
+    l.sw = (22 * D * s + climb * 26 * D * Math.max(0, c) + climb * 10 * D) * amt;
+    l.kn = (6 * D + 52 * D * Math.pow(Math.max(0, c), 1.4) + climb * 40 * D * Math.max(0, c)) * (0.55 + 0.45 * amt) + climb * 12 * D;
+    l.an = (10 * D * Math.max(0, c) - 14 * D * Math.max(0, -Math.sin(TAU * ph + 0.9))) * amt;
+  };
+  legAt(p, o.legL);
+  legAt(p + 0.5, o.legR);
+  o.hipY = pose.hipY - (0.012 + 0.012 * amt) * (0.5 - 0.5 * Math.cos(TAU * 2 * p - Math.PI)) - climb * 0.04;
+  const sway = Math.sin(TAU * p);
+  o.hips = [pose.hips[0] + climb * 8 * D, pose.hips[1] + 5 * D * sway * amt, pose.hips[2] + 2 * D * Math.cos(TAU * p) * amt];
+  o.chest = [pose.chest[0] + climb * 5 * D, pose.chest[1] - 7 * D * sway * amt, pose.chest[2]];
+  if (!o.armL.ik) { o.armL.sw = pose.armL.sw - 0.32 * sway * amt; o.armL.el = pose.armL.el + 0.12 * amt + 0.1 * Math.max(0, -sway) * amt; }
+  if (!o.armR.ik && !o.phone) { o.armR.sw = pose.armR.sw + 0.32 * sway * amt; o.armR.el = pose.armR.el + 0.12 * amt + 0.1 * Math.max(0, sway) * amt; }
+  return o;
+};
+
+/** Run cycle at gait phase `p`: long stride, flight phase, forward lean, pumping arms (elbows ~90°). */
+export const runCycle = (pose: Pose, p: number, amt = 1): Pose => {
+  const o = { ...pose, legL: { ...pose.legL }, legR: { ...pose.legR }, armL: { ...pose.armL }, armR: { ...pose.armR } };
+  const legAt = (ph: number, l: Leg) => {
+    const s = Math.sin(TAU * ph), c = Math.cos(TAU * ph);
+    l.sw = (34 * D * s + 12 * D) * amt;
+    l.kn = (14 * D + 95 * D * Math.pow(Math.max(0, c), 1.2) + 20 * D * Math.max(0, s)) * amt;
+    l.an = (16 * D * Math.max(0, c) - 22 * D * Math.max(0, -Math.sin(TAU * ph + 0.9))) * amt;
+  };
+  legAt(p, o.legL);
+  legAt(p + 0.5, o.legR);
+  o.hipY = pose.hipY - 0.05 * amt + 0.035 * amt * Math.abs(Math.sin(TAU * p));
+  const sway = Math.sin(TAU * p);
+  o.hips = [pose.hips[0] + 0.1 * amt, pose.hips[1] + 8 * D * sway * amt, pose.hips[2]];
+  o.spine = [pose.spine[0] + 0.12 * amt, pose.spine[1], pose.spine[2]];
+  o.chest = [pose.chest[0], pose.chest[1] - 12 * D * sway * amt, pose.chest[2]];
+  if (!o.armL.ik) { o.armL.sw = pose.armL.sw - 0.75 * sway * amt; o.armL.el = 1.45 * amt + 0.2; o.armL.ab = 0.16; }
+  if (!o.armR.ik) { o.armR.sw = pose.armR.sw + 0.75 * sway * amt; o.armR.el = 1.45 * amt + 0.2; o.armR.ab = 0.16; }
+  return o;
+};
+
+/** Holding the phone in front of the chest, screen toward the face. */
+export const phoneArm = (): Arm => ({ sw: 0.25, ab: 0.12, tw: 0, el: 1.7, wr: [0.2, 0, 0], ik: { t: [-0.05, 0.1, 0.33], pole: [-0.6, -0.7, -0.2], w: 1 } });
+
+==== 5875 project/src/cine/character/rig.ts
+// Performance helpers shared by every character: walking along plan paths with exact arrival times,
+// world → chest space for arm IK, aiming the head, and the exact eye position (mirrors Character.tsx's
+// transform chain) for POV cameras and eye close-ups. All pure functions of time.
+
+import { Euler, Object3D, Vector3 } from "three";
+import { planPath, type P2, type PlanPath } from "../../kits/worldforge/path.ts";
+import { lerpN, type Pose } from "./pose.ts";
+import type { CharSpec } from "./Character.tsx";
+import type { V3 } from "../Lights.tsx";
+
+export { planPath, type P2, type PlanPath };
+
+/** Distance along a path with a trapezoid speed profile that ends exactly at the path end at t1. */
+export const along = (path: PlanPath, t: number, t0: number, t1: number, acc: number, dec: number, v0 = 0) => {
+  const T = t1 - t0, L = path.length;
+  const v = (L - (v0 * acc) / 2) / (T - acc / 2 - dec / 2);
+  const u = Math.min(Math.max(t - t0, 0), T);
+  let s: number;
+  if (u < acc) s = v0 * u + ((v - v0) * u * u) / (2 * acc);
+  else if (u < T - dec) s = (v0 + v) * acc / 2 + v * (u - acc);
+  else {
+    const w = u - (T - dec);
+    s = (v0 + v) * acc / 2 + v * (T - dec - acc) + v * w - (v * w * w) / (2 * dec);
+  }
+  return { s: Math.min(s, L), speed: u < acc ? v0 + ((v - v0) * u) / acc : u < T - dec ? v : v * (1 - (u - (T - dec)) / dec) };
+};
+
+export const yawOf = (d: P2) => Math.atan2(d[0], d[1]);
+
+export const walkState = (path: PlanPath, t: number, t0: number, t1: number, acc: number, dec: number, stride: number, amt: number, v0 = 0) => {
+  const { s, speed } = along(path, t, t0, t1, acc, dec, v0);
+  const { p, dir } = path.at(s);
+  return { p, yaw: yawOf(dir), phase: s / stride, moving: Math.min(1, speed / 0.5) * amt, speed };
+};
+
+const headH = (c: CharSpec) => (0.96 + 0.1 + 0.2 + 0.27 + 0.09 + 0.09) * c.scale;
+
+/** World point → the character's chest space (unscaled rig units), for arm IK. Right arm: negate x. */
+export const toChest = (p: Pose, w: V3, c: CharSpec): [number, number, number] => {
+  // through the real hips → spine → chest rotations (a leaning or seated body moves its shoulders)
+  trunk(p, c);
+  const v = chain.chest.worldToLocal(new Vector3(w[0], w[1], w[2]));
+  return [v.x, v.y, v.z];
+};
+
+/** Aim neck+head at a world point (k blends from the current pose). */
+export const lookAt = (p: Pose, w: V3, c: CharSpec, k = 1) => {
+  const dx = w[0] - p.x, dy = w[1] - (p.y + headH(c) + p.hipY * c.scale), dz = w[2] - p.z;
+  const co = Math.cos(-p.yaw), s = Math.sin(-p.yaw);
+  const lx = dx * co + dz * s, lz = -dx * s + dz * co;
+  let yaw = Math.atan2(lx, lz);
+  yaw = Math.max(-1.4, Math.min(1.4, yaw));
+  const pitch = Math.max(-0.7, Math.min(0.7, Math.atan2(-dy, Math.hypot(lx, lz))));
+  p.neck = [lerpN(p.neck[0], pitch * 0.4, k), lerpN(p.neck[1], yaw * 0.35, k), p.neck[2]];
+  p.head = [lerpN(p.head[0], pitch * 0.6, k), lerpN(p.head[1], yaw * 0.65, k), p.head[2]];
+};
+
+const chain = (() => {
+  const root = new Object3D(), hips = new Object3D(), spine = new Object3D(), chest = new Object3D(), neck = new Object3D(), head = new Object3D(), content = new Object3D(), eye = new Object3D();
+  root.add(hips); hips.add(spine); spine.add(chest); chest.add(neck); neck.add(head); head.add(content); content.add(eye);
+  return { root, hips, spine, chest, neck, head, content, eye };
+})();
+
+/** Pose the root → hips → spine → chest part of the chain exactly like Character.tsx does. */
+const trunk = (p: Pose, c: CharSpec) => {
+  const k = chain;
+  k.root.position.set(p.x, p.y, p.z);
+  k.root.rotation.set(0, p.yaw, 0);
+  k.root.scale.setScalar(c.scale);
+  k.hips.position.set(0, 0.96 + p.hipY, 0);
+  k.hips.rotation.copy(new Euler(p.hips[0], p.hips[1], -p.hips[2], "YXZ"));
+  k.spine.position.set(0, 0.1, 0);
+  k.spine.rotation.copy(new Euler(p.spine[0], p.spine[1], -p.spine[2], "YXZ"));
+  k.chest.position.set(0, 0.2, 0);
+  k.chest.rotation.copy(new Euler(p.chest[0], p.chest[1], -p.chest[2], "YXZ"));
+  k.root.updateMatrixWorld(true);
+};
+
+/** World position of the character's left eye (or any head-local point) and the head's forward direction. */
+export const eyeExact = (p: Pose, c: CharSpec, local: V3 = [0.0375, 0.009, 0.0905]): { pos: V3; dir: V3; head: V3 } => {
+  const k = chain;
+  k.root.position.set(p.x, p.y, p.z);
+  k.root.rotation.set(0, p.yaw, 0);
+  k.root.scale.setScalar(c.scale);
+  k.hips.position.set(0, 0.96 + p.hipY, 0);
+  k.hips.rotation.copy(new Euler(p.hips[0], p.hips[1], -p.hips[2], "YXZ"));
+  k.spine.position.set(0, 0.1, 0);
+  k.spine.rotation.copy(new Euler(p.spine[0], p.spine[1], -p.spine[2], "YXZ"));
+  k.chest.position.set(0, 0.2, 0);
+  k.chest.rotation.copy(new Euler(p.chest[0], p.chest[1], -p.chest[2], "YXZ"));
+  k.neck.position.set(0, 0.27, -0.01);
+  k.neck.rotation.copy(new Euler(p.neck[0], p.neck[1], -p.neck[2], "YXZ"));
+  k.head.position.set(0, 0.09, 0.01);
+  k.head.rotation.copy(new Euler(p.head[0], p.head[1], -p.head[2], "YXZ"));
+  k.content.position.set(0, 0.09, 0.01);
+  k.content.scale.setScalar(c.headScale);
+  k.eye.position.set(...local);
+  k.root.updateMatrixWorld(true);
+  const pos = new Vector3().setFromMatrixPosition(k.eye.matrixWorld);
+  const ahead = new Vector3(local[0], local[1], local[2] + 0.2).applyMatrix4(k.content.matrixWorld);
+  const dir = ahead.sub(pos).normalize();
+  const hc = new Vector3(0, 0, 0).applyMatrix4(k.content.matrixWorld);
+  return { pos: [pos.x, pos.y, pos.z], dir: [dir.x, dir.y, dir.z], head: [hc.x, hc.y, hc.z] };
+};
+
+/** Chest space (rig units, as used by IK targets) → world. Inverse of toChest. */
+export const fromChest = (p: Pose, l: [number, number, number], c: CharSpec): V3 => {
+  trunk(p, c);
+  const v = new Vector3(l[0], l[1], l[2]).applyMatrix4(chain.chest.matrixWorld);
+  return [v.x, v.y, v.z];
+};
+
+export const add3 = (a: V3, b: V3, k = 1): V3 => [a[0] + b[0] * k, a[1] + b[1] * k, a[2] + b[2] * k];
+
+==== 6214 project/src/cine/env/Ocean.tsx
+// Open sea: a graded grid (dense near `center`, coarse to the horizon) displaced every frame by a sum of
+// Gerstner waves — a pure function of time, so any frame renders the same. Fine ripples come from a
+// scrolling procedural normal map, which also makes the moon/sun glitter path. `waveHeight` exposes the
+// same surface for boats, floating lights and sound.
+
+import React, { useMemo } from "react";
+import { BufferAttribute, BufferGeometry, CanvasTexture, RepeatWrapping, Sphere, Vector2, Vector3 } from "three";
+import { expAxis } from "../../kits/worldforge/heightfield.ts";
+import { mulberry32 } from "../../kits/worldforge/noise.ts";
+import { phys } from "../mats.ts";
+
+const G = 9.81;
+type Wave = { dx: number; dz: number; k: number; w: number; A: number; ph: number };
+const WAVES: Wave[] = [
+  [0.3, 62, 0.42, 0.0], [-0.5, 33, 0.24, 1.3], [0.9, 18, 0.13, 2.1], [-1.2, 9.5, 0.07, 0.4], [0.1, 5.2, 0.035, 3.3], [1.7, 2.7, 0.016, 5.1],
+].map(([a, L, A, ph]) => {
+  const k = (Math.PI * 2) / L;
+  return { dx: Math.sin(a - Math.PI), dz: Math.cos(a - Math.PI), k, w: Math.sqrt(G * k), A, ph };
+});
+const Q = 0.55; // crest sharpness
+
+/** Height of the sea surface at (x, z) and time t (amp scales every wave). */
+export const waveHeight = (x: number, z: number, t: number, amp = 1) => {
+  let y = 0;
+  for (const v of WAVES) y += amp * v.A * Math.sin(v.k * (v.dx * x + v.dz * z) - v.w * t + v.ph);
+  return y;
+};
+/** Surface slope (for boats to pitch/roll with the swell). */
+export const waveSlope = (x: number, z: number, t: number, amp = 1): [number, number] => {
+  let sx = 0, sz = 0;
+  for (const v of WAVES) {
+    const c = amp * v.A * v.k * Math.cos(v.k * (v.dx * x + v.dz * z) - v.w * t + v.ph);
+    sx += c * v.dx; sz += c * v.dz;
+  }
+  return [sx, sz];
+};
+
+const rippleTex = () => {
+  const n = 256, c = document.createElement("canvas");
+  c.width = c.height = n;
+  const g = c.getContext("2d")!;
+  const r = mulberry32(17);
+  const h = new Float32Array(n * n);
+  for (let o = 0; o < 4; o++) {
+    const cells = 4 << o, amp = 1 / (1 + o * 1.4), grid = Array.from({ length: cells * cells }, () => r());
+    for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+      const fx = (x / n) * cells, fy = (y / n) * cells, ix = Math.floor(fx), iy = Math.floor(fy);
+      const ux = fx - ix, uy = fy - iy, sx = ux * ux * (3 - 2 * ux), sy = uy * uy * (3 - 2 * uy);
+      const at = (i: number, j: number) => grid[((j % cells) * cells + (i % cells))];
+      h[y * n + x] += amp * ((at(ix, iy) * (1 - sx) + at(ix + 1, iy) * sx) * (1 - sy) + (at(ix, iy + 1) * (1 - sx) + at(ix + 1, iy + 1) * sx) * sy);
+    }
+  }
+  const img = g.createImageData(n, n);
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+    const hx = h[y * n + ((x + 1) % n)] - h[y * n + ((x + n - 1) % n)], hy = h[((y + 1) % n) * n + x] - h[((y + n - 1) % n) * n + x];
+    const v = new Vector3(-hx * 6, -hy * 6, 1).normalize(), i = (y * n + x) * 4;
+    img.data[i] = (v.x * 0.5 + 0.5) * 255; img.data[i + 1] = (v.y * 0.5 + 0.5) * 255; img.data[i + 2] = (v.z * 0.5 + 0.5) * 255; img.data[i + 3] = 255;
+  }
+  g.putImageData(img, 0, 0);
+  const t = new CanvasTexture(c);
+  t.wrapS = t.wrapT = RepeatWrapping;
+  t.repeat.set(220, 220);
+  return t;
+};
+
+let ripple: CanvasTexture | null = null;
+
+export const Ocean: React.FC<{ t: number; amp?: number; color?: string; size?: number; level?: number }> = ({ t, amp = 1, color = "#0a1824", size = 900, level = 0 }) => {
+  const geo = useMemo(() => {
+    const ax = expAxis(-size, size, 0.7, 0.032), az = expAxis(-size, size, 0.7, 0.032);
+    const nx = ax.n, nz = az.n;
+    const g = new BufferGeometry();
+    g.setAttribute("position", new BufferAttribute(new Float32Array(nx * nz * 3), 3));
+    g.setAttribute("normal", new BufferAttribute(new Float32Array(nx * nz * 3), 3));
+    const uv = new Float32Array(nx * nz * 2);
+    for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) { uv[(j * nx + i) * 2] = (ax.coord[i] + size) / (2 * size); uv[(j * nx + i) * 2 + 1] = (az.coord[j] + size) / (2 * size); }
+    g.setAttribute("uv", new BufferAttribute(uv, 2));
+    const idx = new Uint32Array((nx - 1) * (nz - 1) * 6);
+    let n = 0;
+    for (let j = 0; j < nz - 1; j++) for (let i = 0; i < nx - 1; i++) {
+      const a = j * nx + i, b = a + 1, c = a + nx, d = c + 1;
+      idx[n++] = a; idx[n++] = c; idx[n++] = b; idx[n++] = b; idx[n++] = c; idx[n++] = d;
+    }
+    g.setIndex(new BufferAttribute(idx, 1));
+    g.boundingSphere = new Sphere(new Vector3(0, 0, 0), size * 1.5);
+    return { g, ax, az };
+  }, [size]);
+  useMemo(() => {
+    const { g, ax, az } = geo;
+    const P = g.attributes.position.array as Float32Array, N = g.attributes.normal.array as Float32Array;
+    const nx = ax.n;
+    for (let j = 0; j < az.n; j++) {
+      const z0 = az.coord[j];
+      for (let i = 0; i < nx; i++) {
+        const x0 = ax.coord[i];
+        // waves shorter than ~3 grid cells alias at the horizon: fade them with distance
+        const cell = 0.7 + 0.032 * Math.max(Math.abs(x0), Math.abs(z0));
+        let x = x0, y = 0, z = z0, nX = 0, nY = 1, nZ = 0;
+        for (const v of WAVES) {
+          const keep = Math.min(1, Math.max(0, ((2 * Math.PI) / v.k / cell - 3) / 3));
+          if (keep <= 0) continue;
+          const A = amp * v.A * keep, th = v.k * (v.dx * x0 + v.dz * z0) - v.w * t + v.ph, s = Math.sin(th), c = Math.cos(th);
+          x += Q * A * v.dx * c; z += Q * A * v.dz * c; y += A * s;
+          nX -= v.dx * v.k * A * c; nZ -= v.dz * v.k * A * c; nY -= Q * v.k * A * s;
+        }
+        const k = (j * nx + i) * 3, l = Math.hypot(nX, nY, nZ);
+        P[k] = x; P[k + 1] = level + y; P[k + 2] = z;
+        N[k] = nX / l; N[k + 1] = nY / l; N[k + 2] = nZ / l;
+      }
+    }
+    g.attributes.position.needsUpdate = true;
+    g.attributes.normal.needsUpdate = true;
+  }, [geo, t, amp, level]);
+  if (!ripple) ripple = rippleTex();
+  ripple.offset.set((t * 0.011) % 1, (t * 0.0067) % 1);
+  const m = phys(`ocean${color}`, { color, roughness: 0.3, metalness: 0, ior: 1.33, specularIntensity: 0.32, normalMap: ripple, normalScale: new Vector2(0.5, 0.5), envMapIntensity: 0.6 });
+  return <mesh geometry={geo.g} material={m} receiveShadow frustumCulled={false} />;
+};
+
+==== 4790 project/src/cine/env/Sky.tsx
+// Sky dome for exterior worlds: elevation gradient, glow around the moon/sun, the disk itself, a seeded
+// star field and soft cloud bands, all in one fog-free shader on a sphere that follows the camera.
+
+import React, { useMemo } from "react";
+import { BackSide, Color, ShaderMaterial, SphereGeometry, Vector3 } from "three";
+import type { V3 } from "../Lights.tsx";
+
+export type SkyLook = { zenith: string; horizon: string; glow: string; disk: string; diskSize: number; stars: number; clouds: number; cloud: string };
+
+export const SKIES: Record<string, SkyLook> = {
+  night: { zenith: "#03060f", horizon: "#16233d", glow: "#5c7ab8", disk: "#f2f0e6", diskSize: 0.018, stars: 1, clouds: 0.45, cloud: "#2a3550" },
+  dusk: { zenith: "#1a2240", horizon: "#e0875a", glow: "#ffb36e", disk: "#fff1d0", diskSize: 0.02, stars: 0.15, clouds: 0.55, cloud: "#7a5a6a" },
+  dawn: { zenith: "#2b3f66", horizon: "#e8b48c", glow: "#ffd9a8", disk: "#fff6e0", diskSize: 0.02, stars: 0.05, clouds: 0.5, cloud: "#a8909a" },
+  day: { zenith: "#4f86c6", horizon: "#cfe0ee", glow: "#ffffff", disk: "#fffaf0", diskSize: 0.016, stars: 0, clouds: 0.55, cloud: "#f2f4f6" },
+  storm: { zenith: "#0a0d12", horizon: "#2a3038", glow: "#4a5566", disk: "#c8ccd4", diskSize: 0.0, stars: 0, clouds: 1, cloud: "#1c2028" },
+};
+
+const geo = new SphereGeometry(800, 64, 32);
+
+export const SkyDome: React.FC<{ look: SkyLook; dir: V3; cam: V3; t: number }> = ({ look, dir, cam, t }) => {
+  const mat = useMemo(
+    () =>
+      new ShaderMaterial({
+        side: BackSide,
+        depthWrite: false,
+        fog: false,
+        uniforms: {
+          uDir: { value: new Vector3() }, uZen: { value: new Color() }, uHor: { value: new Color() }, uGlow: { value: new Color() },
+          uDisk: { value: new Color() }, uSize: { value: 0 }, uStars: { value: 0 }, uClouds: { value: 0 }, uCloud: { value: new Color() }, uT: { value: 0 },
+        },
+        vertexShader: /* glsl */ `varying vec3 vDir; void main(){ vDir = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+        fragmentShader: /* glsl */ `
+          uniform vec3 uDir, uZen, uHor, uGlow, uDisk, uCloud; uniform float uSize, uStars, uClouds, uT;
+          varying vec3 vDir;
+          float h21(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+          float vn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+            return mix(mix(h21(i), h21(i + vec2(1,0)), f.x), mix(h21(i + vec2(0,1)), h21(i + vec2(1,1)), f.x), f.y); }
+          float fbm(vec2 p){ float s = 0.0, a = 0.5; for (int i = 0; i < 5; i++){ s += a * vn(p); p *= 2.03; a *= 0.5; } return s; }
+          void main(){
+            vec3 d = normalize(vDir);
+            float e = clamp(d.y, -1.0, 1.0);
+            vec3 col = mix(uHor, uZen, pow(max(e, 0.0), 0.5));
+            if (e < 0.0) col = uHor * 0.55;
+            float c = max(dot(d, normalize(uDir)), 0.0);
+            col += uGlow * (pow(c, 8.0) * 0.35 + pow(c, 64.0) * 0.5) * smoothstep(-0.05, 0.1, e);
+            // stars: one jittered point per cell in (azimuth, elevation)
+            if (uStars > 0.0 && e > 0.0) {
+              vec2 g = vec2(atan(d.z, d.x) * 90.0, e * 140.0);
+              vec2 id = floor(g), f = fract(g);
+              float r = h21(id);
+              vec2 p = vec2(h21(id + 7.1), h21(id + 3.7));
+              float s = smoothstep(0.09, 0.0, length(f - p)) * step(0.82, r) * (0.5 + 0.5 * sin(uT * (1.0 + r * 3.0) + r * 40.0));
+              col += vec3(0.85, 0.9, 1.0) * s * uStars * smoothstep(0.02, 0.25, e) * (0.6 + 1.6 * fract(r * 13.0));
+            }
+            // clouds: stretched fbm bands, lit toward the moon/sun
+            if (uClouds > 0.0 && e > -0.02) {
+              vec2 q = d.xz / (e + 0.18) * 1.6 + vec2(uT * 0.004, 0.0);
+              float n = fbm(q * vec2(1.0, 2.6));
+              float cl = smoothstep(0.52, 0.85, n) * uClouds * smoothstep(-0.02, 0.12, e);
+              vec3 cc = uCloud + uGlow * pow(c, 6.0) * 0.6;
+              col = mix(col, cc, cl * 0.85);
+            }
+            // the disk
+            float disk = smoothstep(cos(uSize), cos(uSize * 0.9), dot(d, normalize(uDir)));
+            col = mix(col, uDisk * 2.2, disk * step(0.0001, uSize));
+            gl_FragColor = vec4(col, 1.0);
+          }`,
+      }),
+    [],
+  );
+  const u = mat.uniforms;
+  u.uDir.value.set(...dir);
+  u.uZen.value.set(look.zenith);
+  u.uHor.value.set(look.horizon);
+  u.uGlow.value.set(look.glow);
+  u.uDisk.value.set(look.disk);
+  u.uSize.value = look.diskSize;
+  u.uStars.value = look.stars;
+  u.uClouds.value = look.clouds;
+  u.uCloud.value.set(look.cloud);
+  u.uT.value = t;
+  return <mesh geometry={geo} material={mat} position={cam} renderOrder={-10} frustumCulled={false} />;
+};
+
+==== 7304 project/src/cine/FX.tsx
+// Atmosphere: fake volumetric light shafts (additive prisms from an opening along a light direction)
+// and floating dust motes. Both live on FX_LAYER only, so GTAO/DOF never see them (large transparent
+// volumes on the default layer corrupt those passes and can blank a frame).
+
+import React, { useMemo } from "react";
+import { AdditiveBlending, BufferAttribute, BufferGeometry, CanvasTexture, Color, ConeGeometry, DoubleSide, type Object3D, ShaderMaterial, Vector3 } from "three";
+import { FX_LAYER } from "../core/render/Post.tsx";
+import { mulberry32 } from "../kits/worldforge/noise.ts";
+import type { V3 } from "./Lights.tsx";
+
+const fxLayer = (o: Object3D | null) => {
+  if (o) o.layers.set(FX_LAYER);
+};
+
+const shaftGeo = (corners: V3[], dir: V3, len: number, spread: number) => {
+  const d = new Vector3(...dir).normalize();
+  const c0 = corners.map((c) => new Vector3(...c));
+  const ctr = c0.reduce((a, b) => a.add(b.clone()), new Vector3()).multiplyScalar(1 / c0.length);
+  const c1 = c0.map((c) => c.clone().sub(ctr).multiplyScalar(1 + spread).add(ctr).addScaledVector(d, len));
+  const pos: number[] = [], uv: number[] = [];
+  for (let i = 0; i < 4; i++) {
+    const a0 = c0[i], b0 = c0[(i + 1) % 4], a1 = c1[i], b1 = c1[(i + 1) % 4];
+    pos.push(...a0.toArray(), ...b0.toArray(), ...b1.toArray(), ...a0.toArray(), ...b1.toArray(), ...a1.toArray());
+    uv.push(0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1);
+  }
+  const g = new BufferGeometry();
+  g.setAttribute("position", new BufferAttribute(new Float32Array(pos), 3));
+  g.setAttribute("uv", new BufferAttribute(new Float32Array(uv), 2));
+  return g;
+};
+
+const shaftMat = () =>
+  new ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    blending: AdditiveBlending,
+    side: DoubleSide,
+    fog: false,
+    uniforms: { uColor: { value: new Color("#9fb8ff") }, uI: { value: 0.1 } },
+    vertexShader: /* glsl */ `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+    fragmentShader: /* glsl */ `uniform vec3 uColor; uniform float uI; varying vec2 vUv;
+      void main(){
+        float edge = pow(sin(3.14159 * clamp(vUv.x, 0.0, 1.0)), 1.6);
+        float along = smoothstep(0.0, 0.08, vUv.y) * pow(1.0 - clamp(vUv.y, 0.0, 1.0), 1.4);
+        float a = clamp(edge * along * uI, 0.0, 1.0);
+        gl_FragColor = vec4(uColor * a, 1.0);
+      }`,
+  });
+
+/** A light shaft from an opening (4 corners, in order around the rectangle) along `dir`. */
+export const Shaft: React.FC<{ corners: V3[]; dir: V3; len: number; spread?: number; color: string; i: number }> = ({ corners, dir, len, spread = 0.15, color, i }) => {
+  const key = JSON.stringify([corners, dir, len, spread]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const geo = useMemo(() => shaftGeo(corners, dir, len, spread), [key]);
+  const mat = useMemo(() => shaftMat(), []);
+  mat.uniforms.uColor.value.set(color);
+  mat.uniforms.uI.value = i;
+  return <mesh ref={fxLayer} geometry={geo} material={mat} visible={i > 0.001} renderOrder={5} />;
+};
+
+let dotTex: CanvasTexture | null = null;
+const dot = () => {
+  if (dotTex) return dotTex;
+  const c = document.createElement("canvas");
+  c.width = c.height = 64;
+  const g = c.getContext("2d")!;
+  const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  gr.addColorStop(0, "rgba(255,255,255,1)");
+  gr.addColorStop(0.35, "rgba(255,255,255,0.45)");
+  gr.addColorStop(1, "rgba(255,255,255,0)");
+  g.fillStyle = gr;
+  g.fillRect(0, 0, 64, 64);
+  dotTex = new CanvasTexture(c);
+  return dotTex;
+};
+
+/** Dust motes drifting inside a box (deterministic in t). */
+export const Dust: React.FC<{ min: V3; max: V3; n?: number; t: number; color?: string; i?: number; size?: number; seed?: number }> = ({ min, max, n = 220, t, color = "#c8d6ff", i = 0.5, size = 0.012, seed = 3 }) => {
+  const base = useMemo(() => {
+    const r = mulberry32(seed);
+    return Array.from({ length: n }, () => [r(), r(), r(), r() * 6.28, 0.3 + r() * 0.7] as const);
+  }, [n, seed]);
+  const geo = useMemo(() => {
+    const g = new BufferGeometry();
+    g.setAttribute("position", new BufferAttribute(new Float32Array(n * 3), 3));
+    return g;
+  }, [n]);
+  const a = geo.attributes.position as BufferAttribute;
+  base.forEach(([u, v, w, ph, sp], k) => {
+    const x = min[0] + (max[0] - min[0]) * ((u + 0.03 * Math.sin(t * 0.21 * sp + ph)) % 1);
+    const y = min[1] + (max[1] - min[1]) * ((((v - 0.012 * t * sp) % 1) + 1) % 1);
+    const z = min[2] + (max[2] - min[2]) * ((w + 0.03 * Math.cos(t * 0.17 * sp + ph * 1.3)) % 1);
+    a.setXYZ(k, x, y, z);
+  });
+  a.needsUpdate = true;
+  geo.computeBoundingSphere();
+  return (
+    <points ref={fxLayer} geometry={geo} renderOrder={6}>
+      <pointsMaterial map={dot()} color={color} size={size} sizeAttenuation transparent opacity={i} depthWrite={false} blending={AdditiveBlending} fog={false} />
+    </points>
+  );
+};
+
+export { fxLayer };
+
+/** Soft additive glow (camera-facing) — lamps, distant lights, halos in fog. Size in metres. */
+export const Glow: React.FC<{ pos: V3; size: number; color: string; i: number; stretch?: number }> = ({ pos, size, color, i, stretch = 1 }) => (
+  <sprite ref={fxLayer} position={pos} scale={[size, size * stretch, 1]} renderOrder={7} visible={i > 0.002}>
+    <spriteMaterial map={dot()} color={color} opacity={Math.min(1, i)} transparent depthWrite={false} blending={AdditiveBlending} fog={false} />
+  </sprite>
+);
+
+const beamMat = () =>
+  new ShaderMaterial({
+    transparent: true, depthWrite: false, blending: AdditiveBlending, side: DoubleSide, fog: false,
+    uniforms: { uColor: { value: new Color("#fff2d8") }, uI: { value: 0.1 } },
+    vertexShader: /* glsl */ `varying vec2 vUv; varying vec3 vN; varying vec3 vV;
+      void main(){ vUv = uv; vec4 mv = modelViewMatrix * vec4(position,1.0); vN = normalize(normalMatrix * normal); vV = normalize(-mv.xyz); gl_Position = projectionMatrix * mv; }`,
+    fragmentShader: /* glsl */ `uniform vec3 uColor; uniform float uI; varying vec2 vUv; varying vec3 vN; varying vec3 vV;
+      void main(){
+        float along = pow(clamp(vUv.y, 0.0, 1.0), 2.2) * smoothstep(1.0, 0.95, vUv.y);
+        float edge = pow(abs(dot(normalize(vN), normalize(vV))), 1.5);
+        float a = clamp(along * edge * uI, 0.0, 1.0);
+        gl_FragColor = vec4(uColor * a, 1.0);
+      }`,
+  });
+
+/** A light beam (open cone) from `pos` toward (−sin yaw, 0, −cos yaw), tilted up by `pitch` (rad). */
+export const Beam: React.FC<{ pos: V3; yaw: number; pitch?: number; len: number; radius: number; color: string; i: number }> = ({ pos, yaw, pitch = 0, len, radius, color, i }) => {
+  const mat = useMemo(() => beamMat(), []);
+  mat.uniforms.uColor.value.set(color);
+  mat.uniforms.uI.value = i;
+  return (
+    <group position={pos} rotation={[0, yaw, 0]} visible={i > 0.002}>
+      <group rotation={[Math.PI / 2 + pitch, 0, 0]}>
+        <mesh ref={fxLayer} geometry={beamGeo(len, radius)} material={mat} position={[0, -len / 2, 0]} renderOrder={6} frustumCulled={false} />
+      </group>
+    </group>
+  );
+};
+const beamCache = new Map<string, ConeGeometry>();
+const beamGeo = (len: number, r: number) => {
+  const k = `${len},${r}`;
+  let g = beamCache.get(k);
+  if (!g) { g = new ConeGeometry(r, len, 32, 1, true); beamCache.set(k, g); }
+  return g;
+};
+
+==== 6573 project/src/cine/Lights.tsx
+// Fixed light rig for a whole film. The set of lights never changes (three.js never recompiles a shader
+// mid-film); shots only move them and change colour/intensity. Three lights cast shadows: the moon
+// (directional, frustum fitted to the shot's box) and two spots (practical lamp, moving headlight…).
+// Six unshadowed points carry practicals, bounce and fill.
+
+import React, { useLayoutEffect, useMemo } from "react";
+import { useThree } from "@react-three/fiber";
+import { Color, DirectionalLight, FogExp2, HemisphereLight, Matrix4, Object3D, PMREMGenerator, PointLight, SpotLight, Vector3 } from "three";
+import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
+
+import { P_OFF, S_OFF, type LightState, type PointL, type SpotL, type V3 } from "./types.ts";
+export { P_OFF, S_OFF, type LightState, type PointL, type SpotL, type V3 };
+
+const makeSpot = (map: number) => {
+  const s = new SpotLight("#ffd9a8", 0);
+  s.castShadow = true;
+  s.shadow.mapSize.set(map, map);
+  s.shadow.bias = -0.0005;
+  s.shadow.normalBias = 0.02;
+  s.shadow.radius = 4;
+  s.shadow.camera.near = 0.05;
+  const t = new Object3D();
+  s.target = t;
+  return { s, t };
+};
+
+export const Lights: React.FC<{ s: LightState }> = ({ s }) => {
+  const { scene, gl } = useThree();
+  const rig = useMemo(() => {
+    const hemi = new HemisphereLight("#8899bb", "#221a14", 0.5);
+    const moon = new DirectionalLight("#9fb8ff", 1);
+    moon.castShadow = true;
+    moon.shadow.mapSize.set(2048, 2048);
+    moon.shadow.bias = -0.0004;
+    moon.shadow.normalBias = 0.025;
+    moon.shadow.radius = 3;
+    const mt = new Object3D();
+    moon.target = mt;
+    const spots = [makeSpot(2048), makeSpot(1024)];
+    const pts = [0, 1, 2, 3, 4, 5].map(() => new PointLight("#fff", 0, 1, 2));
+    const pm = new PMREMGenerator(gl);
+    const env = pm.fromScene(new RoomEnvironment(), 0.04).texture;
+    return { hemi, moon, mt, spots, pts, env };
+  }, [gl]);
+
+  useLayoutEffect(() => {
+    scene.environment = rig.env;
+    scene.background = new Color(s.bg);
+    if (!(scene.fog instanceof FogExp2)) scene.fog = new FogExp2(s.fog.color, s.fog.density);
+    (scene.fog as FogExp2).color.set(s.fog.color);
+    (scene.fog as FogExp2).density = s.fog.density;
+    scene.environmentIntensity = s.env;
+
+    rig.hemi.color.set(s.hemi.sky);
+    rig.hemi.groundColor.set(s.hemi.ground);
+    rig.hemi.intensity = s.hemi.i;
+
+    // moon: fixed frustum fitted around the shot box in light space
+    const { min, max } = s.moon.box;
+    const L = new Vector3(...s.moon.dir).normalize();
+    const c = new Vector3(...min).add(new Vector3(...max)).multiplyScalar(0.5);
+    rig.mt.position.copy(c);
+    rig.mt.updateMatrixWorld();
+    rig.moon.position.copy(c).addScaledVector(L, 60);
+    const view = new Matrix4().lookAt(rig.moon.position, c, Math.abs(L.y) > 0.98 ? new Vector3(0, 0, 1) : new Vector3(0, 1, 0));
+    const inv = new Matrix4().makeTranslation(rig.moon.position.x, rig.moon.position.y, rig.moon.position.z).multiply(view).invert();
+    const lo = new Vector3(Infinity, Infinity, Infinity), hi = new Vector3(-Infinity, -Infinity, -Infinity);
+    for (let k = 0; k < 8; k++) {
+      const p = new Vector3(k & 1 ? max[0] : min[0], k & 2 ? max[1] : min[1], k & 4 ? max[2] : min[2]).applyMatrix4(inv);
+      lo.min(p);
+      hi.max(p);
+    }
+    const sc = rig.moon.shadow.camera;
+    sc.left = lo.x; sc.right = hi.x; sc.bottom = lo.y; sc.top = hi.y;
+    sc.near = Math.max(0.5, -hi.z - 5);
+    sc.far = -lo.z + 5;
+    sc.updateProjectionMatrix();
+    rig.moon.color.set(s.moon.color);
+    rig.moon.intensity = s.moon.i;
+    // shadow maps render every frame even for a dark light: an unrendered shadow map makes WebGL
+    // reject every draw call ("mismatch between texture format and sampler type")
+    rig.moon.shadow.autoUpdate = true;
+
+    s.spots.forEach((sp, i) => {
+      const { s: l, t } = rig.spots[i];
+      l.position.set(...sp.pos);
+      t.position.set(...sp.target);
+      t.updateMatrixWorld();
+      l.color.set(sp.color);
+      l.intensity = sp.i;
+      l.angle = sp.angle;
+      l.penumbra = sp.penumbra;
+      l.distance = sp.dist;
+      l.decay = 2;
+      l.shadow.camera.far = sp.dist;
+      l.shadow.autoUpdate = true;
+    });
+
+    s.pts.forEach((p, i) => {
+      const l = rig.pts[i];
+      l.position.set(...p.pos);
+      l.color.set(p.color);
+      l.intensity = p.i;
+      l.distance = p.dist;
+      l.decay = 2;
+    });
+  }, [s, rig, scene]);
+
+  return (
+    <>
+      <primitive object={rig.hemi} />
+      <primitive object={rig.moon} />
+      <primitive object={rig.mt} />
+      {rig.spots.map(({ s: l, t }, i) => (
+        <React.Fragment key={i}>
+          <primitive object={l} />
+          <primitive object={t} />
+        </React.Fragment>
+      ))}
+      {rig.pts.map((p, i) => (
+        <primitive key={i} object={p} />
+      ))}
+    </>
+  );
+};
+
+// ── blending (lamp switching on, set changes, light passing) ─────────────────
+
+const mixN = (a: number, b: number, k: number) => a + (b - a) * k;
+const mix3 = (a: V3, b: V3, k: number): V3 => [mixN(a[0], b[0], k), mixN(a[1], b[1], k), mixN(a[2], b[2], k)];
+const _a = new Color(), _b = new Color();
+export const mixC = (a: string, b: string, k: number) => `#${_a.set(a).lerp(_b.set(b), k).getHexString()}`;
+const mixP = (a: PointL, b: PointL, k: number): PointL => {
+  // a light fading out keeps its position (no sliding across the room)
+  const pos = a.i === 0 ? b.pos : b.i === 0 ? a.pos : mix3(a.pos, b.pos, k);
+  return { pos, color: mixC(a.color, b.color, k), i: mixN(a.i, b.i, k), dist: mixN(a.dist, b.dist, k) };
+};
+const mixS = (a: SpotL, b: SpotL, k: number): SpotL =>
+  a.i === 0 ? { ...b, i: b.i * k } : b.i === 0 ? { ...a, i: a.i * (1 - k) } : { ...b, color: mixC(a.color, b.color, k), i: mixN(a.i, b.i, k) };
+
+export const mixLight = (a: LightState, b: LightState, k: number): LightState => {
+  if (k <= 0) return a;
+  if (k >= 1) return b;
+  return {
+    bg: mixC(a.bg, b.bg, k),
+    fog: { color: mixC(a.fog.color, b.fog.color, k), density: mixN(a.fog.density, b.fog.density, k) },
+    env: mixN(a.env, b.env, k),
+    hemi: { sky: mixC(a.hemi.sky, b.hemi.sky, k), ground: mixC(a.hemi.ground, b.hemi.ground, k), i: mixN(a.hemi.i, b.hemi.i, k) },
+    moon: { dir: a.moon.dir, box: a.moon.box, color: mixC(a.moon.color, b.moon.color, k), i: mixN(a.moon.i, b.moon.i, k) },
+    spots: [mixS(a.spots[0], b.spots[0], k), mixS(a.spots[1], b.spots[1], k)],
+    pts: [0, 1, 2, 3, 4, 5].map((i) => mixP(a.pts[i], b.pts[i], k)) as LightState["pts"],
+  };
+};
+
+==== 4889 project/src/cine/neural/silhouettes.ts
+// 2D silhouettes shared by the memory shadows, the expectation templates and the ending ghosts.
+// Drawn on canvases (alpha masks, white on transparent) and as polylines in a unit box
+// (x −0.5…0.5, y 0…1, y up), so the same shape can be a shadow, a glowing outline or points.
+
+import { canvasTex } from "../mats.ts";
+
+export type Poly = [number, number][];
+
+/** Human standing figure outline (the "pattern" the brain completes). */
+export const HUMAN: Poly = [
+  [0, 1.0], [0.07, 0.985], [0.1, 0.93], [0.09, 0.87], [0.05, 0.835], [0.06, 0.81], [0.2, 0.78], [0.24, 0.72], [0.26, 0.5], [0.24, 0.42],
+  [0.2, 0.44], [0.19, 0.62], [0.16, 0.55], [0.15, 0.3], [0.13, 0.02], [0.03, 0.02], [0.02, 0.3], [0, 0.4], [-0.02, 0.3], [-0.03, 0.02],
+  [-0.13, 0.02], [-0.15, 0.3], [-0.16, 0.55], [-0.19, 0.62], [-0.2, 0.44], [-0.24, 0.42], [-0.26, 0.5], [-0.24, 0.72], [-0.2, 0.78],
+  [-0.06, 0.81], [-0.05, 0.835], [-0.09, 0.87], [-0.1, 0.93], [-0.07, 0.985], [0, 1.0],
+];
+
+/** Kuntilanak: long hair, long gown, floating, arms hanging. */
+export const KUNTI: Poly = [
+  [0, 1.0], [0.08, 0.98], [0.12, 0.92], [0.15, 0.8], [0.19, 0.66], [0.27, 0.55], [0.3, 0.42], [0.26, 0.4], [0.24, 0.5], [0.22, 0.38],
+  [0.28, 0.12], [0.36, 0.0], [0.18, 0.05], [0.06, 0.0], [-0.05, 0.04], [-0.2, 0.0], [-0.34, 0.03], [-0.27, 0.14], [-0.22, 0.38],
+  [-0.24, 0.5], [-0.26, 0.4], [-0.3, 0.42], [-0.27, 0.55], [-0.19, 0.66], [-0.15, 0.8], [-0.12, 0.92], [-0.08, 0.98], [0, 1.0],
+];
+
+/** Pocong: a wrapped shroud tied above the head and at the feet. */
+export const POCONG: Poly = [
+  [0, 1.0], [0.05, 0.96], [0.03, 0.92], [0.11, 0.88], [0.15, 0.78], [0.17, 0.62], [0.17, 0.4], [0.15, 0.2], [0.1, 0.09], [0.06, 0.06],
+  [0.1, 0.0], [-0.1, 0.0], [-0.06, 0.06], [-0.1, 0.09], [-0.15, 0.2], [-0.17, 0.4], [-0.17, 0.62], [-0.15, 0.78], [-0.11, 0.88],
+  [-0.03, 0.92], [-0.05, 0.96], [0, 1.0],
+];
+
+/** Haunted house: crooked roof, a broken shutter, a dead tree. */
+export const RUMAH: Poly = [
+  [-0.5, 0.0], [-0.5, 0.42], [-0.56, 0.42], [-0.2, 0.78], [-0.16, 0.74], [-0.12, 0.9], [-0.05, 0.9], [-0.05, 0.82], [0.12, 0.98],
+  [0.52, 0.5], [0.44, 0.5], [0.46, 0.0], [-0.5, 0.0],
+];
+
+const drawPoly = (g: CanvasRenderingContext2D, poly: Poly, w: number, h: number, pad = 0.06) => {
+  const s = Math.min(w, h) * (1 - pad * 2);
+  g.beginPath();
+  poly.forEach(([x, y], i) => {
+    const px = w / 2 + x * s, py = h - (pad * h + y * s);
+    if (i === 0) g.moveTo(px, py);
+    else g.lineTo(px, py);
+  });
+  g.closePath();
+};
+
+/** Soft-edged white mask of a silhouette (for shadows on walls and dissolving ghosts). */
+export const silhouetteTex = (key: string, poly: Poly, extra?: (g: CanvasRenderingContext2D, w: number, h: number) => void) =>
+  canvasTex(`sil${key}`, 512, 512, (g, w, h) => {
+    g.clearRect(0, 0, w, h);
+    g.filter = "blur(6px)";
+    g.fillStyle = "#fff";
+    drawPoly(g, poly, w, h);
+    g.fill();
+    if (extra) extra(g, w, h);
+    g.filter = "none";
+  });
+
+export const KUNTI_TEX = () =>
+  silhouetteTex("kunti", KUNTI, (g, w, h) => {
+    // hair strands falling past the shoulders
+    g.strokeStyle = "#fff";
+    g.lineWidth = 6;
+    for (let i = -3; i <= 3; i++) {
+      g.beginPath();
+      g.moveTo(w / 2 + i * 9, h * 0.1);
+      g.bezierCurveTo(w / 2 + i * 14, h * 0.3, w / 2 + i * 22, h * 0.42, w / 2 + i * 18, h * 0.58);
+      g.stroke();
+    }
+  });
+export const POCONG_TEX = () => silhouetteTex("pocong", POCONG);
+export const RUMAH_TEX = () =>
+  silhouetteTex("rumah", RUMAH, (g, w, h) => {
+    // windows cut out like eyes
+    g.globalCompositeOperation = "destination-out";
+    g.fillStyle = "#000";
+    g.fillRect(w * 0.3, h * 0.55, w * 0.1, h * 0.12);
+    g.fillRect(w * 0.58, h * 0.5, w * 0.1, h * 0.15);
+    g.fillRect(w * 0.45, h * 0.78, w * 0.1, h * 0.16);
+    g.globalCompositeOperation = "source-over";
+  });
+export const HUMAN_TEX = () => silhouetteTex("human", HUMAN);
+
+/** Resample a closed polyline to n evenly spaced points. */
+export const resample = (poly: Poly, n: number): Poly => {
+  const seg: number[] = [];
+  let L = 0;
+  for (let i = 0; i < poly.length - 1; i++) {
+    const d = Math.hypot(poly[i + 1][0] - poly[i][0], poly[i + 1][1] - poly[i][1]);
+    seg.push(d);
+    L += d;
+  }
+  const out: Poly = [];
+  for (let k = 0; k < n; k++) {
+    let s = (k / (n - 1)) * L, i = 0;
+    while (i < seg.length - 1 && s > seg[i]) { s -= seg[i]; i++; }
+    const f = seg[i] > 0 ? Math.min(1, s / seg[i]) : 0;
+    out.push([poly[i][0] + (poly[i + 1][0] - poly[i][0]) * f, poly[i][1] + (poly[i + 1][1] - poly[i][1]) * f]);
+  }
+  return out;
+};
+
+/** Even-odd point-in-polygon test. */
+export const inside = (poly: Poly, x: number, y: number) => {
+  let c = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [xi, yi] = poly[i], [xj, yj] = poly[j];
+    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) c = !c;
+  }
+  return c;
+};
+
+==== 7846 project/src/cine/Post.tsx
+// CINÉSTORY camera + finishing chain: MSAA → NaN guard → GTAO → bokeh DOF → bloom → PBR Neutral tone
+// map → film grade (lift/gain, saturation, contrast, landscape vignette, lens chromatic fringe, grain,
+// flash, fade to black). The grade is driven per shot and blends across lamp changes and transitions.
+
+import React, { useLayoutEffect, useMemo } from "react";
+import { useFrame, useThree } from "@react-three/fiber";
+import { Color, HalfFloatType, NeutralToneMapping, PerspectiveCamera, Vector2, Vector3, WebGLRenderTarget } from "three";
+import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
+import { GTAOPass } from "three/examples/jsm/postprocessing/GTAOPass.js";
+import { BokehPass } from "three/examples/jsm/postprocessing/BokehPass.js";
+import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
+import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
+import { ShaderPass } from "three/examples/jsm/postprocessing/ShaderPass.js";
+import { FX_LAYER, withoutFx } from "../core/render/Post.tsx";
+import { mixC } from "./Lights.tsx";
+
+import { GRADE0, type Cam, type Grade } from "./types.ts";
+export { GRADE0, type Cam, type Grade };
+
+export const CameraRig: React.FC<{ cam: Cam }> = ({ cam }) => {
+  const { camera } = useThree();
+  useLayoutEffect(() => {
+    const c = camera as PerspectiveCamera;
+    c.position.set(...cam.pos);
+    const f = new Vector3(...cam.target).sub(c.position).normalize();
+    const r = cam.roll ?? 0;
+    // roll about the view axis
+    const up = new Vector3(0, 1, 0);
+    const side = new Vector3().crossVectors(f, up).normalize();
+    const u2 = new Vector3().crossVectors(side, f).normalize();
+    c.up.copy(u2.multiplyScalar(Math.cos(r)).addScaledVector(side, Math.sin(r)));
+    c.lookAt(...cam.target);
+    c.fov = cam.fov;
+    c.near = cam.near ?? 0.05;
+    c.far = cam.far ?? 900;
+    c.updateProjectionMatrix();
+    c.updateMatrixWorld();
+    c.layers.enable(FX_LAYER);
+  }, [cam, camera]);
+  return null;
+};
+
+const NanGuardShader = {
+  uniforms: { tDiffuse: { value: null } },
+  vertexShader: /* glsl */ `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+  fragmentShader: /* glsl */ `uniform sampler2D tDiffuse; varying vec2 vUv;
+    void main(){ vec4 c = texture2D(tDiffuse, vUv);
+      if (any(isnan(c)) || any(isinf(c))) c = vec4(0.0, 0.0, 0.0, 1.0);
+      gl_FragColor = clamp(c, 0.0, 64.0); }`,
+};
+
+const GradeShader = {
+  uniforms: {
+    tDiffuse: { value: null },
+    uTime: { value: 0 },
+    uRes: { value: new Vector2(1920, 1080) },
+    uCA: { value: 0.0012 },
+    uLift: { value: new Vector3() },
+    uGain: { value: new Vector3(1, 1, 1) },
+    uSat: { value: 1 },
+    uContrast: { value: 1 },
+    uVignette: { value: 0.2 },
+    uGrain: { value: 0.015 },
+    uFlash: { value: 0 },
+    uFlashColor: { value: new Color("#fff") },
+    uBlack: { value: 0 },
+  },
+  vertexShader: /* glsl */ `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+  fragmentShader: /* glsl */ `
+    uniform sampler2D tDiffuse; uniform float uTime; uniform vec2 uRes;
+    uniform vec3 uLift; uniform vec3 uGain; uniform float uSat; uniform float uContrast;
+    uniform float uVignette; uniform float uGrain; uniform float uFlash; uniform vec3 uFlashColor; uniform float uBlack; uniform float uCA;
+    varying vec2 vUv;
+    float hash(vec2 p){ p = fract(p * vec2(443.897, 441.423)); p += dot(p, p.yx + 19.19); return fract((p.x + p.y) * p.x); }
+    void main(){
+      vec2 cd = vUv - 0.5;
+      float ca = uCA * dot(cd, cd) * 4.0;
+      vec3 c = vec3(texture2D(tDiffuse, vUv - cd * ca).r, texture2D(tDiffuse, vUv).g, texture2D(tDiffuse, vUv + cd * ca).b);
+      vec3 x = clamp(c, 0.0, 1.0);
+      x = x * uGain + uLift * (1.0 - x);
+      float l = dot(x, vec3(0.2126, 0.7152, 0.0722));
+      x = mix(vec3(l), x, uSat);
+      x = clamp((x - 0.5) * uContrast + 0.5, 0.0, 1.0);
+      x = mix(x, x * x * (3.0 - 2.0 * x), 0.18);
+      vec2 d = (vUv - 0.5) * vec2(1.0, 0.86);
+      x *= 1.0 - uVignette * smoothstep(0.28, 0.82, length(d));
+      float g = hash(vUv * uRes + uTime * 17.0) - 0.5;
+      x += g * uGrain * (0.5 + 0.5 * (1.0 - l));
+      x = mix(x, uFlashColor, clamp(uFlash, 0.0, 1.0));
+      x *= 1.0 - clamp(uBlack, 0.0, 1.0);
+      gl_FragColor = vec4(x, 1.0);
+    }`,
+};
+
+export const FilmPost: React.FC<{ cam: Cam; grade: Grade; frame: number }> = ({ cam, grade, frame }) => {
+  const { gl, scene, camera, size } = useThree();
+  const chain = useMemo(() => {
+    const w = size.width, h = size.height;
+    const rt = new WebGLRenderTarget(w, h, { type: HalfFloatType, samples: 4 });
+    const composer = new EffectComposer(gl, rt);
+    composer.setPixelRatio(1);
+    composer.setSize(w, h);
+    composer.addPass(new RenderPass(scene, camera));
+    composer.addPass(new ShaderPass(NanGuardShader));
+    const gtao = new GTAOPass(scene, camera, w, h);
+    gtao.blendIntensity = 1.0;
+    gtao.updateGtaoMaterial({ radius: 0.35, distanceExponent: 1.6, thickness: 0.6, scale: 1.0, samples: 16, distanceFallOff: 1.0, screenSpaceRadius: false });
+    gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 5, rings: 2, samples: 16 });
+    composer.addPass(withoutFx(gtao, camera));
+    const dof = withoutFx(new BokehPass(scene, camera, { focus: 3, aperture: 0.002, maxblur: 0.008 }), camera);
+    composer.addPass(dof);
+    const bloom = new UnrealBloomPass(new Vector2(w, h), 0.25, 0.5, 0.85);
+    composer.addPass(bloom);
+    composer.addPass(new OutputPass());
+    const g = new ShaderPass(GradeShader);
+    g.uniforms.uRes.value.set(w, h);
+    composer.addPass(g);
+    return { composer, dof, bloom, gtao, g };
+  }, [gl, scene, camera, size.width, size.height]);
+
+  useLayoutEffect(() => {
+    gl.toneMapping = NeutralToneMapping;
+    gl.toneMappingExposure = grade.exposure;
+    const u = chain.dof.uniforms as unknown as Record<string, { value: number }>;
+    const dist = new Vector3(...cam.pos).distanceTo(new Vector3(...cam.target));
+    u.focus.value = cam.focus ?? dist;
+    u.aperture.value = cam.aperture ?? 0;
+    u.maxblur.value = cam.maxBlur ?? 0;
+    chain.dof.enabled = (cam.aperture ?? 0) > 0 && (cam.maxBlur ?? 0) > 0;
+    chain.bloom.strength = grade.bloom;
+    chain.bloom.radius = grade.bloomRadius;
+    chain.bloom.threshold = grade.bloomThreshold;
+    chain.gtao.blendIntensity = grade.ao;
+    chain.gtao.enabled = grade.ao > 0.01;
+    const U = chain.g.uniforms;
+    U.uTime.value = frame % 997;
+    U.uLift.value.set(...grade.lift);
+    U.uGain.value.set(...grade.gain);
+    U.uSat.value = grade.sat;
+    U.uContrast.value = grade.contrast;
+    U.uVignette.value = grade.vignette;
+    U.uGrain.value = grade.grain;
+    U.uFlash.value = grade.flash;
+    U.uFlashColor.value.set(grade.flashColor);
+    U.uBlack.value = grade.black;
+    U.uCA.value = grade.ca;
+  }, [frame, chain, cam, grade, gl]);
+
+  useFrame(() => {
+    chain.composer.render();
+  }, 1);
+  return null;
+};
+
+const mixN = (a: number, b: number, k: number) => a + (b - a) * k;
+export const mixGrade = (a: Grade, b: Grade, k: number): Grade => {
+  if (k <= 0) return a;
+  if (k >= 1) return b;
+  const o = { ...a };
+  for (const key of Object.keys(a) as (keyof Grade)[]) {
+    const va = a[key], vb = b[key];
+    if (typeof va === "number" && typeof vb === "number") (o as Record<string, unknown>)[key] = mixN(va, vb, k);
+    else if (Array.isArray(va) && Array.isArray(vb)) (o as Record<string, unknown>)[key] = [0, 1, 2].map((i) => mixN(va[i], vb[i], k));
+    else if (typeof va === "string" && typeof vb === "string") (o as Record<string, unknown>)[key] = mixC(va, vb, k);
+  }
+  return o;
+};
+
+==== 10769 project/src/cine/set/tex.ts
+// Procedural set textures (drawn once, deterministic, no files): plaster, panel doors, breeze
+// blocks, gypsum ceiling, concrete, LED clock, the phone screen states, poster.
+
+import { canvasTex } from "../mats.ts";
+import { mulberry32 } from "../../kits/worldforge/noise.ts";
+
+/** Mottled wall paint with a little grime toward the bottom (grey, multiplied by the material colour). */
+export const plasterTex = (key: string, rep: [number, number] = [1, 1], grime = 0.25) =>
+  canvasTex(`plaster${key}`, 512, 512, (g, w, h) => {
+    const r = mulberry32(31);
+    g.fillStyle = "#e9e9e9";
+    g.fillRect(0, 0, w, h);
+    for (let k = 0; k < 900; k++) {
+      g.fillStyle = `rgba(${r() > 0.5 ? "255,255,255" : "90,90,90"},${0.015 + r() * 0.03})`;
+      g.beginPath();
+      g.ellipse(r() * w, r() * h, 6 + r() * 40, 4 + r() * 24, r() * 3, 0, Math.PI * 2);
+      g.fill();
+    }
+    const gr = g.createLinearGradient(0, h * 0.55, 0, h);
+    gr.addColorStop(0, "rgba(60,50,40,0)");
+    gr.addColorStop(1, `rgba(60,50,40,${grime})`);
+    g.fillStyle = gr;
+    g.fillRect(0, 0, w, h);
+    for (let k = 0; k < 40; k++) {
+      g.strokeStyle = `rgba(70,60,50,${0.03 + r() * 0.05})`;
+      g.lineWidth = 1 + r() * 2;
+      const x = r() * w;
+      g.beginPath();
+      g.moveTo(x, h * (0.6 + r() * 0.3));
+      g.lineTo(x + (r() - 0.5) * 6, h);
+      g.stroke();
+    }
+  }, rep);
+
+/** Varnished plywood panel door: vertical grain, four recessed panels, wear around the handle. */
+export const doorTex = (key: string, base = "#5a3520") =>
+  canvasTex(`door${key}`, 512, 1024, (g, w, h) => {
+    const r = mulberry32(key.length * 13 + 7);
+    g.fillStyle = base;
+    g.fillRect(0, 0, w, h);
+    for (let k = 0; k < 160; k++) {
+      g.strokeStyle = `rgba(${r() > 0.6 ? "120,80,50" : "25,12,6"},${0.08 + r() * 0.14})`;
+      g.lineWidth = 0.6 + r() * 2.2;
+      const x = r() * w;
+      g.beginPath();
+      g.moveTo(x, 0);
+      g.bezierCurveTo(x + (r() - 0.5) * 30, h * 0.33, x + (r() - 0.5) * 30, h * 0.66, x + (r() - 0.5) * 16, h);
+      g.stroke();
+    }
+    const panel = (x: number, y: number, pw: number, ph: number) => {
+      g.strokeStyle = "rgba(15,8,4,0.7)";
+      g.lineWidth = 7;
+      g.strokeRect(x, y, pw, ph);
+      g.strokeStyle = "rgba(160,110,70,0.25)";
+      g.lineWidth = 3;
+      g.strokeRect(x + 6, y + 6, pw - 12, ph - 12);
+    };
+    panel(60, 60, 170, 400); panel(282, 60, 170, 400);
+    panel(60, 540, 170, 420); panel(282, 540, 170, 420);
+    const gr = g.createRadialGradient(w * 0.9, h * 0.52, 0, w * 0.9, h * 0.52, 120);
+    gr.addColorStop(0, "rgba(20,10,4,0.35)");
+    gr.addColorStop(1, "rgba(20,10,4,0)");
+    g.fillStyle = gr;
+    g.fillRect(0, 0, w, h);
+  });
+
+/** Plank door for the gudang (rougher, paint flaking). */
+export const plankDoorTex = () =>
+  canvasTex("plankdoor", 512, 1024, (g, w, h) => {
+    const r = mulberry32(77);
+    const n = 6;
+    for (let i = 0; i < n; i++) {
+      g.fillStyle = `hsl(${24 + r() * 8}, ${20 + r() * 10}%, ${16 + r() * 7}%)`;
+      g.fillRect((i * w) / n, 0, w / n, h);
+      for (let k = 0; k < 30; k++) {
+        g.strokeStyle = `rgba(0,0,0,${0.1 + r() * 0.2})`;
+        g.lineWidth = 0.5 + r() * 2;
+        const x = (i * w) / n + r() * (w / n);
+        g.beginPath();
+        g.moveTo(x, 0);
+        g.lineTo(x + (r() - 0.5) * 10, h);
+        g.stroke();
+      }
+      g.fillStyle = "rgba(0,0,0,0.7)";
+      g.fillRect((i * w) / n, 0, 4, h);
+    }
+    g.fillStyle = "rgba(40,24,14,0.9)";
+    g.fillRect(0, h * 0.18, w, 40);
+    g.fillRect(0, h * 0.78, w, 40);
+  });
+
+/** Breeze block (roster) pattern: white = solid, black = hole (used as alpha map). */
+export const rosterTex = () =>
+  canvasTex("roster", 512, 128, (g, w, h) => {
+    g.fillStyle = "#fff";
+    g.fillRect(0, 0, w, h);
+    g.fillStyle = "#000";
+    const cell = 64;
+    for (let x = 0; x < w; x += cell) {
+      g.beginPath();
+      g.ellipse(x + cell / 2, h / 2, cell * 0.3, h * 0.36, 0, 0, Math.PI * 2);
+      g.fill();
+      g.fillRect(x + cell * 0.12, h * 0.12, cell * 0.12, h * 0.76);
+      g.fillRect(x + cell * 0.76, h * 0.12, cell * 0.12, h * 0.76);
+    }
+  }, undefined, false);
+
+/** Gypsum ceiling boards with seams. */
+export const ceilTex = (rep: [number, number]) =>
+  canvasTex(`ceil${rep}`, 256, 512, (g, w, h) => {
+    const r = mulberry32(41);
+    g.fillStyle = "#ececea";
+    g.fillRect(0, 0, w, h);
+    for (let k = 0; k < 300; k++) {
+      g.fillStyle = `rgba(0,0,0,${r() * 0.02})`;
+      g.fillRect(r() * w, r() * h, 2 + r() * 8, 2 + r() * 8);
+    }
+    g.fillStyle = "rgba(0,0,0,0.22)";
+    g.fillRect(0, 0, w, 2);
+    g.fillRect(0, 0, 2, h);
+  }, rep);
+
+export const concreteTex = (rep: [number, number]) =>
+  canvasTex(`concrete${rep}`, 512, 512, (g, w, h) => {
+    const r = mulberry32(53);
+    g.fillStyle = "#8c8a86";
+    g.fillRect(0, 0, w, h);
+    for (let k = 0; k < 3000; k++) {
+      g.fillStyle = `rgba(${r() > 0.5 ? "255,255,255" : "0,0,0"},${0.02 + r() * 0.05})`;
+      g.fillRect(r() * w, r() * h, 1 + r() * 4, 1 + r() * 4);
+    }
+    for (let k = 0; k < 12; k++) {
+      g.strokeStyle = `rgba(0,0,0,${0.08 + r() * 0.1})`;
+      g.lineWidth = 1;
+      g.beginPath();
+      let x = r() * w, y = r() * h;
+      g.moveTo(x, y);
+      for (let s = 0; s < 8; s++) { x += (r() - 0.5) * 60; y += (r() - 0.5) * 60; g.lineTo(x, y); }
+      g.stroke();
+    }
+  }, rep);
+
+/** 7-segment LED digits (red), e.g. "02:17"; `colon` toggles the blinking colon. */
+export const ledTex = (text: string, colon: boolean) =>
+  canvasTex(`led${text}${colon}`, 512, 192, (g, w, h) => {
+    g.fillStyle = "#000";
+    g.fillRect(0, 0, w, h);
+    const SEG: Record<string, string> = { "0": "abcdef", "1": "bc", "2": "abged", "3": "abgcd", "4": "fgbc", "5": "afgcd", "6": "afgedc", "7": "abc", "8": "abcdefg", "9": "abcfgd" };
+    const digit = (x: number, ch: string) => {
+      const on = SEG[ch] ?? "";
+      const sw = 70, sh = 130, t = 13, y = 30;
+      const seg = (id: string, x0: number, y0: number, ww: number, hh: number) => {
+        g.fillStyle = on.includes(id) ? "#ff3b2a" : "rgba(255,40,20,0.07)";
+        g.beginPath();
+        g.roundRect(x0, y0, ww, hh, 5);
+        g.fill();
+      };
+      seg("a", x + t, y, sw - 2 * t, t);
+      seg("g", x + t, y + sh / 2 - t / 2, sw - 2 * t, t);
+      seg("d", x + t, y + sh - t, sw - 2 * t, t);
+      seg("f", x, y + t, t, sh / 2 - t);
+      seg("b", x + sw - t, y + t, t, sh / 2 - t);
+      seg("e", x, y + sh / 2, t, sh / 2 - t);
+      seg("c", x + sw - t, y + sh / 2, t, sh / 2 - t);
+    };
+    const chars = text.replace(":", "");
+    const xs = [40, 135, 270, 365];
+    chars.split("").forEach((c, i) => digit(xs[i], c));
+    g.fillStyle = colon ? "#ff3b2a" : "rgba(255,40,20,0.07)";
+    g.beginPath(); g.arc(236, 70, 8, 0, Math.PI * 2); g.fill();
+    g.beginPath(); g.arc(236, 126, 8, 0, Math.PI * 2); g.fill();
+  }, undefined, true);
+
+export type PhoneState = "off" | "notif";
+export type PhoneMsg = { from?: string; text?: string; time?: string; date?: string };
+/** Phone screen: lock screen with one notification (sender + up to two lines). Readable in an insert. */
+export const phoneScreenTex = (state: PhoneState, msg: PhoneMsg = {}) =>
+  canvasTex(`phone${state}${JSON.stringify(msg)}`, 720, 1440, (g, w, h) => {
+    if (state === "off") {
+      g.fillStyle = "#000";
+      g.fillRect(0, 0, w, h);
+      return;
+    }
+    const gr = g.createLinearGradient(0, 0, w, h);
+    gr.addColorStop(0, "#1a2b4a");
+    gr.addColorStop(0.55, "#0e1830");
+    gr.addColorStop(1, "#24183a");
+    g.fillStyle = gr;
+    g.fillRect(0, 0, w, h);
+    // soft wallpaper shapes
+    for (const [x, y, rr, c] of [[180, 420, 260, "rgba(80,120,200,0.18)"], [560, 980, 320, "rgba(120,80,180,0.14)"]] as const) {
+      const rg = g.createRadialGradient(x, y, 0, x, y, rr);
+      rg.addColorStop(0, c);
+      rg.addColorStop(1, "rgba(0,0,0,0)");
+      g.fillStyle = rg;
+      g.fillRect(0, 0, w, h);
+    }
+    g.fillStyle = "#eaf2ff";
+    g.textAlign = "center";
+    g.font = "500 38px Manrope, sans-serif";
+    g.fillText(msg.date ?? "Sabtu, 8 Maret", w / 2, 200);
+    g.font = "300 190px Manrope, sans-serif";
+    g.fillText(msg.time ?? "23.47", w / 2, 390);
+    // notification card
+    const x = 40, y = 520, cw = w - 80, ch = 270;
+    g.fillStyle = "rgba(235,240,250,0.9)";
+    g.beginPath();
+    g.roundRect(x, y, cw, ch, 44);
+    g.fill();
+    g.fillStyle = "#2f8f63";
+    g.beginPath();
+    g.roundRect(x + 34, y + 34, 76, 76, 20);
+    g.fill();
+    g.fillStyle = "#ffffff";
+    g.beginPath();
+    g.ellipse(x + 72, y + 68, 22, 18, 0, 0, Math.PI * 2);
+    g.fill();
+    g.beginPath();
+    g.moveTo(x + 58, y + 80); g.lineTo(x + 52, y + 94); g.lineTo(x + 70, y + 84); g.fill();
+    g.textAlign = "left";
+    g.fillStyle = "#11151d";
+    g.font = "700 44px Manrope, sans-serif";
+    g.fillText(msg.from ?? "Pesan baru", x + 134, y + 70);
+    g.fillStyle = "#59606c";
+    g.font = "500 30px Manrope, sans-serif";
+    g.textAlign = "right";
+    g.fillText("sekarang", x + cw - 36, y + 68);
+    g.textAlign = "left";
+    g.fillStyle = "#1b2029";
+    g.font = "500 38px Manrope, sans-serif";
+    // wrap the message into two lines
+    const words = (msg.text ?? "Kamu sudah sampai?").split(" ");
+    const lines = [""];
+    for (const wd of words) { const tryL = (lines[lines.length - 1] + " " + wd).trim(); if (g.measureText(tryL).width > cw - 72 && lines.length < 2) lines.push(wd); else lines[lines.length - 1] = tryL; }
+    lines.forEach((l, i) => g.fillText(l, x + 36, y + 170 + i * 52));
+    g.fillStyle = "rgba(234,242,255,0.75)";
+    g.font = "500 30px Manrope, sans-serif";
+    g.textAlign = "center";
+    g.fillText("Geser ke atas untuk membuka", w / 2, h - 90);
+  });
+
+/** Band-style poster for a bedroom wall (abstract, no real artwork). */
+export const posterTex = () =>
+  canvasTex("poster", 256, 360, (g, w, h) => {
+    g.fillStyle = "#1f2a33";
+    g.fillRect(0, 0, w, h);
+    g.fillStyle = "#e4b34a";
+    g.beginPath();
+    g.arc(w / 2, h * 0.42, 70, 0, Math.PI * 2);
+    g.fill();
+    g.fillStyle = "#1f2a33";
+    for (let i = 0; i < 6; i++) g.fillRect(0, h * 0.42 + i * 16 - 20, w, 6);
+    g.fillStyle = "#e8e1d2";
+    g.font = "700 30px Manrope, sans-serif";
+    g.textAlign = "center";
+    g.fillText("SENJA", w / 2, h * 0.82);
+    g.font = "500 13px Manrope, sans-serif";
+    g.fillText("LIVE · TOUR 2026", w / 2, h * 0.9);
+  });
+
+export const numberTex = (label: string) =>
+  canvasTex(`num${label}`, 128, 128, (g, w, h) => {
+    g.fillStyle = "#c9c2b0";
+    g.fillRect(0, 0, w, h);
+    g.strokeStyle = "#5a5246";
+    g.lineWidth = 6;
+    g.strokeRect(6, 6, w - 12, h - 12);
+    g.fillStyle = "#2a2622";
+    g.font = "700 74px Manrope, sans-serif";
+    g.textAlign = "center";
+    g.textBaseline = "middle";
+    g.fillText(label, w / 2, h / 2 + 4);
+  });
+
+==== 5586 project/src/director/story.ts
+// story.json — the ONE file written per video. Everything else (blocking, acting, cameras, light, grade,
+// letterbox, UI, sound) is derived from it by the director (compile.ts). Plain data, validated with
+// plain-language errors (validate.ts). Cues: a spoken word ("cahaya", "cahaya#1" = its 2nd occurrence,
+// 0-based) or a number = VO seconds.
+
+import type { CustomLook } from "../cine/character/looks.ts";
+import type { HoldKind } from "../cine/character/pose.ts";
+
+export type Cue = string | number;
+export type Word = [string, number, number];
+
+export const MOODS = ["mystery", "tense", "calm", "memory", "told", "reveal", "science", "warm", "cctv"] as const;
+export type Mood = (typeof MOODS)[number];
+export const CUTS = ["cut", "fade", "dip", "flash"] as const;
+export type Transition = (typeof CUTS)[number];
+
+export const ACTIONS = [
+  "stand", "look", "turn", "walk", "run", "startle", "freeze", "peer", "point", "reach", "wave",
+  "phone", "binoculars", "raise", "think", "nod", "shake", "sigh", "talk", "shiver",
+  "sit", "standUp", "write", "lie", "sleep", "wake", "sitUp",
+  "push", "pickUp", "putDown", "give", "receive", "open", "close", "kneel",
+] as const;
+export type ActionName = (typeof ACTIONS)[number];
+
+export const SHOTS = [
+  "establish", "drone", "wide", "mediumWide", "medium", "cu", "ecu", "ots", "pov", "long", "track", "lead", "profile",
+  "low", "high", "insert", "orbit", "push", "pull", "reveal", "map", "twoShot",
+] as const;
+export type ShotName = (typeof SHOTS)[number];
+
+export const FACES = ["neutral", "calm", "alert", "fear", "panic", "squint", "read", "sleep", "drowsy", "smile", "laugh", "sad", "think", "uneasy", "serious", "relief", "surprised", "curious"] as const;
+export type FaceName = (typeof FACES)[number];
+
+export const PROPS = ["phone", "binoculars", "lantern", "flashlight", "mug", "book"] as const;
+export type PropName = (typeof PROPS)[number];
+export type { HoldKind };
+
+export type Ui =
+  | { type: "title"; text: string; sub?: string; kicker?: string }
+  | { type: "lower"; text: string; sub?: string }
+  | { type: "tag"; text: string; sub?: string; pos?: "tl" | "tr" | "bl" | "br" | "c" }
+  | { type: "callout"; text: string; sub?: string; poi: string }
+  | { type: "card"; title?: string; lines: string[]; pos?: "l" | "r" }
+  | { type: "stamp"; text: string }
+  | { type: "clock"; text: string; sub?: string }
+  | { type: "steps"; items: string[] };
+
+export type ShotSpec = { type: ShotName; subject?: string; target?: string; side?: "left" | "right"; fov?: number };
+
+export type Beat = {
+  at: Cue;
+  /** optional end (otherwise the next beat / scene end) */
+  until?: Cue;
+  do?: ActionName;
+  who?: string | string[];
+  /** a mark name (walk/run/sit destination) */
+  to?: string;
+  /** what to look at / point at / show: a POI name, a mark, or a cast id */
+  target?: string;
+  /** a camera-only beat: show this POI or person (no acting needed) */
+  show?: string;
+  face?: FaceName;
+  shot?: ShotName | ShotSpec;
+  set?: Record<string, number>;
+  /** seconds for set changes to fade (default 0.6) */
+  fade?: number;
+  sfx?: string | string[];
+  ui?: Ui | Ui[];
+  /** music accent + sound hit on this beat */
+  hit?: boolean;
+  /** music drops out during this beat */
+  quiet?: boolean;
+  /** an object moves on its own (rolling, sliding): to a mark / POI / [x, z], over `dur` seconds */
+  move?: { obj: string; to: string | [number, number]; dur?: number; yaw?: number };
+  /** what the action handles: the object pushed / picked up / given, or the door opened */
+  obj?: string;
+};
+
+export type SceneCast = { at: string; do?: "stand" | "sit" | "lie"; face?: FaceName; /** object id held in the hand from the scene start */ holding?: string };
+
+export type Scene = {
+  at: Cue;
+  place: string;
+  time?: string;
+  mood?: Mood;
+  set?: Record<string, number>;
+  cast?: Record<string, SceneCast>;
+  cut?: Transition;
+  beats: Beat[];
+};
+
+export type CastMember = {
+  id: string; look: string; name?: string; custom?: CustomLook; prop?: PropName;
+  /** what the phone shows when this person reads it ("phone" action) */
+  phoneText?: { from?: string; text?: string; time?: string; date?: string };
+};
+
+export type Story = {
+  id: string;
+  title: string;
+  /** resolved by make.mjs when `world` names a world.json (dynamic world) */
+  worldSpec?: import("../gen/spec.ts").WorldSpec;
+  objectSpecs?: import("../gen/spec.ts").ObjectSpec[];
+  vo: { file: string; offset?: number };
+  words: string | Word[];
+  world: string;
+  cast: CastMember[];
+  scenes: Scene[];
+  titleCard?: { at: Cue; until?: Cue; text: string; sub?: string; kicker?: string };
+  disclaimer?: { at: Cue; until?: Cue; text: string };
+  endCard?: { text?: string; sub?: string; seconds?: number };
+  /** seconds of picture after the VO ends before the end card (default 1.2) */
+  tail?: number;
+  /** VO loudness envelope (filled in by make.mjs; 60 values per second) */
+  voenv?: number[];
+  /** the mixed soundtrack in public/ (filled in by make.mjs once the sound step ran) */
+  audio?: string;
+  /** "portrait" 1080×1920 (default) or "landscape" 1920×1080 */
+  format?: "portrait" | "landscape";
+  /** "burn" = captions in the picture (portrait default), "off" = only the .srt (landscape default) */
+  captions?: "burn" | "off";
+  /** the user's brand kit (voynann-brand.json), resolved by make.mjs; false in story.json = no branding */
+  brand?: { brand?: string; handle?: string; cta?: string; colors?: { primary?: string; accent?: string; background?: string }; logoFile?: string; watermark?: boolean; intro?: { seconds?: number } };
+};
+
+==== 5037 project/src/film/Film.tsx
+// One generic renderer for every story: compile once, then per frame — scene, set state, light rig
+// (+ props carried by people), the world's set, the people, the camera, the grade, the overlay, audio.
+
+import React, { useMemo } from "react";
+import { Html5Audio, staticFile, useCurrentFrame, useVideoConfig } from "remotion";
+import { Stage } from "../cine/Stage.tsx";
+import { Lights, type LightState } from "../cine/Lights.tsx";
+import { CameraRig, FilmPost } from "../cine/Post.tsx";
+import { Character } from "../cine/character/Character.tsx";
+import { fromChest } from "../cine/character/rig.ts";
+import { phys } from "../cine/mats.ts";
+import { phoneScreenTex, type PhoneMsg } from "../cine/set/tex.ts";
+import { compile } from "../director/compile.ts";
+import type { Story } from "../director/story.ts";
+import { SETS } from "../worlds/sets.tsx";
+import { studioLight } from "../worlds/studio/data.ts";
+import { MindStudio } from "../worlds/studio/Mind.tsx";
+import { GenSet } from "../gen/GenSet.tsx";
+import { FilmOverlay } from "./Overlay.tsx";
+import { Solid } from "../core/qa/scene-qa.tsx";
+
+const phoneScreen = (msg?: PhoneMsg) => phys(`phoneOn${JSON.stringify(msg ?? {})}`, { color: "#000000", emissive: "#ffffff", emissiveMap: phoneScreenTex("notif", msg), emissiveIntensity: 0.62, roughness: 0.08, clearcoat: 1 });
+
+export const Film: React.FC<{ story: Story; audio?: string }> = ({ story, audio }) => {
+  const plan = useMemo(() => compile(story), [story]);
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+  const t = frame / fps;
+  const S = plan.sceneAt(t);
+  const shot = plan.shotAt(t);
+  const cam = plan.cam(t);
+  const s = plan.setAt(t);
+  const Set = SETS[plan.world.id] ?? (() => null);
+  const people = S.cast.map((who) => ({ who, p: plan.poseOf(who, t) })).filter((x) => x.p);
+  const studio = S.place.kind === "studio";
+  let L: LightState = studio ? studioLight() : plan.world.light(S.place.id, S.time, s, t);
+  // light carried by people: a lantern glows (point 4), a flashlight throws a spot (spot 1)
+  for (const { who, p } of people) {
+    if (!p?.hold) continue;
+    const hand = fromChest(p, p.armR.ik && p.armR.ik.w > 0.3 ? [-p.armR.ik.t[0], p.armR.ik.t[1], p.armR.ik.t[2]] : [-0.2, -0.4, 0.1], plan.specs[who]);
+    if (p.hold.kind === "lantern") L = { ...L, pts: [L.pts[0], L.pts[1], L.pts[2], L.pts[3], { pos: [hand[0], hand[1] - 0.15, hand[2]], color: "#ffb45e", i: 2.4, dist: 6 }, L.pts[5]] };
+    if (p.hold.kind === "flashlight") {
+      const f = [Math.sin(p.yaw), 0, Math.cos(p.yaw)];
+      const aim: [number, number, number] = p.aim ?? [hand[0] + f[0] * 6, hand[1] - 0.9, hand[2] + f[2] * 6];
+      L = { ...L, spots: [L.spots[0], { pos: hand, target: aim, color: "#fff4dc", i: 55, angle: 0.3, penumbra: 0.55, dist: 26 }] };
+    }
+  }
+  // overview shots (establish, drone, map) see through the haze a little more: cinematic licence
+  if (shot.kind === "map" || shot.kind === "drone" || shot.kind === "establish") L = { ...L, fog: { ...L.fog, density: L.fog.density * 0.45 } };
+  const pov = shot.kind === "pov" ? shot.who : undefined;
+  // portrait / phone: a soft eye-light from the camera side on the subject's face in dark scenes, short
+  // reach (it lights the face, not the room) — the night stays dark, the face reads on a small screen
+  let fill = { pos: [0, -60, 0] as [number, number, number], i: 0 };
+  const fp = shot.who ? people.find((x) => x.who === shot.who)?.p : undefined;
+  if (plan.format === "portrait" && fp && S.dark > 0.3 && !studio && !["pov", "long", "establish", "drone", "map"].includes(shot.kind)) {
+    const head: [number, number, number] = [fp.x, fp.y + 1.45 + fp.hipY, fp.z];
+    const d = [cam.pos[0] - head[0], cam.pos[1] - head[1], cam.pos[2] - head[2]], dl = Math.hypot(d[0], d[1], d[2]) || 1;
+    const k = Math.min(1.1, dl);
+    fill = { pos: [head[0] + (d[0] / dl) * k, head[1] + (d[1] / dl) * k + 0.28, head[2] + (d[2] / dl) * k], i: 1.5 * Math.min(1, S.dark) };
+  }
+  return (
+    <Stage overlay={() => <FilmOverlay plan={plan} t={t} cam={cam} />}>
+      <Lights s={L} />
+      <pointLight position={fill.pos} intensity={fill.i} distance={3.2} decay={2} color="#dfe8ff" />
+      {studio ? <MindStudio t={t} /> : plan.built ? (
+        <GenSet b={plan.built} place={S.place.id} time={S.time} s={s} t={t} cam={cam} dyn={plan.objectsAt(t)} area={[S.place.box.min[0], S.place.box.min[2], S.place.box.max[0], S.place.box.max[2]]} />
+      ) : <Set place={S.place.id} time={S.time} s={s} t={t} cam={cam} />}
+      {/* <Solid>: the people for the scene QA (scripts/qa-scene.mjs) — what they carry is part of them */}
+      {people.map(({ who, p }) => <Solid key={who} id={who}><Character spec={plan.specs[who]} pose={p!} t={t} visible={who !== pov} phoneScreen={phoneScreen(plan.story.cast.find((c) => c.id === who)?.phoneText)} /></Solid>)}
+      <CameraRig cam={cam} />
+      <FilmPost cam={cam} grade={plan.grade(t)} frame={frame} />
+      {audio ? <Html5Audio src={staticFile(audio)} /> : null}
+    </Stage>
+  );
+};
+
+==== 6866 project/src/gen/objects/builtin.tsx
+// Built-in organic objects (trees, bushes, ferns, rocks, logs, grass). Each is a short list of parts
+// (geometry + material + local matrix); one object renders the parts, a scatter renders each part as one
+// InstancedMesh over all items (hundreds of trees stay cheap).
+
+import React, { useMemo } from "react";
+import { BufferGeometry, Color, ConeGeometry, CylinderGeometry, IcosahedronGeometry, InstancedMesh, type Material, Matrix4, Quaternion, Vector3, Euler } from "three";
+import { cached } from "../../kits/worldforge/geo.ts";
+import { fbm } from "../../kits/worldforge/noise.ts";
+import { phys } from "../../cine/mats.ts";
+import type { V3 } from "../spec.ts";
+
+type BPart = { geo: BufferGeometry; mat: Material; m: Matrix4; tint?: boolean };
+
+const blob = (key: string, seed: number, k = 0.3) =>
+  cached(`blob${key}`, () => {
+    const g = new IcosahedronGeometry(1, 2);
+    const a = g.attributes.position;
+    for (let i = 0; i < a.count; i++) {
+      const v = new Vector3(a.getX(i), a.getY(i), a.getZ(i));
+      v.multiplyScalar(1 + k * fbm(v.x * 1.6 + seed, v.y * 1.6 + v.z * 1.3, 3));
+      a.setXYZ(i, v.x, v.y, v.z);
+    }
+    g.computeVertexNormals();
+    return g;
+  });
+const M = (p: V3, s: V3 = [1, 1, 1], r: V3 = [0, 0, 0]) => new Matrix4().compose(new Vector3(...p), new Quaternion().setFromEuler(new Euler(...r)), new Vector3(...s));
+const bark = () => phys("bBark", { color: "#4b3a2b", roughness: 0.95 });
+const needle = () => phys("bNeedle", { color: "#ffffff", roughness: 0.85 });
+const leafM = () => phys("bLeaf", { color: "#ffffff", roughness: 0.8, sheen: 0.3, sheenColor: "#d8ffc0" });
+
+export const builtinParts = (id: string): BPart[] =>
+  (({
+    "tree-pine": () => [
+      { geo: cached("bTrunkPine", () => new CylinderGeometry(0.1, 0.2, 4, 10)), mat: bark(), m: M([0, 2, 0]) },
+      ...[0, 1, 2, 3, 4].map((k) => ({ geo: cached("bCone", () => new ConeGeometry(1, 1, 9)), mat: needle(), m: M([0, 2.6 + k * 1.6, 0], [1.65 - k * 0.27, 2.6, 1.65 - k * 0.27], [0, k * 0.7, 0]), tint: true })),
+    ],
+    "tree-broad": () => [
+      { geo: cached("bTrunkBroad", () => new CylinderGeometry(0.16, 0.3, 4.6, 10)), mat: bark(), m: M([0, 2.3, 0]) },
+      { geo: cached("bBranch", () => new CylinderGeometry(0.06, 0.1, 2.2, 7)), mat: bark(), m: M([0.6, 4.2, 0.1], [1, 1, 1], [0, 0, -0.7]) },
+      { geo: cached("bBranch", () => new CylinderGeometry(0.06, 0.1, 2.2, 7)), mat: bark(), m: M([-0.5, 4.0, -0.3], [1, 1, 1], [0.3, 0, 0.8]) },
+      ...([[0, 5.6, 0, 2.1], [1.3, 5.0, 0.4, 1.5], [-1.2, 5.1, -0.3, 1.6], [0.2, 6.6, -0.6, 1.4], [-0.3, 5.2, 1.2, 1.4]] as number[][]).map(([x, y, z, r], k) => ({ geo: blob(`crown${k % 3}`, k * 3.1, 0.35), mat: leafM(), m: M([x, y, z], [r, r * 0.82, r]), tint: true })),
+    ],
+    "tree-palm": () => [
+      ...[0, 1, 2, 3].map((k) => ({ geo: cached("bPalmSeg", () => new CylinderGeometry(0.13, 0.16, 2.2, 9)), mat: bark(), m: M([k * 0.18, 1.1 + k * 2.05, 0], [1, 1, 1], [0, 0, -0.09]) })),
+      ...[0, 1, 2, 3, 4, 5, 6].map((k) => ({ geo: cached("bFrond", () => new ConeGeometry(0.35, 3.0, 4)), mat: leafM(), m: M([0.75 + Math.sin((k / 7) * 6.28) * 1.2, 8.3, Math.cos((k / 7) * 6.28) * 1.2], [1, 1, 0.18], [Math.cos((k / 7) * 6.28) * 1.2, (k / 7) * 6.28, -Math.sin((k / 7) * 6.28) * 1.2]), tint: true })),
+    ],
+    bush: () => ([[0, 0.45, 0, 0.55], [0.35, 0.38, 0.15, 0.42], [-0.3, 0.36, -0.1, 0.45]] as number[][]).map(([x, y, z, r], k) => ({ geo: blob(`bush${k}`, k * 5.7, 0.3), mat: leafM(), m: M([x, y, z], [r, r * 0.85, r]), tint: true })),
+    fern: () => [0, 1, 2, 3, 4, 5].map((k) => ({ geo: cached("bFernLeaf", () => new ConeGeometry(0.09, 0.6, 3)), mat: leafM(), m: M([Math.sin(k) * 0.18, 0.2, Math.cos(k) * 0.18], [1, 1, 0.25], [Math.cos(k) * 1.1, k, -Math.sin(k) * 1.1]), tint: true })),
+    rock: () => [{ geo: blob("rock", 2.2, 0.3), mat: phys("bRock", { color: "#ffffff", roughness: 0.93, flatShading: true }), m: M([0, 0.22, 0], [0.5, 0.32, 0.45]), tint: true }],
+    log: () => [
+      { geo: cached("bLog", () => new CylinderGeometry(0.22, 0.25, 3.0, 12)), mat: bark(), m: M([0, 0.22, 0], [1, 1, 1], [0, 0, Math.PI / 2]) },
+      { geo: blob("moss", 1.1, 0.25), mat: phys("bMoss", { color: "#3f5a2a", roughness: 0.95 }), m: M([0.3, 0.42, 0], [0.9, 0.08, 0.2]) },
+    ],
+    "grass-tuft": () => [0, 1, 2, 3].map((k) => ({ geo: cached("bBlade", () => new ConeGeometry(0.03, 0.35, 3).translate(0, 0.175, 0)), mat: leafM(), m: M([Math.sin(k * 1.7) * 0.06, 0, Math.cos(k * 1.7) * 0.06], [1, 1, 1], [Math.sin(k) * 0.3, 0, Math.cos(k) * 0.3]), tint: true })),
+  }) as Record<string, () => BPart[]>)[id]?.() ?? [];
+
+const TINT: Record<string, [string, string]> = {
+  "tree-pine": ["#1f3a24", "#2d4a2a"], "tree-broad": ["#2f5a2a", "#4a6a2a"], "tree-palm": ["#3f6a2a", "#5a7a30"], bush: ["#2f5228", "#4a6a30"], fern: ["#2f5a28", "#507a34"],
+  rock: ["#5e5a55", "#7a756e"], log: ["#ffffff", "#ffffff"], "grass-tuft": ["#3f5a2a", "#6a7a3a"],
+};
+
+export const Builtin: React.FC<{ id: string; color?: string }> = ({ id, color }) => {
+  const parts = useMemo(() => builtinParts(id), [id]);
+  const tint = color ?? TINT[id]?.[0] ?? "#ffffff";
+  return (
+    <group>
+      {parts.map((p, i) => {
+        const pos = new Vector3(), q = new Quaternion(), s = new Vector3();
+        p.m.decompose(pos, q, s);
+        const mat = p.tint ? phys(`bt${id}${tint}${(p.mat as unknown as { uuid: string }).uuid}`, { color: tint, roughness: 0.85 }) : p.mat;
+        return <mesh key={i} geometry={p.geo} material={mat} position={pos} quaternion={q} scale={s} castShadow receiveShadow />;
+      })}
+    </group>
+  );
+};
+
+/** Many copies of a built-in object as instanced meshes (one per part), tinted per item. */
+export const BuiltinScatter: React.FC<{ id: string; items: { pos: V3; yaw: number; scale: number }[]; seed?: number }> = ({ id, items, seed = 1 }) => {
+  const meshes = useMemo(() => {
+    const parts = builtinParts(id);
+    const [c0, c1] = TINT[id] ?? ["#ffffff", "#ffffff"];
+    const A = new Color(c0), B = new Color(c1), c = new Color();
+    return parts.map((p) => {
+      const mat = p.tint ? phys(`bti${(p.mat as unknown as { uuid: string }).uuid}`, { color: "#ffffff", roughness: 0.85, flatShading: id === "rock" }) : p.mat;
+      const m = new InstancedMesh(p.geo, mat, items.length);
+      items.forEach((it, i) => {
+        const W = new Matrix4().compose(new Vector3(...it.pos), new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), it.yaw), new Vector3(it.scale, it.scale, it.scale)).multiply(p.m);
+        m.setMatrixAt(i, W);
+        if (p.tint) m.setColorAt(i, c.copy(A).lerp(B, ((Math.sin(i * 12.9898 + seed) * 43758.5453) % 1 + 1) % 1));
+      });
+      m.castShadow = id !== "grass-tuft" && id !== "fern";
+      m.receiveShadow = true;
+      return m;
+    });
+  }, [id, items, seed]);
+  return <group>{meshes.map((m, i) => <primitive key={i} object={m} />)}</group>;
+};
+
+==== 6674 project/src/kits/worldforge/heightfield.ts
+// Height-field toolkit: graded grids, bilinear lookup, baked sun visibility + ambient occlusion.
+//
+// A WORLDFORGE terrain is one analytic height function sampled on two graded grids: a dense
+// "near" patch where the camera travels (sub-metre at the hero location, coarser toward its
+// edges) and a coarse "far" patch out to the horizon. Grid spacing grows exponentially away
+// from the origin, so detail is spent where the camera is. Because the sun never moves within
+// a film, terrain self-shadowing and AO are baked once per grid vertex (pure CPU, seeded) —
+// long mountain and dune shadows cost nothing per frame and can never flicker.
+
+export type Axis = {
+  n: number;
+  /** Index of coordinate 0. */
+  c: number;
+  coord: Float64Array;
+  /** Fractional index of a coordinate (inverse of the spacing map). */
+  inv: (x: number) => number;
+};
+
+/** Spacing s(x) = s0 + k·|x|: a graded axis covering [min, max] with x = 0 on a grid line. */
+export const expAxis = (min: number, max: number, s0: number, k: number): Axis => {
+  const uOf = (x: number) => (Math.sign(x) * Math.log(1 + (k * Math.abs(x)) / s0)) / k;
+  const lo = Math.ceil(-uOf(min));
+  const hi = Math.ceil(uOf(max));
+  const n = lo + hi + 1;
+  const coord = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    const u = i - lo;
+    coord[i] = (Math.sign(u) * (s0 / k)) * (Math.exp(k * Math.abs(u)) - 1);
+  }
+  return { n, c: lo, coord, inv: (x: number) => lo + uOf(x) };
+};
+
+export type Grid = {
+  ax: Axis;
+  az: Axis;
+  /** Heights, row-major: index = j * ax.n + i (i along x, j along z). */
+  h: Float32Array;
+  minX: number;
+  maxX: number;
+  minZ: number;
+  maxZ: number;
+};
+
+export const makeGrid = (ax: Axis, az: Axis, height: (x: number, z: number) => number): Grid => {
+  const h = new Float32Array(ax.n * az.n);
+  for (let j = 0; j < az.n; j++) {
+    const z = az.coord[j];
+    for (let i = 0; i < ax.n; i++) h[j * ax.n + i] = height(ax.coord[i], z);
+  }
+  return { ax, az, h, minX: ax.coord[0], maxX: ax.coord[ax.n - 1], minZ: az.coord[0], maxZ: az.coord[az.n - 1] };
+};
+
+export const inside = (g: Grid, x: number, z: number, margin = 0) =>
+  x > g.minX + margin && x < g.maxX - margin && z > g.minZ + margin && z < g.maxZ - margin;
+
+/** Bilinear height lookup in grid-index space (clamped to the grid). */
+export const lookup = (g: Grid, x: number, z: number) => {
+  const nx = g.ax.n, nz = g.az.n;
+  let fi = g.ax.inv(x), fj = g.az.inv(z);
+  if (fi < 0) fi = 0; else if (fi > nx - 1.0001) fi = nx - 1.0001;
+  if (fj < 0) fj = 0; else if (fj > nz - 1.0001) fj = nz - 1.0001;
+  const i = fi | 0, j = fj | 0;
+  // Linear in true coordinates within the cell (the mesh is linear there too).
+  const x0 = g.ax.coord[i], x1 = g.ax.coord[i + 1];
+  const z0 = g.az.coord[j], z1 = g.az.coord[j + 1];
+  let tx = (x - x0) / (x1 - x0), tz = (z - z0) / (z1 - z0);
+  tx = tx < 0 ? 0 : tx > 1 ? 1 : tx;
+  tz = tz < 0 ? 0 : tz > 1 ? 1 : tz;
+  const k = j * nx + i;
+  const a = g.h[k] + (g.h[k + 1] - g.h[k]) * tx;
+  const b = g.h[k + nx] + (g.h[k + nx + 1] - g.h[k + nx]) * tx;
+  return a + (b - a) * tz;
+};
+
+/** Height at any point: the near grid where it exists, otherwise the far grid. */
+export const makeWorldHeight = (near: Grid, far: Grid) => (x: number, z: number) =>
+  inside(near, x, z) ? lookup(near, x, z) : lookup(far, x, z);
+
+export type BakeOpts = {
+  /** Unit vector toward the sun. */
+  sun: [number, number, number];
+  /** Highest point in the world: rays above it can stop. */
+  maxH: number;
+  maxDist: number;
+  /** Penumbra half-width as a slope (tan of angle). */
+  soft: number;
+};
+
+/**
+ * Sun visibility per grid vertex, 0..1 with soft penumbrae: march toward the sun and keep the
+ * smallest clearance angle between the ray and the terrain.
+ */
+export const bakeSun = (g: Grid, height: (x: number, z: number) => number, o: BakeOpts) => {
+  const [lx, ly, lz] = o.sun;
+  const lh = Math.hypot(lx, lz);
+  const dx = lx / lh, dz = lz / lh, tanE = ly / lh;
+  const nx = g.ax.n, nz = g.az.n;
+  const out = new Float32Array(nx * nz);
+  for (let j = 0; j < nz; j++) {
+    const z = g.az.coord[j];
+    const sz = j > 0 ? z - g.az.coord[j - 1] : g.az.coord[1] - z;
+    for (let i = 0; i < nx; i++) {
+      const x = g.ax.coord[i];
+      const sx = i > 0 ? x - g.ax.coord[i - 1] : g.ax.coord[1] - x;
+      const spacing = Math.max(sx, sz);
+      const h0 = g.h[j * nx + i] + 0.12 + 0.04 * spacing;
+      let vis = 1;
+      let s = spacing * 0.8;
+      while (s < o.maxDist) {
+        const ry = h0 + s * tanE;
+        if (ry > o.maxH) break;
+        const th = height(x + dx * s, z + dz * s);
+        const v = 0.5 + (ry - th) / s / (2 * o.soft);
+        if (v < vis) {
+          vis = v;
+          if (vis <= 0) { vis = 0; break; }
+        }
+        s = s * 1.045 + 0.3 * spacing;
+      }
+      out[j * nx + i] = vis > 1 ? 1 : vis;
+    }
+  }
+  return out;
+};
+
+/** Horizon-based ambient occlusion per vertex (8 directions, exponential steps). */
+export const bakeAO = (g: Grid, height: (x: number, z: number) => number, radius: number, strength: number) => {
+  const nx = g.ax.n, nz = g.az.n;
+  const out = new Float32Array(nx * nz);
+  const dirs = Array.from({ length: 8 }, (_, k) => [Math.cos((k / 8) * Math.PI * 2 + 0.3), Math.sin((k / 8) * Math.PI * 2 + 0.3)]);
+  const steps: number[] = [];
+  for (let s = 1.2; s < radius; s *= 1.6) steps.push(s);
+  for (let j = 0; j < nz; j++) {
+    const z = g.az.coord[j];
+    for (let i = 0; i < nx; i++) {
+      const x = g.ax.coord[i];
+      const h0 = g.h[j * nx + i];
+      let occ = 0;
+      for (const [cx, cz] of dirs) {
+        let m = 0;
+        for (const s of steps) {
+          const t = (height(x + cx * s, z + cz * s) - h0) / s;
+          if (t > m) m = t;
+        }
+        occ += m / Math.sqrt(1 + m * m);
+      }
+      const ao = 1 - (occ / 8) * strength;
+      out[j * nx + i] = ao < 0 ? 0 : ao;
+    }
+  }
+  return out;
+};
+
+/** Grid-space normal (world units), written into `out` as xyz per vertex. */
+export const gridNormals = (g: Grid) => {
+  const nx = g.ax.n, nz = g.az.n;
+  const out = new Float32Array(nx * nz * 3);
+  for (let j = 0; j < nz; j++) {
+    const j0 = j > 0 ? j - 1 : j, j1 = j < nz - 1 ? j + 1 : j;
+    const dz = g.az.coord[j1] - g.az.coord[j0];
+    for (let i = 0; i < nx; i++) {
+      const i0 = i > 0 ? i - 1 : i, i1 = i < nx - 1 ? i + 1 : i;
+      const dx = g.ax.coord[i1] - g.ax.coord[i0];
+      const gx = (g.h[j * nx + i1] - g.h[j * nx + i0]) / dx;
+      const gz = (g.h[j1 * nx + i] - g.h[j0 * nx + i]) / dz;
+      const l = Math.hypot(gx, 1, gz);
+      const k = (j * nx + i) * 3;
+      out[k] = -gx / l;
+      out[k + 1] = 1 / l;
+      out[k + 2] = -gz / l;
+    }
+  }
+  return out;
+};
+
+==== 3442 project/src/kits/worldforge/noise.ts
+// Seeded, deterministic noise for world-building. Every function is a pure function of its
+// inputs (no Math.random), so terrain, scatter and textures are identical in every render tab.
+
+export const mulberry32 = (seed: number) => {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+};
+
+/** Integer hash → [0, 1). */
+export const hash2 = (x: number, y: number, seed = 0) => {
+  let h = (Math.imul(x | 0, 374761393) + Math.imul(y | 0, 668265263) + Math.imul(seed | 0, 2147483647)) | 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  h ^= h >>> 16;
+  return (h >>> 0) / 4294967296;
+};
+
+// 2D gradient (Perlin) noise with a seeded permutation table.
+const P = new Uint16Array(512);
+const GX = new Float32Array(256);
+const GY = new Float32Array(256);
+{
+  const rnd = mulberry32(0x6a52);
+  const p = Array.from({ length: 256 }, (_, i) => i);
+  for (let i = 255; i > 0; i--) {
+    const j = Math.floor(rnd() * (i + 1));
+    [p[i], p[j]] = [p[j], p[i]];
+  }
+  for (let i = 0; i < 512; i++) P[i] = p[i & 255];
+  for (let i = 0; i < 256; i++) {
+    const a = rnd() * Math.PI * 2;
+    GX[i] = Math.cos(a);
+    GY[i] = Math.sin(a);
+  }
+}
+
+/** Perlin noise, roughly in [-1, 1]. */
+export const noise2 = (x: number, y: number) => {
+  const xi = Math.floor(x), yi = Math.floor(y);
+  const xf = x - xi, yf = y - yi;
+  const X = xi & 255, Y = yi & 255;
+  const a = P[X] + Y, b = P[X + 1] + Y;
+  const g00 = P[a], g01 = P[a + 1], g10 = P[b], g11 = P[b + 1];
+  const d00 = GX[g00] * xf + GY[g00] * yf;
+  const d10 = GX[g10] * (xf - 1) + GY[g10] * yf;
+  const d01 = GX[g01] * xf + GY[g01] * (yf - 1);
+  const d11 = GX[g11] * (xf - 1) + GY[g11] * (yf - 1);
+  const u = xf * xf * xf * (xf * (xf * 6 - 15) + 10);
+  const v = yf * yf * yf * (yf * (yf * 6 - 15) + 10);
+  const x0 = d00 + (d10 - d00) * u;
+  const x1 = d01 + (d11 - d01) * u;
+  return (x0 + (x1 - x0) * v) * 1.414;
+};
+
+// Octaves are rotated ~37° against each other so the lattice never lines up.
+const RC = 0.8, RS = 0.6;
+
+/** Fractal sum, roughly in [-1, 1]. */
+export const fbm = (x: number, y: number, oct: number, gain = 0.5) => {
+  let s = 0, a = 1, n = 0;
+  for (let i = 0; i < oct; i++) {
+    s += a * noise2(x, y);
+    n += a;
+    const nx = (RC * x - RS * y) * 2.03 + 17.1;
+    y = (RS * x + RC * y) * 2.03 + 3.7;
+    x = nx;
+    a *= gain;
+  }
+  return s / n;
+};
+
+/** Ridged multifractal in [0, 1]: sharp crests, eroded-looking valleys. */
+export const ridged = (x: number, y: number, oct: number, gain = 0.5) => {
+  let s = 0, a = 1, n = 0, w = 1;
+  for (let i = 0; i < oct; i++) {
+    let r = 1 - Math.abs(noise2(x, y));
+    r *= r;
+    r *= w;
+    w = Math.min(1, r * 1.8);
+    s += a * r;
+    n += a;
+    const nx = (RC * x - RS * y) * 2.07 + 31.3;
+    y = (RS * x + RC * y) * 2.07 + 7.9;
+    x = nx;
+    a *= gain;
+  }
+  return s / n;
+};
+
+export const clamp01 = (x: number) => (x < 0 ? 0 : x > 1 ? 1 : x);
+export const smooth = (a: number, b: number, x: number) => {
+  const t = clamp01((x - a) / (b - a));
+  return t * t * (3 - 2 * t);
+};
+export const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+/** Polynomial smooth minimum. */
+export const smin = (a: number, b: number, k: number) => {
+  const h = clamp01(0.5 + (0.5 * (b - a)) / k);
+  return lerp(b, a, h) - k * h * (1 - h);
+};
+
+==== 10787 project/src/worlds/coast/data.ts
+// Coast world, data side: places (marks, POIs, camera space), set props and the light rig per time.
+
+import { P_OFF, S_OFF, type LightState, type PointL } from "../../cine/types.ts";
+import type { Place, SetState, WorldData } from "../types.ts";
+import { BED_AT, BENCH, BOAT, COTTAGE, C_DOOR, C_WIN, DECK_Y, DESK, DESK_TOP, LAMP, LANTERN, LH, MOON, SEA_LIGHT, SUN_DAWN, TOP, beamAngle, ground } from "./layout.ts";
+
+const SEA = { sea: [-40, 1, -200] as [number, number, number], light: SEA_LIGHT, horizon: [0, 2, -600] as [number, number, number], boat: [BOAT[0], 1.5, BOAT[2]] as [number, number, number] };
+const towerSolid = { min: [-LH.r0 - 0.4, -8, -LH.r0 - 0.4] as [number, number, number], max: [LH.r0 + 0.4, DECK_Y - 0.1, LH.r0 + 0.4] as [number, number, number] };
+const lanternSolid = { min: [-LANTERN.r - 0.15, DECK_Y, -LANTERN.r - 0.15] as [number, number, number], max: [LANTERN.r + 0.15, LANTERN.y1 + 1.6, LANTERN.r + 0.15] as [number, number, number] };
+const cottageSolid = { min: [COTTAGE.x0 - 0.2, TOP - 2, COTTAGE.z0 - 0.2] as [number, number, number], max: [COTTAGE.x1 + 0.2, TOP + COTTAGE.h + 1.9, COTTAGE.z1 + 0.2] as [number, number, number] };
+
+const cliff: Place = {
+  id: "cliff", doc: "the headland outside: lighthouse, keeper's cottage, bench and fence at the cliff edge, the open sea below",
+  kind: "exterior", floor: TOP,
+  marks: {
+    "cottage-door": { p: [6.3, C_DOOR.z], yaw: -Math.PI / 2, doc: "outside the cottage door" },
+    "lighthouse-door": { p: [3.2, 0], yaw: -Math.PI / 2, doc: "at the lighthouse door" },
+    path: { p: [4.6, -2.8], yaw: Math.PI, doc: "on the path between the buildings, facing the sea" },
+    edge: { p: [2.4, -6.7], yaw: Math.PI, doc: "at the fence on the cliff edge, facing the sea" },
+    "edge-left": { p: [-3.2, -6.3], yaw: Math.PI, doc: "further left along the fence" },
+    bench: { p: [BENCH[0], BENCH[2] + 0.12], yaw: Math.PI, seat: 0.45, doc: "the bench facing the sea (sit)" },
+  },
+  pois: { ...SEA, "lighthouse-top": [0, LANTERN.y0 + 1.5, 0], lighthouse: [0, TOP + 8, 0], cottage: [10, TOP + 1.6, 0], "cottage-window": [C_WIN.x, TOP + 1.6, COTTAGE.z0], "cottage-door": [COTTAGE.x0, TOP + 1.1, C_DOOR.z], bench: [BENCH[0], TOP + 0.5, BENCH[2]], moon: [MOON[0] * 500, MOON[1] * 500, MOON[2] * 500] },
+  box: { min: [-60, TOP - 6, -120], max: [60, 70, 60] },
+  solids: [towerSolid, cottageSolid],
+  ground,
+  establish: { center: [2, TOP + 8, -3], radius: 42, height: 9, yaw: 2.4 },
+  view: "sea", ambience: "coast", surface: "grass", reverb: 0.1,
+};
+
+const gallery: Place = {
+  id: "gallery", doc: "the balcony around the lamp room at the top of the lighthouse, railing, the sea far below",
+  kind: "exterior", floor: DECK_Y,
+  marks: {
+    "gallery-sea": { p: [0.35, -1.95], y: DECK_Y, yaw: Math.PI, doc: "at the railing facing the sea" },
+    "gallery-left": { p: [-1.75, -1.0], y: DECK_Y, yaw: Math.PI + 0.9, doc: "railing, left side" },
+    "gallery-door": { p: [1.95, 0.4], y: DECK_Y, yaw: -Math.PI / 2, doc: "by the lamp-room door" },
+  },
+  pois: { ...SEA, lamp: LAMP, cottage: [10, TOP + 1.6, 0], below: [2, TOP, -8] },
+  box: { min: [-30, DECK_Y - 3, -30], max: [30, DECK_Y + 25, 30] },
+  solids: [towerSolid, lanternSolid],
+  ground,
+  establish: { center: [0, DECK_Y + 1.2, 0], radius: 9, height: 4, yaw: 2.3 },
+  view: "sea", ambience: "gallery", surface: "metal", reverb: 0.05,
+};
+
+const cottage: Place = {
+  id: "cottage", doc: "inside the keeper's cottage: desk with logbook, oil lamp and radio under the sea window, bed, door",
+  kind: "interior", floor: COTTAGE.y,
+  marks: {
+    desk: { p: [DESK[0], DESK[2] + 0.72], y: COTTAGE.y, yaw: Math.PI, seat: 0.46, doc: "the chair at the desk, facing the window (sit)" },
+    window: { p: [11.55, -1.75], y: COTTAGE.y, yaw: Math.PI, doc: "standing at the window" },
+    door: { p: [7.75, C_DOOR.z], y: COTTAGE.y, yaw: Math.PI / 2, doc: "just inside the door" },
+    middle: { p: [9.4, 0.4], y: COTTAGE.y, yaw: Math.PI, doc: "middle of the room" },
+    bed: { p: [BED_AT[0], BED_AT[2]], y: COTTAGE.y, yaw: -Math.PI / 2, bed: { head: [12.65, BED_AT[2]], y: 0.58 }, doc: "the bed (lie / sit up / wake)" },
+  },
+  pois: { ...SEA, window: [C_WIN.x, COTTAGE.y + 1.5, COTTAGE.z0], logbook: [DESK[0] - 0.15, COTTAGE.y + DESK_TOP + 0.02, DESK[2] + 0.05], lamp: [DESK[0] + 0.5, COTTAGE.y + DESK_TOP + 0.2, DESK[2] - 0.05], radio: [DESK[0] - 0.55, COTTAGE.y + DESK_TOP + 0.12, DESK[2] - 0.1], door: [COTTAGE.x0, COTTAGE.y + 1.1, C_DOOR.z], bed: [BED_AT[0], COTTAGE.y + 0.6, BED_AT[2]] },
+  box: { min: [COTTAGE.x0 + 0.3, COTTAGE.y + 0.3, COTTAGE.z0 + 0.3], max: [COTTAGE.x1 - 0.3, COTTAGE.y + COTTAGE.h - 0.2, COTTAGE.z1 - 0.3] },
+  solids: [
+    { min: [DESK[0] - 0.7, COTTAGE.y, DESK[2] - 0.35], max: [DESK[0] + 0.7, COTTAGE.y + DESK_TOP + 0.3, DESK[2] + 0.35] },
+    { min: [BED_AT[0] - 1.0, COTTAGE.y, BED_AT[2] - 0.5], max: [BED_AT[0] + 1.0, COTTAGE.y + 0.7, BED_AT[2] + 0.5] },
+  ],
+  establish: { center: [10, COTTAGE.y + 1.1, -0.6], radius: 2.6, height: 1.6, yaw: -0.6 },
+  view: "window", window: "window", ambience: "cottage", surface: "wood", reverb: 0.25,
+};
+
+const sea: Place = {
+  id: "sea", doc: "out on the water near the fishing boat (outrigger perahu with a lamp pole); the headland far behind",
+  kind: "exterior", floor: 0,
+  marks: {},
+  pois: { boat: [BOAT[0], 1.5, BOAT[2]], lamps: [BOAT[0], 4.1, BOAT[2]], lighthouse: [0, LANTERN.y0 + 1.5, 0], cliff: [2, TOP, -8], horizon: [0, 2, -600] },
+  box: { min: [-140, 0.9, -330], max: [60, 80, -60] },
+  solids: [{ min: [BOAT[0] - 5, -2, BOAT[2] - 6], max: [BOAT[0] + 5, 5, BOAT[2] + 6] }],
+  establish: { center: [BOAT[0], 2, BOAT[2]], radius: 26, height: 7, yaw: 0.9 },
+  view: "boat", ambience: "sea", surface: "wood", reverb: 0.0,
+};
+
+type TimeLook = { bg: string; fog: string; hemiSky: string; hemiGround: string; hemi: number; key: string; keyI: number; dir: [number, number, number]; env: number; fill: string; dark: number };
+const TIMES: Record<string, TimeLook> = {
+  night: { bg: "#050913", fog: "#0c1626", hemiSky: "#2b3f66", hemiGround: "#0b0c0e", hemi: 0.5, key: "#a8c0ff", keyI: 2.4, dir: MOON, env: 0.05, fill: "#3e5c96", dark: 1 },
+  dusk: { bg: "#2a2a3e", fog: "#6a5a68", hemiSky: "#7a7aa0", hemiGround: "#2a2018", hemi: 0.9, key: "#ffb27a", keyI: 2.6, dir: [0.6, 0.12, -0.78], env: 0.18, fill: "#8a6a7a", dark: 0.6 },
+  dawn: { bg: "#5a6a88", fog: "#9a9aa8", hemiSky: "#a8b8d8", hemiGround: "#3a3028", hemi: 1.1, key: "#ffd2a0", keyI: 3.0, dir: SUN_DAWN, env: 0.3, fill: "#a0a8c0", dark: 0.35 },
+  day: { bg: "#9ab8d8", fog: "#b8c8d8", hemiSky: "#cfe0f2", hemiGround: "#5a5040", hemi: 1.4, key: "#fff4e0", keyI: 3.4, dir: [0.4, 0.75, -0.5], env: 0.5, fill: "#c0d0e0", dark: 0 },
+};
+
+const pt = (pos: [number, number, number], color: string, i: number, dist: number): PointL => (i > 0.001 ? { pos, color, i, dist } : P_OFF);
+
+const light = (place: string, time: string, s: SetState, t: number): LightState => {
+  const T = TIMES[time] ?? TIMES.night;
+  const fog = s.fog ?? 0.3, beam = s.beam ?? 1, lamp = s.lamp ?? 1, seaL = s.seaLight ?? 0, boat = s.boat ?? 0;
+  const dark = T.dark;
+  if (place === "cottage") {
+    // the lamp beam sweeps past the sea window twice a revolution: a cold flash through the glass
+    const a = beamAngle(t), toWin = Math.atan2(C_WIN.x, COTTAGE.z0);
+    const flash = beam * dark * Math.max(0, Math.cos(a - toWin)) ** 40 + beam * dark * Math.max(0, Math.cos(a + Math.PI - toWin)) ** 40;
+    return {
+      bg: T.bg, fog: { color: T.fog, density: 0.0035 + 0.011 * fog }, env: T.env * 0.6 + 0.03,
+      hemi: { sky: T.hemiSky, ground: "#1a120c", i: T.hemi * 0.55 },
+      moon: { dir: T.dir, color: T.key, i: T.keyI * 0.75, box: { min: [COTTAGE.x0, COTTAGE.y - 0.2, COTTAGE.z0 - 0.5], max: [COTTAGE.x1, COTTAGE.y + COTTAGE.h, COTTAGE.z1] } },
+      spots: [S_OFF, S_OFF],
+      pts: [
+        pt([DESK[0] + 0.5, COTTAGE.y + DESK_TOP + 0.3, DESK[2] + 0.1], "#ffb257", 1.7 * lamp * (0.4 + 0.6 * dark), 6),
+        pt([DESK[0] + 0.3, COTTAGE.y + COTTAGE.h - 0.1, DESK[2] + 0.8], "#ff9a50", 0.7 * lamp * dark, 6),
+        pt([C_WIN.x, COTTAGE.y + 1.6, COTTAGE.z0 + 0.6], T.fill, 0.6 + 0.6 * (1 - dark), 4.5),
+        pt([C_WIN.x, COTTAGE.y + 1.5, COTTAGE.z0 + 1.4], "#fff2d8", 3 * flash, 7),
+        P_OFF, P_OFF,
+      ],
+    };
+  }
+  const gal = place === "gallery";
+  const atSea = place === "sea";
+  const box = atSea ? { min: [BOAT[0] - 10, -2, BOAT[2] - 10] as [number, number, number], max: [BOAT[0] + 10, 8, BOAT[2] + 10] as [number, number, number] } : gal ? { min: [-4, DECK_Y - 1, -4] as [number, number, number], max: [4, DECK_Y + 4, 4] as [number, number, number] } : { min: [-14, TOP - 3, -12] as [number, number, number], max: [15, TOP + 18, 6] as [number, number, number] };
+  return {
+    bg: T.bg, fog: { color: T.fog, density: 0.0035 + 0.011 * fog }, env: T.env,
+    hemi: { sky: T.hemiSky, ground: T.hemiGround, i: T.hemi },
+    moon: { dir: T.dir, color: T.key, i: T.keyI, box },
+    spots: [
+      dark > 0.2 ? { pos: [COTTAGE.x0 - 0.35, TOP + 2.55, C_DOOR.z], target: [COTTAGE.x0 - 2.2, TOP, C_DOOR.z], color: "#ffb76e", i: 7 * lamp * dark, angle: 0.95, penumbra: 0.8, dist: 10 } : S_OFF,
+      S_OFF,
+    ],
+    pts: [
+      pt(LAMP, "#ffdcaa", (gal ? 1.6 : 9) * beam * (0.3 + 0.7 * dark), gal ? 6 : 22),
+      pt([C_WIN.x, TOP + 1.5, COTTAGE.z0 - 0.7], "#ffb46a", 1.4 * lamp * dark, 6),
+      pt([SEA_LIGHT[0], SEA_LIGHT[1] + 1, SEA_LIGHT[2] + 3], "#ffe9c0", 60 * Math.max(seaL, boat), 70),
+      pt([BOAT[0] + 6, 6, BOAT[2] + 10], "#ffe2b0", 40 * boat, 30),
+      P_OFF,
+      pt(atSea ? [BOAT[0] + 8, 10, BOAT[2] + 14] : gal ? [2.5, DECK_Y + 2.5, -3] : [4, TOP + 5, -4], T.fill, 0.8, gal ? 9 : 26),
+    ],
+  };
+};
+
+export const COAST: WorldData = {
+  id: "coast",
+  doc: "a rocky headland with a red-and-white lighthouse, the keeper's cottage and the open sea (Indonesian coast)",
+  places: { cliff, gallery, cottage, sea },
+  times: ["night", "dusk", "dawn", "day"],
+  props: {
+    beam: { default: 1, doc: "lighthouse lamp turning, beams sweep the sea (0 off, 1 on)", sfx: { up: "machine", down: "click" } },
+    lamp: { default: 1, doc: "oil lamp in the cottage + porch light (0 off, 1 on)", sfx: { up: "click", down: "click" } },
+    seaLight: { default: 0, doc: "the light far out at sea (0 none, 1 bright); it bobs and seems to blink", sfx: { up: "shimmer" } },
+    boat: { default: 0, doc: "the fishing boat under the sea light is revealed and lit (0 hidden in the dark, 1 clearly visible)", sfx: { up: "reveal" } },
+    fog: { default: 0.3, doc: "sea fog (0 clear, 1 thick; the sea light gets a big halo)" },
+    waves: { default: 1, doc: "swell height (0.5 calm, 1 normal, 1.6 rough)" },
+    door: { default: 0, doc: "cottage door (0 shut, 1 open)", sfx: { up: "door-open", down: "door-close" } },
+  },
+  light,
+};
+
+==== 4725 project/src/worlds/kos/set/Gudang.tsx
+// The gudang (storage room) behind the end wall — used for the "two people, same room" experiment.
+// Same building: its door is the gudang door at the end of the hallway, its vent is the hallway vent.
+
+import React from "react";
+import { box, cyl, sphere, torus } from "../../../kits/worldforge/geo.ts";
+import { basic, phys } from "../../../cine/mats.ts";
+import { CEIL, END_Z, GUDANG, VENT, WALL } from "../layout.ts";
+import { HoledWall, MAT, Slab } from "./parts.tsx";
+import type { KosState } from "./Kos.tsx";
+
+export const GUD = { x0: -0.95, x1: 1.75, z0: -18.2, z1: END_Z - WALL };
+export const GUD_SWITCH: [number, number, number] = [GUDANG.x - GUDANG.w / 2 - 0.22, 1.3, GUD.z1 - 0.012];
+export const GUD_BULB: [number, number, number] = [0.4, CEIL - 0.35, -16.7];
+
+export const Gudang: React.FC<{ s: KosState }> = ({ s }) => {
+  const wood = MAT.matte("#6b5440", 0.8);
+  const card = (c: string) => MAT.matte(c, 0.9);
+  const bulbOn = (s.gudang ?? 0) > 1.5 ? 1 : 0;
+  return (
+    <group>
+      <Slab min={[GUD.x0, -0.1, GUD.z0]} max={[GUD.x1, 0, GUD.z1]} m={MAT.concrete([2, 2])} cast={false} />
+      <group visible={s.roof !== false}>
+        <Slab min={[GUD.x0, CEIL, GUD.z0]} max={[GUD.x1, CEIL + 0.08, GUD.z1]} m={MAT.matte("#8d8a80", 0.95)} />
+      </group>
+      <HoledWall axis="z" c={GUD.x0 - WALL / 2} a0={GUD.z1} a1={GUD.z0} holes={[]} dado={false} />
+      <HoledWall axis="z" c={GUD.x1 + WALL / 2} a0={GUD.z1} a1={GUD.z0} holes={[]} dado={false} />
+      <HoledWall axis="x" c={GUD.z0 - WALL / 2} a0={GUD.x0 - WALL} a1={GUD.x1 + WALL} holes={[{ a0: 0.2, a1: 1.0, y0: 1.5, y1: 2.2 }]} dado={false} />
+      {/* back window glow + bars */}
+      <mesh geometry={box(0.8, 0.7, 0.001, 0)} material={basic("gudWin", { color: "#26395c" })} position={[0.6, 1.85, GUD.z0 - 0.2]} />
+      {[0.3, 0.5, 0.7, 0.9].map((x) => (
+        <mesh key={x} geometry={cyl(0.008, 0.008, 0.7, 6)} material={MAT.steel()} position={[x, 1.85, GUD.z0 - 0.05]} castShadow />
+      ))}
+      {/* shelves with boxes along the left wall */}
+      {[0.35, 0.95, 1.55].map((y, i) => (
+        <group key={y}>
+          <Slab min={[GUD.x0, y - 0.02, -17.9]} max={[GUD.x0 + 0.45, y, -15.6]} m={wood} />
+          {[0, 1, 2].map((k) => (
+            <mesh key={k} geometry={box(0.36, 0.28 + 0.06 * ((i + k) % 2), 0.4 + 0.1 * (k % 2), 0.01)} material={card(["#a88a5e", "#8f7550", "#b49a6a"][(i + k) % 3])} position={[GUD.x0 + 0.22, y + 0.15, -17.5 + k * 0.7]} rotation={[0, (k - 1) * 0.06, 0]} castShadow receiveShadow />
+          ))}
+        </group>
+      ))}
+      {[-17.9, -15.6].map((z) => (
+        <Slab key={z} min={[GUD.x0, 0, z - 0.02]} max={[GUD.x0 + 0.45, 1.6, z + 0.02]} m={wood} />
+      ))}
+      {/* an old bicycle against the right wall */}
+      <group position={[GUD.x1 - 0.25, 0, -17.0]} rotation={[0, Math.PI / 2, 0.06]}>
+        {[-0.5, 0.5].map((z) => (
+          <mesh key={z} geometry={torus(0.32, 0.02, 8, 36)} material={MAT.matte("#151515", 0.8)} position={[z, 0.34, 0]} castShadow />
+        ))}
+        <mesh geometry={cyl(0.015, 0.015, 1.0, 8)} material={MAT.matte("#7a2a24", 0.4)} position={[0, 0.62, 0]} rotation={[0, 0, Math.PI / 2 + 0.15]} castShadow />
+        <mesh geometry={cyl(0.015, 0.015, 0.6, 8)} material={MAT.matte("#7a2a24", 0.4)} position={[-0.25, 0.5, 0]} rotation={[0, 0, 0.6]} castShadow />
+        <mesh geometry={box(0.22, 0.05, 0.1, 0.02)} material={MAT.matte("#222", 0.6)} position={[-0.28, 0.82, 0]} castShadow />
+      </group>
+      {/* a rolled mattress, paint cans, a bucket */}
+      <mesh geometry={cyl(0.22, 0.22, 0.9, 20)} material={phys("matt", { color: "#9aa6a0", roughness: 0.9 })} position={[1.2, 0.22, -15.8]} rotation={[0, 0, Math.PI / 2]} castShadow receiveShadow />
+      {[0, 1, 2].map((k) => (
+        <mesh key={k} geometry={cyl(0.1, 0.1, 0.22, 20)} material={phys(`can${k}`, { color: ["#c9c4b8", "#d8d0b0", "#b5bcc4"][k], metalness: 0.5, roughness: 0.4 })} position={[0.1 + k * 0.23, 0.11, -17.85]} castShadow />
+      ))}
+      {/* hanging bulb + switch by the door */}
+      <mesh geometry={cyl(0.004, 0.004, 0.3, 6)} material={MAT.black()} position={[GUD_BULB[0], CEIL - 0.15, GUD_BULB[2]]} />
+      <mesh geometry={sphere(0.045, 16, 12)} material={phys(`gbulb${bulbOn}`, { color: "#f5efe2", emissive: "#ffd9a0", emissiveIntensity: 5 * bulbOn, roughness: 0.3 })} position={GUD_BULB} />
+      <mesh geometry={box(0.07, 0.11, 0.012, 0.004)} material={MAT.plastic("#efeee8")} position={GUD_SWITCH} />
+      {/* the vent seen from inside (its flap faces the hallway) */}
+      <mesh geometry={box(VENT.w + 0.06, VENT.y1 - VENT.y0 + 0.06, 0.02, 0.004)} material={MAT.frame()} position={[VENT.x, (VENT.y0 + VENT.y1) / 2, GUD.z1 - 0.01]} />
+    </group>
+  );
+};
+
+==== 10714 project/src/worlds/kos/set/Kos.tsx
+// The kos building (one layout for the whole episode): hallway shell with room doors, breeze-block vents,
+// ceiling tube lamps, conduit, CCTV at the entrance, everyday clutter (sandals, rack, chair, bin), the end
+// of the hallway (End.tsx), the bedroom (Room.tsx), the outside (Exterior.tsx).
+
+import React from "react";
+import { box, cyl, sphere } from "../../../kits/worldforge/geo.ts";
+import { basic, phys } from "../../../cine/mats.ts";
+import { CCTV, CCTV_LOOK, CEIL, DOORS, END_Z, ENTRANCE_Z, HALL, LEFT_ROOMS_END, ROOM_DOOR, ROOM, SMALL_WIN, TUBES, WALL, type V3 } from "../layout.ts";
+import { DoorSet, doorHoles, HoledWall, MAT, Slab } from "./parts.tsx";
+import { End } from "./End.tsx";
+import { Room } from "./Room.tsx";
+import { Gudang } from "./Gudang.tsx";
+
+export type KosState = {
+  /** the bedroom (room 2) door open angle (rad, into the room) */
+  roomDoor: number;
+  /** key rotation 0..1 (locked at 1) */
+  key: number;
+  /** the bedroom door lever pressed 0..1 */
+  lever: number;
+  /** vent flap angle (rad) */
+  vent: number;
+  /** ceiling tubes 0..1 */
+  tubes: number;
+  /** CCTV LED 0..1 */
+  led: number;
+  /** clock colon on */
+  colon: boolean;
+  /** fan blade angle (rad) */
+  fan: number;
+  /** raincoat sway (rad) */
+  coat: number;
+  /** show the room interior / hallway (culling for speed) */
+  room: boolean;
+  hall: boolean;
+  /** roofs + ceilings (off for the overhead "dollhouse" views) */
+  roof?: boolean;
+  /** gudang (storage room) interior */
+  gudang?: number;
+  /** clothes piled on the desk chair (pareidolia) */
+  pile?: boolean;
+  /** daylight outside the windows */
+  day?: boolean;
+  /** the raincoat hangs at the end of the hallway */
+  coatOn?: boolean;
+};
+
+const LW = HALL.x0 - WALL / 2; // left wall centre
+const RW = HALL.x1 + WALL / 2; // right wall centre
+
+const Sandals: React.FC<{ p: V3; yaw: number; c: string }> = ({ p, yaw, c }) => (
+  <group position={p} rotation={[0, yaw, 0]}>
+    {[-0.07, 0.07].map((x, i) => (
+      <group key={i} position={[x, 0, i * 0.04]} rotation={[0, (i - 0.5) * 0.18, 0]}>
+        <mesh geometry={box(0.095, 0.016, 0.26, 0.008)} material={MAT.plastic(c)} position={[0, 0.008, 0]} castShadow receiveShadow />
+        {[1, -1].map((k) => (
+          <mesh key={k} geometry={box(0.008, 0.01, 0.11, 0.004)} material={MAT.plastic("#e8e3d8")} position={[k * 0.028, 0.03, 0.03]} rotation={[0.22, k * 0.4, 0]} />
+        ))}
+      </group>
+    ))}
+  </group>
+);
+
+const Tube: React.FC<{ p: V3; on: number }> = ({ p, on }) => (
+  <group position={p}>
+    <mesh geometry={box(0.12, 0.05, 1.24, 0.01)} material={MAT.plastic("#e6e6e1")} castShadow />
+    <mesh geometry={cyl(0.014, 0.014, 1.18, 12)} material={phys(`tube${on > 0.5}`, { color: "#dfe7ea", emissive: "#e8f4ff", emissiveIntensity: on * 1.25, roughness: 0.3 })} position={[0, -0.035, 0]} rotation={[Math.PI / 2, 0, 0]} />
+  </group>
+);
+
+const Cctv: React.FC<{ led: number }> = ({ led }) => {
+  const d = [CCTV_LOOK[0] - CCTV[0], CCTV_LOOK[1] - CCTV[1], CCTV_LOOK[2] - CCTV[2]];
+  const yaw = Math.atan2(d[0], d[2]);
+  const pitch = -Math.atan2(d[1], Math.hypot(d[0], d[2]));
+  return (
+    <group position={CCTV}>
+      <mesh geometry={box(0.02, 0.1, 0.08, 0.006)} material={MAT.plastic("#ecebe6")} position={[HALL.x1 - CCTV[0] - 0.01, 0.05, 0]} />
+      <mesh geometry={cyl(0.012, 0.012, HALL.x1 - CCTV[0], 10)} material={MAT.plastic("#ecebe6")} position={[(HALL.x1 - CCTV[0]) / 2, 0.06, 0]} rotation={[0, 0, Math.PI / 2]} />
+      <group rotation={[pitch, yaw, 0]} rotation-order="YXZ">
+        <mesh geometry={box(0.085, 0.08, 0.2, 0.02)} material={MAT.plastic("#5e5d58")} castShadow />
+        <mesh geometry={box(0.1, 0.012, 0.23, 0.004)} material={MAT.plastic("#5e5d58")} position={[0, 0.046, 0.02]} />
+        <mesh geometry={cyl(0.03, 0.03, 0.012, 24)} material={phys("lens", { color: "#05070a", roughness: 0.05, metalness: 0.3, clearcoat: 1 })} position={[0, 0, 0.102]} rotation={[Math.PI / 2, 0, 0]} />
+        <mesh geometry={sphere(0.005, 10, 8)} material={basic(`led${led > 0.5}`, { color: led > 0.5 ? "#ff2a1a" : "#3a0806" })} position={[0.028, -0.026, 0.1]} />
+      </group>
+    </group>
+  );
+};
+
+/** Plastic chair (kursi plastik) outside room 5. */
+const Chair: React.FC<{ p: V3; yaw: number }> = ({ p, yaw }) => {
+  const m = MAT.plastic("#2f6f9a");
+  return (
+    <group position={p} rotation={[0, yaw, 0]}>
+      <mesh geometry={box(0.42, 0.04, 0.4, 0.03)} material={m} position={[0, 0.44, 0]} castShadow receiveShadow />
+      <mesh geometry={box(0.42, 0.4, 0.04, 0.03)} material={m} position={[0, 0.68, -0.2]} rotation={[-0.12, 0, 0]} castShadow />
+      {[[-0.18, -0.17], [0.18, -0.17], [-0.18, 0.17], [0.18, 0.17]].map(([x, z], i) => (
+        <mesh key={i} geometry={cyl(0.018, 0.024, 0.44, 10)} material={m} position={[x, 0.22, z]} rotation={[z * 0.3, 0, -x * 0.3]} castShadow />
+      ))}
+    </group>
+  );
+};
+
+/** Hallway: floor, ceiling, both side walls with doors, entrance lintel, lamps, CCTV, clutter. */
+export const Kos: React.FC<{ s: KosState }> = ({ s }) => {
+  const len = ENTRANCE_Z - END_Z;
+  const leftHoles = DOORS.filter((d) => d.side < 0).flatMap(doorHoles).concat([{ a0: SMALL_WIN.z0, a1: SMALL_WIN.z1, y0: SMALL_WIN.y0, y1: SMALL_WIN.y1 }]);
+  const rightHoles = DOORS.filter((d) => d.side > 0).flatMap(doorHoles);
+  return (
+    <group>
+      <group visible={s.hall}>
+        {/* floor + ceiling */}
+        <Slab min={[HALL.x0 - WALL, -0.1, END_Z - WALL]} max={[HALL.x1 + WALL, 0, ENTRANCE_Z]} m={MAT.tile([2, len / 0.8])} cast={false} />
+        <group visible={s.roof !== false}>
+          <Slab min={[HALL.x0 - WALL, CEIL, END_Z - WALL]} max={[HALL.x1 + WALL, CEIL + 0.08, ENTRANCE_Z]} m={MAT.ceil([1, len / 1.2])} />
+        </group>
+        {/* skirting */}
+        {[HALL.x0 + 0.006, HALL.x1 - 0.006].map((x) => (
+          <Slab key={x} min={[x - 0.006, 0, END_Z]} max={[x + 0.006, 0.09, ENTRANCE_Z]} m={MAT.trim()} cast={false} />
+        ))}
+        <HoledWall axis="z" c={LW} a0={ENTRANCE_Z} a1={END_Z} holes={leftHoles} />
+        <HoledWall axis="z" c={RW} a0={ENTRANCE_Z} a1={END_Z} holes={rightHoles} />
+        {/* entrance lintel (the hallway opens to the terrace) */}
+        <Slab min={[HALL.x0 - WALL, 2.35, ENTRANCE_Z - 0.15]} max={[HALL.x1 + WALL, CEIL + 0.08, ENTRANCE_Z]} m={MAT.wall()} />
+        {DOORS.map((d) => {
+          const isRoom = d.id === ROOM_DOOR.id;
+          return (
+            <DoorSet
+              key={d.id}
+              d={d}
+              wx={d.side < 0 ? LW : RW}
+              open={isRoom ? s.roomDoor : 0}
+              lever={isRoom ? s.lever : 0}
+              lockKey={isRoom ? s.key : undefined}
+              leaf={MAT.door(d.id === "K8" ? "dusty" : "std", d.id === "K8" ? "#4a3326" : undefined)}
+              extra={
+                d.id === "K8" ? (
+                  // the empty room: a hasp and padlock on the hallway side
+                  <group position={[RW - WALL / 2 - 0.03, 1.08, d.z - d.w / 2 + 0.07]}>
+                    <mesh geometry={box(0.012, 0.03, 0.12, 0.004)} material={MAT.steel()} />
+                    <mesh geometry={box(0.03, 0.05, 0.04, 0.008)} material={phys("brass", { color: "#a98a3e", metalness: 1, roughness: 0.35 })} position={[-0.02, -0.04, 0.03]} castShadow />
+                  </group>
+                ) : null
+              }
+            />
+          );
+        })}
+        {/* conduit along the ceiling corner + switches beside each door */}
+        <mesh geometry={cyl(0.012, 0.012, len, 8)} material={MAT.plastic("#e9e7e0")} position={[HALL.x1 - 0.03, CEIL - 0.03, (ENTRANCE_Z + END_Z) / 2]} rotation={[Math.PI / 2, 0, 0]} />
+        {DOORS.map((d) => (
+          <mesh key={`sw${d.id}`} geometry={box(0.012, 0.11, 0.07, 0.004)} material={MAT.plastic("#efeee8")} position={[(d.side < 0 ? HALL.x0 : HALL.x1) - d.side * 0.006, 1.35, d.z + d.w / 2 + 0.2]} />
+        ))}
+        {TUBES.map((p, i) => (
+          <Tube key={i} p={p} on={s.tubes} />
+        ))}
+        <Cctv led={s.led} />
+        {/* clutter */}
+        <Sandals p={[HALL.x0 + 0.25, 0, ROOM_DOOR.z + 0.62]} yaw={1.3} c="#7b2a2a" />
+        <Sandals p={[HALL.x1 - 0.24, 0, -3.5 + 0.6]} yaw={-1.7} c="#2a5b3c" />
+        <Sandals p={[HALL.x1 - 0.22, 0, -10.5 - 0.62]} yaw={-1.45} c="#3a3a3a" />
+        <Sandals p={[HALL.x0 + 0.22, 0, -9.0 + 0.6]} yaw={1.6} c="#b07a2a" />
+        <Chair p={[HALL.x1 - 0.3, 0, -7.0 - 0.75]} yaw={-1.35} />
+        {/* shoe rack by K1 */}
+        <group position={[HALL.x0 + 0.17, 0, -0.4]}>
+          {[0.08, 0.3, 0.52].map((y) => (
+            <mesh key={y} geometry={box(0.3, 0.02, 0.8, 0.005)} material={MAT.matte("#4a3a2c", 0.6)} position={[0, y, 0]} castShadow receiveShadow />
+          ))}
+          {[[-0.13, -0.38], [0.13, -0.38], [-0.13, 0.38], [0.13, 0.38]].map(([x, z], i) => (
+            <mesh key={i} geometry={box(0.02, 0.56, 0.02, 0.004)} material={MAT.matte("#4a3a2c", 0.6)} position={[x, 0.28, z]} />
+          ))}
+          {[-0.22, 0.05, 0.27].map((z, i) => (
+            <mesh key={z} geometry={box(0.11, 0.09, 0.27, 0.035)} material={MAT.matte(["#d8d2c6", "#2c2c30", "#8a5a3a"][i], 0.7)} position={[0, 0.35, z]} rotation={[0, 1.57, 0]} castShadow />
+          ))}
+        </group>
+        {/* trash bin near the entrance */}
+        <mesh geometry={cyl(0.17, 0.14, 0.48, 20)} material={MAT.plastic("#3e6b4c")} position={[HALL.x1 - 0.22, 0.24, 0.55]} castShadow receiveShadow />
+      </group>
+      {/* outer walls of both room blocks (keep the moon out except through real openings) */}
+      <Slab min={[ROOM.x0 - WALL, 0, ROOM.z1 + WALL]} max={[ROOM.x0, CEIL + 0.1, ENTRANCE_Z]} m={MAT.matte("#9a978c", 0.95)} />
+      <Slab min={[ROOM.x0 - WALL, 0, LEFT_ROOMS_END]} max={[ROOM.x0, CEIL + 0.1, ROOM.z0 - WALL]} m={MAT.matte("#9a978c", 0.95)} />
+      <Slab min={[-ROOM.x0, 0, END_Z - WALL]} max={[-ROOM.x0 + WALL, CEIL + 0.1, ENTRANCE_Z]} m={MAT.matte("#9a978c", 0.95)} />
+      <Slab min={[HALL.x1 + WALL, 0, END_Z - WALL]} max={[-ROOM.x0 + WALL, CEIL + 0.1, END_Z]} m={MAT.matte("#9a978c", 0.95)} />
+      <group visible={s.roof !== false}>
+        <Slab min={[ROOM.x0 - WALL, CEIL + 0.08, LEFT_ROOMS_END]} max={[-ROOM.x0 + WALL, CEIL + 0.2, ENTRANCE_Z]} m={MAT.matte("#8a877c", 0.95)} />
+        <Slab min={[HALL.x0 - WALL, CEIL + 0.08, END_Z - WALL]} max={[-ROOM.x0 + WALL, CEIL + 0.2, LEFT_ROOMS_END]} m={MAT.matte("#8a877c", 0.95)} />
+      </group>
+      {/* left building block ends at LEFT_ROOMS_END: an exterior face toward the side passage */}
+      <Slab min={[ROOM.x0 - WALL, 0, LEFT_ROOMS_END - WALL]} max={[HALL.x0 - WALL, 3.0, LEFT_ROOMS_END]} m={MAT.matte("#9a978c", 0.95)} />
+      <Room s={s} />
+      <End s={s} />
+      {s.gudang ? <Gudang s={s} /> : null}
+    </group>
+  );
+};
+
+==== 8577 project/src/worlds/kos/set/parts.tsx
+// Building blocks for the kos: axis-aligned slabs, walls with openings, door sets (frame, leaf, handle,
+// number, breeze-block vent), shared materials. All geometry/materials cached by key.
+
+import React from "react";
+import { DoubleSide, type Material } from "three";
+import { box, cyl, torus } from "../../../kits/worldforge/geo.ts";
+import { basic, phys, tileTex } from "../../../cine/mats.ts";
+import { ceilTex, concreteTex, doorTex, numberTex, plasterTex, rosterTex } from "../../../cine/set/tex.ts";
+import { CEIL, WALL, type Door, type V3 } from "../layout.ts";
+
+export const MAT = {
+  wall: () => phys("wallUp", { color: "#d3cdbb", roughness: 0.92, map: plasterTex("up", [1, 1], 0.12) }),
+  dado: () => phys("dado", { color: "#5d7a74", roughness: 0.55, map: plasterTex("dado", [1, 1], 0.3), clearcoat: 0.15 }),
+  trim: () => phys("trim", { color: "#3c4b47", roughness: 0.5 }),
+  ceil: (rep: [number, number]) => phys(`ceil${rep}`, { color: "#d9d9d4", roughness: 0.95, map: ceilTex(rep) }),
+  tile: (rep: [number, number]) => phys(`tile${rep}`, { color: "#ffffff", map: tileTex(rep), roughness: 0.34, clearcoat: 0.18, clearcoatRoughness: 0.45 }),
+  frame: () => phys("frame", { color: "#3a2416", roughness: 0.5, clearcoat: 0.3 }),
+  door: (key: string, base?: string) => phys(`door${key}`, { color: "#ffffff", map: doorTex(key, base), roughness: 0.42, clearcoat: 0.45, clearcoatRoughness: 0.3 }),
+  chrome: () => phys("chrome", { color: "#c9ccd1", metalness: 1, roughness: 0.22 }),
+  steel: () => phys("steel", { color: "#55585e", metalness: 0.8, roughness: 0.45 }),
+  roster: () => phys("roster", { color: "#c9c4b4", roughness: 0.9, alphaMap: rosterTex(), alphaTest: 0.5, side: DoubleSide }),
+  concrete: (rep: [number, number]) => phys(`concrete${rep}`, { color: "#ffffff", map: concreteTex(rep), roughness: 0.95 }),
+  plastic: (c: string) => phys(`plastic${c}`, { color: c, roughness: 0.45, clearcoat: 0.2 }),
+  matte: (c: string, r = 0.85) => phys(`matte${c}${r}`, { color: c, roughness: r }),
+  black: () => basic("black", { color: "#000000" }),
+  number: (label: string) => phys(`num${label}`, { color: "#ffffff", map: numberTex(label), roughness: 0.6 }),
+};
+
+/** Axis-aligned slab from min to max corner. */
+export const Slab: React.FC<{ min: V3; max: V3; m: Material; r?: number; cast?: boolean; recv?: boolean }> = ({ min, max, m, r = 0.004, cast = true, recv = true }) => {
+  const w = max[0] - min[0], h = max[1] - min[1], d = max[2] - min[2];
+  if (w <= 0 || h <= 0 || d <= 0) return null;
+  return (
+    <mesh
+      geometry={box(+w.toFixed(4), +h.toFixed(4), +d.toFixed(4), r, 1)}
+      material={m}
+      position={[(min[0] + max[0]) / 2, (min[1] + max[1]) / 2, (min[2] + max[2]) / 2]}
+      castShadow={cast}
+      receiveShadow={recv}
+    />
+  );
+};
+
+export type Hole = { a0: number; a1: number; y0: number; y1: number };
+
+/**
+ * A wall along an axis with rectangular openings. `axis` "z": the wall runs along z at x = c (thickness
+ * across x); "x": runs along x at z = c. Upper paint + lower dado band (1.0 m) on both faces.
+ */
+export const HoledWall: React.FC<{ axis: "x" | "z"; c: number; a0: number; a1: number; holes: Hole[]; t?: number; top?: number; dado?: boolean }> = ({ axis, c, a0, a1, holes, t = WALL, top = CEIL, dado = true }) => {
+  const lo = Math.min(a0, a1), hi = Math.max(a0, a1);
+  const hs = [...holes].sort((p, q) => Math.min(p.a0, p.a1) - Math.min(q.a0, q.a1)).map((h) => ({ ...h, a0: Math.min(h.a0, h.a1), a1: Math.max(h.a0, h.a1) }));
+  const pieces: { a0: number; a1: number; y0: number; y1: number }[] = [];
+  let cur = lo;
+  for (const h of hs) {
+    if (h.a0 > cur) pieces.push({ a0: cur, a1: h.a0, y0: 0, y1: top });
+    if (h.y0 > 0) pieces.push({ a0: h.a0, a1: h.a1, y0: 0, y1: h.y0 });
+    if (h.y1 < top) pieces.push({ a0: h.a0, a1: h.a1, y0: h.y1, y1: top });
+    cur = Math.max(cur, h.a1);
+  }
+  if (cur < hi) pieces.push({ a0: cur, a1: hi, y0: 0, y1: top });
+  const DADO = 1.0;
+  const out: React.ReactNode[] = [];
+  pieces.forEach((p, i) => {
+    const mk = (y0: number, y1: number, m: Material, k: string, inset = 0) => {
+      if (y1 <= y0) return;
+      const min: V3 = axis === "z" ? [c - t / 2 - inset, y0, p.a0] : [p.a0, y0, c - t / 2 - inset];
+      const max: V3 = axis === "z" ? [c + t / 2 + inset, y1, p.a1] : [p.a1, y1, c + t / 2 + inset];
+      out.push(<Slab key={`${i}${k}`} min={min} max={max} m={m} />);
+    };
+    if (dado && p.y0 < DADO) {
+      mk(p.y0, Math.min(DADO, p.y1), MAT.dado(), "d", 0.004);
+      mk(Math.max(DADO, p.y0), p.y1, MAT.wall(), "u");
+      if (p.y1 > DADO) mk(DADO - 0.012, DADO + 0.012, MAT.trim(), "t", 0.008);
+    } else mk(p.y0, p.y1, MAT.wall(), "u");
+  });
+  return <>{out}</>;
+};
+
+/** Holes for a hallway door + its breeze-block vent above. */
+export const doorHoles = (d: Door): Hole[] => [{ a0: d.z - d.w / 2 - 0.06, a1: d.z + d.w / 2 + 0.06, y0: 0, y1: 2.5 }];
+
+/**
+ * A complete door set in a side wall at x = wx (wall centre): frame, leaf (open angle `open`, swinging
+ * into the room, i.e. away from the hallway), lever handles both sides, number plate, breeze-block vent.
+ */
+export const DoorSet: React.FC<{ d: Door; wx: number; open?: number; leaf: Material; extra?: React.ReactNode; lever?: number; lockKey?: number }> = ({ d, wx, open = 0, leaf, extra, lever = 0, lockKey }) => {
+  const s = d.side; // −1 left wall, +1 right wall
+  const z0 = d.z - d.w / 2, z1 = d.z + d.w / 2;
+  const fw = 0.06, depth = WALL + 0.03;
+  const hingeZ = d.hinge > 0 ? z1 : z0;
+  const latchDir = d.hinge > 0 ? -1 : 1; // from hinge toward the latch along z
+  // leaf swings into the room: rotate about y at the hinge; positive angle for a left-wall door moves −x
+  const ang = open * (s < 0 ? 1 : -1) * (d.hinge > 0 ? 1 : -1);
+  const fr = MAT.frame();
+  return (
+    <group>
+      <Slab min={[wx - depth / 2, 0, z0 - fw]} max={[wx + depth / 2, d.h + fw, z0]} m={fr} />
+      <Slab min={[wx - depth / 2, 0, z1]} max={[wx + depth / 2, d.h + fw, z1 + fw]} m={fr} />
+      <Slab min={[wx - depth / 2, d.h, z0 - fw]} max={[wx + depth / 2, d.h + fw, z1 + fw]} m={fr} />
+      {/* lintel + breeze-block vent above the door */}
+      <Slab min={[wx - WALL / 2, d.h + fw, z0 - fw]} max={[wx + WALL / 2, 2.2, z1 + fw]} m={MAT.wall()} />
+      <Slab min={[wx - depth / 2, 2.2, z0 - fw]} max={[wx + depth / 2, 2.22, z1 + fw]} m={fr} />
+      <Slab min={[wx - depth / 2, 2.48, z0 - fw]} max={[wx + depth / 2, 2.5, z1 + fw]} m={fr} />
+      {[-0.06, 0.06].map((o) => (
+        <mesh key={o} geometry={box(0.001, 0.26, d.w + 2 * fw, 0)} material={MAT.roster()} position={[wx + o, 2.35, d.z]} castShadow />
+      ))}
+      {/* leaf, pivoting at the hinge */}
+      <group position={[wx + s * 0.02, 0, hingeZ]} rotation={[0, ang, 0]}>
+        <group position={[0, 0, latchDir * d.w / 2]}>
+          <Slab min={[-0.02, 0.01, -d.w / 2 + 0.005]} max={[0.02, d.h - 0.005, d.w / 2 - 0.005]} m={leaf} r={0.006} />
+          {[1, -1].map((side) => (
+            <group key={side} position={[side * 0.026, 1.0, latchDir * (d.w / 2 - 0.085)]}>
+              <mesh geometry={box(0.012, 0.16, 0.045, 0.006)} material={MAT.chrome()} castShadow />
+              <group position={[side * 0.025, 0.03, 0]} rotation={[-latchDir * lever, 0, 0]}>
+                <mesh geometry={cyl(0.009, 0.009, 0.11, 12)} material={MAT.chrome()} position={[0, 0, -latchDir * 0.045]} rotation={[Math.PI / 2, 0, 0]} castShadow />
+              </group>
+              <mesh geometry={cyl(0.007, 0.007, 0.012, 10)} material={MAT.steel()} position={[side * 0.004, -0.045, 0]} rotation={[0, 0, Math.PI / 2]} />
+            </group>
+          ))}
+          <mesh geometry={box(0.004, 0.09, 0.09, 0.002)} material={MAT.number(d.label)} position={[-s * 0.024, 1.62, 0]} />
+          {lockKey !== undefined ? (
+            // key in the lock on the room side (turns a quarter to lock)
+            <group position={[s * 0.03, 0.955, latchDir * (d.w / 2 - 0.085)]} rotation={[lockKey * Math.PI / 2, 0, 0]}>
+              <mesh geometry={box(0.012, 0.008, 0.008, 0.002)} material={phys("keyBrass", { color: "#b8973f", metalness: 1, roughness: 0.3 })} position={[s * 0.006, 0, 0]} />
+              <mesh geometry={box(0.004, 0.028, 0.022, 0.003)} material={phys("keyBrass", { color: "#b8973f", metalness: 1, roughness: 0.3 })} position={[s * 0.016, 0, 0]} castShadow />
+              <mesh geometry={torus(0.005, 0.0015, 6, 12)} material={MAT.steel()} position={[s * 0.016, 0.018, 0]} rotation={[0, Math.PI / 2, 0]} />
+            </group>
+          ) : null}
+        </group>
+      </group>
+      {extra}
+    </group>
+  );
+};
+
+==== 5404 project/src/worlds/types.ts
+// World contract (data side). A world = one consistent place made of named sub-locations ("places").
+// Stories only ever name places, marks (where people stand/sit), POIs (what they look at) and set props
+// (things that change: lamps, doors, a light at sea). Everything here is plain data + pure functions,
+// importable by the director and the sound script (no JSX).
+
+import type { LightState, V3 } from "../cine/types.ts";
+
+export type { V3 };
+export type Box = { min: V3; max: V3 };
+export type Surface = "grass" | "wood" | "tile" | "stone" | "sand" | "metal" | "carpet";
+
+/** A spot a person can stand at. `yaw` = facing (0 = +z), `seat` = seat height (sit), `bed` = lie here. */
+export type Mark = { p: [number, number]; y?: number; yaw?: number; seat?: number; bed?: { head: [number, number]; y: number }; doc?: string };
+
+export type Place = {
+  id: string;
+  doc: string;
+  kind: "interior" | "exterior" | "studio";
+  /** floor height under the people standing here */
+  floor: number;
+  marks: Record<string, Mark>;
+  pois: Record<string, V3>;
+  /** cameras are clamped into `box` and pushed out of every solid */
+  box: Box;
+  /** generated interiors: the camera must also be inside one of these (the rooms of the place) */
+  zones?: Box[];
+  /** walls etc. that block the view (line-of-sight checks only) */
+  occluders?: Box[];
+  solids: Box[];
+  /** foliage (tree crowns, bushes): cameras are kept out, the view may pass through */
+  soft?: Box[];
+  /** the swing of every door leaf (cameras keep off it like off a solid; a shut door is air, so only a small margin) */
+  swings?: Box[];
+  /** ground height for cameras (exteriors with terrain) */
+  ground?: (x: number, z: number) => number;
+  /** hint for establishing shots: what to frame and from how far */
+  establish: { center: V3; radius: number; height: number; yaw: number };
+  /** the default looking direction for wides (a POI name) */
+  view: string;
+  /** interiors: a window POI to shoot far things through (long lens from just outside it) */
+  window?: string;
+  ambience: string;
+  surface: Surface;
+  /** 0 dry … 1 big hall (sound reverb) */
+  reverb: number;
+};
+
+export type PropDoc = { default: number; doc: string; sfx?: { up?: string; down?: string } };
+export type SetState = Record<string, number>;
+
+export type WorldData = {
+  id: string;
+  doc: string;
+  places: Record<string, Place>;
+  times: string[];
+  props: Record<string, PropDoc>;
+  /** light rig for a place at a time of day, given the set state */
+  light: (place: string, time: string, s: SetState, t: number) => LightState;
+};
+
+export const inBox = (p: V3, b: Box, m = 0) => p[0] > b.min[0] - m && p[0] < b.max[0] + m && p[1] > b.min[1] - m && p[1] < b.max[1] + m && p[2] > b.min[2] - m && p[2] < b.max[2] + m;
+
+/** Keep a camera position legal for a place: inside its box, out of solids, above the ground. */
+/** A camera position the set allows: inside the place, out of solids. `toward` (what the shot looks at) decides the
+ *  side: the lens is pulled into the room the subject is in and pushed out of a wall on the subject's side. Without
+ *  it the nearest room / face wins — and a camera path running through a thick wall then flips from one side to the
+ *  other in a single frame (seen as flash cuts inside ↔ outside). Pure per frame: same input, same side, every frame. */
+export const legalCam = (pl: Place, p: V3, toward?: V3): V3 => {
+  const q: V3 = [
+    Math.min(pl.box.max[0], Math.max(pl.box.min[0], p[0])),
+    Math.min(pl.box.max[1], Math.max(pl.box.min[1], p[1])),
+    Math.min(pl.box.max[2], Math.max(pl.box.min[2], p[2])),
+  ];
+  if (pl.zones?.length && !pl.zones.some((z) => inBox(q, z))) {
+    // pull into the subject's room, else the nearest room
+    const home = toward ? pl.zones.filter((z) => inBox(toward, z)) : [];
+    let best = q, bd = Infinity;
+    for (const z of home.length ? home : pl.zones) {
+      const c: V3 = [Math.min(z.max[0], Math.max(z.min[0], q[0])), Math.min(z.max[1], Math.max(z.min[1], q[1])), Math.min(z.max[2], Math.max(z.min[2], q[2]))];
+      const d = Math.hypot(c[0] - q[0], c[1] - q[1], c[2] - q[2]);
+      if (d < bd) { bd = d; best = c; }
+    }
+    q[0] = best[0]; q[1] = best[1]; q[2] = best[2];
+  }
+  // solids keep 12 cm off the lens; foliage (irregular, bigger than its box) half a metre
+  for (const [s, m] of [...pl.solids.map((b) => [b, 0.12] as const), ...(pl.swings ?? []).map((b) => [b, 0.12] as const), ...(pl.soft ?? []).map((b) => [b, 0.5] as const)]) {
+    if (!inBox(q, s, m)) continue;
+    // push out through the nearest face — among the faces on the subject's side when there are any
+    const d = [q[0] - (s.min[0] - m), s.max[0] + m - q[0], q[1] - (s.min[1] - m), s.max[1] + m - q[1], q[2] - (s.min[2] - m), s.max[2] + m - q[2]];
+    const facing = toward ? [toward[0] < s.min[0], toward[0] > s.max[0], toward[1] < s.min[1], toward[1] > s.max[1], toward[2] < s.min[2], toward[2] > s.max[2]] : [];
+    const pickFrom = facing.some(Boolean) ? d.map((v, i) => (facing[i] ? v : Infinity)) : d;
+    const k = pickFrom.indexOf(Math.min(...pickFrom));
+    if (k === 0) q[0] = s.min[0] - m; else if (k === 1) q[0] = s.max[0] + m;
+    else if (k === 2) q[1] = s.min[1] - m; else if (k === 3) q[1] = s.max[1] + m;
+    else if (k === 4) q[2] = s.min[2] - m; else q[2] = s.max[2] + m;
+  }
+  if (pl.ground) q[1] = Math.max(q[1], pl.ground(q[0], q[2]) + 0.35);
+  return q;
+};
+
+==== 5521 project/worlds/minimarket.world.json
+{
+ "id": "minimarket",
+ "doc": "a city minimarket: a bright shop room with a checkout counter, QRIS standee and gondola shelves of goods; outside a pavement, a street and shop façades across the road.",
+ "times": [
+  "day",
+  "dusk",
+  "night"
+ ],
+ "ground": {
+  "size": 70,
+  "material": "concrete:#3b3e41",
+  "hills": 0.0
+ },
+ "rooms": [
+  {
+   "id": "toko",
+   "rect": [
+    -4,
+    -5,
+    4,
+    4
+   ],
+   "height": 3.0,
+   "floor": "tiles:#cdd2d1",
+   "walls": "paint:#7f9aa3",
+   "wainscot": "#245a6f",
+   "ceiling": "paint:#c7d0d1",
+   "openings": [
+    {
+     "wall": "south",
+     "at": 2,
+     "type": "door",
+     "sign": "MINIMARKET",
+     "w": 1.6,
+     "h": 2.2,
+     "id": "pintu-masuk"
+    },
+    {
+     "wall": "south",
+     "at": -1.5,
+     "type": "window",
+     "w": 2.4,
+     "h": 1.5,
+     "sill": 0.9
+    },
+    {
+     "wall": "east",
+     "at": 2.5,
+     "type": "window",
+     "w": 1.8,
+     "h": 1.3,
+     "sill": 0.9
+    }
+   ]
+  }
+ ],
+ "paths": [
+  {
+   "id": "trotoar-depan",
+   "points": [
+    [
+     -8,
+     5.6
+    ],
+    [
+     8,
+     5.6
+    ]
+   ],
+   "width": 2.2,
+   "material": "concrete:#6a6e70"
+  },
+  {
+   "id": "jalan-raya",
+   "points": [
+    [
+     -30,
+     8.2
+    ],
+    [
+     30,
+     8.2
+    ]
+   ],
+   "width": 5.0,
+   "material": "concrete:#2f3235"
+  }
+ ],
+ "buildings": [
+  {
+   "rect": [
+    -12,
+    10.5,
+    -3,
+    15
+   ],
+   "height": 4.5,
+   "color": "#c9b89a",
+   "sign": "APOTEK",
+   "windows": true
+  },
+  {
+   "rect": [
+    1.5,
+    10.5,
+    11,
+    15.5
+   ],
+   "height": 6.0,
+   "color": "#b0a894",
+   "sign": "RUKO",
+   "windows": true
+  },
+  {
+   "rect": [
+    -26,
+    11,
+    -15,
+    16
+   ],
+   "height": 5.0,
+   "color": "#a8b0b2",
+   "windows": true
+  },
+  {
+   "rect": [
+    14,
+    11,
+    24,
+    16
+   ],
+   "height": 5.5,
+   "color": "#bcae96",
+   "windows": true
+  },
+  {
+   "rect": [
+    -14,
+    -16,
+    -4,
+    -8
+   ],
+   "height": 5.0,
+   "color": "#9aa49a",
+   "windows": true
+  },
+  {
+   "rect": [
+    5,
+    -16,
+    15,
+    -8
+   ],
+   "height": 5.5,
+   "color": "#b2a690",
+   "windows": true
+  }
+ ],
+ "objects": [
+  {
+   "use": "counter",
+   "id": "kasir",
+   "at": [
+    -1.5,
+    -3.4
+   ],
+   "yaw": 0
+  },
+  {
+   "use": "qris",
+   "id": "qris-1",
+   "at": [
+    -2.0,
+    0.95,
+    -3.1
+   ],
+   "yaw": 0
+  },
+  {
+   "use": "store-shelf",
+   "id": "rak-1",
+   "at": [
+    -3.72,
+    -1.2
+   ],
+   "yaw": 1.5708
+  },
+  {
+   "use": "store-shelf",
+   "id": "rak-2",
+   "at": [
+    -3.72,
+    1.0
+   ],
+   "yaw": 1.5708
+  },
+  {
+   "use": "store-shelf",
+   "id": "rak-3",
+   "at": [
+    3.72,
+    -1.2
+   ],
+   "yaw": -1.5708
+  },
+  {
+   "use": "store-shelf",
+   "id": "rak-4",
+   "at": [
+    3.72,
+    1.0
+   ],
+   "yaw": -1.5708
+  },
+  {
+   "use": "store-shelf",
+   "id": "rak-5",
+   "at": [
+    0.9,
+    -1.4
+   ],
+   "yaw": 0
+  },
+  {
+   "use": "store-shelf",
+   "id": "rak-6",
+   "at": [
+    0.9,
+    0.6
+   ],
+   "yaw": 0
+  },
+  {
+   "use": "cash",
+   "id": "cash",
+   "at": [
+    -1.95,
+    0.95,
+    -3.55
+   ],
+   "yaw": 0.3
+  }
+ ],
+ "scatter": [
+  {
+   "use": "tree-broad",
+   "count": 10,
+   "area": [
+    -30,
+    16,
+    30,
+    30
+   ],
+   "minDist": 6,
+   "scale": [
+    0.8,
+    1.1
+   ],
+   "avoid": [
+    "buildings",
+    "paths"
+   ]
+  }
+ ],
+ "lights": [
+  {
+   "type": "panel",
+   "at": [
+    -1.5,
+    2.95,
+    -2.5
+   ],
+   "prop": "lampu-toko"
+  },
+  {
+   "type": "panel",
+   "at": [
+    1.5,
+    2.95,
+    -0.5
+   ],
+   "prop": "lampu-toko"
+  },
+  {
+   "type": "panel",
+   "at": [
+    -1.5,
+    2.95,
+    2.0
+   ],
+   "prop": "lampu-toko"
+  },
+  {
+   "type": "lamp-post",
+   "id": "lampu-jalan-1",
+   "at": [
+    -4,
+    0,
+    6.8
+   ]
+  },
+  {
+   "type": "lamp-post",
+   "id": "lampu-jalan-2",
+   "at": [
+    6,
+    0,
+    6.8
+   ]
+  }
+ ],
+ "props": {
+  "lampu-toko": {
+   "default": 1,
+   "doc": "shop ceiling panels on/off"
+  }
+ },
+ "places": {
+  "toko": {
+   "doc": "inside the minimarket: the checkout counter with QRIS at the back (north), gondola shelves along the walls and a centre aisle, the glass entrance door in the south wall",
+   "kind": "interior",
+   "rooms": [
+    "toko"
+   ],
+   "marks": {
+    "antre-1": {
+     "at": [
+      -1.5,
+      -2.5
+     ],
+     "yaw": 3.1416,
+     "doc": "first in line at the counter, facing the cashier"
+    },
+    "antre-2": {
+     "at": [
+      -1.5,
+      -1.2
+     ],
+     "yaw": 3.1416,
+     "doc": "second in the queue, behind antre-1"
+    },
+    "tengah-toko": {
+     "at": [
+      0.0,
+      0.2
+     ],
+     "yaw": 3.1416,
+     "doc": "in the centre aisle, facing the counter"
+    },
+    "dalam-pintu": {
+     "at": [
+      2.0,
+      3.0
+     ],
+     "yaw": 3.1416,
+     "doc": "just inside the entrance, facing into the shop"
+    }
+   },
+   "view": "kasir",
+   "ambience": "market",
+   "surface": "tile"
+  },
+  "jalan": {
+   "doc": "the pavement and street in front of the minimarket, shop façades across the road",
+   "kind": "exterior",
+   "area": [
+    -10,
+    4.6,
+    10,
+    10
+   ],
+   "marks": {
+    "depan-toko": {
+     "at": [
+      0.5,
+      7.2
+     ],
+     "yaw": 3.1416,
+     "doc": "on the pavement facing the shop, the across-street buildings behind as a backdrop"
+    },
+    "trotoar": {
+     "at": [
+      -0.6,
+      7.2
+     ],
+     "yaw": 3.1416,
+     "doc": "on the pavement facing the shop, across-street buildings behind"
+    }
+   },
+   "view": "pintu-masuk",
+   "ambience": "outdoor",
+   "surface": "stone",
+   "establish": [
+    0.5,
+    1.3,
+    5.4,
+    4.6,
+    2.3,
+    0.35
+   ]
+  }
+ },
+ "fog": 0.05
+}
+==== 5949 project/worlds/perpustakaan.world.json
+{
+  "id": "perpustakaan",
+  "doc": "a small one-room library building in a city park: reading room with shelves, tables and windows; outside a lawn, a gravel path, benches, trees and lamp posts",
+  "times": [
+    "day",
+    "dusk",
+    "night"
+  ],
+  "ground": {
+    "size": 80,
+    "material": "grass:#56703a",
+    "hills": 0.08
+  },
+  "rooms": [
+    {
+      "id": "ruang-baca",
+      "rect": [
+        -5,
+        -4,
+        5,
+        4
+      ],
+      "height": 3.2,
+      "floor": "planks:#b08a5e",
+      "walls": "paint:#ece2cf",
+      "wainscot": "#7a5534",
+      "ceiling": "paint:#f4efe6",
+      "openings": [
+        {
+          "wall": "south",
+          "at": 0,
+          "type": "door",
+          "glass": true,
+          "sign": "PERPUSTAKAAN",
+          "id": "pintu-depan"
+        },
+        {
+          "wall": "south",
+          "at": -3,
+          "type": "window",
+          "w": 1.6,
+          "h": 1.3,
+          "sill": 0.9
+        },
+        {
+          "wall": "south",
+          "at": 3,
+          "type": "window",
+          "w": 1.6,
+          "h": 1.3,
+          "sill": 0.9
+        },
+        {
+          "wall": "east",
+          "at": 0,
+          "type": "window",
+          "w": 2.0,
+          "h": 1.3,
+          "sill": 0.9
+        }
+      ]
+    }
+  ],
+  "paths": [
+    {
+      "id": "jalan-taman",
+      "points": [
+        [
+          0,
+          4.6
+        ],
+        [
+          0.5,
+          9
+        ],
+        [
+          -1.5,
+          15
+        ],
+        [
+          -1,
+          24
+        ]
+      ],
+      "width": 1.6,
+      "material": "dirt:#a89a80"
+    }
+  ],
+  "objects": [
+    {
+      "use": "bookshelf",
+      "id": "rak-1",
+      "at": [
+        -3.2,
+        -3.78
+      ]
+    },
+    {
+      "use": "bookshelf",
+      "id": "rak-2",
+      "at": [
+        -1.1,
+        -3.78
+      ]
+    },
+    {
+      "use": "bookshelf",
+      "id": "rak-3",
+      "at": [
+        1.1,
+        -3.78
+      ]
+    },
+    {
+      "use": "bookshelf",
+      "id": "rak-4",
+      "at": [
+        3.2,
+        -3.78
+      ]
+    },
+    {
+      "use": "bookshelf",
+      "id": "rak-5",
+      "at": [
+        -4.78,
+        -1
+      ],
+      "yaw": 1.5708
+    },
+    {
+      "use": "reading-table",
+      "id": "meja-baca",
+      "at": [
+        -1.6,
+        0.6
+      ]
+    },
+    {
+      "use": "wooden-chair",
+      "id": "kursi-baca",
+      "at": [
+        -1.45,
+        1.18
+      ],
+      "yaw": 3.1416
+    },
+    {
+      "use": "wooden-chair",
+      "at": [
+        -1.6,
+        -0.05
+      ]
+    },
+    {
+      "use": "reading-table",
+      "id": "meja-2",
+      "at": [
+        2.2,
+        0.6
+      ]
+    },
+    {
+      "use": "wooden-chair",
+      "at": [
+        2.2,
+        1.25
+      ],
+      "yaw": 3.1416
+    },
+    {
+      "use": "park-bench",
+      "id": "bangku-taman",
+      "at": [
+        2.4,
+        10
+      ],
+      "yaw": -1.5708
+    },
+    {
+      "use": "park-bench",
+      "at": [
+        -3.6,
+        14
+      ],
+      "yaw": 1.5708
+    },
+    {
+      "use": "tree-broad",
+      "id": "pohon-besar",
+      "at": [
+        8,
+        17
+      ]
+    }
+  ],
+  "scatter": [
+    {
+      "use": "tree-broad",
+      "count": 26,
+      "area": [
+        -30,
+        -30,
+        30,
+        30
+      ],
+      "minDist": 6,
+      "scale": [
+        0.8,
+        1.2
+      ]
+    },
+    {
+      "use": "bush",
+      "count": 30,
+      "area": [
+        -14,
+        -10,
+        14,
+        26
+      ],
+      "minDist": 2
+    },
+    {
+      "use": "grass-tuft",
+      "count": 300,
+      "area": [
+        -12,
+        -8,
+        12,
+        26
+      ],
+      "minDist": 0.4,
+      "avoid": [
+        "paths",
+        "rooms"
+      ]
+    }
+  ],
+  "lights": [
+    {
+      "type": "panel",
+      "at": [
+        -1.8,
+        3.15,
+        0.5
+      ],
+      "prop": "lampu-ruang"
+    },
+    {
+      "type": "panel",
+      "at": [
+        2.0,
+        3.15,
+        0.5
+      ],
+      "prop": "lampu-ruang"
+    },
+    {
+      "type": "lamp-post",
+      "id": "lampu-taman-1",
+      "at": [
+        1.6,
+        0,
+        7.5
+      ],
+      "prop": "lampu-taman"
+    },
+    {
+      "type": "lamp-post",
+      "id": "lampu-taman-2",
+      "at": [
+        -2.8,
+        0,
+        17
+      ],
+      "prop": "lampu-taman"
+    }
+  ],
+  "props": {
+    "lampu-ruang": {
+      "default": 1,
+      "doc": "reading-room ceiling panels on/off"
+    },
+    "lampu-taman": {
+      "default": 0,
+      "doc": "park lamp posts on/off",
+      "sfx": {
+        "up": "click"
+      }
+    }
+  },
+  "places": {
+    "ruang-baca": {
+      "doc": "the reading room: shelves along the back wall, two reading tables, the glass door in the south wall",
+      "kind": "interior",
+      "rooms": [
+        "ruang-baca"
+      ],
+      "marks": {
+        "dalam-pintu": {
+          "at": [
+            0,
+            3.2
+          ],
+          "yaw": 3.1416,
+          "doc": "just inside the door, facing into the room"
+        },
+        "rak": {
+          "at": [
+            -1.1,
+            -2.9
+          ],
+          "yaw": 3.1416,
+          "doc": "in front of the shelves, facing them"
+        }
+      },
+      "view": "rak-2",
+      "ambience": "room",
+      "surface": "wood"
+    },
+    "taman": {
+      "doc": "the park lawn south of the library: the path from the far end to the door",
+      "kind": "exterior",
+      "area": [
+        -12,
+        4.3,
+        12,
+        26
+      ],
+      "marks": {
+        "ujung-jalan": {
+          "at": [
+            -1.0,
+            13.5
+          ],
+          "yaw": 3.0,
+          "doc": "on the path halfway across the park, facing the library"
+        },
+        "depan-pintu": {
+          "at": [
+            0.25,
+            4.75
+          ],
+          "yaw": 3.1416,
+          "doc": "on the path right in front of the door, facing it"
+        }
+      },
+      "view": "pintu-depan",
+      "ambience": "outdoor",
+      "surface": "grass"
+    }
+  }
+}

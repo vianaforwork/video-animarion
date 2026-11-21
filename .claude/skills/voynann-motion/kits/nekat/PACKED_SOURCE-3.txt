@@ -1,0 +1,2236 @@
+VOYNANN Motion - packed source files of this folder. Do not edit by hand.
+The skill upload in the Claude app accepts at most 200 files, so the source files are packed here.
+`node <skill folder>/new-project.mjs <project folder> --kit=<style>` unpacks them into the project.
+Format: per file one line with four '=' signs, the byte length and the path, then exactly that many bytes.
+
+==== 1206 project/package.json
+{
+  "name": "voynann-nekat-project",
+  "version": "1.0.0",
+  "private": true,
+  "description": "VOYNANN Motion NEKAT project (Remotion + React Three Fiber): story.json (+ optional voice-over) -> recurring duo + one escalating absurd challenge with a counter, toy-clay 3D, 9:16.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "scripts": {
+    "dev": "remotion studio",
+    "typecheck": "tsc --noEmit",
+    "check-env": "node scripts/check-env.mjs",
+    "make": "node scripts/make.mjs",
+    "library": "node scripts/make.mjs --library",
+    "menu": "node scripts/make.mjs --menu",
+    "smoke": "node scripts/make.mjs kucing-oren --stills auto --silent"
+  },
+  "dependencies": {
+    "@react-three/fiber": "9.8.2",
+    "@remotion/cli": "4.0.539",
+    "@remotion/google-fonts": "4.0.539",
+    "@remotion/three": "4.0.539",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "remotion": "4.0.539",
+    "three": "0.186.1",
+    "three-mesh-bvh": "0.9.16"
+  },
+  "devDependencies": {
+    "@remotion/bundler": "4.0.539",
+    "@remotion/renderer": "4.0.539",
+    "@types/react": "19.2.7",
+    "@types/three": "0.186.0",
+    "typescript": "5.9.3"
+  },
+  "overrides": {
+    "zod": "4.6.7"
+  }
+}
+
+==== 4392 project/public/nekat/OFL-LilitaOne.txt
+Copyright (c) 2011 Juan Montoreano (juan@remolacha.biz), 
+with Reserved Font Name Lilita
+
+This Font Software is licensed under the SIL Open Font License, Version 1.1.
+This license is copied below, and is also available with a FAQ at:
+http://scripts.sil.org/OFL
+
+
+-----------------------------------------------------------
+SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007
+-----------------------------------------------------------
+
+PREAMBLE
+The goals of the Open Font License (OFL) are to stimulate worldwide
+development of collaborative font projects, to support the font creation
+efforts of academic and linguistic communities, and to provide a free and
+open framework in which fonts may be shared and improved in partnership
+with others.
+
+The OFL allows the licensed fonts to be used, studied, modified and
+redistributed freely as long as they are not sold by themselves. The
+fonts, including any derivative works, can be bundled, embedded, 
+redistributed and/or sold with any software provided that any reserved
+names are not used by derivative works. The fonts and derivatives,
+however, cannot be released under any other type of license. The
+requirement for fonts to remain under this license does not apply
+to any document created using the fonts or their derivatives.
+
+DEFINITIONS
+"Font Software" refers to the set of files released by the Copyright
+Holder(s) under this license and clearly marked as such. This may
+include source files, build scripts and documentation.
+
+"Reserved Font Name" refers to any names specified as such after the
+copyright statement(s).
+
+"Original Version" refers to the collection of Font Software components as
+distributed by the Copyright Holder(s).
+
+"Modified Version" refers to any derivative made by adding to, deleting,
+or substituting -- in part or in whole -- any of the components of the
+Original Version, by changing formats or by porting the Font Software to a
+new environment.
+
+"Author" refers to any designer, engineer, programmer, technical
+writer or other person who contributed to the Font Software.
+
+PERMISSION & CONDITIONS
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of the Font Software, to use, study, copy, merge, embed, modify,
+redistribute, and sell modified and unmodified copies of the Font
+Software, subject to the following conditions:
+
+1) Neither the Font Software nor any of its individual components,
+in Original or Modified Versions, may be sold by itself.
+
+2) Original or Modified Versions of the Font Software may be bundled,
+redistributed and/or sold with any software, provided that each copy
+contains the above copyright notice and this license. These can be
+included either as stand-alone text files, human-readable headers or
+in the appropriate machine-readable metadata fields within text or
+binary files as long as those fields can be easily viewed by the user.
+
+3) No Modified Version of the Font Software may use the Reserved Font
+Name(s) unless explicit written permission is granted by the corresponding
+Copyright Holder. This restriction only applies to the primary font name as
+presented to the users.
+
+4) The name(s) of the Copyright Holder(s) or the Author(s) of the Font
+Software shall not be used to promote, endorse or advertise any
+Modified Version, except to acknowledge the contribution(s) of the
+Copyright Holder(s) and the Author(s) or with their explicit written
+permission.
+
+5) The Font Software, modified or unmodified, in part or in whole,
+must be distributed entirely under this license, and must not be
+distributed under any other license. The requirement for fonts to
+remain under this license does not apply to any document created
+using the Font Software.
+
+TERMINATION
+This license becomes null and void if any of the above conditions are
+not met.
+
+DISCLAIMER
+THE FONT SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT
+OF COPYRIGHT, PATENT, TRADEMARK, OR OTHER RIGHT. IN NO EVENT SHALL THE
+COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+INCLUDING ANY GENERAL, SPECIAL, INDIRECT, INCIDENTAL, OR CONSEQUENTIAL
+DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
+OTHER DEALINGS IN THE FONT SOFTWARE.
+
+==== 664 project/remotion.config.ts
+// See all configuration options: https://remotion.dev/docs/config
+import fs from "node:fs";
+import { Config } from "@remotion/cli/config";
+
+Config.setVideoImageFormat("jpeg");
+Config.setJpegQuality(95);
+Config.setOverwriteOutput(true);
+// WebGL film: GPU-backed ANGLE path in headless Chrome, or software "swangle" when scripts/gl.mjs found
+// no usable GPU on this computer (remembered in .gl-mode). The GL env var overrides both.
+type GL = Parameters<typeof Config.setChromiumOpenGlRenderer>[0];
+const gl = (process.env.GL || (fs.existsSync(".gl-mode") ? fs.readFileSync(".gl-mode", "utf8").trim() : "") || "angle") as GL;
+Config.setChromiumOpenGlRenderer(gl);
+
+==== 3814 project/scripts/stills.mjs
+// Visual QA: bundle once, render chosen frames of a composition, tile them into a contact sheet.
+//   node scripts/stills.mjs <outDir> <frame,frame,...> <compositionId> [scale]
+// Frames may be given in seconds with an "s" suffix (e.g. 4.5s), using the composition's fps.
+
+import path from "node:path";
+import fs from "node:fs";
+import { execFileSync } from "node:child_process";
+import { bundle } from "@remotion/bundler";
+import { openBrowser, renderStill, selectComposition } from "@remotion/renderer";
+import { glMode, isWebGLError, switchToSoftware, tolerateClosedTargets } from "./gl.mjs";
+
+tolerateClosedTargets();
+
+const [outDir, list, id, scaleArg = "1", propsFile] = process.argv.slice(2);
+const rawProps = propsFile ? JSON.parse(fs.readFileSync(propsFile, "utf8")) : {};
+// a props file is either { plan, … } or a bare plan
+const inputProps = propsFile ? (rawProps.plan ? rawProps : { plan: rawProps }) : {};
+if (!outDir || !list || !id) {
+  console.error("usage: node scripts/stills.mjs <outDir> <frame,frame,...|4.5s,...> <compositionId> [scale]");
+  process.exit(1);
+}
+fs.mkdirSync(outDir, { recursive: true });
+
+const serveUrl = await bundle({ entryPoint: path.resolve("src/index.ts") });
+// bundles are ~50 MB each; never leave them in the temp dir, even when a render throws
+const cleanup = () => fs.rmSync(serveUrl, { recursive: true, force: true });
+process.on("exit", cleanup);
+const composition = await selectComposition({ serveUrl, id, inputProps });
+const frames = list.split(",").map((t) => (t.endsWith("s") ? Math.round(parseFloat(t) * composition.fps) : parseInt(t, 10)));
+const files = [];
+const renderAll = async (gl) => {
+  // one browser for all stills: WebGL contexts are expensive to create and tear down
+  const puppeteerInstance = await openBrowser("chrome", { chromiumOptions: { gl } });
+  try {
+    files.length = 0;
+    for (const frame of frames) {
+      const output = path.join(outDir, `f${String(frame).padStart(4, "0")}.png`);
+      await renderStill({ composition, serveUrl, output, frame, inputProps, scale: Number(scaleArg), chromiumOptions: { gl }, timeoutInMilliseconds: 180000, puppeteerInstance });
+      files.push(output);
+      process.stdout.write(`${frame} `);
+    }
+  } finally {
+    // after a WebGL crash the tab may already be gone; closing must not hide the original error
+    await puppeteerInstance.close({ silent: true }).catch(() => {});
+  }
+};
+const gl = glMode();
+try {
+  await renderAll(gl);
+} catch (e) {
+  if (gl === "swangle" || !isWebGLError(e)) throw e;
+  await renderAll(switchToSoftware());
+}
+console.log();
+cleanup();
+
+// contact sheet (needs ffmpeg; skipped if missing)
+try {
+  const w = Math.round(composition.width * Number(scaleArg)), h = Math.round(composition.height * Number(scaleArg));
+  const cols = Math.min(4, files.length), rows = Math.ceil(files.length / cols), n = cols * rows;
+  if (n > 1) {
+    const inputs = files.flatMap((f) => ["-i", f]);
+    const pads = Array.from({ length: n - files.length }, () => ["-f", "lavfi", "-i", `color=c=black:s=${w}x${h}`]).flat();
+    const filter =
+      Array.from({ length: n }, (_, i) => `[${i}:v]scale=${w}:${h},setsar=1[v${i}]`).join(";") + ";" +
+      Array.from({ length: n }, (_, i) => `[v${i}]`).join("") +
+      `xstack=inputs=${n}:layout=` + Array.from({ length: n }, (_, i) => `${(i % cols) * w}_${Math.floor(i / cols) * h}`).join("|") +
+      `,scale='min(2160,iw)':-2`;
+    execFileSync("ffmpeg", ["-v", "error", "-y", ...inputs, ...pads, "-filter_complex", filter, "-frames:v", "1", path.join(outDir, "_sheet.jpg")]);
+    console.log(`sheet: ${path.join(outDir, "_sheet.jpg")}`);
+  }
+} catch {
+  console.log("(contact sheet skipped: ffmpeg not available)");
+}
+// a render that failed on the GPU path leaves its timeout timer behind; do not wait for it
+process.exit(0);
+
+==== 113 project/src/index.ts
+import { registerRoot } from "remotion";
+import { RemotionRoot } from "./Root.tsx";
+
+registerRoot(RemotionRoot);
+
+==== 8311 project/src/nekat/camera.ts
+// NEKAT camera solver — an automatic camera per shot. For the points a shot must show (the hero's head and feet, the
+// tool, the targets, the nearest arrivals) it tries a fan of directions around the set's camera side (+z) and
+// elevations, finds for each the closest distance at which every point sits inside the picture's safe box (clear of
+// the counter / level chip at the top and the platform UI at the bottom), and keeps the best one: lines of sight to
+// the hero and the targets clear of walls / houses, the camera inside the set bounds and outside every solid, a
+// different angle from the previous shot. Pure TypeScript (no three).
+import type { Box, Cam, SetMeta } from "./types.ts";
+import type { V3 } from "./math.ts";
+
+const D = Math.PI / 180;
+const add = (a: V3, b: V3, k = 1): V3 => [a[0] + b[0] * k, a[1] + b[1] * k, a[2] + b[2] * k];
+const sub = (a: V3, b: V3): V3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const dot = (a: V3, b: V3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const cross = (a: V3, b: V3): V3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const nrm = (a: V3): V3 => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; };
+const wrapA = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
+
+const rayBox = (o: V3, d: V3, b: Box) => {
+  let t0 = 0, t1 = 1;
+  for (let i = 0; i < 3; i++) {
+    if (Math.abs(d[i]) < 1e-9) { if (o[i] < b.min[i] || o[i] > b.max[i]) return Infinity; continue; }
+    let a = (b.min[i] - o[i]) / d[i], c = (b.max[i] - o[i]) / d[i];
+    if (a > c) [a, c] = [c, a];
+    t0 = Math.max(t0, a); t1 = Math.min(t1, c);
+    if (t0 > t1) return Infinity;
+  }
+  return t0;
+};
+const inside = (p: V3, b: Box, pad = 0) => p[0] > b.min[0] - pad && p[0] < b.max[0] + pad && p[1] > b.min[1] - pad && p[1] < b.max[1] + pad && p[2] > b.min[2] - pad && p[2] < b.max[2] + pad;
+/** Is the segment a → b clear of the blockers (blockers holding b itself are ignored)? */
+export const clearLine = (a: V3, b: V3, blockers: Box[]) => {
+  const d = sub(b, a);
+  for (const bx of blockers) { if (inside(b, bx, 0.02)) continue; if (rayBox(a, d, bx) < 0.985) return false; }
+  return true;
+};
+
+/** Safe box in NDC [x0, x1, y0, y1]: portrait keeps the top ~25 % for the counter + level chip and the bottom 16 %
+ *  for the platform UI; landscape keeps a strip at the top. */
+export const safeBox = (aspect: number, role: string): [number, number, number, number] => {
+  if (aspect > 1) return role === "hook" ? [-0.86, 0.86, -0.7, 0.1] : [-0.86, 0.86, -0.66, 0.5];
+  return role === "hook" ? [-0.84, 0.84, -0.66, 0.08] : [-0.84, 0.84, -0.64, 0.4];
+};
+
+export type FitOpts = {
+  aspect: number;
+  S: SetMeta;
+  fov: number;
+  /** azimuths (deg) of the camera around the subject; 0 = on the +z side */
+  azs: number[];
+  /** elevations (deg) */
+  els: number[];
+  box: [number, number, number, number];
+  /** points that need a clear line of sight */
+  see: V3[];
+  prevAz?: number;
+  minD?: number;
+  maxD?: number;
+  /** prefer this azimuth (deg) */
+  prefer?: number;
+  /** ignore blockers north of this z (pieces the picture hides when the camera stands there) */
+  hideZ?: number;
+};
+export type Fit = { cam: Cam; az: number; el: number; vis: number; visFirst: number; d: number; ok: boolean };
+
+const project = (q: V3, pos: V3, target: V3, fov: number, aspect: number) => {
+  const f = nrm(sub(target, pos)), r = nrm(cross(f, [0, 1, 0])), u = cross(r, f);
+  const v = sub(q, pos), depth = dot(v, f);
+  const tv = Math.tan((fov * D) / 2), th = tv * aspect;
+  return { x: dot(v, r) / (depth * th), y: dot(v, u) / (depth * tv), depth };
+};
+
+export const projectPt = (q: V3, pos: V3, target: V3, fov: number, aspect: number) => project(q, pos, target, fov, aspect);
+/** Best camera that shows every point of `pts` inside the safe box. */
+export const fitShot = (pts: V3[], o: FitOpts): Fit => {
+  let lo: V3 = [1e9, 1e9, 1e9], hi: V3 = [-1e9, -1e9, -1e9];
+  for (const p of pts) for (let i = 0; i < 3; i++) { lo[i] = Math.min(lo[i], p[i]); hi[i] = Math.max(hi[i], p[i]); }
+  const aim: V3 = [(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, (lo[2] + hi[2]) / 2];
+  const [bx0, bx1, by0, by1] = o.box;
+  const S = o.S;
+  let best: (Fit & { score: number }) | null = null;
+  for (const el of o.els)
+    for (const azd of o.azs) {
+      const az = azd * D;
+      const dir: V3 = [Math.cos(el * D) * Math.sin(az), Math.sin(el * D), Math.cos(el * D) * Math.cos(az)];
+      let target = aim;
+      let d = 0;
+      for (let it = 0; it < 3; it++) {
+        const fits = (dd: number) => {
+          const pos = add(target, dir, dd);
+          for (const p of pts) {
+            const q = project(p, pos, target, o.fov, o.aspect);
+            if (q.depth < 0.3 || q.x < bx0 || q.x > bx1 || q.y < by0 || q.y > by1) return false;
+          }
+          return true;
+        };
+        let a = o.minD ?? 0.8, b = o.maxD ?? 40;
+        if (!fits(b)) { d = b; break; }
+        for (let k = 0; k < 28; k++) { const m = (a + b) / 2; if (fits(m)) b = m; else a = m; }
+        d = b;
+        // re-centre the content vertically / horizontally in the box
+        const pos = add(target, dir, d);
+        let yl = 9, yh = -9, xl = 9, xh = -9, dep = 0;
+        for (const p of pts) { const q = project(p, pos, target, o.fov, o.aspect); yl = Math.min(yl, q.y); yh = Math.max(yh, q.y); xl = Math.min(xl, q.x); xh = Math.max(xh, q.x); dep += q.depth; }
+        dep /= pts.length;
+        const f = nrm(sub(target, pos)), r = nrm(cross(f, [0, 1, 0])), u = cross(r, f);
+        const tv = Math.tan((o.fov * D) / 2), th = tv * o.aspect;
+        const dy = ((yl + yh) / 2 - (by0 + by1) / 2) * dep * tv, dx = ((xl + xh) / 2 - (bx0 + bx1) / 2) * dep * th;
+        target = add(add(target, u, dy), r, dx);
+      }
+      {
+        // vertical slack: sit the content low in the box (backdrop above, not empty floor below)
+        const pos0 = add(target, dir, d);
+        let yl = 9, yh = -9, dep = 0;
+        for (const p of pts) { const q = project(p, pos0, target, o.fov, o.aspect); yl = Math.min(yl, q.y); yh = Math.max(yh, q.y); dep += q.depth; }
+        dep /= pts.length;
+        const slack = by1 - by0 - (yh - yl);
+        if (slack > 0.06) {
+          const f = nrm(sub(target, pos0)), r = nrm(cross(f, [0, 1, 0])), u = cross(r, f);
+          const tgt2 = add(target, u, (yl - (by0 + 0.04)) * dep * Math.tan((o.fov * D) / 2));
+          const pos2 = add(tgt2, dir, d);
+          if (pts.every((p) => { const q = project(p, pos2, tgt2, o.fov, o.aspect); return q.depth > 0.3 && q.y >= by0 - 0.01 && q.y <= by1 && q.x >= bx0 && q.x <= bx1; })) target = tgt2;
+        }
+      }
+      const pos = add(target, dir, d);
+      // validity
+      const dbg = (w: string) => { if (typeof process !== "undefined" && process.env?.CAMDBG) console.log(w, azd, el, d.toFixed(1), pos.map((v) => v.toFixed(1)).join()); };
+      if (pos[1] < 0.35 || pos[1] > S.bounds.y1) { dbg("y"); continue; }
+      if (pos[0] < S.bounds.x0 || pos[0] > S.bounds.x1 || pos[2] < S.bounds.z0 || pos[2] > S.bounds.z1) { dbg("xz"); continue; }
+      const hiding = o.hideZ !== undefined && pos[2] > o.hideZ && pos[1] < 4;
+      const blockers = hiding ? S.blockers.filter((b) => b.min[2] < o.hideZ!) : S.blockers;
+      if (blockers.some((b) => inside(pos, b, 0.25))) { dbg("in"); continue; }
+      let vis = 0;
+      for (const p of o.see) if (clearLine(pos, p, blockers)) vis++;
+      vis /= Math.max(1, o.see.length);
+      const visFirst = o.see.length && clearLine(pos, o.see[0], blockers) ? 1 : 0;
+      let score = 4 * vis - 0.12 * d - 0.01 * Math.abs(el - o.els[0]);
+      if (o.prefer !== undefined) score -= 0.012 * Math.abs(azd - o.prefer);
+      if (o.prevAz !== undefined && Math.abs(wrapA(az - o.prevAz)) < 14 * D) score -= 0.7;
+      if (!best || score > best.score) best = { cam: { pos, target, fov: o.fov }, az, el, vis, visFirst, d, ok: true, score };
+    }
+  if (!best) {
+    const pos = add(aim, [0, 1.6, 5]);
+    return { cam: { pos, target: aim, fov: o.fov }, az: 0, el: 15, vis: 0, visFirst: 0, d: 5, ok: false };
+  }
+  return best;
+};
+
+/** End key of a slow push-in (or pull-out with k < 0). */
+export const pushed = (a: Cam, k = 0.07): Cam => ({ pos: add(a.pos, sub(a.target, a.pos), k), target: a.target, fov: a.fov - (k > 0 ? 1 : -1) });
+
+==== 6061 project/src/nekat/caption.ts
+// NEKAT caption layout (pure TypeScript, shared by the HUD and the compiler): how a caption line wraps and sizes, the
+// screen boxes it fills (text + speaker chip) and where it may sit. The compiler keeps every caption off the hero's and
+// the partner's heads (and the tool's working end during a level) by moving the line to the nearest free height.
+
+/** Break a long caption into two lines at the space nearest the middle (an explicit \n wins). */
+export const wrap = (s: string) => {
+  if (s.includes("\n") || s.replace(/\*/g, "").length <= 20) return s;
+  const mid = s.length / 2;
+  let best = -1;
+  for (let i = 0; i < s.length; i++) if (s[i] === " " && (best < 0 || Math.abs(i - mid) < Math.abs(best - mid))) best = i;
+  return best < 0 ? s : s.slice(0, best) + "\n" + s.slice(best + 1);
+};
+/** Font size that keeps the longest line inside `width` (Lilita One ≈ 0.52 em per letter). */
+export const fitSize = (text: string, size: number, width: number) => {
+  const longest = Math.max(...text.split("\n").map((l) => l.replace(/\*/g, "").length));
+  const per = size * 0.52;
+  return longest * per > width ? Math.max(size * 0.62, width / (longest * 0.52)) : size;
+};
+
+/** Design frame of the HUD (the overlay is drawn at this size and scaled to the video). */
+export const frameOf = (wide: boolean) => (wide ? { W: 1920, H: 1080 } : { W: 1080, H: 1920 });
+export const CAPTION = {
+  size: (wide: boolean) => (wide ? 80 : 100),
+  width: (wide: boolean) => (wide ? 1500 : 980),
+  chip: 82,
+};
+export type Rect = { x0: number; x1: number; y0: number; y1: number };
+
+// Lilita One advance widths (1/1000 em) for " "…"~", "…", "é", "è" — read from public/nekat/LilitaOne-Regular.ttf (hmtx).
+const GLYPHS = " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~…éè";
+const ADV = [188,287,460,833,531,798,667,301,430,422,557,602,305,525,229,573,639,406,525,528,598,524,575,500,570,565,277,277,484,580,450,584,867,655,594,561,616,493,472,621,644,429,462,620,435,907,648,696,570,706,590,531,502,628,661,953,683,615,563,385,587,385,687,636,350,517,520,424,565,486,375,516,501,273,271,531,272,788,551,513,555,511,396,450,368,544,521,752,557,537,454,362,628,362,459,909,486,486];
+/** Rendered width (px) of one line in Lilita One at `size`, with letter-spacing and the outside half of the stroke. */
+export const textWidth = (line: string, size: number, spacing = 1, stroke = 0.16) => {
+  let em = 0, n = 0;
+  for (const ch of line.replace(/\*/g, "")) { const i = GLYPHS.indexOf(ch); em += i < 0 ? 0.6 : ADV[i] / 1000; n++; }
+  return em * size + n * spacing + stroke * size;
+};
+/** Screen boxes (design px) of a caption centred at yc: the speaker chip and the text block (as the HUD lays them out). */
+export const captionBoxes = (text: string, speaker: string | undefined, yc: number, wide: boolean): Rect[] => {
+  const t = wrap(text);
+  const size = fitSize(t, CAPTION.size(wide), CAPTION.width(wide));
+  const lines = t.split("\n");
+  const tw = Math.max(...lines.map((l) => textWidth(l, size)));
+  const th = lines.length * size * 1.08 + size * 0.1;
+  const chipH = speaker ? CAPTION.chip : 0;
+  const { W } = frameOf(wide);
+  const top = yc - (th + chipH) / 2;
+  const out: Rect[] = [{ x0: W / 2 - tw / 2, x1: W / 2 + tw / 2, y0: top + chipH, y1: top + chipH + th }];
+  if (speaker) { const cw = textWidth(speaker, 40, 0, 0) + 40 + 12; out.push({ x0: W / 2 - cw / 2, x1: W / 2 + cw / 2, y0: top, y1: top + chipH - 14 }); }
+  return out;
+};
+/** Bounding box of captionBoxes. */
+export const captionRect = (text: string, speaker: string | undefined, yc: number, wide: boolean): Rect => {
+  const b = captionBoxes(text, speaker, yc, wide);
+  return { x0: Math.min(...b.map((r) => r.x0)), x1: Math.max(...b.map((r) => r.x1)), y0: Math.min(...b.map((r) => r.y0)), y1: Math.max(...b.map((r) => r.y1)) };
+};
+/** Hook title block (lines stacked from `top`, sizes as the HUD's Title). */
+export const titleRect = (lines: string[], wide: boolean): Rect => {
+  const width = wide ? 1500 : 1020, top = wide ? 300 : 420, { W } = frameOf(wide);
+  const base = lines.length === 1 ? [118] : lines.length === 2 ? [86, 112] : [76, 118, 100];
+  const sizes = base.map((sz, i) => fitSize(lines[i] ?? "", sz, width));
+  const w = Math.max(...lines.map((l, i) => textWidth(l, sizes[i] ?? 100, 0, 0.15)));
+  return { x0: W / 2 - w / 2, x1: W / 2 + w / 2, y0: top - 10, y1: top + sizes.reduce((a, b) => a + b * 1.04, 0) + 10 };
+};
+/** End card ("PART n" sticker + next line) laid out from `top`. */
+export const partCardRect = (top: number, wide: boolean): Rect => { const { W } = frameOf(wide); return { x0: W / 2 - 330, x1: W / 2 + 330, y0: top - 20, y1: top + 380 }; };
+/** Preferred centre line of a caption (portrait: lower third; the peak sits a little lower to clear the close-up). */
+export const captionHome = (wide: boolean, seg: string) => (wide ? (seg === "peak" ? 900 : 850) : seg === "peak" ? 1440 : 1250);
+/** Candidate centre lines for a caption of height h: home first, then every 10 px between the chips and the
+ *  platform UI, nearest to home first. */
+export const captionYs = (wide: boolean, seg: string, h: number): number[] => {
+  const lo = captionTop(wide) + h / 2, hi = captionFloor(wide) - h / 2, home = Math.min(hi, Math.max(lo, captionHome(wide, seg)));
+  const ys: number[] = [home];
+  for (let y = Math.ceil(lo / 10) * 10; y <= hi; y += 10) if (Math.abs(y - home) > 1) ys.push(y);
+  return ys.sort((a, b) => Math.abs(a - home) - Math.abs(b - home));
+};
+/** Highest a caption box may reach (counter + level chips above) and lowest (platform UI below). */
+export const captionTop = (wide: boolean) => (wide ? 300 : 470);
+export const captionFloor = (wide: boolean) => (wide ? 1040 : 1610);
+export const overlaps = (a: Rect, b: Rect, pad = 0) => a.x0 < b.x1 + pad && a.x1 > b.x0 - pad && a.y0 < b.y1 + pad && a.y1 > b.y0 - pad;
+export const overlapArea = (a: Rect, b: Rect) => Math.max(0, Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0)) * Math.max(0, Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0));
+
+==== 4369 project/src/nekat/dressing.ts
+// NEKAT per-story set dressing (stories/<id>/props.json): extra objects placed in a set without engine edits — a
+// gerobak bakso in the gang, a scarecrow in the kebun, a sign-less stand at the school. Each piece is built from simple
+// clay parts, keeps the crowd off its footprint, blocks the camera, and (with "stand": true) lets creatures sit on top.
+// Pure TypeScript (node + browser).
+import type { V3 } from "./math.ts";
+import type { SetMeta } from "./types.ts";
+import type { Zone } from "./crowd.ts";
+
+export type DressPart = { shape: "box" | "cyl" | "ball" | "cone"; size?: V3; r?: number; h?: number; pos?: V3; rot?: V3; color: string };
+export type Dress = { name: string; about?: string; at: [number, number]; yaw?: number; footprint: [number, number]; height: number; stand?: boolean; parts: DressPart[] };
+
+const HEX = /^#[0-9a-fA-F]{6}$/;
+export const dressProblems = (d: Dress, S: SetMeta): string[] => {
+  const p: string[] = [];
+  const w = `props.json "${d.name}"`;
+  if (!Array.isArray(d.at) || d.at.length !== 2) p.push(`${w}: "at" must be [x, z] in metres`);
+  if (!Array.isArray(d.footprint) || d.footprint.length !== 2) p.push(`${w}: "footprint" must be [width, depth] in metres`);
+  if (typeof d.height !== "number" || d.height <= 0 || d.height > 6) p.push(`${w}: "height" must be 0–6 m`);
+  if (!Array.isArray(d.parts) || !d.parts.length) p.push(`${w}: "parts" must list at least one part`);
+  for (const [i, q] of (d.parts ?? []).entries()) {
+    if (!["box", "cyl", "ball", "cone"].includes(q.shape)) p.push(`${w} part ${i + 1}: shape "${q.shape}" unknown (have: box, cyl, ball, cone)`);
+    if (!HEX.test(String(q.color))) p.push(`${w} part ${i + 1}: color must be like "#e2574c"`);
+    if (q.shape === "box" && (!Array.isArray(q.size) || q.size.length !== 3)) p.push(`${w} part ${i + 1}: a box needs "size": [w, h, d]`);
+    if (q.shape !== "box" && typeof q.r !== "number") p.push(`${w} part ${i + 1}: a ${q.shape} needs "r"`);
+  }
+  if (p.length) return p;
+  const [x, z] = d.at, hw = Math.max(...d.footprint) / 2;
+  const H = S.hero;
+  if (x + hw > H[0] - 1.1 && x - hw < H[0] + 1.1 && z + hw > H[2] - 0.6 && z - hw < H[2] + 2.7) p.push(`${w} stands on the hero's spot or the stage in front of him (x ${(H[0] - 1.1).toFixed(1)}…${(H[0] + 1.1).toFixed(1)}, z ${(H[2] - 0.6).toFixed(1)}…${(H[2] + 2.7).toFixed(1)}) — move it`);
+  if (x < S.bounds.x0 || x > S.bounds.x1 || z < -12 || z > S.bounds.z1) p.push(`${w} is outside the set (x ${S.bounds.x0}…${S.bounds.x1})`);
+  const lz = H[2] + 0.75;
+  if (x - hw < H[0] - 1.75 && z + hw > lz - 0.6 && z - hw < lz + 0.6) p.push(`${w} blocks the vehicle lane (z ${(lz - 0.6).toFixed(1)}…${(lz + 0.6).toFixed(1)} left of x ${(H[0] - 1.75).toFixed(1)}) — move it`);
+  return p;
+};
+/** Axis-aligned footprint of a (rotated) piece. */
+const aabb = (d: Dress) => {
+  const a = ((d.yaw ?? 0) * Math.PI) / 180, c = Math.abs(Math.cos(a)), s = Math.abs(Math.sin(a));
+  const hx = (d.footprint[0] * c + d.footprint[1] * s) / 2, hz = (d.footprint[0] * s + d.footprint[1] * c) / 2;
+  return { x0: d.at[0] - hx, x1: d.at[0] + hx, z0: d.at[1] - hz, z1: d.at[1] + hz };
+};
+const cache = new Map<string, SetMeta>();
+/** The set with a story's dressing merged in (crowd avoids it, cameras see past it, creatures may stand on it). */
+export const withDressing = (S: SetMeta, dress?: Dress[]): SetMeta => {
+  if (!dress?.length) return S;
+  const key = `${S.id}|${JSON.stringify(dress)}`;
+  const hit = cache.get(key);
+  if (hit) return hit;
+  let h = 0;
+  for (const ch of key) h = (h * 31 + ch.charCodeAt(0)) | 0;
+  const avoid: Zone[] = [], blockers: SetMeta["blockers"] = [], tops: SetMeta["tops"] = [];
+  for (const d of dress) {
+    const b = aabb(d);
+    if (d.stand) tops.push([b.x0, b.x1, b.z0, b.z1, d.height]);
+    else avoid.push({ kind: "rect", x0: b.x0 - 0.05, x1: b.x1 + 0.05, z0: b.z0 - 0.05, z1: b.z1 + 0.05 });
+    blockers.push({ min: [b.x0, 0, b.z0], max: [b.x1, d.height, b.z1] });
+  }
+  const out: SetMeta = { ...S, id: `${S.id}~${(h >>> 0).toString(36)}`, avoid: [...S.avoid, ...avoid], blockers: [...S.blockers, ...blockers], tops: [...S.tops, ...tops], ledges: [...S.ledges, ...dress.filter((d) => d.stand).map((d) => ({ cx: d.at[0], cz: d.at[1], rx: d.footprint[0] / 2 - 0.15, rz: d.footprint[1] / 2 - 0.15, facing: 0.2 }))] };
+  cache.set(key, out);
+  return out;
+};
+
+==== 5612 project/src/nekat/kit/clay.ts
+// NEKAT materials: matte "toy clay" — high roughness, a faint thumbed-clay bump, flat real colours (no gradients,
+// no emissive glow). Everything is cached by colour/options so a thousand props share a handful of materials.
+import {
+  CanvasTexture, DoubleSide, FrontSide, LinearFilter, MeshStandardMaterial, RepeatWrapping, SRGBColorSpace, type Texture,
+} from "three";
+import { rng } from "../math.ts";
+
+let noise: CanvasTexture | null = null;
+/** Soft lumpy value noise (clay surface) used as a bump map. */
+export const clayNoise = (): CanvasTexture => {
+  if (noise) return noise;
+  const N = 256;
+  const cv = document.createElement("canvas");
+  cv.width = N;
+  cv.height = N;
+  const g = cv.getContext("2d")!;
+  const img = g.createImageData(N, N);
+  const r = rng(7);
+  const G = 16;
+  const grid: number[] = [];
+  for (let i = 0; i < G * G; i++) grid.push(r());
+  const at = (x: number, y: number) => grid[((y % G) + G) % G * G + (((x % G) + G) % G)];
+  const vn = (x: number, y: number) => {
+    const xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi;
+    const u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
+    return (at(xi, yi) * (1 - u) + at(xi + 1, yi) * u) * (1 - v) + (at(xi, yi + 1) * (1 - u) + at(xi + 1, yi + 1) * u) * v;
+  };
+  for (let y = 0; y < N; y++)
+    for (let x = 0; x < N; x++) {
+      const fx = (x / N) * G, fy = (y / N) * G;
+      const n = 0.6 * vn(fx, fy) + 0.3 * vn(fx * 2, fy * 2) + 0.1 * vn(fx * 4, fy * 4);
+      const c = Math.round(n * 255);
+      const o = (y * N + x) * 4;
+      img.data[o] = img.data[o + 1] = img.data[o + 2] = c;
+      img.data[o + 3] = 255;
+    }
+  g.putImageData(img, 0, 0);
+  noise = new CanvasTexture(cv);
+  noise.wrapS = noise.wrapT = RepeatWrapping;
+  noise.repeat.set(2, 2);
+  return noise;
+};
+
+export type ClayOpts = { rough?: number; bump?: number; map?: Texture; double?: boolean; flatShade?: boolean };
+const cache = new Map<string, MeshStandardMaterial>();
+export const clay = (color: string, o: ClayOpts = {}): MeshStandardMaterial => {
+  const key = `${color}|${o.rough ?? ""}|${o.bump ?? ""}|${o.map?.uuid ?? ""}|${o.double ? 1 : 0}|${o.flatShade ? 1 : 0}`;
+  let m = cache.get(key);
+  if (m) return m;
+  m = new MeshStandardMaterial({
+    color,
+    roughness: o.rough ?? 0.8,
+    metalness: 0,
+    map: o.map ?? null,
+    bumpMap: o.bump === 0 ? null : clayNoise(),
+    bumpScale: o.bump ?? 0.35,
+    side: o.double ? DoubleSide : FrontSide,
+    flatShading: o.flatShade ?? false,
+  });
+  cache.set(key, m);
+  return m;
+};
+
+// ------------------------------------------------------------------ flat pattern textures (canvas, crisp, no gradients)
+const texCache = new Map<string, CanvasTexture>();
+const canvasTex = (key: string, w: number, h: number, draw: (g: CanvasRenderingContext2D) => void, repeat: [number, number] = [1, 1]) => {
+  const hit = texCache.get(key);
+  if (hit) return hit;
+  const cv = document.createElement("canvas");
+  cv.width = w;
+  cv.height = h;
+  draw(cv.getContext("2d")!);
+  const t = new CanvasTexture(cv);
+  t.colorSpace = SRGBColorSpace;
+  t.wrapS = t.wrapT = RepeatWrapping;
+  t.repeat.set(repeat[0], repeat[1]);
+  t.anisotropy = 8;
+  t.minFilter = LinearFilter;
+  t.generateMipmaps = false;
+  texCache.set(key, t);
+  return t;
+};
+
+/** Sarung plaid (kotak-kotak): base + two line colours. */
+export const plaid = (base: string, a: string, b: string, repeat: [number, number] = [4, 3]) =>
+  canvasTex(`plaid|${base}|${a}|${b}|${repeat}`, 256, 256, (g) => {
+    g.fillStyle = base;
+    g.fillRect(0, 0, 256, 256);
+    g.globalAlpha = 0.85;
+    g.fillStyle = a;
+    g.fillRect(0, 40, 256, 34);
+    g.fillRect(40, 0, 34, 256);
+    g.fillStyle = b;
+    g.fillRect(0, 150, 256, 10);
+    g.fillRect(150, 0, 10, 256);
+    g.fillRect(0, 196, 256, 6);
+    g.fillRect(196, 0, 6, 256);
+    g.globalAlpha = 1;
+  }, repeat);
+
+/** Stripes (towel, awning, clothes). */
+export const stripes = (a: string, b: string, n = 6, vertical = false) =>
+  canvasTex(`stripes|${a}|${b}|${n}|${vertical}`, 128, 128, (g) => {
+    g.fillStyle = a;
+    g.fillRect(0, 0, 128, 128);
+    g.fillStyle = b;
+    for (let i = 0; i < n; i++) {
+      const p = (i * 128) / n;
+      if (vertical) g.fillRect(p, 0, 64 / n, 128);
+      else g.fillRect(0, p, 128, 64 / n);
+    }
+  });
+
+/** Paving blocks / tiles with grout lines. */
+export const tiles = (fill: string, line: string, cols: number, rows: number, repeat: [number, number], offsetRows = false, lineW = 3) =>
+  canvasTex(`tiles|${fill}|${line}|${cols}|${rows}|${repeat}|${offsetRows}|${lineW}`, 256, 256, (g) => {
+    g.fillStyle = fill;
+    g.fillRect(0, 0, 256, 256);
+    g.fillStyle = line;
+    const cw = 256 / cols, rh = 256 / rows;
+    for (let r = 0; r < rows; r++) {
+      g.fillRect(0, r * rh, 256, lineW);
+      const off = offsetRows && r % 2 ? cw / 2 : 0;
+      for (let c = 0; c <= cols; c++) g.fillRect(c * cw + off - lineW / 2, r * rh, lineW, rh);
+    }
+  }, repeat);
+
+/** Clay roof tiles (genteng): rows of rounded scallops. */
+export const genteng = (fill: string, line: string, repeat: [number, number]) =>
+  canvasTex(`genteng|${fill}|${line}|${repeat}`, 256, 256, (g) => {
+    g.fillStyle = fill;
+    g.fillRect(0, 0, 256, 256);
+    g.strokeStyle = line;
+    g.lineWidth = 5;
+    for (let r = 0; r < 4; r++) {
+      const y = r * 64;
+      g.beginPath();
+      g.moveTo(0, y + 2);
+      g.lineTo(256, y + 2);
+      g.stroke();
+      for (let c = 0; c < 4; c++) {
+        const x = c * 64 + (r % 2 ? 32 : 0);
+        g.beginPath();
+        g.moveTo(x, y);
+        g.lineTo(x, y + 64);
+        g.stroke();
+      }
+    }
+  }, repeat);
+
+==== 7843 project/src/nekat/kit/creatureGeo.ts
+// NEKAT creature geometry: the species blobs (species.ts) merged into ONE geometry per pose and part, so a thousand
+// creatures are three draw calls per pose (body, eyes, moving part). Colours are vertex colours from the creature look;
+// tabby stripes / spots are drawn crisp in the fragment shader from part-local coordinates (aLocal) and a mode (aStripe).
+import {
+  BufferAttribute, BufferGeometry, CatmullRomCurve3, Color, ConeGeometry, Euler, Matrix4, MeshStandardMaterial,
+  SphereGeometry, TubeGeometry, Vector3,
+} from "three";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import { clayNoise } from "./clay.ts";
+import { SPECIES, type Part, type Role } from "../species.ts";
+import type { CreatureLook } from "../cast.ts";
+import type { V3 } from "../math.ts";
+
+const FIXED: Partial<Record<Role, string>> = { shine: "#ffffff", mouth: "#5a3a33", comb: "#e0483f", horn: "#d8cbb0", hoof: "#4a3b33" };
+const mixHex = (a: string, b: string, t: number) => new Color(a).lerp(new Color(b), t).getStyle();
+export const roleColor = (role: Role, l: CreatureLook): string => {
+  if (FIXED[role]) return FIXED[role]!;
+  if (role === "body") return l.body;
+  if (role === "accent") return l.accent;
+  if (role === "belly") return l.belly;
+  if (role === "nose" || role === "beak") return l.nose;
+  if (role === "ear") return mixHex(l.nose, l.belly, 0.45);
+  if (role === "eye") return l.eye ?? "#231c18";
+  return l.body;
+};
+
+const build = (p: Part, l: CreatureLook, shift: V3): BufferGeometry => {
+  let g: BufferGeometry;
+  const pat = l.pattern ?? "stripes";
+  let st = p.k === "cone" ? 0 : p.st ?? 0;
+  if (pat === "plain") st = 0;
+  else if (pat === "spots") st = st === 1 || st === 3 ? 4 : 0;
+  if (p.k === "ell") {
+    g = new SphereGeometry(1, p.seg?.[0] ?? 28, p.seg?.[1] ?? 18);
+    g.setAttribute("aLocal", (g.getAttribute("position") as BufferAttribute).clone());
+    g.scale(p.r[0], p.r[1], p.r[2]);
+    g.applyMatrix4(new Matrix4().makeRotationFromEuler(new Euler(...(p.rot ?? [0, 0, 0]), "YXZ")));
+    g.translate(p.c[0], p.c[1], p.c[2]);
+    if (p.floor !== undefined) {
+      const pos = g.getAttribute("position") as BufferAttribute;
+      for (let i = 0; i < pos.count; i++) {
+        const y = pos.getY(i);
+        if (y < p.floor + 0.03) pos.setY(i, p.floor + 0.03 - (p.floor + 0.03 - y) * 0.12);
+      }
+      g.computeVertexNormals();
+    }
+  } else if (p.k === "cone") {
+    g = new ConeGeometry(p.r, p.h, 16, 1);
+    g.setAttribute("aLocal", (g.getAttribute("position") as BufferAttribute).clone());
+    g.scale(1, 1, p.flat ?? 0.6);
+    g.applyMatrix4(new Matrix4().makeRotationFromEuler(new Euler(...p.rot, "XYZ")));
+    g.translate(p.c[0], p.c[1], p.c[2]);
+  } else {
+    const curve = new CatmullRomCurve3(p.pts.map((q) => new Vector3(...q)));
+    g = new TubeGeometry(curve, 28, p.r, 10, false);
+    const uv = g.getAttribute("uv") as BufferAttribute;
+    const loc = new Float32Array(uv.count * 3);
+    for (let i = 0; i < uv.count; i++) loc[i * 3] = uv.getX(i);
+    g.setAttribute("aLocal", new BufferAttribute(loc, 3));
+    if (p.taper) {
+      const pos = g.getAttribute("position") as BufferAttribute;
+      const segs = 28, rad = 10;
+      for (let s = 0; s <= segs; s++) {
+        const u = s / segs, c = curve.getPointAt(u), k = 1 - p.taper * u * u;
+        for (let j = 0; j <= rad; j++) {
+          const i = s * (rad + 1) + j;
+          pos.setXYZ(i, c.x + (pos.getX(i) - c.x) * k, c.y + (pos.getY(i) - c.y) * k, c.z + (pos.getZ(i) - c.z) * k);
+        }
+      }
+      g.computeVertexNormals();
+    }
+  }
+  g.translate(-shift[0], -shift[1], -shift[2]);
+  const n = g.getAttribute("position").count;
+  const col = new Float32Array(n * 3), sa = new Float32Array(n);
+  const c = new Color(roleColor(p.col, l));
+  for (let i = 0; i < n; i++) { col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b; sa[i] = st; }
+  g.setAttribute("color", new BufferAttribute(col, 3));
+  g.setAttribute("aStripe", new BufferAttribute(sa, 1));
+  for (const k of Object.keys(g.attributes)) if (!["position", "normal", "uv", "color", "aStripe", "aLocal"].includes(k)) g.deleteAttribute(k);
+  return g;
+};
+const merge = (ps: Part[], l: CreatureLook, shift: V3 = [0, 0, 0]) => {
+  const gs = ps.map((p) => build(p, l, shift));
+  const m = mergeGeometries(gs, false);
+  if (!m) throw new Error("creature merge failed");
+  m.computeBoundingSphere();
+  return m;
+};
+
+export type PoseGeo = { body: BufferGeometry; eyes?: BufferGeometry; eyeAt: V3; part?: BufferGeometry; partAt: V3 };
+const cache = new Map<string, PoseGeo>();
+export const creatureGeo = (l: CreatureLook, pose: number): PoseGeo => {
+  const key = `${pose}|${JSON.stringify(l)}`;
+  const hit = cache.get(key);
+  if (hit) return hit;
+  const P = SPECIES[l.species].poses[pose];
+  const out: PoseGeo = {
+    body: merge(P.parts, l),
+    eyes: P.eyes ? merge(P.eyes.parts, l) : undefined,
+    eyeAt: P.eyes?.at ?? [0, 0, 0],
+    part: P.move ? merge(P.move.parts, l, P.move.at) : undefined,
+    partAt: P.move?.at ?? [0, 0, 0],
+  };
+  cache.set(key, out);
+  return out;
+};
+
+// ------------------------------------------------------------------ material (vertex colours × instance tint, crisp pattern)
+const matCache = new Map<string, MeshStandardMaterial>();
+export const creatureMat = (l: CreatureLook, part: "body" | "eyes" | "part") => {
+  const key = `${part}|${l.body}|${l.accent}`;
+  const hit = matCache.get(key);
+  if (hit) return hit;
+  const m = new MeshStandardMaterial({ vertexColors: true, roughness: part === "eyes" ? 0.3 : 0.82, metalness: 0, bumpMap: part === "eyes" ? null : clayNoise(), bumpScale: 0.25 });
+  if (part !== "eyes") {
+    const f = new Color(l.body), st = new Color(l.accent);
+    const mulc = new Color(st.r / Math.max(0.02, f.r), st.g / Math.max(0.02, f.g), st.b / Math.max(0.02, f.b));
+    m.onBeforeCompile = (sh) => {
+      sh.uniforms.uStripeMul = { value: mulc };
+      sh.vertexShader = sh.vertexShader
+        .replace("#include <common>", "#include <common>\nattribute vec3 aLocal; attribute float aStripe; varying vec3 vLocal; varying float vStripe;")
+        .replace("#include <begin_vertex>", "#include <begin_vertex>\nvLocal = aLocal; vStripe = aStripe;");
+      sh.fragmentShader = sh.fragmentShader
+        .replace("#include <common>", "#include <common>\nvarying vec3 vLocal; varying float vStripe; uniform vec3 uStripeMul;")
+        .replace(
+          "#include <color_fragment>",
+          `#include <color_fragment>
+          if (vStripe > 0.5) {
+            float band = 0.0;
+            if (vStripe < 1.5) {
+              float s = sin(vLocal.z * 10.0 + 1.2);
+              float aa = fwidth(s) * 1.2;
+              band = smoothstep(0.42 - aa, 0.42 + aa, s) * smoothstep(-0.05, 0.25, vLocal.y) * smoothstep(0.92, 0.6, vLocal.z);
+            } else if (vStripe < 2.5) {
+              float ax = abs(vLocal.x);
+              float d = min(ax, abs(ax - 0.3));
+              float w = 0.075 * smoothstep(0.95, 0.45, vLocal.y);
+              float aa = fwidth(d) * 1.2;
+              band = (1.0 - smoothstep(w - aa, w + aa, d)) * smoothstep(0.42, 0.5, vLocal.y) * step(-0.1, vLocal.z);
+            } else if (vStripe < 3.5) {
+              float s = sin(vLocal.x * 34.0);
+              float aa = fwidth(s) * 1.2;
+              band = smoothstep(0.2 - aa, 0.2 + aa, s) * step(0.12, vLocal.x);
+            } else {
+              float s = sin(vLocal.x * 5.3 + 0.7) * sin(vLocal.z * 4.1 + 1.9) + 0.6 * sin(vLocal.y * 6.7 + vLocal.x * 2.3);
+              float aa = fwidth(s) * 1.2;
+              band = smoothstep(0.55 - aa, 0.55 + aa, s);
+            }
+            diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * uStripeMul, band);
+          }`,
+        );
+    };
+    m.customProgramCacheKey = () => "nekat-creature";
+  }
+  matCache.set(key, m);
+  return m;
+};
+
+==== 5112 project/src/nekat/kit/fx.tsx
+// NEKAT effects: clay dust puffs (grow fast, shrink to nothing — never linger), sound rings from a megaphone (flat
+// rings that travel and fade by shrinking, no glow), wind streaks from the fan, water drips falling off a wet hero.
+import React, { useLayoutEffect, useRef } from "react";
+import { InstancedMesh, Matrix4, MeshStandardMaterial, Quaternion, SphereGeometry, TorusGeometry, Vector3 } from "three";
+import { clay } from "./clay.ts";
+import { basis } from "./props.tsx";
+import { clamp, norm, type V3 } from "../math.ts";
+import type { Puff } from "../acts.ts";
+
+const M = new Matrix4(), Q = new Quaternion(), S = new Vector3(), T = new Vector3();
+const puffGeo = new SphereGeometry(1, 12, 8);
+const puffMat = new MeshStandardMaterial({ color: "#fff7ea", roughness: 0.95 });
+export const Puffs: React.FC<{ puffs: Puff[]; t: number; max?: number }> = ({ puffs, t, max = 2400 }) => {
+  const ref = useRef<InstancedMesh>(null);
+  useLayoutEffect(() => {
+    const m = ref.current;
+    if (!m) return;
+    let n = 0;
+    for (const [k, pf] of puffs.entries()) {
+      const L = 0.32, age = t - pf.t0;
+      if (age < 0 || age > L) continue;
+      const u = age / L;
+      const R = (pf.r ?? 0.3) * (0.35 + 0.9 * (1 - Math.pow(1 - u, 2)));
+      const sz = (pf.r ?? 0.3) * 0.3 * Math.sin(Math.PI * Math.pow(u, 0.6));
+      for (let i = 0; i < 6 && n < max; i++) {
+        const a = (i / 6) * Math.PI * 2 + k * 0.7;
+        T.set(pf.p[0] + Math.cos(a) * R, pf.p[1] + 0.1 + u * 0.22 + (i % 2) * 0.05, pf.p[2] + Math.sin(a) * R);
+        M.compose(T, Q.identity(), S.setScalar(Math.max(0.0001, sz * (0.8 + 0.2 * (i % 3)))));
+        m.setMatrixAt(n++, M);
+      }
+    }
+    m.count = n;
+    m.instanceMatrix.needsUpdate = true;
+  });
+  return <instancedMesh ref={ref} args={[puffGeo, puffMat, max]} frustumCulled={false} />;
+};
+
+const ringGeo = new TorusGeometry(1, 0.06, 8, 40);
+/** Rings travelling along dir from p between t0 and t1 (local time t), one every 0.18 s. */
+export const Rings: React.FC<{ p: V3; dir: V3; t: number; t0: number; t1: number; color: string }> = ({ p, dir, t, t0, t1, color }) => {
+  const d = norm(dir);
+  const q = basis(d, [1, 0, 0]);
+  const out: React.ReactNode[] = [];
+  for (let k = 0; t0 + k * 0.18 < t1; k++) {
+    const age = t - (t0 + k * 0.18);
+    if (age < 0 || age > 0.7) continue;
+    const u = age / 0.7;
+    const r = 0.14 + u * 0.55;
+    const fade = Math.sin(Math.PI * Math.min(1, u * 1.15));
+    out.push(
+      <mesh key={k} geometry={ringGeo} material={clay(color, { bump: 0 })} position={[p[0] + d[0] * u * 1.6, p[1] + d[1] * u * 1.6, p[2] + d[2] * u * 1.6]} quaternion={q} scale={[r, r, r * Math.max(0.05, fade) * 0.6]} rotation={[Math.PI / 2, 0, 0]} />,
+    );
+  }
+  return <group>{out}</group>;
+};
+const streakGeo = new SphereGeometry(1, 8, 6);
+const streakMat = new MeshStandardMaterial({ color: "#ffffff", roughness: 0.6 });
+/** Wind streaks: thin white capsules flying along dir from p (on 0…1). */
+export const Wind: React.FC<{ p: V3; dir: V3; t: number; on: number }> = ({ p, dir, t, on }) => {
+  const ref = useRef<InstancedMesh>(null);
+  useLayoutEffect(() => {
+    const m = ref.current;
+    if (!m) return;
+    const d = norm(dir);
+    Q.copy(basis(d));
+    let n = 0;
+    if (on > 0.01)
+      for (let i = 0; i < 14; i++) {
+        const u = (((t * 1.6 + i / 14) % 1) + 1) % 1;
+        const ox = Math.sin(i * 12.9898) * 0.45, oy = Math.sin(i * 78.233) * 0.4;
+        const len = 0.18 * on * Math.sin(Math.PI * u);
+        T.set(p[0] + d[0] * u * 2.4 + ox * d[2], p[1] + oy, p[2] + d[2] * u * 2.4 - ox * d[0]);
+        M.compose(T, Q, S.set(0.012 * on, Math.max(0.0001, len), 0.012 * on));
+        m.setMatrixAt(n++, M);
+      }
+    m.count = n;
+    m.instanceMatrix.needsUpdate = true;
+  });
+  return <instancedMesh ref={ref} args={[streakGeo, streakMat, 14]} frustumCulled={false} />;
+};
+const dropGeo = new SphereGeometry(1, 10, 8);
+const dropMat = new MeshStandardMaterial({ color: "#86cdf2", roughness: 0.35 });
+/** Drips falling off the hero's head after a splash (from t0, for 1.4 s, thinning out). */
+export const Drips: React.FC<{ p: V3; t: number; t0: number }> = ({ p, t, t0 }) => {
+  const ref = useRef<InstancedMesh>(null);
+  useLayoutEffect(() => {
+    const m = ref.current;
+    if (!m) return;
+    let n = 0;
+    const age = t - t0;
+    if (age > 0 && age < 1.6)
+      for (let i = 0; i < 10; i++) {
+        const per = 0.55 + 0.2 * Math.abs(Math.sin(i * 3.1));
+        const u = (((age + i * 0.13) % per) + per) % per / per;
+        const a = i * 2.39996, r = 0.12 + 0.08 * Math.abs(Math.sin(i * 7.7));
+        const fade = clamp((1.6 - age) / 0.5);
+        T.set(p[0] + Math.cos(a) * r, p[1] - 0.05 - u * u * 1.1, p[2] + Math.sin(a) * r);
+        const s = 0.018 * fade * Math.sin(Math.PI * Math.min(1, u * 1.2));
+        M.compose(T, Q.identity(), S.set(Math.max(0.0001, s), Math.max(0.0001, s * 1.6), Math.max(0.0001, s)));
+        m.setMatrixAt(n++, M);
+      }
+    m.count = n;
+    m.instanceMatrix.needsUpdate = true;
+  });
+  return <instancedMesh ref={ref} args={[dropGeo, dropMat, 10]} frustumCulled={false} />;
+};
+
+==== 7480 project/src/nekat/kit/Stage.tsx
+// NEKAT Stage: the toy-diorama light. One warm soft sun (blurred shadow map), a big pastel sky/ground bounce,
+// ambient occlusion for the clay contact shadows, a flat pastel sky colour. No bloom, no vignette, no flares, no grain.
+// Chain: MSAA scene → NaN guard → GTAO → neutral tone map (keeps the pastel hues) → tiny contrast/sat grade.
+import React, { useLayoutEffect, useMemo } from "react";
+import { useFrame, useThree } from "@react-three/fiber";
+import { ThreeCanvas } from "@remotion/three";
+import { useVideoConfig } from "remotion";
+import {
+  Color, DirectionalLight, Fog, HalfFloatType, HemisphereLight, NeutralToneMapping, Object3D, PCFShadowMap,
+  PerspectiveCamera, Vector3, WebGLRenderTarget,
+} from "three";
+import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
+import { GTAOPass } from "three/examples/jsm/postprocessing/GTAOPass.js";
+import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
+import { ShaderPass } from "three/examples/jsm/postprocessing/ShaderPass.js";
+import type { V3 } from "../math.ts";
+import { QaProbe } from "../../core/qa/scene-qa.tsx";
+
+export type Shot = { pos: V3; target: V3; fov: number; shadowAt?: V3; shadowBox?: number };
+
+export type Light = {
+  sun: { dir: V3; color: string; intensity: number };
+  hemi: { sky: string; ground: string; intensity: number };
+  sky: string;
+  fog: { color: string; near: number; far: number };
+  exposure: number;
+  ao: number;
+  contrast: number;
+  sat: number;
+};
+
+/** Late afternoon ("sore"): warmer, lower sun, a touch more contrast. */
+export const TOY_SORE: Light = {
+  sun: { dir: [-0.62, 0.52, 0.58], color: "#ffd9a8", intensity: 2.6 },
+  hemi: { sky: "#e3dcf2", ground: "#f2cfae", intensity: 1.45 },
+  sky: "#f3c99e",
+  fog: { color: "#f2d2b4", near: 30, far: 110 },
+  exposure: 1.0,
+  ao: 0.9,
+  contrast: 0.12,
+  sat: 1.05,
+};
+/** Soft late-morning pastel day. */
+export const TOY_DAY: Light = {
+  sun: { dir: [-0.42, 0.8, 0.52], color: "#fff0dc", intensity: 2.5 },
+  hemi: { sky: "#dcebff", ground: "#f3dcc4", intensity: 1.55 },
+  sky: "#a9dcf3",
+  fog: { color: "#bfe4f4", near: 30, far: 110 },
+  exposure: 1.0,
+  ao: 0.9,
+  contrast: 0.1,
+  sat: 1.04,
+};
+
+const GradeShader = {
+  uniforms: { tDiffuse: { value: null }, uContrast: { value: 0.1 }, uSat: { value: 1.0 } },
+  vertexShader: /* glsl */ `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+  fragmentShader: /* glsl */ `
+    uniform sampler2D tDiffuse; uniform float uContrast; uniform float uSat; varying vec2 vUv;
+    void main(){
+      vec4 c = texture2D(tDiffuse, vUv);
+      c.rgb = mix(c.rgb, c.rgb * c.rgb * (3.0 - 2.0 * c.rgb), uContrast);
+      float l = dot(c.rgb, vec3(0.2126, 0.7152, 0.0722));
+      c.rgb = mix(vec3(l), c.rgb, uSat);
+      gl_FragColor = vec4(clamp(c.rgb, 0.0, 1.0), 1.0);
+    }`,
+};
+const SanitizeShader = {
+  uniforms: { tDiffuse: { value: null } },
+  vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: `uniform sampler2D tDiffuse; varying vec2 vUv;
+    void main() { vec4 c = texture2D(tDiffuse, vUv); if (any(isnan(c)) || any(isinf(c))) c = vec4(0.0, 0.0, 0.0, 1.0); gl_FragColor = vec4(clamp(c.rgb, 0.0, 32.0), 1.0); }`,
+};
+
+const Rig: React.FC<{ shot: Shot; light: Light; children: React.ReactNode }> = ({ shot, light, children }) => {
+  const { gl, scene, camera, size } = useThree();
+  const rig = useMemo(() => {
+    const target = new Object3D();
+    const sun = new DirectionalLight("#fff", 2);
+    sun.target = target;
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(4096, 4096);
+    sun.shadow.radius = 5;
+    sun.shadow.blurSamples = 16;
+    sun.shadow.bias = -0.0004;
+    sun.shadow.normalBias = 0.025;
+    const hemi = new HemisphereLight("#fff", "#888", 1);
+    return { target, sun, hemi };
+  }, []);
+
+  const chain = useMemo(() => {
+    const w = size.width, h = size.height;
+    const rt = new WebGLRenderTarget(w, h, { type: HalfFloatType, samples: 8 });
+    const composer = new EffectComposer(gl, rt);
+    composer.setPixelRatio(1);
+    composer.setSize(w, h);
+    composer.addPass(new RenderPass(scene, camera));
+    composer.addPass(new ShaderPass(SanitizeShader));
+    const gtao = new GTAOPass(scene, camera, w, h);
+    gtao.updateGtaoMaterial({ radius: 0.45, distanceExponent: 1.3, thickness: 1.2, scale: 1.0, samples: 16, distanceFallOff: 1.0, screenSpaceRadius: false });
+    gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, rings: 2, samples: 16 });
+    composer.addPass(gtao);
+    composer.addPass(new OutputPass());
+    const grade = new ShaderPass(GradeShader);
+    composer.addPass(grade);
+    return { composer, gtao, grade };
+  }, [gl, scene, camera, size.width, size.height]);
+
+  useLayoutEffect(() => {
+    const cam = camera as PerspectiveCamera;
+    cam.position.set(...shot.pos);
+    cam.up.set(0, 1, 0);
+    cam.lookAt(...shot.target);
+    cam.fov = shot.fov;
+    cam.near = 0.05;
+    cam.far = 400;
+    cam.updateProjectionMatrix();
+    cam.updateMatrixWorld();
+    gl.toneMapping = NeutralToneMapping;
+    gl.shadowMap.autoUpdate = false;
+  }, [shot, camera, gl]);
+
+  useFrame(() => {
+    const L = light;
+    const at = shot.shadowAt ?? shot.target;
+    const box = shot.shadowBox ?? 10;
+    const dir = new Vector3(...L.sun.dir).normalize();
+    rig.target.position.set(...at);
+    rig.target.updateMatrixWorld();
+    rig.sun.position.set(at[0] + dir.x * 50, at[1] + dir.y * 50, at[2] + dir.z * 50);
+    rig.sun.color.set(L.sun.color);
+    rig.sun.intensity = L.sun.intensity;
+    const sc = rig.sun.shadow.camera;
+    sc.left = -box;
+    sc.right = box;
+    sc.top = box;
+    sc.bottom = -box;
+    sc.near = 1;
+    sc.far = 120;
+    sc.updateProjectionMatrix();
+    rig.sun.updateMatrixWorld();
+    rig.hemi.color.set(L.hemi.sky);
+    rig.hemi.groundColor.set(L.hemi.ground);
+    rig.hemi.intensity = L.hemi.intensity;
+    scene.background = new Color(L.sky);
+    const fog = scene.fog as Fog | null;
+    if (!fog) scene.fog = new Fog(L.fog.color, L.fog.near, L.fog.far);
+    else {
+      fog.color.set(L.fog.color);
+      fog.near = L.fog.near;
+      fog.far = L.fog.far;
+    }
+    gl.toneMappingExposure = L.exposure;
+    chain.gtao.blendIntensity = L.ao;
+    chain.grade.uniforms.uContrast.value = L.contrast;
+    chain.grade.uniforms.uSat.value = L.sat;
+    gl.shadowMap.needsUpdate = true;
+    chain.composer.render();
+  }, 1);
+
+  return (
+    <>
+      <primitive object={rig.target} />
+      <primitive object={rig.sun} />
+      <primitive object={rig.hemi} />
+      {children}
+    </>
+  );
+};
+
+/** One canvas for the whole film (same set every shot): the camera and the actors change per frame. */
+export const ToyCanvas: React.FC<{ shot: Shot; light?: Light; children: React.ReactNode }> = ({ shot, light = TOY_DAY, children }) => {
+  const { width, height } = useVideoConfig();
+  return (
+    <ThreeCanvas
+      width={width}
+      height={height}
+      shadows={{ type: PCFShadowMap }}
+      dpr={1}
+      gl={{ antialias: false, preserveDrawingBuffer: true, powerPreference: "high-performance" }}
+      camera={{ fov: shot.fov, position: shot.pos, near: 0.05, far: 400 }}
+    >
+      <Rig shot={shot} light={light}>
+        {children}
+        <QaProbe />
+      </Rig>
+    </ThreeCanvas>
+  );
+};
+
+==== 3973 project/src/nekat/math.ts
+// NEKAT maths: vectors, easing, seeded random, two-bone IK. Pure functions only (same frame in, same pose out).
+export type V3 = [number, number, number];
+
+export const clamp = (x: number, lo = 0, hi = 1) => (x < lo ? lo : x > hi ? hi : x);
+export const mix = (a: number, b: number, t: number) => a + (b - a) * t;
+export const mix3 = (a: V3, b: V3, t: number): V3 => [mix(a[0], b[0], t), mix(a[1], b[1], t), mix(a[2], b[2], t)];
+export const lin = (x: number, a: number, b: number) => clamp((x - a) / (b - a));
+export const smooth = (t: number) => {
+  const x = clamp(t);
+  return x * x * (3 - 2 * x);
+};
+export const smoother = (t: number) => {
+  const x = clamp(t);
+  return x * x * x * (x * (x * 6 - 15) + 10);
+};
+export const easeOut = (t: number) => 1 - Math.pow(1 - clamp(t), 3);
+export const easeIn = (t: number) => Math.pow(clamp(t), 3);
+/** overshoot then settle (pop-in), C1 at the end */
+export const easeBack = (t: number, k = 1.9) => {
+  const x = clamp(t) - 1;
+  return 1 + (k + 1) * x * x * x + k * x * x;
+};
+/** 0 → 1 → 0 bump without a cusp */
+export const bump = (t: number) => (t <= 0 || t >= 1 ? 0 : 0.5 - 0.5 * Math.cos(t * Math.PI * 2));
+/** window: 0 before a, ramps to 1 over `r` s, holds, ramps down to 0 ending at b */
+export const win = (t: number, a: number, b: number, r = 0.15) => smooth(lin(t, a, a + r)) * (1 - smooth(lin(t, b - r, b)));
+
+export const add = (a: V3, b: V3): V3 => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+export const sub = (a: V3, b: V3): V3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+export const mul = (a: V3, s: number): V3 => [a[0] * s, a[1] * s, a[2] * s];
+export const dot = (a: V3, b: V3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+export const cross = (a: V3, b: V3): V3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+export const len = (a: V3) => Math.hypot(a[0], a[1], a[2]);
+export const norm = (a: V3): V3 => {
+  const l = len(a) || 1;
+  return [a[0] / l, a[1] / l, a[2] / l];
+};
+export const rotY = (p: V3, a: number): V3 => {
+  const c = Math.cos(a), s = Math.sin(a);
+  return [p[0] * c + p[2] * s, p[1], -p[0] * s + p[2] * c];
+};
+
+/** Deterministic PRNG (mulberry32). */
+export const rng = (seed: number) => {
+  let s = seed >>> 0;
+  return () => {
+    s = (s + 0x6d2b79f5) >>> 0;
+    let t = s;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+};
+export const hash = (n: number) => {
+  const x = Math.sin(n * 127.1 + 311.7) * 43758.5453;
+  return x - Math.floor(x);
+};
+
+/** Two-bone IK: elbow/knee between root and target (bone lengths a, b) bent toward `pole`. Returns [mid, end]. */
+export const ik2 = (root: V3, target: V3, a: number, b: number, pole: V3): [V3, V3] => {
+  let d = sub(target, root);
+  let L = len(d);
+  if (L < 1e-6) {
+    d = [0, -1, 0];
+    L = 1e-6;
+  }
+  const dir = mul(d, 1 / L);
+  // never fully straight: near full extension the elbow would swing a lot for a tiny change in distance
+  const Lc = Math.min((a + b) * 0.97, Math.max(Math.abs(a - b) + 1e-3, L));
+  const x = (a * a - b * b + Lc * Lc) / (2 * Lc);
+  const h = Math.sqrt(Math.max(0, a * a - x * x));
+  let bend = sub(pole, mul(dir, dot(pole, dir)));
+  if (len(bend) < 1e-5) bend = cross(dir, [1, 0, 0]);
+  bend = norm(bend);
+  return [add(add(root, mul(dir, x)), mul(bend, h)), add(root, mul(dir, Lc))];
+};
+
+/** Keyframed scalar/vector track: keys [{t, v}], eased with smootherstep between keys. */
+export type Key<T> = { t: number; v: T; ease?: (x: number) => number };
+export const track = (keys: Key<number[]>[], t: number): number[] => {
+  if (t <= keys[0].t) return keys[0].v.slice();
+  const last = keys[keys.length - 1];
+  if (t >= last.t) return last.v.slice();
+  let i = 0;
+  while (i < keys.length - 2 && t > keys[i + 1].t) i++;
+  const a = keys[i], b = keys[i + 1];
+  const u = (b.ease ?? smoother)(lin(t, a.t, b.t));
+  return a.v.map((x, j) => mix(x, b.v[j], u));
+};
+
+==== 5632 project/src/nekat/population.ts
+// NEKAT population: where the creatures of a count N live in a set. One ordered list of homes per set + species
+// (computed once, seeded): the first N are the crowd at count N, so a bigger count only ADDS creatures (homes never
+// move). Order: one layer on the ground nearest the action → the ledges (fence caps, benches, bales) → the roofs and
+// flat roofs → piles on the ground. The stage in front of the hero, the hero, the partner, the vehicle lane and the
+// set's own obstacles stay free, so targets and tools always have room. Pure TypeScript.
+import { Pile, scatter, slope, type Inst, type Zone } from "./crowd.ts";
+import { SPECIES } from "./species.ts";
+import type { SetMeta } from "./types.ts";
+import { hash, type V3 } from "./math.ts";
+
+/** Stage rectangle in front of the hero (world, the hero faces +z). */
+export const stageOf = (S: SetMeta) => ({ x0: S.hero[0] - 1.05, x1: S.hero[0] + 1.05, z0: S.hero[2] + 0.4, z1: S.hero[2] + 2.65 });
+export const stageCentre = (S: SetMeta): V3 => [S.hero[0], 0, S.hero[2] + 1.5];
+export const LANE_DZ = 0.75;
+/** Where a vehicle stops (its centre) and the lane strip it drives along. */
+export const laneOf = (S: SetMeta) => ({ z: S.hero[2] + LANE_DZ, stopX: S.hero[0] - 2.9, x0: S.laneFrom - 2, x1: S.hero[0] - 1.75 });
+
+export const reserved = (S: SetMeta, partner: boolean): Zone[] => {
+  const st = stageOf(S), ln = laneOf(S);
+  const z: Zone[] = [
+    { kind: "rect", ...st },
+    { kind: "circle", c: [S.hero[0], S.hero[2]], r: 0.6 },
+    { kind: "rect", x0: ln.x0, x1: ln.x1, z0: ln.z - 0.6, z1: ln.z + 0.6 },
+    { kind: "circle", c: [S.perch.p[0], S.perch.p[2]], r: 0.55 },
+    ...S.avoid,
+  ];
+  if (partner) z.push({ kind: "circle", c: [S.watch.p[0], S.watch.p[2]], r: 0.65 });
+  return z;
+};
+
+const memo = new Map<string, Inst[]>();
+/** The full ordered home list (up to the species cap). */
+export const homes = (S: SetMeta, sp: string, partner: boolean): Inst[] => {
+  const key = `${S.id}|${sp}|${partner}`;
+  const hit = memo.get(key);
+  if (hit) return hit;
+  const def = SPECIES[sp];
+  const avoid = reserved(S, partner);
+  const sc = stageCentre(S);
+  const out: Inst[] = [];
+  // A: one layer on the ground, nearest the stage first
+  S.ground.forEach((g, gi) => {
+    const room = Math.max(0, def.cap - out.length);
+    if (!room) return;
+    const est = Math.round(((g.x1 - g.x0) * (g.z1 - g.z0)) / 0.42);
+    const got = scatter({ sp, x0: g.x0, x1: g.x1, z0: g.z0, z1: g.z1, y: g.y ?? 0, n: Math.min(room, est), seed: 300 + gi, avoid, existing: out, near: [sc[0], sc[2]], facing: 0.2, yawJitter: 0.9, tries: est * 30 });
+    out.push(...got);
+  });
+  // B: ledges (creatures climb onto the set's tops), roofs, flat roofs
+  const P = new Pile(sp, S.bounds.x0 - 4, S.bounds.x1 + 4, -14, 16, 0.035).boxes(S.tops);
+  for (const c of out) P.place(c.pose, c.p[0], c.p[2], c.yaw, c.s ?? 1);
+  S.ledges.forEach((l, li) => {
+    const n = Math.max(1, Math.round((l.rx * 2) / 0.5) + Math.round((l.rz * 2) / 0.6));
+    const got = P.drop({ cx: l.cx, cz: l.cz, rx: l.rx, rz: l.rz, n, seed: 400 + li, facing: l.facing, yawJitter: 0.3, best: 6, avoid, rect: true, altShare: def.altShare }).filter((c) => c.p[1] > 0.25);
+    out.push(...got);
+  });
+  S.roofs.forEach((r, ri) => {
+    if (out.length >= def.cap) return;
+    out.push(...slope(r.o, r.e, r.downYaw, r.angle, r.cols, r.rows, r.dx * (sp === "kambing" ? 1.5 : 1), r.dz * (sp === "kambing" ? 1.4 : 1), 500 + ri, r.fill ?? 0.85).map((c) => ({ ...c, yaw: c.yaw * 0.4 })));
+  });
+  S.flats.forEach((f, fi) => {
+    if (out.length >= def.cap) return;
+    const est = Math.round(((f.x1 - f.x0) * (f.z1 - f.z0)) / 0.55);
+    out.push(...scatter({ sp, x0: f.x0, x1: f.x1, z0: f.z0, z1: f.z1, y: f.y, n: Math.min(def.cap - out.length, est), seed: 600 + fi, avoid, facing: 0.3, tries: est * 20 }));
+  });
+  // C: even layers over every ground area (lowest spot first), never higher than ~4 layers
+  const capH = SPECIES[sp].mound * 0.68;
+  for (let pass = 0; pass < 3 && out.length < def.cap; pass++) {
+    const areas = S.ground.map((g) => ({ g, a: (g.x1 - g.x0) * (g.z1 - g.z0) }));
+    const total = areas.reduce((x, y) => x + y.a, 0);
+    let got = 0;
+    areas.forEach(({ g, a }, gi) => {
+      const need = def.cap - out.length;
+      if (need <= 0) return;
+      const share = Math.max(1, Math.ceil((need * a) / total));
+      const add = P.drop({ cx: (g.x0 + g.x1) / 2, cz: (g.z0 + g.z1) / 2, rx: (g.x1 - g.x0) / 2, rz: (g.z1 - g.z0) / 2, n: share, seed: 700 + pass * 10 + gi, best: 6, rect: true, avoid, yawJitter: 0.9, facing: 0.3, cap: () => (g.y ?? 0) + capH });
+      got += add.length;
+      out.push(...add);
+    });
+    if (!got) break;
+  }
+  const list = out.slice(0, def.cap).map((c, i) => ({ ...c, seed: 1000 + i, wag: 0.7 + 0.6 * hash(i * 1.7) }));
+  memo.set(key, list);
+  return list;
+};
+
+/** Creatures drawn for a counter value (the picture is full long before the number stops). */
+export const visibleCount = (sp: string, n: number) => Math.min(Math.max(0, Math.round(n)), SPECIES[sp].cap);
+/** Drawn creatures for counter n in an episode whose counter ends at `end` in a set holding `cap`: exact up to 40
+ *  (people count small numbers), then logarithmic up to the full set — so a series part that starts at a huge
+ *  number starts partly full and still visibly grows. */
+export const drawnFor = (n: number, end: number, cap: number) => {
+  const v = Math.max(0, Math.round(n));
+  if (end <= cap) return Math.min(v, cap);
+  const k0 = 40;
+  if (v <= k0) return v;
+  return Math.min(cap, Math.round(k0 + ((cap - k0) * Math.log(v / k0)) / Math.log(Math.max(end, k0 + 1) / k0)));
+};
+
+==== 9235 project/src/nekat/ride.ts
+// NEKAT ride fit (pure TypeScript): how a rider of ANY build sits in the mini fire truck (damkar) without anything
+// passing through anything. The truck is drawn around its rider: seat height / depth, backrest, foot well, cab length
+// and width follow the rider's hips, thighs, knees and feet (seated "chair" lower body: lap + shin drape for a sarung
+// or skirt, legs for trousers / shorts), and the steering wheel is placed where the rider's hands reach it (two-bone IK
+// within reach, rim clear of belly, lap and chin) for every lean the ride poses use. A rider too wide for the cab makes
+// the whole toy a little bigger (k), never the rider smaller.
+//
+// Units: truck units (the truck group is scaled by k in the world). Rider-local = Person root space before build.s
+// (x = rider's left, y up, z forward). Truck-local: x forward (the rider faces +x), y up, z = −rider-x.
+import { BD } from "./rig.ts";
+import type { PersonLook } from "./cast.ts";
+import { ik2, type V3 } from "./math.ts";
+
+export type Ride = {
+  /** truck scale (1 = the base toy) */
+  k: number;
+  /** rider size in truck units (build.s / k) and belly */
+  s: number; b: number;
+  /** rider root (feet level) in truck units */
+  x0: number; floor: number;
+  /** cab: rear / front inner faces (x), inner half-width (z), seat top, seat front, backrest front */
+  rear: number; front: number; side: number; seatTop: number; seatFront: number; backFront: number; backTop: number;
+  /** steering wheel in truck units: centre, half-width / half-height of the (round or oval) rim, tilt (top toward the
+   *  rider), and where the column joins the rim (its lowest point) */
+  wheel: { c: V3; rx: number; ry: number; tilt: number; join: V3 };
+  /** rider-local hand targets on the rim, elbow poles, feet */
+  handL: V3; handR: V3; poleL: V3; poleR: V3; footL: V3; footR: V3;
+};
+
+/** Leans the ride poses may use (the fit is checked for all of them). */
+export const RIDE_LEAN: [number, number] = [-0.03, 0.08];
+
+// rider-local seated body (Person "chair" lower body; see kit/Person.tsx)
+const SEAT_Y = 0.405; // under the thighs / lap
+const KNEE_Z = 0.44; // front of the knees / skirt drape
+const TOE_Z = 0.56; // front of the feet (foot at z 0.40)
+const FOOT_Z = 0.4;
+const LAP_TOP = 0.6;
+/** column joint radius (rider-local) */
+export const HUB = 0.032; // top of lap / hip block over the thighs (pants hip block reaches 0.65 at z ≤ 0.15)
+
+const rotX = (p: V3, a: number, pivotY: number): V3 => {
+  const y = p[1] - pivotY, z = p[2];
+  return [p[0], pivotY + y * Math.cos(a) - z * Math.sin(a), y * Math.sin(a) + z * Math.cos(a)];
+};
+/** Distance from p to the rider's torso ellipsoid (approximate, negative inside), at lean a. */
+const torsoGap = (p: V3, b: number, a: number) => {
+  // into the torso's own frame (undo the lean about the waist), then the ellipsoid test
+  const q = rotX(p, -a, BD.waistY), c0: V3 = [0, BD.waistY + BD.torsoC, 0];
+  const r: V3 = [BD.torsoR[0] * b, BD.torsoR[1], BD.torsoR[2] * b];
+  const u = Math.hypot((q[0] - c0[0]) / r[0], (q[1] - c0[1]) / r[1], (q[2] - c0[2]) / r[2]);
+  return (u - 1) * Math.min(r[0], r[1], r[2]);
+};
+const shoulder = (side: 1 | -1, b: number, a: number): V3 => rotX([side * BD.shX * b, BD.waistY + BD.shY, -0.01], a, BD.waistY);
+const segGap = (a: V3, c: V3, b: number, lean: number) => {
+  let g = Infinity;
+  for (let i = 0; i <= 6; i++) { const k = i / 6; g = Math.min(g, torsoGap([a[0] + (c[0] - a[0]) * k, a[1] + (c[1] - a[1]) * k, a[2] + (c[2] - a[2]) * k], b, lean)); }
+  return g;
+};
+
+type WheelFit = { yc: number; zc: number; rx: number; ry: number; tilt: number; score: number };
+const wheelCache = new Map<string, WheelFit>();
+/** Steering wheel (rider-local) that every lean in RIDE_LEAN can hold: hands on the rim's side points within 95 %
+ *  reach, rim ≥ 3 cm off the belly (2.5 / 2 cm only when nothing else fits), clear of the lap and under the chin, elbows
+ *  and forearms outside the body. Wide bellies get a wider (oval, yoke-like) wheel so the arms pass beside the belly. */
+const fitWheel = (b: number, head: number): WheelFit => {
+  const key = `${b.toFixed(3)}|${head.toFixed(3)}`;
+  const hit = wheelCache.get(key);
+  if (hit) return hit;
+  const chin = BD.waistY + BD.headC + (head - 1) * BD.headR * 0.9 - BD.headR * head * 0.92;
+  const reach = (BD.upper + BD.fore) * 0.95;
+  const leans = [RIDE_LEAN[0], 0, (RIDE_LEAN[0] + RIDE_LEAN[1]) / 2, RIDE_LEAN[1]];
+  const search = (rimGap: number, hubGap: number): WheelFit | null => {
+    let best: WheelFit | null = null;
+    for (const tilt of [0.9, 0.6, 0.3, 0])
+      for (let rx = 0.13; rx <= 0.4001; rx += 0.03)
+        for (const ry of [0.13, 0.11, 0.09]) {
+          if (ry > rx + 1e-6) continue;
+          for (let yc = 0.78; yc <= 1.0001; yc += 0.02) {
+            if (yc + ry * Math.cos(tilt) > chin - 0.03) continue;
+            for (let zc = 0.22; zc <= 0.62; zc += 0.01) {
+              const rim = (ph: number): V3 => [rx * Math.cos(ph), yc + ry * Math.sin(ph) * Math.cos(tilt), zc - ry * Math.sin(ph) * Math.sin(tilt)];
+              let ok = true;
+              for (let i = 0; i < 32 && ok; i++) { const p = rim((i / 32) * Math.PI * 2); if (p[1] < LAP_TOP + 0.04 && p[2] < KNEE_Z + 0.04) ok = false; }
+              // the column joins the rim at its lowest point and runs forward-down to the dash (≈ z 0.62, y 0.55 lowest)
+              const A = rim(-Math.PI / 2);
+              const col = [0, 0.25, 0.5, 0.75, 1].map((k): V3 => [0, A[1] + (0.55 - A[1]) * k, A[2] + (0.62 - A[2]) * k]);
+              if (col.some((p) => p[1] < LAP_TOP + 0.05 && p[2] < KNEE_Z + 0.05)) ok = false;
+              for (const a of leans) {
+                if (!ok) break;
+                if (col.some((p) => torsoGap(p, b, a) < HUB + hubGap)) ok = false;
+                for (let i = 0; i < 32 && ok; i++) if (torsoGap(rim((i / 32) * Math.PI * 2), b, a) < rimGap) ok = false;
+                for (const side of [1, -1] as const) {
+                  if (!ok) break;
+                  const sh = shoulder(side, b, a), h: V3 = [side * rx, yc, zc];
+                  const L = Math.hypot(h[0] - sh[0], h[1] - sh[1], h[2] - sh[2]);
+                  if (L > reach || L < 0.22 || torsoGap(h, b, a) < BD.handR + 0.01) { ok = false; break; }
+                  const [el, ha] = ik2(sh, h, BD.upper, BD.fore, [side, -0.5, -0.2]);
+                  if (torsoGap(el, b, a) < BD.armR * 0.6 || segGap(el, ha, b, a) < BD.armR + 0.01) ok = false;
+                }
+              }
+              if (!ok) continue;
+              const score = Math.abs(yc - 0.86) + 0.6 * zc + 0.6 * (rx - ry) + 0.1 * Math.abs(tilt - 0.9);
+              if (!best || score < best.score) best = { yc, zc, rx, ry, tilt, score };
+              break; // the nearest zc for this shape and height
+            }
+          }
+        }
+    return best;
+  };
+  const out = search(0.03, 0.025) ?? search(0.025, 0.015) ?? search(0.02, 0.008) ?? { yc: 0.86, zc: 0.36, rx: 0.13, ry: 0.13, tilt: 0.9, score: 99 };
+  wheelCache.set(key, out);
+  return out;
+};
+/** True when this build has a wheel fit inside every clearance (false → fallback wheel; the plan warns). */
+export const rideOk = (look: PersonLook) => fitWheel(look.build?.belly ?? 1, look.build?.head ?? 1).score < 99;
+
+const rideCache = new Map<string, Ride>();
+/** Where this rider sits in the truck and how the truck is built around them. */
+export const rideFit = (look: PersonLook): Ride => {
+  const S = look.build?.s ?? 1, b = look.build?.belly ?? 1, head = look.build?.head ?? 1;
+  const key = `${S}|${b}|${head}`;
+  const hit = rideCache.get(key);
+  if (hit) return hit;
+  // hips are the widest part below the cab rim: lathe radius 0.262·b (seated, the lap block 0.23·b)
+  const hipHalf = 0.262 * b * S + 0.03;
+  const SIDE = 0.335;
+  const k = Math.max(1, hipHalf / SIDE);
+  const s = S / k;
+  const rear = -0.45;
+  const backFront = rear + 0.08;
+  const x0 = backFront + (BD.torsoR[2] * b + 0.025) * s;
+  const front = x0 + (TOE_Z + 0.03) * s;
+  // shoulders above the cab rim (0.86) by ~0.1 → small riders sit on a raised floor; base floor just above the plate
+  const floor = Math.max(0.27, 0.96 - (BD.waistY + BD.shY) * s);
+  const seatTop = floor + (SEAT_Y - 0.005) * s;
+  const seatFront = x0 + 0.3 * s;
+  const backTop = seatTop + 0.42 * s;
+  const w = fitWheel(b, head);
+  const T = (l: V3): V3 => [x0 + s * l[2], floor + s * l[1], -s * l[0]];
+  const g: V3 = [w.rx, w.yc, w.zc];
+  const out: Ride = {
+    k, s, b, x0, floor, rear, front, side: SIDE, seatTop, seatFront, backFront, backTop,
+    wheel: { c: T([0, w.yc, w.zc]), rx: w.rx * s, ry: w.ry * s, tilt: w.tilt, join: T([0, w.yc - w.ry * Math.cos(w.tilt), w.zc + w.ry * Math.sin(w.tilt)]) },
+    handL: g, handR: [-g[0], g[1], g[2]], poleL: [1, -0.5, -0.2], poleR: [-1, -0.5, -0.2],
+    footL: [0.11, 0, FOOT_Z], footR: [-0.11, 0, FOOT_Z],
+  };
+  rideCache.set(key, out);
+  return out;
+};
+/** World position of the rider's root for a truck at p (yaw 0). */
+export const riderPos = (p: V3, R: Ride): V3 => [p[0] + R.k * R.x0, p[1] + R.k * R.floor, p[2]];
+/** Truck-local point → world (truck at p, yaw 0). */
+export const truckWorld = (p: V3, R: Ride, l: V3): V3 => [p[0] + R.k * l[0], p[1] + R.k * l[1], p[2] + R.k * l[2]];
+
+==== 3668 project/src/nekat/sets/Gang.tsx
+// NEKAT set "gang" — the picture. Layout data (houses, fences, spots) lives in gang.meta.ts.
+import React, { useMemo } from "react";
+import { clay, tiles } from "../kit/clay.ts";
+import { rb } from "../kit/Person.tsx";
+import { Chair, Cloud, Fence, Gate, House, Jemuran, Motor, Pole, Pot, Tree } from "./parts.tsx";
+import { FENCES, HOUSES, GANG_HIDE_Z, MOTOR, POLE_AT } from "./gang.meta.ts";
+
+export const STREET = { z0: 0, z1: 3.7 };
+const groundBase = () => clay("#e7d6bd", { rough: 0.95 });
+
+export const Gang: React.FC<{ hideZ?: number; motor?: boolean }> = React.memo(({ hideZ, motor = true }) => {
+  const north = !(hideZ !== undefined && hideZ <= GANG_HIDE_Z + 0.01);
+  const gateOpen = 1.3;
+  const street = useMemo(() => clay("#ffffff", { map: tiles("#d9d3c8", "#c6beb0", 4, 8, [30, 2], true, 3), rough: 0.95 }), []);
+  const yardS = useMemo(() => clay("#ffffff", { map: tiles("#f1dcc2", "#dfc4a2", 4, 4, [40, 2], false, 3), rough: 0.9 }), []);
+  return (
+    <group>
+      {/* ground: base, street slab (y = 0), yards (raised 4 cm) */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.02, 0]} material={groundBase()} receiveShadow>
+        <planeGeometry args={[240, 240]} />
+      </mesh>
+      <mesh geometry={rb(38, 0.2, STREET.z1 - STREET.z0, 0.02)} material={street} position={[0, -0.1, (STREET.z0 + STREET.z1) / 2]} receiveShadow />
+      <mesh geometry={rb(38, 0.24, 2.6, 0.02)} material={yardS} position={[0, -0.08, -1.25]} receiveShadow />
+      <mesh geometry={rb(38, 0.24, 2.4, 0.02)} material={yardS} position={[0, -0.08, 4.95]} receiveShadow />
+      <mesh geometry={rb(38, 0.24, 6.0, 0.02)} material={yardS} position={[0, -0.09, 9.1]} receiveShadow />
+
+      {HOUSES.filter((h) => north || h.face === 1 || h.rot !== undefined).map((h, i) => (
+        <House key={i} s={h} />
+      ))}
+
+      {FENCES.filter((f) => north || f.z < 1).map((f, i) => (
+        <Fence key={i} x0={f.x0} x1={f.x1} z={f.z} gap={f.gap} wall={f.wall} cap={f.cap} />
+      ))}
+      <Gate x={1.95} z={-0.1} w={1.55} open={gateOpen} color="#4f9f7a" dir={-1} />
+      {/* Darto's yard & teras */}
+      <Chair p={[-2.4, 0.16, -1.6]} yaw={0.4} color="#e0524a" />
+      <Chair p={[-1.65, 0.16, -1.7]} yaw={-0.2} color="#e0524a" />
+      <Jemuran p={[5.0, 0.04, -0.9]} len={2.3} yaw={0} />
+      <Pot p={[-3.1, 0.04, -0.5]} />
+      <Pot p={[-2.5, 0.04, -0.5]} flower="#f6d36b" />
+      <Pot p={[3.2, 0.04, -0.5]} s={1.1} flower={null} leaf="#5aa864" />
+      {/* street-side pots along the fence */}
+      <Pot p={[-3.3, 0, 0.32]} s={0.9} />
+      <Pot p={[2.5, 0, 0.32]} s={0.95} flower="#f6d36b" />
+      <Pot p={[3.3, 0, 0.32]} s={0.85} flower="#ffffff" />
+      <Pot p={[-6.0, 0, 0.32]} s={0.9} flower="#e98a6a" />
+      <Pot p={[6.0, 0, 0.32]} s={0.9} />
+      {/* pillar-top pots */}
+      <Pot p={[-3.7, 1.24, -0.1]} s={0.6} flower="#f39ab0" />
+      <Pot p={[3.7, 1.24, -0.1]} s={0.6} flower="#f6d36b" />
+
+      {motor ? <Motor p={MOTOR.p} yaw={MOTOR.yaw} body="#7fc4cf" trim="#f3efe6" /> : null}
+
+      <Pole p={[POLE_AT[0], 0, POLE_AT[1]]} anchors={[[0.5, 3.6, -2.4], [-19.5, 4.2, 0.6], [19, 4.2, 0.6], [4.4, 3.5, 5.0]]} />
+      <Tree p={[-4.6, 0, -9.5]} s={1.2} />
+      <Tree p={[5.2, 0, -10.5]} s={1.4} leaf="#6aae63" />
+      <Tree p={[-12, 0, -10.5]} s={1.3} leaf="#86c47a" />
+      {north ? <Tree p={[0.5, 0, 13]} s={1.3} /> : null}
+
+      <Cloud p={[-14, 24, -80]} s={3} />
+      <Cloud p={[10, 30, -90]} s={3.6} />
+      <Cloud p={[30, 20, -70]} s={2.4} />
+      <Cloud p={[-36, 18, -60]} s={2.6} />
+      <Cloud p={[0, 22, 90]} s={3} />
+      <Cloud p={[60, 22, 0]} s={3} />
+      <Cloud p={[-60, 24, 10]} s={3} />
+    </group>
+  );
+});
+
+
+==== 610 project/src/nekat/sets/index.ts
+// NEKAT sets registry (pure data). A new set = a meta file (spots, crowd areas, tops, blockers…) + a picture
+// component registered in scenes.tsx. See KIT.md › Adding a set.
+import type { SetMeta } from "../types.ts";
+import { GANG, GANG_HIDE_Z } from "./gang.meta.ts";
+import { KEBUN } from "./kebun.meta.ts";
+import { SEKOLAH } from "./sekolah.meta.ts";
+
+export const SETS: Record<string, SetMeta> = { gang: GANG, kebun: KEBUN, sekolah: SEKOLAH };
+/** Sets whose far side (z beyond the value) hides while the camera stands there. */
+export const HIDE_Z: Record<string, number> = { gang: GANG_HIDE_Z };
+
+==== 3622 project/src/nekat/sets/kebun.meta.ts
+// NEKAT set "kebun": a farm yard — packed-earth yard, a wooden kandang (chicken coop), hay bales, a farmhouse with a
+// teras, a well, a hand cart, a bamboo saung, banana trees and coconut palms, rice terraces stepping up behind, hills.
+// Pure data (node + browser): the picture is Kebun.tsx.
+import type { Zone } from "../crowd.ts";
+import type { HouseSpec } from "./parts.tsx";
+import type { SetMeta } from "../types.ts";
+
+export const KEBUN_HOUSE: HouseSpec = {
+  x: 4.4, z: -1.4, face: 1, w: 6.2, h: 2.8, d: 6.0, wall: "#e2b47c", plint: "#b07a4a", trim: "#fbf2e2",
+  roof: { kind: "gable", color: "#c9663f", line: "#a94f2f", rise: 1.5, front: 1.3 },
+  door: { x: -1.2, color: "#7a5233" }, windows: [{ x: 1.4, w: 1.4, curtain: "#f2d36b" }], columns: "#d8b07a",
+};
+export const KANDANG = { x0: -4.6, x1: -1.6, z0: -2.9, z1: -1.0 };
+export const BALE = { p: [-1.6, 0, 0.75] as [number, number, number], s: [1.0, 0.62, 0.7] as [number, number, number] };
+export const WELL: [number, number, number] = [5.8, 0, 2.7];
+export const CART = { p: [6.7, 0, 0.5] as [number, number, number], yaw: -0.4 };
+export const SAUNG = { p: [-8.6, 0, -2.6] as [number, number, number], yaw: 0.3 };
+const ang = Math.atan(1.5 / 3.0), up = 0.38;
+export const KEBUN: SetMeta = {
+  id: "kebun",
+  about: "kebun/sawah + kandang: farm yard, chicken coop, hay bales, farmhouse, well, cart, saung, banana + coconut trees, rice terraces behind",
+  hero: [0.4, 0, 1.0],
+  watch: { p: [-3.1, 0, -0.25], yaw: 0.45 },
+  perch: { p: [-1.6, 0.62, 0.75], yaw: 1.15 },
+  ground: [
+    { x0: -6.5, x1: 6.5, z0: -0.5, z1: 4.3 },
+    { x0: -13, x1: 13, z0: -0.5, z1: 6.5 },
+  ],
+  tops: [
+    [-2.1, -1.1, 0.4, 1.1, 0.62],
+    [-6.15, -5.05, -0.7, 0.1, 0.62], [-5.95, -5.25, -0.55, -0.05, 1.24],
+    [5.2, 6.4, 2.1, 3.3, 0.72],
+    [6.05, 7.35, 0.1, 0.9, 0.8],
+    [-9.9, -7.3, -3.8, -1.4, 0.6],
+  ],
+  ledges: [
+    { cx: -1.6, cz: 0.75, rx: 0.42, rz: 0.25, facing: 1.0 },
+    { cx: -5.6, cz: -0.3, rx: 0.42, rz: 0.3, facing: 0.6 },
+    { cx: 6.7, cz: 0.5, rx: 0.55, rz: 0.3, facing: -0.5 },
+    { cx: -8.6, cz: -2.6, rx: 1.0, rz: 0.9, facing: 0.4 },
+  ],
+  roofs: [{ o: [1.6, 2.28 + up * Math.sin(ang), -0.1 - up * Math.cos(ang)], e: [1, 0], downYaw: 0, angle: ang, cols: 10, rows: 7, dx: 0.6, dz: 0.72, fill: 0.85 }],
+  flats: [],
+  avoid: [
+    { kind: "circle", c: [WELL[0], WELL[2]], r: 0.75 },
+    { kind: "circle", c: [1.9, -0.3], r: 0.38 },
+    { kind: "rect", x0: 5.9, x1: 7.5, z0: 0.0, z1: 1.1 },
+    { kind: "rect", x0: -3.5, x1: -2.5, z0: -1.0, z1: 0.05 },
+    { kind: "rect", x0: -4.8, x1: -1.4, z0: -3.1, z1: -0.9 },
+    { kind: "rect", x0: 1.0, x1: 7.8, z0: -7.5, z1: -0.1 },
+    { kind: "circle", c: [-6.8, -1.6], r: 0.35 },
+    { kind: "circle", c: [8.8, -1.4], r: 0.35 },
+    { kind: "circle", c: [-9.5, 1.5], r: 0.35 },
+  ],
+  blockers: [
+    { min: [1.0, 0, -7.6], max: [7.8, 4.3, -0.05] },
+    { min: [-4.8, 0, -3.1], max: [-1.4, 2.3, -0.9] },
+    { min: [-10.0, 0, -3.9], max: [-7.2, 3.6, -1.3] },
+    { min: [5.1, 0, 2.0], max: [6.5, 2.4, 3.4] },
+    { min: [5.9, 0, 0.0], max: [7.5, 1.0, 1.1] },
+    { min: [-2.1, 0, 0.4], max: [-1.1, 0.62, 1.1] },
+    { min: [-6.2, 0, -0.75], max: [-5.0, 1.25, 0.15] },
+    { min: [-7.0, 0, -1.8], max: [-6.6, 2.2, -1.4] },
+    { min: [8.6, 0, -1.6], max: [9.0, 2.2, -1.2] },
+  ],
+  laneFrom: -11,
+  giant: { p: [4.0, 0, -8.8], scale: 11, over: [4.0, 4.4, -4.4] },
+  bounds: { x0: -14, x1: 14, z0: -0.4, z1: 12, y1: 10 },
+  wide: { pos: [4.2, 6.6, 10.5], target: [0, 2.0, -0.6], fov: 44 },
+  top: { pos: [2.0, 10.5, 12.0], target: [0, 1.4, 0.4], fov: 46 },
+  light: "siang",
+};
+void ({} as Zone);
+
+==== 2303 project/src/nekat/sets/Kebun.tsx
+// NEKAT set "kebun" — the picture (data in kebun.meta.ts).
+import React from "react";
+import { clay } from "../kit/clay.ts";
+import { rb } from "../kit/Person.tsx";
+import { B, BambooFence, Banana, Cart, Cloud, Gentong, HayBale, Hills, House, Kandang, Palm, Pot, Saung, Terraces, Tree, Well } from "./parts.tsx";
+import { BALE, CART, KANDANG, KEBUN_HOUSE, SAUNG, WELL } from "./kebun.meta.ts";
+
+export const Kebun: React.FC = React.memo(() => (
+  <group>
+    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.02, 0]} material={clay("#9fcf7a", { rough: 0.95 })} receiveShadow>
+      <planeGeometry args={[240, 240]} />
+    </mesh>
+    <mesh geometry={rb(16, 0.2, 5.6, 0.05)} material={clay("#d9b98a", { rough: 0.95 })} position={[0, -0.1, 1.6]} receiveShadow />
+    <mesh geometry={rb(5.5, 0.2, 1.4, 0.05)} material={clay("#d4b283", { rough: 0.95 })} position={[0, -0.09, -1.05]} receiveShadow />
+    <House s={KEBUN_HOUSE} />
+    <Kandang {...KANDANG} />
+    <HayBale p={BALE.p} s={BALE.s} />
+    <HayBale p={[-5.6, 0, -0.3]} />
+    <HayBale p={[-5.6, 0.62, -0.3]} s={[0.7, 0.62, 0.5]} yaw={0.2} />
+    <Well p={WELL} />
+    <Cart p={CART.p} yaw={CART.yaw} />
+    <Gentong p={[1.9, 0, -0.3]} />
+    <Pot p={[0.9, 0, -0.5]} leaf="#5aa864" flower={null} />
+    <Saung p={SAUNG.p} yaw={SAUNG.yaw} />
+    <BambooFence x0={-12} x1={-5.0} z={-0.95} />
+    <BambooFence x0={8.0} x1={13} z={-0.95} />
+    <BambooFence x0={-12} x1={12} z={-8.2} />
+    <Banana p={[-6.8, 0, -1.6]} />
+    <Banana p={[8.8, 0, -1.4]} s={1.1} yaw={0.6} />
+    <Banana p={[-9.5, 0, 1.5]} s={0.95} yaw={1.2} />
+    <Banana p={[10.5, 0, 2.5]} yaw={2.2} />
+    <Palm p={[-3.0, 0, -6.0]} s={1.15} />
+    <Palm p={[7.0, 0, -8.0]} s={1.3} lean={-0.1} />
+    <Palm p={[11.0, 0, -4.5]} s={1.2} />
+    <Tree p={[-11.5, 0, -6.5]} s={1.3} />
+    <Tree p={[12.5, 0, -7.5]} s={1.4} leaf="#6aae63" />
+    <Tree p={[-13, 0, 6]} s={1.2} leaf="#86c47a" />
+    <Tree p={[13, 0, 7]} s={1.3} />
+    <B p={[0, 0.25, 11]} s={[30, 0.5, 0.8]} c="#7fb866" r={0.2} shadow={false} />
+    <Terraces z0={-9.0} rows={8} />
+    <Hills z={-70} />
+    <Cloud p={[-14, 24, -80]} s={3} />
+    <Cloud p={[12, 30, -90]} s={3.6} />
+    <Cloud p={[32, 20, -70]} s={2.4} />
+    <Cloud p={[-38, 18, -60]} s={2.6} />
+    <Cloud p={[0, 22, 90]} s={3} />
+  </group>
+));
+
+==== 3646 project/src/nekat/sets/sekolah.meta.ts
+// NEKAT set "sekolah": a school yard — a one-storey classroom block with a raised selasar and columns, a tiled
+// courtyard, benches, trees in square planters, a flag pole, a notice board, a grass field behind the cameras.
+// Pure data (node + browser): the picture is Sekolah.tsx.
+import type { Zone } from "../crowd.ts";
+import type { SetMeta } from "../types.ts";
+
+export const SCHOOL = { x0: -11.5, x1: 11.5, front: -3.6 };
+export const BENCHES: [number, number][] = [[-3.6, -0.95], [3.6, -0.95], [2.55, 0.85]];
+export const PLANTERS: [number, number][] = [[-7.0, -0.2], [7.2, -0.2]];
+export const FLAG: [number, number, number] = [5.6, 0, 3.4];
+export const BOARD = { p: [-9.8, 0, 3.6] as [number, number, number], yaw: 0.9 };
+const cols = Array.from({ length: 7 }, (_, i) => SCHOOL.x0 + (i * (SCHOOL.x1 - SCHOOL.x0)) / 6);
+const ang = Math.atan(1.8 / 3.3);
+export const SEKOLAH: SetMeta = {
+  id: "sekolah",
+  about: "halaman sekolah: classroom block with selasar + columns, tiled courtyard, benches, trees in planters, flag pole, notice board",
+  hero: [0.3, 0, 0.9],
+  watch: { p: [-1.9, 0.35, -2.35], yaw: 0.15 },
+  perch: { p: [2.25, 0.45, 0.85], yaw: -1.35 },
+  ground: [
+    { x0: -6.5, x1: 6.5, z0: -0.6, z1: 4.6 },
+    { x0: -12.5, x1: 12.5, z0: -0.6, z1: 4.6 },
+    { x0: -11.2, x1: 11.2, z0: -3.3, z1: -1.55, y: 0.35 },
+    { x0: -13, x1: 13, z0: 4.8, z1: 8 },
+  ],
+  tops: [
+    ...BENCHES.map(([x, z]) => [x - 1.0, x + 1.0, z - 0.23, z + 0.23, 0.45] as [number, number, number, number, number]),
+    ...PLANTERS.map(([x, z]) => [x - 0.85, x + 0.85, z - 0.85, z + 0.85, 0.45] as [number, number, number, number, number]),
+    [-11.8, 11.8, -3.6, -1.4, 0.35],
+    [FLAG[0] - 0.7, FLAG[0] + 0.7, FLAG[2] - 0.7, FLAG[2] + 0.7, 0.55],
+  ],
+  ledges: [
+    ...BENCHES.map(([x, z]) => ({ cx: x, cz: z, rx: 0.8, rz: 0.05, facing: 0.1 })),
+    ...PLANTERS.map(([x, z]) => ({ cx: x, cz: z + 0.55, rx: 0.6, rz: 0.15, facing: 0.2 })),
+    { cx: 0, cz: -1.95, rx: 10, rz: 0.3, facing: 0.1 },
+  ],
+  roofs: [
+    { o: [-10.8, 3.4, -4.25], e: [1, 0], downYaw: 0, angle: ang, cols: 36, rows: 3, dx: 0.6, dz: 0.72, fill: 0.85 },
+    { o: [-10.8, 2.96, -1.4], e: [1, 0], downYaw: 0, angle: 0.08, cols: 36, rows: 3, dx: 0.6, dz: 0.8, fill: 0.8 },
+  ],
+  flats: [],
+  avoid: [
+    { kind: "circle", c: [FLAG[0], FLAG[2]], r: 0.85 },
+    { kind: "rect", x0: -10.8, x1: -8.8, z0: 2.9, z1: 4.3 },
+    ...cols.map((x) => ({ kind: "circle", c: [x, -1.65], r: 0.22 }) as Zone),
+    ...PLANTERS.map(([x, z]) => ({ kind: "rect", x0: x - 0.3, x1: x + 0.3, z0: z - 0.3, z1: z + 0.3 }) as Zone),
+  ],
+  blockers: [
+    { min: [-11.8, 0, -9.9], max: [11.8, 4.9, -3.55] },
+    ...PLANTERS.map(([x, z]) => ({ min: [x - 0.85, 0, z - 0.85], max: [x + 0.85, 0.5, z + 0.85] }) as { min: [number, number, number]; max: [number, number, number] }),
+    ...PLANTERS.map(([x, z]) => ({ min: [x - 0.25, 0, z - 0.25], max: [x + 0.25, 3.0, z + 0.25] }) as { min: [number, number, number]; max: [number, number, number] }),
+    { min: [FLAG[0] - 0.7, 0, FLAG[2] - 0.7], max: [FLAG[0] + 0.7, 0.6, FLAG[2] + 0.7] },
+    { min: [FLAG[0] - 0.1, 0, FLAG[2] - 0.1], max: [FLAG[0] + 0.1, 7.5, FLAG[2] + 0.1] },
+    ...BENCHES.map(([x, z]) => ({ min: [x - 1.0, 0, z - 0.25], max: [x + 1.0, 0.5, z + 0.25] }) as { min: [number, number, number]; max: [number, number, number] }),
+  ],
+  laneFrom: -11,
+  giant: { p: [0.3, 0, -11.2], scale: 12, over: [0.3, 4.9, -6.6] },
+  bounds: { x0: -14, x1: 14, z0: -1.1, z1: 14, y1: 10 },
+  wide: { pos: [4.5, 7.0, 11.0], target: [0, 2.0, -1.0], fov: 44 },
+  top: { pos: [2.0, 11.0, 13.0], target: [0, 1.2, 0], fov: 46 },
+  light: "siang",
+};
+
+==== 1857 project/src/nekat/sets/Sekolah.tsx
+// NEKAT set "sekolah" — the picture (data in sekolah.meta.ts).
+import React, { useMemo } from "react";
+import { clay, tiles } from "../kit/clay.ts";
+import { rb } from "../kit/Person.tsx";
+import { B, Bench, Board, Cloud, FlagPole, Planter, School, Tree } from "./parts.tsx";
+import { BENCHES, BOARD, FLAG, PLANTERS, SCHOOL } from "./sekolah.meta.ts";
+
+export const Sekolah: React.FC = React.memo(() => {
+  const court = useMemo(() => clay("#ffffff", { map: tiles("#dcd8cf", "#c9c3b8", 4, 4, [26, 7], false, 3), rough: 0.95 }), []);
+  return (
+    <group>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.02, 0]} material={clay("#9fcf7a", { rough: 0.95 })} receiveShadow>
+        <planeGeometry args={[240, 240]} />
+      </mesh>
+      <mesh geometry={rb(26, 0.2, 6.4, 0.03)} material={court} position={[0, -0.1, 1.6]} receiveShadow />
+      <School {...SCHOOL} />
+      {BENCHES.map(([x, z], i) => <Bench key={i} p={[x, 0, z]} color={["#6aa6d8", "#e8833a", "#5b9a4b"][i % 3]} />)}
+      {PLANTERS.map(([x, z], i) => <Planter key={i} p={[x, 0, z]} s={1.25} leaf={i ? "#6aae63" : "#79bf6e"} />)}
+      <FlagPole p={FLAG} />
+      <Board p={BOARD.p} yaw={BOARD.yaw} />
+      {/* far side: low wall + trees beyond the field */}
+      <B p={[0, 0.5, 21]} s={[40, 1.0, 0.3]} c="#efe6d6" r={0.05} />
+      {[-14, -8, -2, 4, 10, 16].map((x, i) => <Tree key={i} p={[x, 0, 23]} s={1.3} leaf={i % 2 ? "#6aae63" : "#86c47a"} />)}
+      <Tree p={[-13.5, 0, 2.5]} s={1.3} />
+      <Tree p={[13.5, 0, 1.5]} s={1.4} leaf="#6aae63" />
+      <Tree p={[-10, 0, -12]} s={1.5} />
+      <Tree p={[9, 0, -13]} s={1.6} leaf="#86c47a" />
+      <Cloud p={[-14, 24, -80]} s={3} />
+      <Cloud p={[10, 30, -90]} s={3.6} />
+      <Cloud p={[30, 20, -70]} s={2.4} />
+      <Cloud p={[-36, 18, -60]} s={2.6} />
+      <Cloud p={[0, 22, 90]} s={3} />
+    </group>
+  );
+});
+
+==== 5898 project/src/nekat/tools.ts
+// NEKAT tool library as DATA: every tool the hero tries, with its chip label, how it is used, how long the gag
+// takes, which targets it can reach, what effect it has on them and the default backfire / arrival. The choreography
+// for each `act` lives in acts.ts; the sound cues in scripts/lib/nekat-sound.mjs. Pure data (node + browser).
+import type { Arrive, Backfire } from "./types.ts";
+
+export type Effect = "hit" | "spray" | "suck" | "blow" | "lure" | "scare" | "catch" | "cover" | "fly" | "trap";
+export type ToolDef = {
+  label: string;
+  about: string;
+  /** choreography id in acts.ts */
+  act: string;
+  effect: Effect;
+  /** tool time (s) when the counter jumps; the choreography before it stretches / holds to fit the line timing */
+  flip: number;
+  /** tool time of the impact (the effect reaches the targets) */
+  impact: number;
+  /** targets the tool works on (taken from the crowd nearest the stage), and where they wait (hero-local x / z) */
+  targets: number;
+  zone: [number, number, number, number];
+  backfire: Backfire;
+  arrive: Arrive;
+  /** shortest sensible level (s) without a voice */
+  min: number;
+  /** the hero rides it (sits inside, stays out of his spot) */
+  vehicle?: boolean;
+  /** sound cue name for the tool's own noise */
+  sound: string;
+};
+
+export const TOOLS: Record<string, ToolDef> = {
+  sapu: { label: "SAPU", about: "broom swat (sapu ijuk)", act: "sapu", effect: "hit", flip: 1.42, impact: 0.64, targets: 3, zone: [-0.6, 0.55, 0.8, 1.35], backfire: "dodge", arrive: "pop", min: 2.3, sound: "swish" },
+  selang: { label: "SELANG AIR", about: "garden hose spray from a reel", act: "selang", effect: "spray", flip: 1.3, impact: 0.55, targets: 4, zone: [-0.8, 0.7, 1.45, 2.4], backfire: "multiply", arrive: "pop", min: 2.3, sound: "water" },
+  ember: { label: "EMBER AIR", about: "a bucket of water thrown in one splash", act: "ember", effect: "spray", flip: 1.2, impact: 0.62, targets: 4, zone: [-0.8, 0.7, 1.4, 2.3], backfire: "splash", arrive: "pop", min: 2.2, sound: "splash" },
+  vacuum: { label: "PENYEDOT DEBU", about: "vacuum cleaner sucks them in… the canister swells and bursts", act: "vacuum", effect: "suck", flip: 1.6, impact: 0.2, targets: 5, zone: [-0.95, 0.7, 1.15, 2.2], backfire: "multiply", arrive: "burst", min: 2.6, sound: "vacuum" },
+  damkar: { label: "MOBIL DAMKAR MINI", about: "ride-on mini fire truck drives in and sprays from its cannon", act: "damkar", effect: "spray", flip: 1.7, impact: 1.15, targets: 6, zone: [-0.95, 0.95, 0.9, 2.5], backfire: "multiply", arrive: "pop", min: 2.8, vehicle: true, sound: "siren" },
+  kipas: { label: "KIPAS ANGIN RAKSASA", about: "giant standing fan blows them away… they come to cool off", act: "kipas", effect: "blow", flip: 1.4, impact: 0.7, targets: 5, zone: [-0.5, 0.95, 1.1, 2.1], backfire: "multiply", arrive: "march", min: 2.4, sound: "fan" },
+  jaring: { label: "JARING", about: "net on a pole swoops over them… the bag bursts", act: "jaring", effect: "catch", flip: 1.45, impact: 0.66, targets: 3, zone: [-0.42, 0.42, 1.38, 1.95], backfire: "multiply", arrive: "burst", min: 2.3, sound: "swish" },
+  umpan: { label: "UMPAN IKAN", about: "a bowl of fish slid out as bait… everyone comes to eat", act: "umpan", effect: "lure", flip: 1.4, impact: 0.85, targets: 5, zone: [-0.95, 0.95, 0.9, 2.5], backfire: "multiply", arrive: "march", min: 2.4, sound: "clink" },
+  toa: { label: "TOA", about: "megaphone shout (sound rings)… they drop in from everywhere", act: "toa", effect: "scare", flip: 1.2, impact: 0.5, targets: 5, zone: [-0.85, 0.85, 1.2, 2.4], backfire: "multiply", arrive: "rain", min: 2.2, sound: "toa" },
+  terompet: { label: "TEROMPET", about: "paper party horn blast (rings)… more arrive", act: "terompet", effect: "scare", flip: 1.2, impact: 0.5, targets: 5, zone: [-0.85, 0.85, 1.2, 2.4], backfire: "multiply", arrive: "rain", min: 2.2, sound: "horn" },
+  payung: { label: "PAYUNG", about: "umbrella opened like a shield… then it rains creatures", act: "payung", effect: "cover", flip: 1.25, impact: 0.6, targets: 4, zone: [-0.7, 0.7, 1.0, 1.9], backfire: "multiply", arrive: "rain", min: 2.3, sound: "fwump" },
+  drone: { label: "DRONE MAINAN", about: "toy drone with a remote buzzes them… they chase it back", act: "drone", effect: "fly", flip: 1.35, impact: 0.75, targets: 4, zone: [-0.8, 0.8, 1.4, 2.4], backfire: "chase", arrive: "march", min: 2.4, sound: "drone" },
+  kardus: { label: "KARDUS JEBAKAN", about: "box propped on a stick drops over one (he yanks the string)… tipped up: more pour out", act: "kardus", effect: "trap", flip: 1.2, impact: 0.74, targets: 1, zone: [-0.05, 0.05, 0.92, 0.98], backfire: "multiply", arrive: "burst", min: 2.3, sound: "thump" },
+};
+
+export const BACKFIRES: Record<Backfire, string> = {
+  multiply: "they just multiply (the tool's own arrival style)",
+  dodge: "the targets dodge before it lands; copies pop up",
+  chase: "the crowd turns on the hero; he backs away, arms up",
+  splash: "it bounces back on the hero (water drips / a dust puff)",
+  stuck: "the tool jams; he tugs and tugs while more arrive anyway",
+};
+export const ARRIVALS: Record<Arrive, string> = {
+  pop: "pop up in a wave with clay puffs",
+  burst: "fly out of the tool (canister / net / box) in volleys",
+  rain: "fall from the sky and land with a squash",
+  march: "hop in from outside the frame",
+  climb: "hop up onto fences, benches and walls",
+};
+export const ENDINGS: Record<string, string> = {
+  nap: "he gives up and naps on his back on the creature mountain (face up, Zzz), crane up to the whole set",
+  adopt: "he sits on a chair, the named one on his lap — 'ya udah, dipelihara'",
+  run: "he runs off past the camera; the crowd pours after him",
+  cliffhanger: "relief… then a GIANT one rises behind the roof; he turns: shock",
+  menyerah: "he sits down, they pile round him to the chest, a white flag goes up",
+};
+
+==== 6709 project/src/nekat/types.ts
+// NEKAT director — data types. A Story is what an author writes (stories/<id>/story.json); a Plan is the compiled
+// film. Both are plain JSON: the same Plan drives the picture (Film.tsx), the sound (scripts/lib/nekat-sound.mjs) and
+// the QA gate. Pure TypeScript (no React / three): node runs the compiler directly.
+import type { V3 } from "./math.ts";
+import type { CreatureLook, PersonLook } from "./cast.ts";
+import type { BoxTop, Zone } from "./crowd.ts";
+import type { Dress } from "./dressing.ts";
+
+export type Box = { min: V3; max: V3 };
+export type Cam = { pos: V3; target: V3; fov: number };
+
+// ------------------------------------------------------------------ sets
+export type SlopeSpec = { o: V3; e: [number, number]; downYaw: number; angle: number; cols: number; rows: number; dx: number; dz: number; fill?: number };
+export type SetMeta = {
+  id: string;
+  about: string;
+  /** where the hero stands in the levels; he always faces +z (toward the cameras) */
+  hero: V3;
+  /** the partner's spot (the second human of the duo) and facing yaw */
+  watch: { p: V3; yaw: number };
+  /** the named creature's spot in the opening (y = the surface it sits on) */
+  perch: { p: V3; yaw: number };
+  /** areas the crowd fills, one layer first (nearest the action first), y = floor height */
+  ground: { x0: number; x1: number; z0: number; z1: number; y?: number }[];
+  /** things creatures can stand ON (height map boxes x0, x1, z0, z1, top): fence caps, walls, seats */
+  tops: BoxTop[];
+  /** strips along ledges where creatures climb up at mid counts (dropped onto `tops`) */
+  ledges: { cx: number; cz: number; rx: number; rz: number; facing: number }[];
+  /** roofs + flat roofs filled at the ending */
+  roofs: SlopeSpec[];
+  flats: { x0: number; x1: number; z0: number; z1: number; y: number }[];
+  /** the crowd keeps out of these (pots, poles, trees, doors) */
+  avoid: Zone[];
+  /** solid volumes: cameras stay out and need a clear line of sight past them */
+  blockers: Box[];
+  /** vehicles enter from this x (left), along z = hero.z + 0.75, and stop left of the stage */
+  laneFrom: number;
+  /** a giant creature rises here (cliffhanger ending): behind a roof */
+  giant: { p: V3; scale: number; over: V3 };
+  /** camera bounds (x, z) and max height */
+  bounds: { x0: number; x1: number; z0: number; z1: number; y1: number };
+  /** authored views: the whole set full (peak / ending), and the high crane end */
+  wide: Cam;
+  top: Cam;
+  /** default light */
+  light?: "siang" | "sore";
+};
+
+// ------------------------------------------------------------------ story (authored)
+export type LineSpec = {
+  text: string;
+  /** who says it (a cast id): a name chip shows, the mouth moves. Without: the narrator / caption voice */
+  by?: string;
+  /** false = on screen only, not in the voice-over */
+  vo?: boolean;
+};
+export type Backfire = "multiply" | "dodge" | "chase" | "splash" | "stuck";
+export type Arrive = "pop" | "burst" | "rain" | "march" | "climb";
+export type LevelSpec = {
+  tool: string;
+  /** counter after this level (default: from counter.curve) */
+  to?: number;
+  backfire?: Backfire;
+  arrive?: Arrive;
+  /** text on the LEVEL chip (default: the tool's name) */
+  label?: string;
+  /** the word the counter jumps on (default: the *starred* word of the level's lines) */
+  flip?: string;
+  lines?: LineSpec[];
+};
+export type CastEntry = { preset?: string; creature?: string; tokoh?: string; look?: Record<string, unknown>; name?: string };
+export type Story = {
+  id: string;
+  /** the challenge question, e.g. "Bisa gak Pak Darto ngusir Si Oren?" (or 2–3 lines) */
+  title: string | string[];
+  set: string;
+  time?: "siang" | "sore";
+  format?: "portrait" | "landscape";
+  part?: number;
+  /** series name: the end state is saved to series/<name>/state.json; "continue": true starts from it */
+  series?: string;
+  continue?: boolean;
+  cast: Record<string, CastEntry>;
+  hero?: string;
+  pest?: string;
+  partner?: string;
+  counter?: { label?: string; start?: number; curve?: "x2" | "x4" | "x8" | "escalate" | number[] };
+  hook?: { lines?: LineSpec[]; say?: boolean };
+  levels: LevelSpec[];
+  peak?: { to?: number; lines?: LineSpec[] };
+  ending: { kind: string; lines?: LineSpec[]; part?: string; next?: string };
+  /** set dressing from stories/<id>/props.json (make.mjs fills it) */
+  dressing?: Dress[];
+};
+
+// ------------------------------------------------------------------ timing
+export type Word = { w: string; t: number };
+export type Timed = { text: string; t0: number; t1: number; words: Word[] };
+
+// ------------------------------------------------------------------ plan (compiled)
+export type PLine = { text: string; by?: string; who?: string; t0: number; t1: number; words: { w: string; t0: number; t1: number }[]; spoken: boolean; /** caption centre line (design px), chosen clear of faces */ y?: number };
+export type SegKind = "hook" | "level" | "peak" | "ending";
+export type PLevel = { n: number; tool: string; label: string; backfire: Backfire; arrive: Arrive; from: number; to: number; flip: number };
+export type Seg = {
+  kind: SegKind;
+  i: number;
+  t0: number;
+  t1: number;
+  lines: PLine[];
+  level?: PLevel;
+  peak?: { from: number; to: number; flip: number; vehicle: boolean };
+  ending?: { kind: string; part: string; next: string; count: number; vehicle: boolean };
+  /** count shown during this segment (before a flip) */
+  count: number;
+};
+export type ShotRole = "hook" | "hook2" | "attempt" | "result" | "level" | "peak" | "end";
+export type PShot = {
+  i: number; t0: number; t1: number; seg: number; role: ShotRole; a: Cam; b: Cam; shadowAt: V3; shadowBox: number; vis: number;
+  /** camera holds key a this long before moving to b */
+  hold?: number;
+  /** the set hides its pieces beyond this z (the camera stands there) */
+  hide?: number;
+  /** small tilt (rad) / lens widening applied so a caption clears the faces */
+  reframe?: { tilt: number; zoom: number };
+};
+export type PActor = { id: string; name: string; look: PersonLook };
+export type PPest = { id: string; name: string; look: CreatureLook };
+export type Cue = { t: number; k: string; n?: number; v?: number };
+export type Plan = {
+  id: string;
+  title: string[];
+  set: string;
+  light: "siang" | "sore";
+  aspect: number;
+  duration: number;
+  hero: PActor;
+  partner?: PActor;
+  pest: PPest;
+  counter: { label: string; keys: { t: number; n: number }[] };
+  /** counter → drawn creatures: exact up to 40, then log up to `cap` (homes in this set) at `end` */
+  drawn: { end: number; cap: number };
+  part: string;
+  segs: Seg[];
+  shots: PShot[];
+  cues: Cue[];
+  audio?: string;
+  voiced: boolean;
+  dressing?: Dress[];
+  warnings: string[];
+};
+
+==== 2749 project/src/Root.tsx
+import React from "react";
+import { Composition } from "remotion";
+import { NekatFilm, nekatMetadata, nekatMetadata30, nekatStillsMetadata, type FilmProps } from "./nekat/Film.tsx";
+import { NekatCard, SetLook, cardMetadata, type CardProps } from "./nekat/Card.tsx";
+import type { Plan } from "./nekat/types.ts";
+
+const EMPTY: FilmProps = { plan: { id: "-", title: ["-"], set: "gang", shots: [], segs: [], duration: 1, aspect: 9 / 16 } as unknown as Plan };
+
+// VOYNANN Motion — NEKAT. Films are rendered by scripts/make.mjs with the compiled plan as props (out/<id>/props.json):
+// NekatPreview (540 × 960 @ 30: stills + QA), NekatPreviewSS (rendered at 2× and downscaled for the preview MP4),
+// NekatFinal (1080 × 1920 @ 60). The …Wide compositions are the same film in 16:9 (make.mjs --wide). NekatStills renders
+// many film frames from ONE page (make.mjs --stills). NekatCard = the kartu tokoh / cast card; SetLook = a set's views.
+export const RemotionRoot: React.FC = () => (
+  <>
+    <Composition id="NekatPreview" component={NekatFilm} defaultProps={EMPTY} calculateMetadata={nekatMetadata30} durationInFrames={30} fps={30} width={540} height={960} />
+    <Composition id="NekatPreviewSS" component={NekatFilm} defaultProps={EMPTY} calculateMetadata={nekatMetadata30} durationInFrames={30} fps={30} width={1080} height={1920} />
+    <Composition id="NekatFinal" component={NekatFilm} defaultProps={EMPTY} calculateMetadata={nekatMetadata} durationInFrames={60} fps={60} width={1080} height={1920} />
+    <Composition id="NekatPreviewWide" component={NekatFilm} defaultProps={EMPTY} calculateMetadata={nekatMetadata30} durationInFrames={30} fps={30} width={960} height={540} />
+    <Composition id="NekatPreviewSSWide" component={NekatFilm} defaultProps={EMPTY} calculateMetadata={nekatMetadata30} durationInFrames={30} fps={30} width={1920} height={1080} />
+    <Composition id="NekatFinalWide" component={NekatFilm} defaultProps={EMPTY} calculateMetadata={nekatMetadata} durationInFrames={60} fps={60} width={1920} height={1080} />
+    <Composition id="NekatStills" component={NekatFilm} defaultProps={EMPTY} calculateMetadata={nekatStillsMetadata} durationInFrames={1} fps={30} width={540} height={960} />
+    <Composition id="NekatStillsWide" component={NekatFilm} defaultProps={EMPTY} calculateMetadata={nekatStillsMetadata} durationInFrames={1} fps={30} width={960} height={540} />
+    <Composition id="NekatCard" component={NekatCard} defaultProps={{ strips: [], h: 400 } as CardProps} calculateMetadata={cardMetadata} durationInFrames={1} fps={30} width={1080} height={400} />
+    <Composition id="SetLook" component={SetLook} defaultProps={{ set: "gang" }} durationInFrames={6} fps={30} width={540} height={960} />
+  </>
+);
+
+==== 615 project/stories/ayam-kebun/props.json
+{
+  "orang-orangan": {
+    "about": "scarecrow in the yard",
+    "at": [-5.0, 3.5], "yaw": 20, "footprint": [0.9, 0.5], "height": 1.9,
+    "parts": [
+      { "shape": "cyl", "r": 0.04, "h": 1.7, "pos": [0, 0.85, 0], "color": "#a8774a" },
+      { "shape": "cyl", "r": 0.03, "h": 0.9, "pos": [0, 1.3, 0], "rot": [0, 0, 90], "color": "#a8774a" },
+      { "shape": "box", "size": [0.4, 0.45, 0.22], "pos": [0, 1.2, 0], "color": "#5b9a4b" },
+      { "shape": "ball", "r": 0.16, "pos": [0, 1.6, 0], "color": "#e8c86a" },
+      { "shape": "cone", "r": 0.3, "h": 0.16, "pos": [0, 1.78, 0], "color": "#d9be7c" }
+    ]
+  }
+}
+
+==== 1500 project/stories/ayam-kebun/story.json
+{
+  "id": "ayam-kebun",
+  "title": "Bisa gak Kakek Sardi nangkep Si Jambul?",
+  "set": "kebun",
+  "part": 1,
+  "cast": {
+    "kakek": { "preset": "kakek", "name": "Kakek Sardi" },
+    "cucu": { "preset": "bocil", "name": "Dimas", "look": { "top": { "kind": "kaos", "color": "#3a7bd5", "color2": "#f6f3ea", "stripes": true } } },
+    "jambul": { "creature": "ayam-putih", "name": "Si Jambul" }
+  },
+  "hero": "kakek", "pest": "jambul", "partner": "cucu",
+  "counter": { "label": "AYAM", "start": 1 },
+  "hook": { "lines": [ { "text": "Kek, ayamnya kabur lagi!", "by": "cucu" } ] },
+  "levels": [
+    { "tool": "jaring", "to": 3, "lines": [
+      { "text": "Kena kau!", "by": "kakek" },
+      { "text": "Jaringnya malah *NETES*." } ] },
+    { "tool": "kardus", "to": 6, "lines": [
+      { "text": "Kurung aja!", "by": "kakek" },
+      { "text": "Dibuka… *ENAM*." } ] },
+    { "tool": "umpan", "to": 24, "backfire": "chase", "lines": [
+      { "text": "Pancing pakai jagung…", "by": "kakek" },
+      { "text": "Yang dateng *SEKAMPUNG*." } ] },
+    { "tool": "kipas", "to": 96, "backfire": "splash", "lines": [
+      { "text": "Tiup yang kenceng!", "by": "kakek" },
+      { "text": "Malah pada *NGADEM*." } ] }
+  ],
+  "peak": { "to": 600, "lines": [ { "text": "*600* ekor.", "vo": true }, { "text": "Kek… ini peternakan.", "by": "cucu" } ] },
+  "ending": { "kind": "adopt", "lines": [ { "text": "Ya udah…\n*DIPELIHARA* aja.", "by": "kakek" } ], "part": "PART 1", "next": "BESOK: TELURNYA…" }
+}
+
+==== 1361 project/stories/bebek-sekolah/story.json
+{
+  "id": "bebek-sekolah",
+  "title": "Bisa gak Pak Joko ngusir Si Kwek dari sekolah?",
+  "set": "sekolah",
+  "part": 1,
+  "cast": {
+    "joko": { "preset": "satpam", "name": "Pak Joko" },
+    "bu": { "preset": "ibu", "name": "Bu Ratna", "look": { "hat": { "kind": "kerudung", "color": "#2f9c93" }, "top": { "kind": "daster", "color": "#efe2c4" }, "bottom": { "kind": "skirt", "color": "#8a5a3a" } } },
+    "kwek": { "creature": "bebek-putih", "name": "Si Kwek" }
+  },
+  "counter": { "label": "BEBEK", "start": 1, "curve": [2, 3, 4, 4, 5] },
+  "levels": [
+    { "tool": "toa", "lines": [ { "text": "BEBEK DILARANG MASUK!", "by": "joko" }, { "text": "Yang dengar malah *DATANG*." } ] },
+    { "tool": "payung", "backfire": "stuck", "lines": [ { "text": "Payungnya macet…" }, { "text": "Hujan *BEBEK*." } ] },
+    { "tool": "drone", "lines": [ { "text": "Pakai teknologi!", "by": "joko" }, { "text": "Dikejar *BALIK*." } ] },
+    { "tool": "ember", "lines": [ { "text": "Siram!", "by": "joko" }, { "text": "Bebek kok *DISIRAM*…" } ] },
+    { "tool": "terompet", "backfire": "dodge", "lines": [ { "text": "Tiup terompet!", "by": "joko" }, { "text": "Dikira *PESTA*." } ] }
+  ],
+  "peak": { "lines": [ { "text": "Pak, upacaranya mulai…", "by": "bu" } ] },
+  "ending": { "kind": "run", "lines": [ { "text": "*KABUUUR!*", "by": "joko" } ], "part": "PART 1" }
+}
+
+==== 1202 project/stories/kambing-gang/props.json
+{
+  "gerobak": {
+    "about": "gerobak bakso parked on the street (creatures can stand on its roof)",
+    "at": [4.1, 2.75], "yaw": -8, "footprint": [1.5, 0.85], "height": 1.6, "stand": true,
+    "parts": [
+      { "shape": "box", "size": [1.2, 0.55, 0.62], "pos": [0, 0.68, 0], "color": "#3f86c9" },
+      { "shape": "box", "size": [1.22, 0.06, 0.64], "pos": [0, 0.98, 0], "color": "#f6f3ea" },
+      { "shape": "box", "size": [0.5, 0.32, 0.5], "pos": [-0.3, 1.17, 0], "color": "#cfe6ef" },
+      { "shape": "cyl", "r": 0.13, "h": 0.32, "pos": [0.32, 1.17, 0], "color": "#c9c6bd" },
+      { "shape": "cyl", "r": 0.03, "h": 0.6, "pos": [-0.55, 1.3, 0.27], "color": "#8a8f96" },
+      { "shape": "cyl", "r": 0.03, "h": 0.6, "pos": [0.55, 1.3, 0.27], "color": "#8a8f96" },
+      { "shape": "box", "size": [1.4, 0.05, 0.8], "pos": [0, 1.6, 0], "color": "#e2574c" },
+      { "shape": "cyl", "r": 0.22, "h": 0.06, "pos": [-0.35, 0.22, 0.33], "rot": [90, 0, 0], "color": "#2d2a2a" },
+      { "shape": "cyl", "r": 0.22, "h": 0.06, "pos": [0.35, 0.22, 0.33], "rot": [90, 0, 0], "color": "#2d2a2a" },
+      { "shape": "box", "size": [0.06, 0.4, 0.06], "pos": [0.55, 0.2, -0.2], "color": "#8a8f96" }
+    ]
+  }
+}
+
+==== 982 project/stories/kambing-gang/story.json
+{
+  "id": "kambing-gang",
+  "title": ["BISA GAK", "PAK RT", "NGUSIR KAMBING?"],
+  "set": "gang",
+  "time": "sore",
+  "cast": {
+    "rt": { "preset": "pakrt", "name": "Pak RT" },
+    "mbek": { "creature": "kambing-cokelat", "name": "Si Mbek" }
+  },
+  "counter": { "label": "KAMBING", "start": 1, "curve": [3, 3, 4, 5] },
+  "levels": [
+    { "tool": "selang", "backfire": "dodge", "lines": [ { "text": "Pergi sana!", "by": "rt" }, { "text": "Kambingnya *NGINDAR*." } ] },
+    { "tool": "vacuum", "backfire": "splash", "lines": [ { "text": "Sedot!", "by": "rt" }, { "text": "Ya nggak *MUAT*, Pak." } ] },
+    { "tool": "jaring", "lines": [ { "text": "Tangkap!", "by": "rt" }, { "text": "Keluar *DUA BELAS*." } ] },
+    { "tool": "damkar", "backfire": "chase", "lines": [ { "text": "Panggil damkar!", "by": "rt" }, { "text": "Kambingnya *NGAMUK*." } ] }
+  ],
+  "ending": { "kind": "menyerah", "lines": [ { "text": "Pak RT *MENYERAH*." } ], "part": "PART 1", "next": "BERSAMBUNG…" }
+}
+
+==== 969 project/stories/kucing-oren-2/story.json
+{
+  "id": "kucing-oren-2",
+  "title": "Bisa gak Pak Darto ngusir 1.024 kucing?",
+  "series": "darto-oren",
+  "continue": true,
+  "part": 2,
+  "cast": {
+    "bu": { "preset": "ibu", "name": "Bu Darto", "look": { "hat": { "kind": "kerudung", "color": "#e8833a" } } }
+  },
+  "partner": "bu",
+  "counter": { "label": "KUCING", "curve": "x2" },
+  "hook": { "lines": [ { "text": "Pak, bangun! Kucingnya masih di sini!", "by": "bu" } ] },
+  "levels": [
+    { "tool": "toa", "lines": [ { "text": "BUBAR SEMUA!", "by": "darto" }, { "text": "Malah *DATANG LAGI*." } ] },
+    { "tool": "kipas", "lines": [ { "text": "Kipas raksasa!", "by": "darto" }, { "text": "Kucing *SUKA ADEM*." } ] },
+    { "tool": "sapu", "backfire": "stuck", "lines": [ { "text": "Sapunya nyangkut…" }, { "text": "Tetap *NAMBAH*." } ] }
+  ],
+  "ending": { "kind": "cliffhanger", "lines": [ { "text": "Akhirnya *TENANG*…" }, { "text": "…atau belum?" } ], "part": "PART 2", "next": "PART 3 SEGERA" }
+}
+
+==== 1155 project/stories/kucing-oren/story.json
+{
+  "id": "kucing-oren",
+  "title": "Bisa gak Pak Darto ngusir Si Oren?",
+  "set": "gang",
+  "part": 1,
+  "series": "darto-oren",
+  "cast": {
+    "darto": { "preset": "bapak", "name": "Pak Darto" },
+    "oren": { "creature": "kucing-oren", "name": "Si Oren" }
+  },
+  "counter": { "label": "KUCING", "start": 1, "curve": "escalate" },
+  "levels": [
+    { "tool": "sapu", "to": 2, "lines": [
+      { "text": "HUSH! SANA!", "by": "darto" },
+      { "text": "…kok jadi *DUA*?" } ] },
+    { "tool": "selang", "to": 4, "lines": [
+      { "text": "Tiap diusir…" },
+      { "text": "kucingnya *NAMBAH*." } ] },
+    { "tool": "vacuum", "to": 16, "lines": [
+      { "text": "Sedot semua!", "by": "darto" },
+      { "text": "Isinya malah *16*." } ] },
+    { "tool": "damkar", "to": 128, "lines": [
+      { "text": "Bawa yang gede!", "by": "darto" },
+      { "text": "Kucingnya bawa *TEMEN*." } ] }
+  ],
+  "peak": { "to": 1024, "lines": [
+    { "text": "*1.024* ekor." },
+    { "text": "Yaudah lah…", "by": "darto" } ] },
+  "ending": { "kind": "nap", "lines": [ { "text": "Gak bisa ngusir?\nYa udah, *TIDUR*." } ], "part": "PART 1", "next": "BERSAMBUNG…" }
+}
+
+==== 484 project/tsconfig.json
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "Preserve",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "noEmit": true,
+    "lib": ["ES2022", "DOM"],
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "noUnusedLocals": true,
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true
+  },
+  "include": ["src", "scripts/*.ts"],
+  "exclude": ["remotion.config.ts"]
+}
