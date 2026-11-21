@@ -64,23 +64,28 @@
    "mood": "memory",
    "cast": {
     "onah": {
-     "at": "masuk-kos",
-     "holding": "tas"
+     "at": "masuk-kos"
     }
    },
    "beats": [
     {
      "at": "Aku datang",
-     "do": "walk",
-     "to": "depan-kamar-onah",
+     "do": "look",
+     "target": "pintu-kamar-kos",
+     "face": "calm"
+    },
+    {
+     "at": "membawa",
+     "do": "look",
+     "target": "tas",
+     "face": "calm",
      "shot": {
       "type": "wide"
      }
     },
     {
      "at": "mimpi",
-     "do": "putDown",
-     "target": "rak-sepatu:top",
+     "do": "sigh",
      "face": "calm"
     }
    ]
