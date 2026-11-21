@@ -70,11 +70,6 @@
    },
    "beats": [
     {
-     "at": "Namaku",
-     "do": "look",
-     "target": "pintu-kamar-kos"
-    },
-    {
      "at": "Aku datang",
      "do": "walk",
      "to": "depan-kamar-onah",
@@ -85,7 +80,7 @@
     {
      "at": "mimpi",
      "do": "putDown",
-     "target": "rak-sepatu:front",
+     "target": "rak-sepatu:top",
      "face": "calm"
     }
    ]
@@ -260,8 +255,9 @@
     {
      "at": "Aku pikir",
      "who": "onah",
-     "do": "think",
-     "face": "think"
+     "do": "look",
+     "face": "smile",
+     "target": "arga"
     }
    ]
   },
